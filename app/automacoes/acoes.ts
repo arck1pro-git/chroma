@@ -29,6 +29,32 @@ import {
   salvarRascunho as salvarNoBanco,
 } from "@/lib/automacoes/repositorio";
 import { sql } from "@/lib/db";
+import { credencialDoMotor } from "@/lib/automacoes/repositorio";
+import { instanciaPadrao } from "@/lib/uazapi";
+
+/**
+ * As credenciais que os nós publicados usam DENTRO do n8n.
+ *
+ * O CRM guarda só o id (motor_credenciais é um mapa, não um cofre — o segredo
+ * mora no motor). Falhar aqui, e com o nome do que falta, é melhor que publicar
+ * um workflow cujos nós não autenticam: ele ficaria ativo e erraria calado no
+ * primeiro disparo.
+ */
+async function credenciaisDoMotor() {
+  const banco = await credencialDoMotor("n8n", "banco");
+  const uazapi = await credencialDoMotor("n8n", "uazapi");
+  if (!banco || !uazapi) {
+    throw new Error(
+      `Credencial do n8n não cadastrada (${!banco ? "banco" : "uazapi"}). Os nós publicados precisam dela para gravar no banco e falar com a uazapi.`,
+    );
+  }
+  const instancia = await instanciaPadrao();
+  return {
+    banco: banco.id,
+    uazapi: uazapi.id,
+    uazapiBaseUrl: instancia.baseUrl.replace(/\/+$/, ""),
+  };
+}
 import type { DefinicaoFluxo } from "@/lib/automacoes/tipos";
 
 const MOTOR = "n8n";
@@ -118,12 +144,12 @@ export async function publicar(
     throw e;
   }
 
-  // Os nós autenticam com o CRM_SERVICE_TOKEN escrito direto no header — não há
-  // credencial cadastrada no motor, por decisão explícita. O adaptador estoura
-  // se a variável não existir; sem este try, isso viraria um 500 cru na tela.
+  // Os nós autenticam com CREDENCIAIS do próprio n8n (motor_credenciais guarda
+  // só os ids). Antes o CRM_SERVICE_TOKEN ia escrito no header de cada nó, e
+  // ficava legível para quem abrisse o workflow na instância compartilhada.
   let workflow;
   try {
-    workflow = paraWorkflow(plano);
+    workflow = paraWorkflow(plano, await credenciaisDoMotor());
   } catch (e) {
     return { ok: false, erro: e instanceof Error ? e.message : String(e) };
   }

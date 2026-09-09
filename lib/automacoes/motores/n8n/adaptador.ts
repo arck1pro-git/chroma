@@ -52,85 +52,73 @@ const NOME_FIM = "Fim da execução";
 // fim em vez de perder o id na segunda.
 const EXECUCAO_ID = `{{ $('${NOME_ENTRADA}').item.json.body.execucao_id }}`;
 
-// Corpo de um POST de volta ao CRM. O "=" na frente é o que liga a avaliação
-// de expressão do n8n no parâmetro inteiro — sem ele, `{{ … }}` viaja literal
-// e o CRM recebe a string em vez do id.
-function corpoParaCrm(campos: Record<string, unknown>) {
-  return "=" + JSON.stringify(campos);
-}
+// O nó que carrega o lead. Todo bloco referencia ele por NOME para pegar
+// nome/whatsapp — e é por isso que a string existe uma vez só.
+const NOME_LEAD = "Carregar lead";
 
 /**
- * Autenticação dos nós que voltam ao CRM: o header escrito direto no nó, com o
- * CRM_SERVICE_TOKEN que já existe no .env.
+ * Traduz o template do CRM (`{{primeiro_nome}}`) para expressão do n8n.
  *
- * A alternativa era uma credencial Header Auth cadastrada dentro do motor, com
- * o CRM guardando só o id (é para isso que a tabela motor_credenciais existe, e
- * o docs/automacoes-n8n.md §3 ainda descreve esse caminho). Ficou de fora por
- * decisão explícita: era um passo manual na UI do motor antes de qualquer
- * publicação funcionar, e não temos credencial cadastrada lá.
+ * As duas sintaxes usam `{{ }}`, e é exatamente daí que vinha o problema que
+ * fazia o texto NÃO poder viajar até o motor: o n8n avaliava `{{primeiro_nome}}`
+ * no contexto dele, onde a variável não existe, e mandava vazio. Traduzindo na
+ * compilação, a mesma marca passa a apontar para a saída do nó que carregou o
+ * lead — e aí o motor resolve certo.
  *
- * O QUE ISSO CUSTA, e é bom saber: o token passa a viajar em texto no JSON do
- * workflow. A instância é compartilhada (§5.1) — quem abrir o workflow lê o
- * token, e com ele consegue reexecutar blocos de fluxos publicados, isto é,
- * reenviar mensagem para contatos. Credencial do motor seria mascarada; um
- * parâmetro de nó não é.
- *
- * Consequência prática: trocar o CRM_SERVICE_TOKEN exige REPUBLICAR os fluxos,
- * senão eles seguem mandando o token antigo e o CRM responde 401.
+ * Campo desconhecido vira string vazia em vez de quebrar a expressão inteira:
+ * uma mensagem com um buraco é melhor que um workflow que não roda.
  */
-function cabecalhoDoCrm() {
-  const token = process.env.CRM_SERVICE_TOKEN;
-  // Publicar sem token geraria nós com "Bearer undefined": workflow ativo,
-  // 401 em cada bloco. Falhar aqui é a única leitura honesta.
-  if (!token) {
-    throw new Error(
-      "CRM_SERVICE_TOKEN não definida — sem ela os blocos publicados não conseguiriam voltar ao CRM.",
-    );
-  }
-  return {
-    sendHeaders: true,
-    headerParameters: {
-      parameters: [{ name: "Authorization", value: `Bearer ${token}` }],
-    },
-  };
+function textoParaExpressao(bruto: string): string {
+  const escapado = bruto.replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
+  return escapado.replace(/\{\{\s*([a-z_][a-z0-9_]*)\s*\}\}/gi, (_, campo) => {
+    return `{{ $('${NOME_LEAD}').first().json.${campo} ?? '' }}`;
+  });
 }
 
-/**
- * Endereço do CRM, do ponto de vista do motor. Ele é ASSADO dentro de cada nó
- * no momento da publicação — não é lido em tempo de execução —, então um valor
- * ruim aqui vira um workflow ativo que falha calado.
- *
- * Foi o que aconteceu em 2026-09-04: com CRM_BASE_URL vazia, o `??` de antes
- * (que só cobre null/undefined) deixava passar a string vazia e o nó ia para o
- * motor apontando para "/api/automacoes/acao", relativo. O fluxo publicava, a
- * execução era criada e morria no primeiro bloco, sem passo e sem callback —
- * 'pendente' para sempre.
- */
-function baseDoCrm() {
-  const bruto = (process.env.CRM_BASE_URL ?? "").trim().replace(/\/+$/, "");
-  if (!bruto) {
-    throw new Error(
-      "CRM_BASE_URL está vazia. Ela é gravada dentro do workflow, então o motor precisa de um endereço ABSOLUTO e alcançável por ele — em desenvolvimento, a URL de um túnel (ngrok, cloudflared) para o seu localhost.",
-    );
-  }
-  if (!/^https?:\/\/[^/]+/i.test(bruto)) {
-    throw new Error(
-      `CRM_BASE_URL inválida ("${bruto}"): precisa começar com http:// ou https:// e ter host. O motor não resolve caminho relativo.`,
-    );
-  }
-  return bruto;
+/** Parâmetro de expressão do n8n: o "=" na frente liga a avaliação. */
+function expr(valor: string) {
+  return "=" + valor;
+}
+
+export type CredenciaisMotor = {
+  /** id da credencial Postgres no n8n (role chroma_n8n). */
+  banco: string;
+  /** id da credencial Header Auth com o token da uazapi. */
+  uazapi: string;
+  /** base_url da instância de WhatsApp, ex.: https://arckwpp.uazapi.com */
+  uazapiBaseUrl: string;
+};
+
+function credPostgres(c: CredenciaisMotor) {
+  return { postgres: { id: c.banco, name: "Chroma · Postgres" } };
 }
 
 /**
  * Traduz o plano neutro para o JSON do n8n.
  *
- * Toda ação vira um HTTP Request de volta para o CRM (Opção B do
- * docs/automacoes-n8n.md §1): o n8n orquestra, o CRM executa. É o que mantém a
- * mensagem de automação aparecendo no chat e o rate limit num ponto só.
+ * O n8n FAZ o trabalho: manda o WhatsApp pela uazapi e grava no mesmo Postgres
+ * do CRM, pelos próprios nós. Antes cada ação era um HTTP Request de volta para
+ * /api/automacoes/acao e quem executava era o CRM — o que exigia o CRM ser
+ * alcançável pelo motor (túnel em desenvolvimento) e mantinha um executor de
+ * 459 linhas do outro lado.
+ *
+ * O que se ganha: publicar passa a bastar. Sem túnel, sem CRM_BASE_URL, sem
+ * token de serviço, sem callback.
+ *
+ * O que isso exige, e é o preço: credencial do banco DENTRO do n8n, que é uma
+ * instância compartilhada. Por isso ela é do role `chroma_n8n`
+ * (migration-role-n8n.sql), que grava mensagem e passo e não apaga nada.
  */
-export function paraWorkflow(plano: PlanoCompilado): WorkflowMotor {
+export function paraWorkflow(
+  plano: PlanoCompilado,
+  cred: CredenciaisMotor,
+): WorkflowMotor {
   const nodes: NoN8n[] = [];
   const connections: WorkflowMotor["connections"] = {};
+  // Nome do nó por onde a corrente SAI de cada bloco. Igual ao nome do bloco na
+  // maioria; diferente quando um bloco vira mais de um nó (o WhatsApp vira o
+  // envio + o registro), e é isso que mantém as ligações corretas.
+  const saidaDoBloco = new Map<string, string>();
 
   const gatilho: NoN8n = {
     id: plano.entrada.id,
@@ -146,8 +134,44 @@ export function paraWorkflow(plano: PlanoCompilado): WorkflowMotor {
   };
   nodes.push(gatilho);
 
-  const autenticacao = cabecalhoDoCrm();
-  const crm = baseDoCrm();
+  // Carrega o lead UMA vez, no começo. Os blocos leem daqui em vez de receber
+  // os dados no corpo do webhook — e a diferença importa: uma cadência espera
+  // dias entre mensagens, e o número que vale é o de AGORA, não o de quando a
+  // execução começou.
+  //
+  // COALESCE nas duas pontas porque a execução pode ser de contato OU de
+  // oportunidade: a mesma consulta serve as duas, e o que não se aplica volta
+  // nulo em vez de exigir dois workflows diferentes.
+  const carregarLead: NoN8n = {
+    id: "__lead__",
+    name: NOME_LEAD,
+    type: "n8n-nodes-base.postgres",
+    typeVersion: 2.4,
+    position: [plano.entrada.posicao.x, plano.entrada.posicao.y + 130],
+    parameters: {
+      operation: "executeQuery",
+      query: `
+        SELECT c.id            AS contato_id,
+               c.nome          AS nome,
+               split_part(c.nome, ' ', 1) AS primeiro_nome,
+               c.whatsapp      AS whatsapp,
+               regexp_replace(c.whatsapp, '\\D', '', 'g') AS numero,
+               c.email         AS email,
+               c.cidade        AS cidade,
+               o.id            AS oportunidade_id,
+               o.nome          AS oportunidade,
+               o.valor         AS valor,
+               u.nome          AS responsavel
+        FROM fluxo_execucoes e
+        LEFT JOIN oportunidades o ON e.entidade_tipo = 'oportunidade' AND o.id = e.entidade_id
+        LEFT JOIN contatos     c ON c.id = COALESCE(o.contato_id, e.entidade_id)
+        LEFT JOIN usuarios     u ON u.id = o.responsavel_id
+        WHERE e.id = $1`,
+      options: { queryReplacement: expr(EXECUCAO_ID) },
+    },
+    credentials: credPostgres(cred),
+  };
+  nodes.push(carregarLead);
 
   for (const passo of plano.passos) {
     if (passo.tipo === "se") {
@@ -190,62 +214,119 @@ export function paraWorkflow(plano: PlanoCompilado): WorkflowMotor {
       continue;
     }
 
-    // Todo o resto: o CRM executa.
+    if (passo.tipo === "enviar_whatsapp_web") {
+      // DOIS nós: manda e registra. Separados porque o registro precisa do
+      // RETORNO da uazapi (o messageid, que é como o webhook de entrega casa a
+      // mensagem depois) — num nó só, ou se grava antes sem o id, ou se manda
+      // sem deixar rastro.
+      const envio = nomeDoNo(passo);
+      const registro = `Registrar [${passo.id}]`;
+
+      nodes.push({
+        id: passo.id,
+        name: envio,
+        type: "n8n-nodes-base.httpRequest",
+        typeVersion: 4.2,
+        position: [passo.posicao.x, passo.posicao.y],
+        parameters: {
+          method: "POST",
+          url: `${cred.uazapiBaseUrl}/send/text`,
+          authentication: "genericCredentialType",
+          genericAuthType: "httpHeaderAuth",
+          sendBody: true,
+          specifyBody: "json",
+          jsonBody: expr(
+            JSON.stringify({
+              number: `{{ $('${NOME_LEAD}').first().json.numero }}`,
+              text: textoParaExpressao(String(passo.config.texto ?? "")),
+            }),
+          ),
+        },
+        credentials: { httpHeaderAuth: { id: cred.uazapi, name: "Chroma · uazapi" } },
+      });
+
+      // O atendimento é resolvido no próprio INSERT: ON CONFLICT não serve
+      // aqui (não há chave única de "conversa aberta"), então a subconsulta
+      // pega a mais recente não encerrada. Sem ela, uma cadência de 18
+      // mensagens criaria 18 conversas na tela do chat.
+      nodes.push({
+        id: `${passo.id}__reg`,
+        name: registro,
+        type: "n8n-nodes-base.postgres",
+        typeVersion: 2.4,
+        position: [passo.posicao.x + 190, passo.posicao.y],
+        parameters: {
+          operation: "executeQuery",
+          query: `
+            INSERT INTO mensagens
+              (atendimento_id, origem, autor_id, texto, status, id_externo)
+            SELECT a.id, 'agente', NULL, $2, 'enviado', $3
+            FROM atendimentos a
+            WHERE a.contato_id = $1::uuid AND a.status <> 'encerrado'
+            ORDER BY a.data_criacao DESC
+            LIMIT 1`,
+          options: {
+            queryReplacement: expr(
+              [
+                `{{ $('${NOME_LEAD}').first().json.contato_id }}`,
+                `{{ $('${envio}').first().json.text ?? '' }}`,
+                `{{ $('${envio}').first().json.messageid ?? '' }}`,
+              ].join(","),
+            ),
+          },
+        },
+        credentials: credPostgres(cred),
+      });
+
+      saidaDoBloco.set(passo.id, registro);
+      continue;
+    }
+
+    // Bloco de ação que ainda não tem nó nativo: um No-Op nomeado, para o
+    // desenho continuar ligado e a falta ficar VISÍVEL no motor em vez de o
+    // fluxo terminar calado no meio.
     nodes.push({
       id: passo.id,
       name: nomeDoNo(passo),
-      type: "n8n-nodes-base.httpRequest",
-      typeVersion: 4.2,
+      type: "n8n-nodes-base.noOp",
+      typeVersion: 1,
       position: [passo.posicao.x, passo.posicao.y],
-      parameters: {
-        method: "POST",
-        url: `${crm}/api/automacoes/acao`,
-        ...autenticacao,
-        sendBody: true,
-        specifyBody: "json",
-        // SÓ ponteiros: fluxo, nó e execução. O `tipo` e a `config` do bloco
-        // NÃO viajam, e não é economia de bytes — são duas coisas:
-        //
-        // 1. Colisão de sintaxe. Este corpo é uma expressão do motor (o "=" na
-        //    frente), e o motor avalia `{{ … }}` dentro dela. Uma mensagem com
-        //    {{primeiro_nome}} seria avaliada LÁ, onde essa variável não
-        //    existe, e chegaria aqui vazia ou quebrada.
-        // 2. Confiança. Quem alcança /api/automacoes/acao com o token poderia
-        //    mandar qualquer texto para qualquer contato. Lendo a config da
-        //    versão PUBLICADA, o pior que um corpo forjado faz é reexecutar um
-        //    bloco que já existe.
-        jsonBody: corpoParaCrm({
-          fluxo_id: plano.fluxoId,
-          no_id: passo.id,
-          execucao_id: EXECUCAO_ID,
-        }),
-      },
+      parameters: {},
     });
   }
 
-  // Nó de fim: avisa o CRM que a execução acabou (§5 do documento). Sem ele a
-  // linha de fluxo_execucoes fica 'pendente' para sempre, e o índice parcial
-  // ux_execucao_ativa_por_entidade passa a recusar a mesma oportunidade no
-  // disparo seguinte — o fluxo travaria sozinho na segunda vez.
+  // Nó de fim: fecha a execução no banco. Sem ele a linha de fluxo_execucoes
+  // fica 'pendente' para sempre, e o índice parcial ux_execucao_ativa_por_entidade
+  // passa a recusar a mesma oportunidade no disparo seguinte — o fluxo travaria
+  // sozinho na segunda vez.
+  //
+  // O UPDATE é condicionado ao estado: uma execução PAUSADA ou CANCELADA pela
+  // ficha da oportunidade não pode ser marcada 'sucesso' por um ramo do motor
+  // que acordou depois. Era o executor que garantia isso; agora é o WHERE.
   const fim: NoN8n = {
     id: "__fim__",
     name: NOME_FIM,
-    type: "n8n-nodes-base.httpRequest",
-    typeVersion: 4.2,
+    type: "n8n-nodes-base.postgres",
+    typeVersion: 2.4,
     // Uma linha abaixo do bloco mais fundo, para não cair em cima de ninguém.
     position: [0, Math.max(0, ...plano.passos.map((p) => p.posicao.y)) + 130],
     parameters: {
-      method: "POST",
-      url: `${crm}/api/automacoes/callback`,
-      ...autenticacao,
-      sendBody: true,
-      specifyBody: "json",
-      jsonBody: corpoParaCrm({
-        fluxo_id: plano.fluxoId,
-        execucao_id: EXECUCAO_ID,
-        motor_execucao_id: "{{ $execution.id }}",
-      }),
+      operation: "executeQuery",
+      query: `
+        UPDATE fluxo_execucoes SET
+          estado = 'sucesso',
+          finalizado_em = now(),
+          duracao_ms = EXTRACT(EPOCH FROM (now() - iniciado_em))::int * 1000,
+          motor_execucao_id = $2
+        WHERE id = $1::uuid
+          AND estado IN ('pendente','rodando','esperando')`,
+      options: {
+        queryReplacement: expr(
+          [EXECUCAO_ID, "{{ $execution.id }}"].join(","),
+        ),
+      },
     },
+    credentials: credPostgres(cred),
   };
   nodes.push(fim);
 
@@ -256,12 +337,15 @@ export function paraWorkflow(plano: PlanoCompilado): WorkflowMotor {
 
   const paraFim = [{ node: NOME_FIM, type: "main" as const, index: 0 }];
 
-  // Do webhook direto para o começo da corrente. Fluxo sem primeiro bloco não
-  // passa no compilador, mas o fim cobre o caso em vez de deixar a saída solta.
+  // O webhook vai para o nó que carrega o lead, SEMPRE — é dele que todo bloco
+  // tira nome e número. Só depois a corrente começa.
   const inicioDaCorrente = plano.entrada.proximo
     ? (nomePorId.get(plano.entrada.proximo) ?? null)
     : null;
   connections[gatilho.name] = {
+    main: [[{ node: NOME_LEAD, type: "main", index: 0 }]],
+  };
+  connections[NOME_LEAD] = {
     main: [
       inicioDaCorrente
         ? [{ node: inicioDaCorrente, type: "main", index: 0 }]
@@ -272,17 +356,27 @@ export function paraWorkflow(plano: PlanoCompilado): WorkflowMotor {
   for (const p of plano.passos) {
     const saidas = Object.entries(p.destinos);
     // Saída sem destino é o FIM de um caminho — e todo caminho tem que passar
-    // pelo aviso de fim, senão a execução só é encerrada nos ramos que por
-    // acaso terminam no último bloco desenhado.
+    // pelo nó de fim, senão a execução só é encerrada nos ramos que por acaso
+    // terminam no último bloco desenhado.
     const main = saidas.map(([, destinoId]) => {
       if (!destinoId) return paraFim;
       const nome = nomePorId.get(destinoId);
       return nome ? [{ node: nome, type: "main" as const, index: 0 }] : paraFim;
     });
+
+    // A corrente sai pelo ÚLTIMO nó do bloco. Para quase todos é o próprio;
+    // para o WhatsApp é o "Registrar", e é isso que garante que a mensagem
+    // seguinte só comece depois de a atual estar gravada.
+    const entrada = nomePorId.get(p.id)!;
+    const saida = saidaDoBloco.get(p.id) ?? entrada;
+    if (saida !== entrada) {
+      connections[entrada] = {
+        main: [[{ node: saida, type: "main", index: 0 }]],
+      };
+    }
+
     // Bloco sem saída nenhuma no catálogo (hoje só "Mudar fluxo"): liga direto.
-    connections[nomePorId.get(p.id)!] = {
-      main: main.length > 0 ? main : [paraFim],
-    };
+    connections[saida] = { main: main.length > 0 ? main : [paraFim] };
   }
 
   void porId;

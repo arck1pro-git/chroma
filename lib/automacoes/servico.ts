@@ -52,44 +52,15 @@ export function naoAutorizado() {
 // contenção é o rate limit logo abaixo, e ele limita a VELOCIDADE do estrago,
 // não o estrago.
 
-// ── Rate limit ──────────────────────────────────────────────────────────────
-
-// Teto conservador: WhatsApp não-oficial em número compartilhado. Ajuste por
-// env quando houver histórico para justificar outro número.
-const TETO_PADRAO = 12;
-
-function teto() {
-  const bruto = Number(process.env.AUTOMACOES_MSGS_POR_MINUTO);
-  return Number.isFinite(bruto) && bruto > 0 ? Math.floor(bruto) : TETO_PADRAO;
-}
-
-/**
- * Quantas mensagens de automação saíram no último minuto, e se cabe mais uma.
- *
- * Conta em `fluxo_execucao_passos` e não em `mensagens` porque o que precisa
- * de freio é o disparo automático — o que uma pessoa digita no /chat não entra
- * nesta conta, e uma linha de `mensagens` sozinha não distingue as duas.
- *
- * O teto é do CRM inteiro, não por instância: com uma instância em uso hoje, a
- * diferença é nenhuma, e um teto global é o que continua valendo se alguém
- * publicar três cadências no mesmo número.
- */
-export async function cabeDisparo(): Promise<
-  { ok: true } | { ok: false; erro: string }
-> {
-  const [linha] = await sql`
-    SELECT count(*)::int AS enviadas
-    FROM fluxo_execucao_passos
-    WHERE no_tipo = 'enviar_whatsapp_web'
-      AND estado = 'sucesso'
-      AND iniciado_em > now() - interval '1 minute'`;
-
-  const enviadas = (linha?.enviadas as number) ?? 0;
-  const limite = teto();
-  if (enviadas < limite) return { ok: true };
-
-  return {
-    ok: false,
-    erro: `Rate limit: ${enviadas} mensagens no último minuto (teto ${limite}). Ajuste AUTOMACOES_MSGS_POR_MINUTO se for intencional.`,
-  };
-}
+// ── Rate limit: REMOVIDO em 2026-09-09 ─────────────────────────────────────
+//
+// Havia aqui um `cabeDisparo()` que contava mensagens do último minuto em
+// fluxo_execucao_passos e recusava acima do teto. Ele vivia no executor do CRM,
+// e o executor deixou de existir: o n8n agora fala direto com a uazapi, então
+// o CRM não está mais no caminho do envio e não tem onde contar.
+//
+// ⚠ CONSEQUÊNCIA, e ela é real: não há mais freio nenhum. Um fluxo com laço
+// dispara na velocidade que o n8n conseguir, na `arckwpp`, que é compartilhada
+// com a produção do SprintHub. Se isso voltar a incomodar, o lugar do freio
+// passa a ser o motor — um nó de espera entre mensagens, ou a configuração de
+// concorrência do workflow.

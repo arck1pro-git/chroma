@@ -243,7 +243,7 @@ export async function dispararCadencia(fluxoId: string): Promise<Resultado> {
     if (presas.n > 0) {
       return {
         ok: false,
-        erro: `Ninguém novo para inscrever, mas ${presas.n} ${presas.n === 1 ? "execução está presa" : "execuções estão presas"} em 'pendente' sem nenhum passo (a mais antiga desde ${presas.maisAntiga}). Isso é o motor não conseguindo voltar ao CRM — confira o CRM_BASE_URL e se o endereço é alcançável de fora. Enquanto a linha existir, a oportunidade não entra de novo.`,
+        erro: `Ninguém novo para inscrever, mas ${presas.n} ${presas.n === 1 ? "execução está presa" : "execuções estão presas"} em 'pendente' sem nenhum passo (a mais antiga desde ${presas.maisAntiga}). Isso é o workflow não tendo chegado ao fim no n8n — abra a execução lá para ver em qual nó parou. Enquanto a linha existir, a oportunidade não entra de novo.`,
       };
     }
     return {
