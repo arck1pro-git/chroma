@@ -1,0 +1,922 @@
+{
+  "subetapas": [
+    {
+      "id": "sub-1",
+      "ordem": 1,
+      "nome": "Boas-vindas",
+      "canal": "whatsapp",
+      "mensagem": "Oi! Aqui é o comercial. Recebi seu contato agora e separei um resumo do que a gente faz. Posso te mandar?"
+    },
+    {
+      "id": "sub-2",
+      "ordem": 2,
+      "nome": "Confirmação de interesse",
+      "canal": "whatsapp",
+      "mensagem": "Só pra eu não te atrapalhar à toa: o que você procura resolver é ainda pra este trimestre?"
+    },
+    {
+      "id": "sub-3",
+      "ordem": 3,
+      "nome": "Material de apoio",
+      "canal": "email",
+      "mensagem": "Segue o material com os três formatos de implantação e o prazo de cada um."
+    },
+    {
+      "id": "sub-4",
+      "ordem": 4,
+      "nome": "Case parecido",
+      "canal": "whatsapp",
+      "mensagem": "Separei o case de um cliente do mesmo porte que o seu. Levou 21 dias pra estar rodando."
+    },
+    {
+      "id": "sub-5",
+      "ordem": 5,
+      "nome": "Convite para diagnóstico",
+      "canal": "ligacao",
+      "mensagem": "Ligação para agendar o diagnóstico de 20 minutos com o time de operação."
+    },
+    {
+      "id": "sub-6",
+      "ordem": 6,
+      "nome": "Números e prova social",
+      "canal": "email",
+      "mensagem": "Média dos clientes no primeiro mês: 32% menos tempo até a primeira resposta."
+    },
+    {
+      "id": "sub-7",
+      "ordem": 7,
+      "nome": "Objeção de preço",
+      "canal": "whatsapp",
+      "mensagem": "Sobre o investimento: dá pra começar pelo módulo mínimo e crescer conforme usar."
+    },
+    {
+      "id": "sub-8",
+      "ordem": 8,
+      "nome": "Lembrete leve",
+      "canal": "whatsapp",
+      "mensagem": "Sei que a semana corre. Quer que eu volte a te procurar na próxima?"
+    },
+    {
+      "id": "sub-9",
+      "ordem": 9,
+      "nome": "Conteúdo técnico",
+      "canal": "email",
+      "mensagem": "Documento de integração: como conectamos com as ferramentas que você já usa."
+    },
+    {
+      "id": "sub-10",
+      "ordem": 10,
+      "nome": "Comparativo",
+      "canal": "email",
+      "mensagem": "Comparativo direto com as duas alternativas que você citou na conversa."
+    },
+    {
+      "id": "sub-11",
+      "ordem": 11,
+      "nome": "Convite para demonstração",
+      "canal": "whatsapp",
+      "mensagem": "Tenho quinta 10h ou sexta 16h pra te mostrar rodando. Qual encaixa melhor?"
+    },
+    {
+      "id": "sub-12",
+      "ordem": 12,
+      "nome": "Depoimento em vídeo",
+      "canal": "whatsapp",
+      "mensagem": "Vídeo de 90 segundos do responsável pela operação de um cliente parecido com você."
+    },
+    {
+      "id": "sub-13",
+      "ordem": 13,
+      "nome": "Condição comercial",
+      "canal": "ligacao",
+      "mensagem": "Ligação para apresentar a condição de implantação sem custo deste mês."
+    },
+    {
+      "id": "sub-14",
+      "ordem": 14,
+      "nome": "Última chamada da condição",
+      "canal": "whatsapp",
+      "mensagem": "A condição vale até sexta. Quer que eu segure a vaga no seu nome?"
+    },
+    {
+      "id": "sub-15",
+      "ordem": 15,
+      "nome": "O que faltou?",
+      "canal": "whatsapp",
+      "mensagem": "Se não foi agora, me diz o que pesou? Preço, prazo ou prioridade interna?"
+    },
+    {
+      "id": "sub-16",
+      "ordem": 16,
+      "nome": "Reativação",
+      "canal": "email",
+      "mensagem": "Novidades do mês e o que mudou por aqui desde a nossa última conversa."
+    },
+    {
+      "id": "sub-17",
+      "ordem": 17,
+      "nome": "Encerramento educado",
+      "canal": "whatsapp",
+      "mensagem": "Vou parar de te escrever por aqui pra não virar insistência. Se mudar o cenário, é só chamar."
+    },
+    {
+      "id": "sub-18",
+      "ordem": 18,
+      "nome": "Volta para nutrição",
+      "canal": "email",
+      "mensagem": "Entrando na lista de conteúdo mensal. Sem cobrança, só material."
+    }
+  ],
+  "oportunidades": [
+    {
+      "id": "sub-op-1",
+      "nome": "Construtora Vega · Expansão",
+      "contato_id": "c-mariana",
+      "valor": 48000,
+      "responsavel_id": "u-rs",
+      "status": "aberta",
+      "dias": 0,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        7
+      ],
+      "feitas": 0
+    },
+    {
+      "id": "sub-op-2",
+      "nome": "Grupo Aurora · Filial Sul",
+      "contato_id": "c-diego",
+      "valor": 22500,
+      "responsavel_id": "u-cl",
+      "status": "aberta",
+      "dias": 0,
+      "tarefas": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        7,
+        8,
+        10
+      ],
+      "feitas": 0
+    },
+    {
+      "id": "sub-op-3",
+      "nome": "Studio Norte Design",
+      "contato_id": "c-isabela",
+      "valor": 8900,
+      "responsavel_id": "u-jp",
+      "status": "aberta",
+      "dias": 0,
+      "tarefas": [
+        0,
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "feitas": 0
+    },
+    {
+      "id": "sub-op-4",
+      "nome": "Padaria Grão Fino · 2ª loja",
+      "contato_id": "c-elaine",
+      "valor": 7400,
+      "responsavel_id": "u-jp",
+      "status": "aberta",
+      "dias": 0,
+      "tarefas": [
+        0,
+        1,
+        3,
+        6,
+        7,
+        10,
+        11
+      ],
+      "feitas": 0
+    },
+    {
+      "id": "sub-op-5",
+      "nome": "Landing · Trial 14 dias",
+      "contato_id": "c-anabeatriz",
+      "valor": 2400,
+      "responsavel_id": "u-mk",
+      "status": "aberta",
+      "dias": 0,
+      "tarefas": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        9,
+        10,
+        13
+      ],
+      "feitas": 0
+    },
+    {
+      "id": "sub-op-6",
+      "nome": "Metalúrgica Ipê",
+      "contato_id": "c-tania",
+      "valor": 15200,
+      "responsavel_id": "u-rs",
+      "status": "aberta",
+      "dias": 1,
+      "tarefas": [
+        0,
+        1,
+        4,
+        6,
+        7,
+        8
+      ],
+      "feitas": 0
+    },
+    {
+      "id": "sub-op-7",
+      "nome": "Clínica Vitalis · Unidade 2",
+      "contato_id": "c-paula",
+      "valor": 14500,
+      "responsavel_id": "u-jp",
+      "status": "aberta",
+      "dias": 1,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "feitas": 1
+    },
+    {
+      "id": "sub-op-8",
+      "nome": "Oficina Ponto Certo",
+      "contato_id": "c-gustavo",
+      "valor": 6100,
+      "responsavel_id": "u-mk",
+      "status": "aberta",
+      "dias": 1,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        7
+      ],
+      "feitas": 1
+    },
+    {
+      "id": "sub-op-9",
+      "nome": "Formulário · Preços",
+      "contato_id": "c-vitor",
+      "valor": 5600,
+      "responsavel_id": "u-mk",
+      "status": "aberta",
+      "dias": 1,
+      "tarefas": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        7,
+        8,
+        10
+      ],
+      "feitas": 1
+    },
+    {
+      "id": "sub-op-10",
+      "nome": "Rede Malbec",
+      "contato_id": "c-otavio",
+      "valor": 76000,
+      "responsavel_id": "u-am",
+      "status": "aberta",
+      "dias": 2,
+      "tarefas": [
+        0,
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "feitas": 1
+    },
+    {
+      "id": "sub-op-11",
+      "nome": "Escola Horizonte",
+      "contato_id": "c-ricardo",
+      "valor": 11200,
+      "responsavel_id": "u-mk",
+      "status": "aberta",
+      "dias": 2,
+      "tarefas": [
+        0,
+        1,
+        3,
+        6,
+        7,
+        10,
+        11
+      ],
+      "feitas": 1
+    },
+    {
+      "id": "sub-op-12",
+      "nome": "Sonora Áudio · Setup",
+      "contato_id": "c-bruno",
+      "valor": 9500,
+      "responsavel_id": "u-tl",
+      "status": "aberta",
+      "dias": 2,
+      "tarefas": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        9,
+        10,
+        13
+      ],
+      "feitas": 1
+    },
+    {
+      "id": "sub-op-13",
+      "nome": "Webinar · Automação",
+      "contato_id": "c-rodrigo",
+      "valor": 4800,
+      "responsavel_id": "u-jp",
+      "status": "aberta",
+      "dias": 2,
+      "tarefas": [
+        0,
+        1,
+        4,
+        6,
+        7,
+        8
+      ],
+      "feitas": 1
+    },
+    {
+      "id": "sub-op-14",
+      "nome": "Log&Co Transportes",
+      "contato_id": "c-beatriz",
+      "valor": 31000,
+      "responsavel_id": "u-cl",
+      "status": "aberta",
+      "dias": 3,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "feitas": 3
+    },
+    {
+      "id": "sub-op-15",
+      "nome": "Vitrine Modas · Setup",
+      "contato_id": "c-priscila",
+      "valor": 12000,
+      "responsavel_id": "u-tl",
+      "status": "aberta",
+      "dias": 3,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        7
+      ],
+      "feitas": 2
+    },
+    {
+      "id": "sub-op-16",
+      "nome": "E-book · Gestão de obras",
+      "contato_id": "c-camila",
+      "valor": 3200,
+      "responsavel_id": "u-jp",
+      "status": "aberta",
+      "dias": 3,
+      "tarefas": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        7,
+        8,
+        10
+      ],
+      "feitas": 2
+    },
+    {
+      "id": "sub-op-17",
+      "nome": "Hospital Santa Lía",
+      "contato_id": "c-fabio",
+      "valor": 128000,
+      "responsavel_id": "u-am",
+      "status": "aberta",
+      "dias": 4,
+      "tarefas": [
+        0,
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "feitas": 2
+    },
+    {
+      "id": "sub-op-18",
+      "nome": "Café Serrano · Multiloja",
+      "contato_id": "c-larissa",
+      "valor": 17600,
+      "responsavel_id": "u-tl",
+      "status": "aberta",
+      "dias": 4,
+      "tarefas": [
+        0,
+        1,
+        3,
+        6,
+        7,
+        10,
+        11
+      ],
+      "feitas": 2
+    },
+    {
+      "id": "sub-op-19",
+      "nome": "Editora Lumen",
+      "contato_id": "c-sofia",
+      "valor": 21000,
+      "responsavel_id": "u-tl",
+      "status": "aberta",
+      "dias": 4,
+      "tarefas": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        9,
+        10,
+        13
+      ],
+      "feitas": 3
+    },
+    {
+      "id": "sub-op-20",
+      "nome": "AgroVerde S.A.",
+      "contato_id": "c-helena",
+      "valor": 54000,
+      "responsavel_id": "u-rs",
+      "status": "aberta",
+      "dias": 5,
+      "tarefas": [
+        0,
+        1,
+        4,
+        6,
+        7,
+        8
+      ],
+      "feitas": 2
+    },
+    {
+      "id": "sub-op-21",
+      "nome": "Rede Farma Bem",
+      "contato_id": "c-juliana",
+      "valor": 26000,
+      "responsavel_id": "u-dn",
+      "status": "aberta",
+      "dias": 5,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "feitas": 5
+    },
+    {
+      "id": "sub-op-22",
+      "nome": "Ferragens União",
+      "contato_id": "c-paulo",
+      "valor": 19800,
+      "responsavel_id": "u-cl",
+      "status": "aberta",
+      "dias": 6,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        7
+      ],
+      "feitas": 3
+    },
+    {
+      "id": "sub-op-23",
+      "nome": "Transportes Litoral · Plano Pro",
+      "contato_id": "c-anderson",
+      "valor": 38000,
+      "responsavel_id": "u-dn",
+      "status": "aberta",
+      "dias": 6,
+      "tarefas": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        7,
+        8,
+        10
+      ],
+      "feitas": 3
+    },
+    {
+      "id": "sub-op-24",
+      "nome": "Auto Peças Krieger",
+      "contato_id": "c-fernando",
+      "valor": 45000,
+      "responsavel_id": "u-dn",
+      "status": "aberta",
+      "dias": 6,
+      "tarefas": [
+        0,
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "feitas": 3
+    },
+    {
+      "id": "sub-op-25",
+      "nome": "Banco Meridiano",
+      "contato_id": "c-renata",
+      "valor": 210000,
+      "responsavel_id": "u-am",
+      "status": "aberta",
+      "dias": 7,
+      "tarefas": [
+        0,
+        1,
+        3,
+        6,
+        7,
+        10,
+        11
+      ],
+      "feitas": 4
+    },
+    {
+      "id": "sub-op-26",
+      "nome": "Têxtil Bonfim",
+      "contato_id": "c-sergio",
+      "valor": 43000,
+      "responsavel_id": "u-rs",
+      "status": "aberta",
+      "dias": 7,
+      "tarefas": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        9,
+        10,
+        13
+      ],
+      "feitas": 5
+    },
+    {
+      "id": "sub-op-27",
+      "nome": "Indústria Kraft Sul",
+      "contato_id": "c-luciana",
+      "valor": 96000,
+      "responsavel_id": "u-cl",
+      "status": "aberta",
+      "dias": 8,
+      "tarefas": [
+        0,
+        1,
+        4,
+        6,
+        7,
+        8
+      ],
+      "feitas": 3
+    },
+    {
+      "id": "sub-op-28",
+      "nome": "Cimentos Aracaju",
+      "contato_id": "c-marcos",
+      "valor": 67500,
+      "responsavel_id": "u-am",
+      "status": "aberta",
+      "dias": 8,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "feitas": 8
+    },
+    {
+      "id": "sub-op-29",
+      "nome": "Studio Norte · Retenção",
+      "contato_id": "c-isabela",
+      "valor": 5200,
+      "responsavel_id": "u-jp",
+      "status": "aberta",
+      "dias": 9,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        7
+      ],
+      "feitas": 5
+    },
+    {
+      "id": "sub-op-30",
+      "nome": "Clínica Vitalis · Convênio",
+      "contato_id": "c-paula",
+      "valor": 9800,
+      "responsavel_id": "u-mk",
+      "status": "aberta",
+      "dias": 10,
+      "tarefas": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        7,
+        8,
+        10
+      ],
+      "feitas": 6
+    },
+    {
+      "id": "sub-op-31",
+      "nome": "Grupo Aurora · Renovação",
+      "contato_id": "c-diego",
+      "valor": 18400,
+      "responsavel_id": "u-cl",
+      "status": "aberta",
+      "dias": 10,
+      "tarefas": [
+        0,
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "feitas": 6
+    },
+    {
+      "id": "sub-op-32",
+      "nome": "Oficina Ponto Certo · Plano anual",
+      "contato_id": "c-gustavo",
+      "valor": 7300,
+      "responsavel_id": "u-mk",
+      "status": "aberta",
+      "dias": 11,
+      "tarefas": [
+        0,
+        1,
+        3,
+        6,
+        7,
+        10,
+        11
+      ],
+      "feitas": 6
+    },
+    {
+      "id": "sub-op-33",
+      "nome": "Rede Malbec · Loja piloto",
+      "contato_id": "c-otavio",
+      "valor": 24000,
+      "responsavel_id": "u-am",
+      "status": "aberta",
+      "dias": 12,
+      "tarefas": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        9,
+        10,
+        13
+      ],
+      "feitas": 8
+    },
+    {
+      "id": "sub-op-34",
+      "nome": "Escola Horizonte · Turno noite",
+      "contato_id": "c-ricardo",
+      "valor": 8600,
+      "responsavel_id": "u-jp",
+      "status": "aberta",
+      "dias": 12,
+      "tarefas": [
+        0,
+        1,
+        4,
+        6,
+        7,
+        8
+      ],
+      "feitas": 5
+    },
+    {
+      "id": "sub-op-35",
+      "nome": "Padaria Grão Fino · Delivery",
+      "contato_id": "c-elaine",
+      "valor": 4100,
+      "responsavel_id": "u-tl",
+      "status": "aberta",
+      "dias": 14,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13
+      ],
+      "feitas": 14
+    },
+    {
+      "id": "sub-op-36",
+      "nome": "Café Serrano · Franquia",
+      "contato_id": "c-larissa",
+      "valor": 29000,
+      "responsavel_id": "u-dn",
+      "status": "aberta",
+      "dias": 15,
+      "tarefas": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        7
+      ],
+      "feitas": 7
+    },
+    {
+      "id": "sub-op-37",
+      "nome": "Editora Lumen · Catálogo digital",
+      "contato_id": "c-sofia",
+      "valor": 13500,
+      "responsavel_id": "u-tl",
+      "status": "aberta",
+      "dias": 15,
+      "tarefas": [
+        0,
+        1,
+        3,
+        4,
+        6,
+        7,
+        8,
+        10
+      ],
+      "feitas": 8
+    },
+    {
+      "id": "sub-op-38",
+      "nome": "Metalúrgica Ipê · Manutenção",
+      "contato_id": "c-tania",
+      "valor": 11700,
+      "responsavel_id": "u-rs",
+      "status": "aberta",
+      "dias": 17,
+      "tarefas": [
+        0,
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "feitas": 8
+    }
+  ],
+  "tarefas": [
+    "Confirmar dados de contato e cargo",
+    "Levantar o cenário atual e a dor principal",
+    "Mapear quem decide e quem influencia",
+    "Enviar apresentação institucional",
+    "Agendar reunião de diagnóstico",
+    "Registrar o orçamento disponível",
+    "Montar a proposta comercial",
+    "Enviar a proposta para o decisor",
+    "Responder às objeções da reunião",
+    "Combinar prazo de implantação com a operação",
+    "Enviar o contrato para assinatura",
+    "Confirmar dados de faturamento",
+    "Passar o histórico para o time de sucesso",
+    "Agendar a reunião de kickoff"
+  ]
+}

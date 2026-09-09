@@ -1,26 +1,358 @@
 @import "tailwindcss";
 
+/* Os tons das etapas são MONTADOS em runtime (`bg-${cor}-${grau}` em
+   lib/cores-funil.ts), então o Tailwind não os vê no código e purgaria todos.
+   Este @source força a grade inteira: 13 cores x 8 graus da rampa.
+   MANTER em sincronia com TONS_FUNIL e RAMPA em lib/cores-funil.ts. */
+@source inline("bg-blue-300 bg-blue-400 bg-blue-500 bg-blue-600 bg-blue-700 bg-blue-800 bg-blue-900 bg-blue-950 bg-sky-300 bg-sky-400 bg-sky-500 bg-sky-600 bg-sky-700 bg-sky-800 bg-sky-900 bg-sky-950 bg-cyan-300 bg-cyan-400 bg-cyan-500 bg-cyan-600 bg-cyan-700 bg-cyan-800 bg-cyan-900 bg-cyan-950 bg-teal-300 bg-teal-400 bg-teal-500 bg-teal-600 bg-teal-700 bg-teal-800 bg-teal-900 bg-teal-950 bg-emerald-300 bg-emerald-400 bg-emerald-500 bg-emerald-600 bg-emerald-700 bg-emerald-800 bg-emerald-900 bg-emerald-950 bg-lime-300 bg-lime-400 bg-lime-500 bg-lime-600 bg-lime-700 bg-lime-800 bg-lime-900 bg-lime-950 bg-amber-300 bg-amber-400 bg-amber-500 bg-amber-600 bg-amber-700 bg-amber-800 bg-amber-900 bg-amber-950 bg-orange-300 bg-orange-400 bg-orange-500 bg-orange-600 bg-orange-700 bg-orange-800 bg-orange-900 bg-orange-950 bg-rose-300 bg-rose-400 bg-rose-500 bg-rose-600 bg-rose-700 bg-rose-800 bg-rose-900 bg-rose-950 bg-fuchsia-300 bg-fuchsia-400 bg-fuchsia-500 bg-fuchsia-600 bg-fuchsia-700 bg-fuchsia-800 bg-fuchsia-900 bg-fuchsia-950 bg-violet-300 bg-violet-400 bg-violet-500 bg-violet-600 bg-violet-700 bg-violet-800 bg-violet-900 bg-violet-950 bg-indigo-300 bg-indigo-400 bg-indigo-500 bg-indigo-600 bg-indigo-700 bg-indigo-800 bg-indigo-900 bg-indigo-950 bg-zinc-300 bg-zinc-400 bg-zinc-500 bg-zinc-600 bg-zinc-700 bg-zinc-800 bg-zinc-900 bg-zinc-950");
+
+/* UMA SUPERFÍCIE SÓ: barra lateral e conteúdo no mesmo tom.
+
+   --background  é o que a barra mostra (ela não tem fundo próprio — ver
+                 app/components/sidebar.tsx) e também o fundo do <body>.
+   --conteudo    é a superfície das telas. Hoje APONTA para --background: o
+                 nome continua existindo porque é ele que os contêineres usam
+                 (bg-conteudo, em ~16 arquivos), então voltar a separar as duas
+                 superfícies é trocar UMA linha aqui, não caçar classe por tela.
+
+   Com o mesmo tom dos dois lados, quem diz onde a barra termina é só a borda
+   (border-zinc-200 / dark:border-zinc-800). O relevo do que fica POR CIMA
+   continua vindo dos cartões e fichas, que são mais claros que a superfície. */
 :root {
   --background: #ffffff;
+  --conteudo: var(--background);
   --foreground: #171717;
+  --scrollbar-thumb: #d4d4d8; /* zinc-300 */
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-conteudo: var(--conteudo);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter), sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #09090b; /* zinc-950 */
+    /* --conteudo NÃO é redefinido aqui de propósito: ele referencia
+       --background, e referência de custom property resolve na hora do uso.
+       Trocar só --background já leva as duas superfícies junto. */
     --foreground: #ededed;
+    --scrollbar-thumb: #3f3f46; /* zinc-700 */
   }
+}
+
+/* Quem rola é a janela (o shell é min-h-screen, sem altura fixa). Sem reservar
+   a calha, filtrar encolhe a página, a barra de rolagem some e todo o layout
+   pula uns 15px de lado. */
+html {
+  scrollbar-gutter: stable;
+  /* scrollbar-color herda: pinta a janela, as etapas do funil e o que mais
+     rolar. A cinza larga padrão do Windows destoa dos campos e cartões. */
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* scrollbar-width não herda — daí o seletor universal. */
+* {
+  scrollbar-width: thin;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Esconde a barra de rolagem sem tirar o rolar. As colunas do funil rolam pelo
+   mouse; a barra por dentro de cada etapa poluía e mudava de largura conforme a
+   quantidade de cards. */
+.rolagem-oculta {
+  scrollbar-width: none; /* Firefox */
+}
+.rolagem-oculta::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge */
+}
+
+/* A ficha entra deslizando da direita; o véu por trás só aparece. O +1rem cobre
+   a folga do right-4, senão o painel começa visível na beirada. */
+@keyframes ficha-entra {
+  from {
+    transform: translateX(calc(100% + 1rem));
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes veu-surge {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.ficha-entra {
+  animation: ficha-entra 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.veu-surge {
+  animation: veu-surge 0.2s ease-out;
+}
+/* Reduced-motion: sem o deslize, mas ainda um fade — some o movimento lateral,
+   não a transição inteira. Quem desliga animações no SO cai aqui. */
+@media (prefers-reduced-motion: reduce) {
+  .ficha-entra {
+    animation-name: veu-surge;
+  }
+}
+
+/* Fade padrão da interface: opacidade + 4px de subida. `both` segura o estado
+   inicial durante o atraso do escalonamento — sem ele o item pisca visível
+   antes da animação começar. Só opacity/transform: as duas propriedades que o
+   compositor anima sem recalcular layout. */
+@keyframes surge {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.surge {
+  animation: surge 0.18s ease-out both;
+}
+
+/* Só opacidade, para <tr>: transform em table-row é inconsistente entre
+   navegadores e desalinha a célula do cabeçalho sticky. */
+.surge-suave {
+  animation: veu-surge 0.16s ease-out both;
+}
+
+/* Fade ao trocar de módulo na sidebar. Quem dispara é app/template.tsx: o
+   template ganha key própria do router e remonta a cada navegação, então a
+   animação roda de novo sozinha.
+
+   130ms, e não mais: as rotas com banco (contatos, funil, chat, configurações)
+   levam ~175ms para renderizar no servidor. Um fade de 260ms em cima disso
+   dobrava o tempo até a tela ficar legível — a animação custava mais que a
+   consulta. Neste patamar o fade acompanha a chegada do conteúdo em vez de
+   atrasá-la.
+
+   Só opacity, sem translate: este elemento embrulha a página inteira, e empurrar
+   tudo alguns pixels faria as rotas que rolam a janela piscarem barra de
+   rolagem. `both` evita o quadro em que o conteúdo aparece opaco antes de a
+   animação assumir. */
+.pagina-surge {
+  animation: veu-surge 0.13s ease-out both;
+}
+
+/* Cores de série dos gráficos das Automações.
+   Azul × vermelho, e não verde × vermelho: o par verde/vermelho falha separação
+   para daltonismo (ΔE 4.1 em deuteranopia, abaixo até da banda tolerada). Este
+   par passa em todos os checks nos dois modos — ΔE 23.8 protan no claro, 25.7
+   deutan no escuro. O vermelho de erro é status fixo, igual nos dois temas; só
+   o azul é re-degrau para a superfície escura. */
+.viz {
+  --serie-ok: #2a78d6;
+  --serie-erro: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  .viz {
+    --serie-ok: #3987e5;
+  }
+}
+
+/* Enquanto o filtro novo ainda não foi aplicado (useDeferredValue), a lista
+   antiga esmaece de leve em vez de travar a digitação. */
+.esmaecendo {
+  opacity: 0.55;
+  transition: opacity 0.15s ease-out;
+}
+
+/* Reduced-motion aqui segue a mesma régua do .ficha-entra logo acima: o que a
+   preferência pede para remover é MOVIMENTO (deslocamento, parallax, escala),
+   não transição de opacidade. Fade puro fica.
+
+   Por isso só .surge muda — ela é a única que desloca 4px, e trocar o
+   animation-name para veu-surge remove o translate mantendo o fade.
+   .surge-suave e .pagina-surge já são opacidade pura e passam intactas.
+
+   Desligar tudo aqui (animation: none) foi o que fez os fades sumirem em
+   máquina com "animações do Windows" off, que reporta reduce mesmo sem
+   ninguém ter pedido acessibilidade. */
+@media (prefers-reduced-motion: reduce) {
+  .surge {
+    animation-name: veu-surge;
+  }
+}
+
+/* Ondas da home: várias camadas do mesmo traçado deslizando em velocidades
+   diferentes dão o efeito de parallax. */
+@keyframes onda {
+  0% {
+    transform: translate3d(-150px, 0, 0);
+  }
+  100% {
+    transform: translate3d(150px, 0, 0);
+  }
+}
+.ondas use {
+  animation: onda 25s cubic-bezier(0.55, 0.5, 0.45, 0.5) infinite;
+}
+.ondas use:nth-child(1) {
+  animation-delay: -2s;
+  animation-duration: 6s;
+}
+.ondas use:nth-child(2) {
+  animation-delay: -3s;
+  animation-duration: 9s;
+}
+.ondas use:nth-child(3) {
+  animation-delay: -4s;
+  animation-duration: 12s;
+}
+.ondas use:nth-child(4) {
+  animation-delay: -5s;
+  animation-duration: 16s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ondas use {
+    animation: none;
+  }
+}
+
+
+/* Colunas do painel de subetapas: todas na cor da etapa, escurecendo ao longo
+   da cadência. O componente entrega dois valores em style inline —
+   --cor-etapa (a var da paleta, traduzida de etapas.cor) e --passo (0 na 1ª
+   mensagem, 100 na última). A faixa de mistura é decidida AQUI porque ela muda
+   com o tema, e o componente não sabe qual é.
+
+   A mistura mora no CSS, e não em classe do Tailwind, por duas razões: são 18
+   degraus e uma paleta só tem 9 tons, e as ~120 classes que a rampa exigiria
+   teriam de entrar uma a uma no @source inline lá de cima — as cores de etapa
+   são dinâmicas e o Tailwind não as vê no código.
+
+   São DUAS rampas, e a divisão é de legibilidade: a faixa do topo não tem
+   texto em cima, então pode ir até a cor cheia; o corpo da coluna tem, e para
+   antes. Junto, o resultado é uma coluna inegavelmente colorida sem apertar o
+   contraste de nada que se lê. */
+
+/* Corpo: 14% a 48% de cor sobre branco. O teto não é estético, é de contraste
+   — acima disso a tinta zinc-900/70 dos rótulos secundários cai abaixo de
+   4,5:1 nas cores mais claras da paleta (zinc e lime são as apertadas). */
+.subetapa {
+  background-color: color-mix(
+    in oklab,
+    var(--cor-etapa) calc(14% + var(--passo) * 0.34%),
+    white
+  );
+}
+
+/* Faixa do topo, a mesma da etapa no quadro de trás: 45% até a cor cheia. É
+   ela que diz "esta coluna é desta etapa" à primeira vista — o corpo sozinho,
+   preso ao teto de contraste, lê como um tom de cinza colorido. */
+.subetapa-faixa {
+  background-color: color-mix(
+    in oklab,
+    var(--cor-etapa) calc(45% + var(--passo) * 0.55%),
+    white
+  );
+}
+
+/* No escuro não dá pra "escurecer" a coluna: ela já nasce quase preta e o fim
+   da cadência sumiria no fundo. O degrau é o mesmo, medido a partir do preto —
+   a cor GANHA CORPO em vez de perder luz, e a leitura da sequência continua.
+   Faixa menor no corpo (14% a 42%) porque aqui a mistura CLAREIA: passar disso
+   é o que faz o zinc-50/70 perder o fundo no lime e no amber. */
+@media (prefers-color-scheme: dark) {
+  .subetapa {
+    background-color: color-mix(
+      in oklab,
+      var(--cor-etapa) calc(14% + var(--passo) * 0.28%),
+      #09090b
+    );
+  }
+  .subetapa-faixa {
+    background-color: color-mix(
+      in oklab,
+      var(--cor-etapa) calc(45% + var(--passo) * 0.55%),
+      #09090b
+    );
+  }
+}
+
+/* ── Painel de IA ────────────────────────────────────────────────────────────
+   As três animações do estado "respondendo". Todas em opacity/transform, que
+   são as duas propriedades que o compositor anima sem recalcular layout — num
+   painel que recebe texto em stream, qualquer animação que force reflow briga
+   com a chegada dos caracteres.
+
+   A estrela gira DEVAGAR (4s). Uma volta rápida lê como "carregando" e sugere
+   espera; devagar lê como "trabalhando" e não puxa o olho para longe do texto
+   que está sendo escrito. */
+@keyframes girar-devagar {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.estrela-pensando {
+  animation: girar-devagar 4s linear infinite;
+}
+
+/* O cursor no fim do texto em stream. Bloco fino, não sublinhado: é o que o
+   olho já conhece de terminal e de editor.
+
+   `steps(2)` e não um fade: cursor que pisca suave parece defeito de tela. O
+   piscar tem que ser binário. */
+@keyframes piscar {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.cursor-ia {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  border-radius: 1px;
+  animation: piscar 1s steps(2, jump-none) infinite;
+}
+
+/* "Pensando…" enquanto nenhum caractere chegou ainda. Vai a 0.45 e volta — o
+   animate-pulse do Tailwind cai a 0.5 com curva própria e, ao lado da estrela
+   girando em ritmo constante, os dois batiam fora de compasso. */
+@keyframes respirar {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.respira {
+  animation: respirar 1.8s ease-in-out infinite;
+}
+
+/* Quem pede menos movimento não perde informação nenhuma aqui: o giro e o
+   respiro somem, o cursor CONTINUA piscando. Ele não é enfeite — é o que
+   distingue "ainda escrevendo" de "acabou". */
+@media (prefers-reduced-motion: reduce) {
+  .estrela-pensando,
+  .respira {
+    animation: none;
+  }
 }

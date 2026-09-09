@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...menos o modelo sem segredo, que serve justamente para versionar quais
+# variáveis existem e onde cada uma é obtida.
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +42,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Anexos de atendimento baixados do WhatsApp (lib/midia.ts). Conversa de
+# cliente: não entra no repositório.
+/.midias

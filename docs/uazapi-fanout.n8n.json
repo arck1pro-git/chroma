@@ -1,0 +1,73 @@
+{
+  "name": "uazapi → fan-out (SprintHub + Chroma)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "uazapi-fanout-fc76285e110448ec",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-460, 160],
+      "id": "e2b7b77f-38ce-4e62-9b18-395395a6d211",
+      "name": "uazapi entra",
+      "webhookId": "c108dba1-3568-464f-9bf7-594d37b26d55",
+      "notes": "Único webhook que a instância arckwpp chama. O caminho é aleatório de propósito: é ele que faz as vezes de segredo, já que a uazapi não manda header de auth."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sprinthub-api-master.sprinthub.app/uazapi?i=arck1pro",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": { "timeout": 15000 }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-100, 40],
+      "id": "529cdac6-cfc0-4260-b83a-9f40b2b1bd65",
+      "name": "SprintHub (produção)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "notes": "Reproduz exatamente o que a uazapi mandava direto pro SprintHub antes deste fan-out. Ramo próprio: falha do Chroma não passa por aqui."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://COLE-AQUI-A-URL-PUBLICA-DO-CHROMA/api/uazapi/webhook?secret=COLE_AQUI_O_UAZAPI_WEBHOOK_SECRET",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": { "timeout": 15000 }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-100, 280],
+      "id": "9c2b0d46-5d6f-45b5-9c85-473d0936d0a1",
+      "name": "Chroma",
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "onError=continue: Chroma fora do ar (deploy, túnel caído) NÃO pode derrubar a entrega do SprintHub. Em dev a URL é a do túnel cloudflared; em produção, o domínio do CRM."
+    }
+  ],
+  "connections": {
+    "uazapi entra": {
+      "main": [
+        [
+          { "node": "SprintHub (produção)", "type": "main", "index": 0 },
+          { "node": "Chroma", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "pinData": {}
+}
