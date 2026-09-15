@@ -180,6 +180,26 @@ function CartaoArrastavel({
 // fica a cavaleiro da divisa: centrada na borda direita da etapa de origem e
 // içada meia altura, ela pega a ponta das DUAS colunas. Assim as etapas podem
 // ficar quase encostadas.
+// Entrada do quadro: cabeçalho e filtros surgem primeiro e as etapas vêm atrás,
+// uma a uma, da esquerda para a direita.
+//
+// 200ms entre uma etapa e a seguinte, e sem teto: cada coluna tem que ser lida
+// como um evento próprio. É o piso útil — o fade de .surge dura 180ms, então
+// abaixo de 200ms uma coluna começa antes de a anterior terminar e a sequência
+// vira um borrão só.
+//
+// O custo é linear: 8 etapas fecham o quadro em 80 + 7 × 200 = 1,48s, e cada
+// etapa a mais soma 0,2s. Sem teto de propósito — a 200ms nem um funil de 12
+// etapas passa de 2,3s.
+//
+// Reduced-motion zera este atraso — ver .etapa-surge em app/globals.css.
+const ATRASO_ETAPAS = 80;
+const PASSO_ETAPA = 200;
+
+function atrasoDaEtapa(i: number) {
+  return `${ATRASO_ETAPAS + i * PASSO_ETAPA}ms`;
+}
+
 function PassoConversao({ conversao }: { conversao: Conversao }) {
   return (
     <span
@@ -194,6 +214,7 @@ function PassoConversao({ conversao }: { conversao: Conversao }) {
 }
 
 function ColunaResumo({
+  ordem,
   etapa,
   oportunidades,
   metrica,
@@ -209,6 +230,8 @@ function ColunaResumo({
   selecionados,
   aoSelecionar,
 }: {
+  // posição da coluna no quadro; serve só ao escalonamento da entrada
+  ordem: number;
   etapa: Etapa;
   oportunidades: Oportunidade[];
   metrica: MetricaEtapa;
@@ -241,7 +264,11 @@ function ColunaResumo({
       // borda ela deixaria falhas nos cantos arredondados. Clipar com
       // overflow-hidden resolveria a faixa e cortaria a pílula de conversão,
       // que é posicionada FORA da coluna de propósito.
-      className="relative flex max-h-full w-72 shrink-0 flex-col rounded-xl bg-zinc-100/70 dark:bg-zinc-900/50"
+      className="surge etapa-surge relative flex max-h-full w-72 shrink-0 flex-col rounded-xl bg-zinc-100/70 dark:bg-zinc-900/50"
+      // O fade da coluna INTEIRA, cards inclusive: escalonar também cada cartão
+      // dentro dela somaria duas esperas na mesma tela e a última coluna só
+      // assentaria depois de um segundo.
+      style={{ animationDelay: atrasoDaEtapa(ordem) }}
       aria-label={etapa.nome}
     >
       {conversao && <PassoConversao conversao={conversao} />}
@@ -730,11 +757,19 @@ export default function Inicio({
     // sobre as quais se está perguntando.
     // min-w-0 na coluna de conteúdo: sem ele o filho que rola na horizontal
     // (o quadro) impõe a própria largura e o flex nunca encolhe.
-    <div className="flex h-screen overflow-hidden bg-conteudo">
+    // `relative`: é este retângulo — a área de conteúdo, à direita da sidebar —
+    // que o painel de cadência usa como limite. Ver painel-subetapas.tsx.
+    <div className="relative flex h-screen overflow-hidden bg-conteudo">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Barra do topo: só o seletor de funil e o acesso aos contatos. Fica
             fora da área que rola, então o funil escolhido continua à vista. */}
-        <header className="shrink-0 border-b border-zinc-200 px-6 py-2 xl:px-16 dark:border-zinc-800">
+        {/* Recuo da ESQUERDA fixo em px-6: o xl:px-16 abria uma faixa vazia de
+            64px entre a barra lateral e o conteúdo. À direita o degrau fica —
+            ali ele não separa nada da sidebar, só respira a borda da janela. */}
+        {/* A barra abre a cascata: ela, os filtros e o título entram na frente
+            das etapas, então quando a primeira coluna aparece a moldura da tela
+            já está de pé. */}
+        <header className="surge shrink-0 border-b border-zinc-200 px-6 py-2 xl:pr-16 dark:border-zinc-800">
           <div className="flex max-w-[1600px] items-center gap-2">
             {/* Um controle só, não uma fileira de abas: a lista de funis cresce
                 com o uso e uma aba por funil empurraria o botão de contatos pra
@@ -769,12 +804,12 @@ export default function Inicio({
             quem rola é cada coluna, por dentro. Assim o kanban mostra o máximo de
             cards que couber na tela em vez de ficar preso a uma altura fixa. */}
         {/* Sem padding à DIREITA e sem largura máxima: o quadro rola até encostar
-            na borda da janela. Com px-6/xl:px-16 dos dois lados, a última coluna
-            ficava cortada por uma faixa de fundo vazia. A folga da esquerda fica,
-            para alinhar com o cabeçalho. */}
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden pb-3 pl-6 pr-0 pt-4 xl:pl-16">
+            na borda da janela. Com recuo dos dois lados, a última coluna ficava
+            cortada por uma faixa de fundo vazia. À esquerda fica só o px-6, na
+            mesma medida do cabeçalho — é o que mantém os dois alinhados. */}
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden pb-3 pl-6 pr-0 pt-4">
           {!funil ? (
-            <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-2 py-20 text-center">
+            <div className="surge mx-auto flex max-w-md flex-col items-center justify-center gap-2 py-20 text-center">
               <Layers
                 className="size-8 text-zinc-300 dark:text-zinc-700"
                 aria-hidden="true"
@@ -800,7 +835,7 @@ export default function Inicio({
                     folga só à esquerda. */}
                 <BarraFiltros
                   mostrarFunil={false}
-                  moldura="mb-1 shrink-0 pr-6 xl:pr-16"
+                  moldura="surge mb-1 shrink-0 pr-6 xl:pr-16"
                   linha="flex flex-wrap items-center gap-2"
                   funis={funis}
                   usuarios={usuarios}
@@ -815,7 +850,10 @@ export default function Inicio({
                   total={totalDoFunil}
                 />
 
-                <div className="mb-2 flex shrink-0 items-baseline gap-2 pr-6 xl:pr-16">
+                <div
+                  className="surge mb-2 flex shrink-0 items-baseline gap-2 pr-6 xl:pr-16"
+                  style={{ animationDelay: "40ms" }}
+                >
                   <h2 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
                     {funil.nome}
                   </h2>
@@ -831,7 +869,7 @@ export default function Inicio({
                 </div>
 
                 {colunas.length === 0 ? (
-                  <p className="rounded-2xl border border-dashed border-zinc-200 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-700">
+                  <p className="surge rounded-2xl border border-dashed border-zinc-200 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-700">
                     Este funil ainda não tem etapas
                   </p>
                 ) : (
@@ -849,10 +887,19 @@ export default function Inicio({
                     onDragEnd={aoSoltar}
                     onDragCancel={() => setIdArrastando(null)}
                   >
-                    <div className="flex min-h-0 flex-1 items-start gap-1 overflow-x-auto pb-2 pt-4">
-                      {colunas.map(({ etapa, oportunidades: doEtapa, metrica, conversao }) => (
+                    <div
+                      // key no CONTÊINER, e não só nas colunas: trocar de funil
+                      // troca as etapas e portanto as keys, mas a key daqui
+                      // deixa isso explícito — é ela que garante que a entrada
+                      // escalonada rode de novo a cada funil escolhido, e não
+                      // só na primeira vez que o Dashboard monta.
+                      key={funil.id}
+                      className="flex min-h-0 flex-1 items-start gap-1 overflow-x-auto pb-2 pt-4"
+                    >
+                      {colunas.map(({ etapa, oportunidades: doEtapa, metrica, conversao }, i) => (
                         <ColunaResumo
                           key={etapa.id}
+                          ordem={i}
                           etapa={etapa}
                           oportunidades={doEtapa}
                           metrica={metrica}
@@ -915,7 +962,7 @@ export default function Inicio({
           ferramentas do servidor. */}
       <ChatIa
         modo="lateral"
-        escopoContexto="analise"
+        usaContextos
         // Quem abre a análise aqui é o "+" da sidebar, ao lado de "Análises".
         botaoFlutuante={false}
         // Com uma cadência aberta, o ?ia= é dela — passar aqui também abriria
@@ -936,8 +983,10 @@ export default function Inicio({
         }
       />
 
-      {/* Por cima de tudo (z-60), com o fundo desfocado: o quadro de subetapas
-          tem 18 colunas próprias e não divide a tela com o de trás. */}
+      {/* Ocupa a área de conteúdo inteira, e só ela: o quadro de subetapas tem
+          18 colunas próprias e não divide o espaço com o de trás — mas também
+          não passa por cima da sidebar, que continua sendo por onde se sai
+          daqui. */}
       {etapaSubetapas && (
         <PainelSubetapas
           key={etapaSubetapas.id}

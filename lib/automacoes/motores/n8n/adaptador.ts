@@ -30,6 +30,13 @@ type NoN8n = {
   position: [number, number];
   parameters: Record<string, unknown>;
   credentials?: Record<string, { id: string; name: string }>;
+  /**
+   * Falso = nó que não devolveu linha nenhuma NÃO propaga item, e o ramo morre
+   * ali. É esse o mecanismo do nó de guarda (ver GUARDA_INSCRITO). É o padrão
+   * do n8n, mas vai escrito: a guarda inteira depende dele, e um default que
+   * mude numa versão futura viraria mensagem indo para quem saiu da lista.
+   */
+  alwaysOutputData?: boolean;
 };
 
 // Nome do nó no n8n. Usa o id do CRM como sufixo para o callback de erro
@@ -40,6 +47,10 @@ function nomeDoNo(p: { id: string; rotulo: string }) {
 
 // O nó de entrada é referenciado por NOME dentro das expressões (é de lá que
 // sai o execucao_id de todo bloco), então a string tem que ser uma só.
+// Prefixo do nome de todo workflow que o Chroma cria. É a marca que permite
+// apagar com segurança numa instância compartilhada — ver apagarWorkflow.
+const PREFIXO_NOME = "[Chroma]";
+
 const NOME_ENTRADA = "Entrada do fluxo";
 const NOME_FIM = "Fim da execução";
 
@@ -55,6 +66,112 @@ const EXECUCAO_ID = `{{ $('${NOME_ENTRADA}').item.json.body.execucao_id }}`;
 // O nó que carrega o lead. Todo bloco referencia ele por NOME para pegar
 // nome/whatsapp — e é por isso que a string existe uma vez só.
 const NOME_LEAD = "Carregar lead";
+
+// ── A guarda de inscrição ───────────────────────────────────────────────────
+//
+// POR QUE ELA EXISTE: o workflow lia o lead uma vez, na entrada, e só voltava a
+// tocar em fluxo_execucoes no nó final. Entre um passo e outro ele não
+// perguntava mais nada ao CRM. Numa cadência que espera dias entre mensagens,
+// isso significava que tirar alguém da automação NÃO parava o envio: a linha
+// ficava 'cancelada' no banco e a mensagem saía do mesmo jeito, na arckwpp, que
+// é compartilhada com a produção do SprintHub.
+//
+// COMO FUNCIONA: antes de cada bloco que manda algo para fora entra este
+// SELECT. Achando linha, o ramo segue; não achando, o nó devolve zero itens e o
+// n8n não executa o que vem depois — sem IF, sem ramo de erro, sem nó extra.
+//
+// O que ele barra, de uma vez:
+//   · desinscrito       → estado 'cancelada'
+//   · pausado           → estado 'pausada' (que também não parava nada)
+//   · fluxo despublicado, pausado ou arquivado → o fluxo inteiro para
+//
+// A QUARTA CONDIÇÃO É A ÚLTIMA MENSAGEM DA CONVERSA. Ela só deixa passar se
+// quem falou por último foi a própria cadência. Qualquer outra coisa encerra o
+// assunto, e por dois motivos que dão no mesmo:
+//
+//   · foi o ATENDENTE (digitando no chat, 'crm', ou pelo celular, 'aparelho')
+//     → alguém já está falando com essa pessoa;
+//   · foi o LEAD ('contato') → ele já respondeu, e a sequência existe para
+//     arrancar resposta. Continuar mandando é falar por cima de quem respondeu.
+//
+// Por isso a comparação é contra 'automacao', e não uma lista do que bloqueia:
+// só a própria cadência libera a próxima; todo o resto para.
+//
+// COALESCE(enviada_por, origem) porque mensagem RECEBIDA tem `enviada_por`
+// nulo — sem isso o NULL do lead viraria "ninguém falou" e a cadência
+// continuaria por cima da resposta dele, que é o caso que mais importa.
+//
+// SÓ CONTA O QUE VEIO DEPOIS DA ENTRADA NO FLUXO (`> e.iniciado_em`), e o
+// COALESCE de fora é o "não houve nada desde então" → libera. Sem esse recorte
+// a PRIMEIRA mensagem nunca sairia para um lead que já tinha conversa: o
+// histórico de quem chegou pelo WhatsApp termina numa mensagem dele, e a
+// cadência morreria antes de começar.
+//
+// MENSAGEM ENVIADA SEM `enviada_por` É IGNORADA, e essa foi a decisão mais
+// difícil daqui. São as anteriores à migration — e as que saírem de um workflow
+// publicado antes dela, que é o caso de TODA cadência rodando hoje. Barrá-las
+// (o lado "seguro") trava a cadência para sempre: a próxima mensagem não sai
+// porque a anterior não tem etiqueta, e nunca vai ter. Ignorá-las custa o
+// oposto e é um custo que acaba: uma mensagem que o atendente mandou pelo
+// celular ANTES da migration não interrompe a sequência. Depois dela, tudo
+// nasce etiquetado e a regra volta a ser exata.
+//
+// Recebida não precisa de etiqueta: `origem = 'contato'` já diz que foi o lead,
+// inclusive no histórico antigo. Então a resposta dele para a cadência mesmo em
+// conversa velha.
+//
+// O custo é uma consulta por mensagem, no mesmo Postgres em que o motor já
+// grava cada mensagem enviada. É barato perto de uma mensagem indevida.
+// Exportada para poder ser EXECUTADA num teste contra o banco. Redigitar a
+// consulta no teste seria testar a cópia: as duas divergiriam, o teste passaria
+// e a mensagem sairia mesmo assim.
+export const GUARDA_INSCRITO = `
+  SELECT 1
+  FROM fluxo_execucoes e
+  JOIN fluxos f ON f.id = e.fluxo_id
+  LEFT JOIN oportunidades o
+    ON e.entidade_tipo = 'oportunidade' AND o.id = e.entidade_id
+  WHERE e.id = $1::uuid
+    AND e.estado IN ('pendente','rodando','esperando')
+    AND f.estado = 'publicado'
+    AND f.arquivado_em IS NULL
+    AND COALESCE(
+      (SELECT COALESCE(m.enviada_por, 'contato')
+       FROM mensagens m
+       JOIN atendimentos a ON a.id = m.atendimento_id
+       WHERE a.contato_id = COALESCE(o.contato_id, e.entidade_id)
+         AND m.data_criacao > e.iniciado_em
+         -- Só o que dá para classificar: recebida é sempre do lead, e enviada
+         -- só conta quando alguém marcou de onde saiu.
+         AND (m.enviada_por IS NOT NULL OR m.origem = 'contato')
+       ORDER BY m.data_criacao DESC, m.id DESC
+       LIMIT 1),
+      'automacao'
+    ) = 'automacao'`;
+
+/**
+ * "Este lead está NESTE bloco agora."
+ *
+ * É a linha que a tela da cadência lê para desenhar o card na coluna certa
+ * (posicaoNaCadencia, em lib/automacoes/repositorio.ts). Cada passo do fluxo é
+ * um bloco no n8n, e cada bloco em que o lead PARA marca a passagem por aqui.
+ *
+ * A ordem sai do banco e não de um contador do workflow: com ramos e
+ * reinscrições, o motor não tem esse número.
+ */
+export const MARCAR_PASSO = `
+  INSERT INTO fluxo_execucao_passos
+    (execucao_id, no_id, no_tipo, ordem, estado)
+  SELECT $1::uuid, $2, $3,
+         (SELECT count(*) + 1 FROM fluxo_execucao_passos p
+           WHERE p.execucao_id = $1::uuid)::smallint,
+         'sucesso'`;
+
+// Blocos que mandam algo para FORA e por isso precisam da guarda na frente.
+// Hoje só um tem nó de verdade; os outros de `comunicacao` ainda caem no No-Op
+// e não enviam nada, então guardá-los seria consulta à toa. Ao implementar o
+// próximo (whatsapp oficial, e-mail), acrescente aqui.
+const BLOCOS_QUE_ENVIAM = new Set(["enviar_whatsapp_web"]);
 
 /**
  * Traduz o template do CRM (`{{primeiro_nome}}`) para expressão do n8n.
@@ -83,10 +200,22 @@ function expr(valor: string) {
 export type CredenciaisMotor = {
   /** id da credencial Postgres no n8n (role chroma_n8n). */
   banco: string;
-  /** id da credencial Header Auth com o token da uazapi. */
+  /** id da credencial Header Auth da instância PADRÃO da uazapi. */
   uazapi: string;
-  /** base_url da instância de WhatsApp, ex.: https://arckwpp.uazapi.com */
+  /** base_url da instância padrão, ex.: https://arckwpp.uazapi.com */
   uazapiBaseUrl: string;
+  /**
+   * Uma credencial e uma base_url POR INSTÂNCIA de WhatsApp.
+   *
+   * É o que faz o número escolhido em cada mensagem valer: o nó de envio do
+   * bloco usa a instância DELE, não a do fluxo. Quem monta este mapa (e cria a
+   * credencial no cofre do n8n quando falta) é `credenciaisDaUazapi`, em
+   * app/automacoes/acoes.ts.
+   *
+   * Opcional para não quebrar chamada antiga — sem ele tudo cai na padrão, que
+   * é como era antes.
+   */
+  porInstancia?: Map<string, { credencialId: string; baseUrl: string }>;
 };
 
 function credPostgres(c: CredenciaisMotor) {
@@ -115,10 +244,14 @@ export function paraWorkflow(
 ): WorkflowMotor {
   const nodes: NoN8n[] = [];
   const connections: WorkflowMotor["connections"] = {};
-  // Nome do nó por onde a corrente SAI de cada bloco. Igual ao nome do bloco na
-  // maioria; diferente quando um bloco vira mais de um nó (o WhatsApp vira o
-  // envio + o registro), e é isso que mantém as ligações corretas.
-  const saidaDoBloco = new Map<string, string>();
+  // Os nós de cada bloco, EM ORDEM, para os blocos que viram mais de um: o
+  // WhatsApp vira guarda → envio → registro. Quem chega no bloco entra pelo
+  // primeiro; quem sai do bloco sai do último. É esta lista que mantém as
+  // ligações corretas sem cada ponto do código recalcular a cadeia.
+  const cadeiaDoBloco = new Map<string, string[]>();
+  // Blocos que efetivamente ganharam a guarda. Existe para a conferência no fim
+  // desta função, não para montar ligação.
+  const comGuarda = new Set<string>();
 
   const gatilho: NoN8n = {
     id: plano.entrada.id,
@@ -199,9 +332,41 @@ export function paraWorkflow(
     }
 
     if (passo.tipo === "esperar" || passo.tipo === "verificar_resposta") {
+      // DOIS nós: marca e espera.
+      //
+      // A espera é um passo da cadência como qualquer outro, e é o único em que
+      // o lead FICA — os demais ele atravessa. Sem a marca, a tela não teria
+      // como saber que ele está parado ali: o último passo registrado seria a
+      // mensagem anterior, e o card apareceria nela por dias.
+      //
+      // A marca vem ANTES da espera, e é isso que a torna verdadeira: ela grava
+      // "entrou no esperar" no instante em que entra, não quando sai.
+      const espera = nomeDoNo(passo);
+      const marca = `Marcar [${passo.id}]`;
+
+      nodes.push({
+        id: `${passo.id}__marca`,
+        name: marca,
+        type: "n8n-nodes-base.postgres",
+        typeVersion: 2.4,
+        // Uma coluna à esquerda: posição é cosmética no n8n, e à esquerda lê
+        // como "antes" no desenho.
+        position: [passo.posicao.x - 190, passo.posicao.y],
+        parameters: {
+          operation: "executeQuery",
+          query: MARCAR_PASSO,
+          options: {
+            queryReplacement: expr(
+              [EXECUCAO_ID, passo.id, passo.tipo].join(","),
+            ),
+          },
+        },
+        credentials: credPostgres(cred),
+      });
+
       nodes.push({
         id: passo.id,
-        name: nomeDoNo(passo),
+        name: espera,
         type: "n8n-nodes-base.wait",
         typeVersion: 1.1,
         position: [passo.posicao.x, passo.posicao.y],
@@ -211,16 +376,65 @@ export function paraWorkflow(
           unit: "minutes",
         },
       });
+
+      cadeiaDoBloco.set(passo.id, [marca, espera]);
       continue;
     }
 
     if (passo.tipo === "enviar_whatsapp_web") {
-      // DOIS nós: manda e registra. Separados porque o registro precisa do
-      // RETORNO da uazapi (o messageid, que é como o webhook de entrega casa a
-      // mensagem depois) — num nó só, ou se grava antes sem o id, ou se manda
-      // sem deixar rastro.
+      // TRÊS nós: confere, manda e registra.
+      //
+      // A guarda vem primeiro e é o que faz "desinscrever" significar alguma
+      // coisa — ver GUARDA_INSCRITO no topo do arquivo.
+      //
+      // Envio e registro são separados porque o registro precisa do RETORNO da
+      // uazapi (o messageid, que é como o webhook de entrega casa a mensagem
+      // depois) — num nó só, ou se grava antes sem o id, ou se manda sem deixar
+      // rastro.
       const envio = nomeDoNo(passo);
+      const guarda = `Ainda inscrito? [${passo.id}]`;
       const registro = `Registrar [${passo.id}]`;
+
+      nodes.push({
+        id: `${passo.id}__guarda`,
+        name: guarda,
+        type: "n8n-nodes-base.postgres",
+        typeVersion: 2.4,
+        // Uma coluna à esquerda do bloco: posição é cosmética no n8n, e à
+        // esquerda lê como "antes" no desenho.
+        position: [passo.posicao.x - 190, passo.posicao.y],
+        parameters: {
+          operation: "executeQuery",
+          query: GUARDA_INSCRITO,
+          options: { queryReplacement: expr(EXECUCAO_ID) },
+        },
+        // O ponto inteiro da guarda: sem linha, sem item, e o ramo morre aqui.
+        alwaysOutputData: false,
+        credentials: credPostgres(cred),
+      });
+
+      // DE QUAL NÚMERO ESTA mensagem sai. O bloco carrega `instancia_id`; sem
+      // ele, a instância padrão. Antes esta linha não existia: toda mensagem
+      // saía pela padrão e o seletor da tela era decorativo.
+      const instanciaId =
+        typeof passo.config.instancia_id === "string"
+          ? passo.config.instancia_id
+          : "";
+      const daInstancia = instanciaId
+        ? cred.porInstancia?.get(instanciaId)
+        : undefined;
+      const baseUrl = daInstancia?.baseUrl ?? cred.uazapiBaseUrl;
+      const credencialUazapi = daInstancia?.credencialId ?? cred.uazapi;
+
+      // Sem instância no bloco E sem padrão: há mais de uma cadastrada e
+      // ninguém escolheu. Falhar AQUI, com o nome do bloco, é o que separa
+      // "corrija a 5ª mensagem" de um workflow publicado que erra calado no
+      // primeiro disparo.
+      if (!baseUrl) {
+        throw new Error(
+          `A mensagem "${passo.rotulo}" não tem número escolhido, e há mais de uma instância de WhatsApp cadastrada. Escolha o número nesta mensagem.`,
+        );
+      }
 
       nodes.push({
         id: passo.id,
@@ -230,7 +444,7 @@ export function paraWorkflow(
         position: [passo.posicao.x, passo.posicao.y],
         parameters: {
           method: "POST",
-          url: `${cred.uazapiBaseUrl}/send/text`,
+          url: `${baseUrl}/send/text`,
           authentication: "genericCredentialType",
           genericAuthType: "httpHeaderAuth",
           sendBody: true,
@@ -242,13 +456,29 @@ export function paraWorkflow(
             }),
           ),
         },
-        credentials: { httpHeaderAuth: { id: cred.uazapi, name: "Chroma · uazapi" } },
+        credentials: {
+          httpHeaderAuth: { id: credencialUazapi, name: "Chroma · uazapi" },
+        },
       });
 
       // O atendimento é resolvido no próprio INSERT: ON CONFLICT não serve
       // aqui (não há chave única de "conversa aberta"), então a subconsulta
       // pega a mais recente não encerrada. Sem ela, uma cadência de 18
       // mensagens criaria 18 conversas na tela do chat.
+      //
+      // ESTE NÓ TAMBÉM MARCA O PASSO, e é o que conserta o card parado na
+      // última coluna. A tela pergunta "qual foi o último bloco executado para
+      // esta oportunidade?" a fluxo_execucao_passos; quem alimentava essa
+      // tabela era o executor do CRM, que deixou de existir quando o n8n passou
+      // a falar direto com a uazapi (ver lib/automacoes/servico.ts). Desde
+      // então ninguém escrevia ali, a posição vinha vazia, e TODO card caía na
+      // régua de dias — que, para uma oportunidade antiga, aponta sempre a
+      // última mensagem. Daí "todo mundo na mensagem 5".
+      //
+      // Vai DEPOIS do envio, na mesma instrução, porque é o envio que faz o
+      // passo existir: falhou o envio, o ramo morre aqui e nada é marcado.
+      // `enviada_por` nasce 'automacao' — é o que distingue esta mensagem da
+      // que o atendente manda pelo celular, e é o que a guarda lê.
       nodes.push({
         id: `${passo.id}__reg`,
         name: registro,
@@ -258,19 +488,35 @@ export function paraWorkflow(
         parameters: {
           operation: "executeQuery",
           query: `
-            INSERT INTO mensagens
-              (atendimento_id, origem, autor_id, texto, status, id_externo)
-            SELECT a.id, 'agente', NULL, $2, 'enviado', $3
-            FROM atendimentos a
-            WHERE a.contato_id = $1::uuid AND a.status <> 'encerrado'
-            ORDER BY a.data_criacao DESC
-            LIMIT 1`,
+            WITH msg AS (
+              INSERT INTO mensagens
+                (atendimento_id, origem, autor_id, texto, status, id_externo,
+                 enviada_por)
+              SELECT a.id, 'agente', NULL, $2, 'enviado', $3, 'automacao'
+              FROM atendimentos a
+              WHERE a.contato_id = $1::uuid AND a.status <> 'encerrado'
+              ORDER BY a.data_criacao DESC
+              LIMIT 1
+              RETURNING id
+            )
+            INSERT INTO fluxo_execucao_passos
+              (execucao_id, no_id, no_tipo, ordem, estado)
+            SELECT $4::uuid, $5, $6,
+                   -- Ordem = quantos passos esta execução já tem + 1. Sai do
+                   -- banco e não de um contador do workflow: com ramos e
+                   -- reentradas, o motor não tem esse número.
+                   (SELECT count(*) + 1 FROM fluxo_execucao_passos p
+                     WHERE p.execucao_id = $4::uuid)::smallint,
+                   'sucesso'`,
           options: {
             queryReplacement: expr(
               [
                 `{{ $('${NOME_LEAD}').first().json.contato_id }}`,
                 `{{ $('${envio}').first().json.text ?? '' }}`,
                 `{{ $('${envio}').first().json.messageid ?? '' }}`,
+                EXECUCAO_ID,
+                passo.id,
+                passo.tipo,
               ].join(","),
             ),
           },
@@ -278,7 +524,8 @@ export function paraWorkflow(
         credentials: credPostgres(cred),
       });
 
-      saidaDoBloco.set(passo.id, registro);
+      cadeiaDoBloco.set(passo.id, [guarda, envio, registro]);
+      comGuarda.add(passo.id);
       continue;
     }
 
@@ -303,6 +550,22 @@ export function paraWorkflow(
   // O UPDATE é condicionado ao estado: uma execução PAUSADA ou CANCELADA pela
   // ficha da oportunidade não pode ser marcada 'sucesso' por um ramo do motor
   // que acordou depois. Era o executor que garantia isso; agora é o WHERE.
+  //
+  // ELE TAMBÉM ESCREVE O HISTÓRICO DO LEAD, e é o único jeito: chegar ao fim do
+  // fluxo é uma saída como qualquer outra, mas acontece DENTRO do motor — o CRM
+  // não é avisado. Sem esta linha, a ficha mostraria "entrou na automação" e
+  // nunca o "saiu", e quem lê a trilha concluiria que o lead está lá até hoje.
+  //
+  // A forma é um CTE: o UPDATE devolve o que precisa e o INSERT lê daí, numa
+  // instrução só. Nada aqui pode derrubar o nó — se a entidade sumiu, o SELECT
+  // não acha linha e o INSERT grava zero, sem erro. E o `fim` só produz linha
+  // quando o UPDATE mexeu em alguma: execução já cancelada não vira "saiu" duas
+  // vezes.
+  //
+  // ⚠ Vale para fluxo PUBLICADO DAQUI PARA A FRENTE. O workflow que está no n8n
+  // é o que foi compilado na publicação — os antigos continuam fechando a
+  // execução sem escrever histórico, e republicar é o que corrige. Mesma
+  // ressalva da guarda de inscrito.
   const fim: NoN8n = {
     id: "__fim__",
     name: NOME_FIM,
@@ -313,13 +576,26 @@ export function paraWorkflow(
     parameters: {
       operation: "executeQuery",
       query: `
-        UPDATE fluxo_execucoes SET
-          estado = 'sucesso',
-          finalizado_em = now(),
-          duracao_ms = EXTRACT(EPOCH FROM (now() - iniciado_em))::int * 1000,
-          motor_execucao_id = $2
-        WHERE id = $1::uuid
-          AND estado IN ('pendente','rodando','esperando')`,
+        WITH fim AS (
+          UPDATE fluxo_execucoes SET
+            estado = 'sucesso',
+            finalizado_em = now(),
+            duracao_ms = EXTRACT(EPOCH FROM (now() - iniciado_em))::int * 1000,
+            motor_execucao_id = $2
+          WHERE id = $1::uuid
+            AND estado IN ('pendente','rodando','esperando')
+          RETURNING fluxo_id, entidade_tipo, entidade_id
+        )
+        INSERT INTO historico (contato_id, oportunidade_id, descricao)
+        SELECT coalesce(o.contato_id, c.id), o.id,
+               'Saiu da automação "' || f.nome || '" — chegou ao fim'
+        FROM fim
+        JOIN fluxos f ON f.id = fim.fluxo_id
+        LEFT JOIN oportunidades o
+          ON fim.entidade_tipo = 'oportunidade' AND o.id = fim.entidade_id
+        LEFT JOIN contatos c
+          ON fim.entidade_tipo = 'contato' AND c.id = fim.entidade_id
+        WHERE o.id IS NOT NULL OR c.id IS NOT NULL`,
       options: {
         queryReplacement: expr(
           [EXECUCAO_ID, "{{ $execution.id }}"].join(","),
@@ -333,7 +609,12 @@ export function paraWorkflow(
   // Conexões: main[índiceDaSaída] = lista de destinos.
   const porId = new Map(plano.passos.map((p) => [p.id, p]));
   const nomePorId = new Map<string, string>([[plano.entrada.id, gatilho.name]]);
-  for (const p of plano.passos) nomePorId.set(p.id, nomeDoNo(p));
+  // Quem aponta para um bloco aponta para o PRIMEIRO nó dele — que no WhatsApp
+  // é a guarda, não o envio. Apontar para o envio pularia a guarda e era
+  // exatamente o furo que ela fecha.
+  for (const p of plano.passos) {
+    nomePorId.set(p.id, cadeiaDoBloco.get(p.id)?.[0] ?? nomeDoNo(p));
+  }
 
   const paraFim = [{ node: NOME_FIM, type: "main" as const, index: 0 }];
 
@@ -364,25 +645,40 @@ export function paraWorkflow(
       return nome ? [{ node: nome, type: "main" as const, index: 0 }] : paraFim;
     });
 
-    // A corrente sai pelo ÚLTIMO nó do bloco. Para quase todos é o próprio;
-    // para o WhatsApp é o "Registrar", e é isso que garante que a mensagem
+    // Os nós internos do bloco em fila, cada um alimentando o próximo. Para
+    // quase todos a cadeia tem um nó só e este laço não faz nada; para o
+    // WhatsApp é guarda → envio → registro, e é o que garante que a mensagem
     // seguinte só comece depois de a atual estar gravada.
-    const entrada = nomePorId.get(p.id)!;
-    const saida = saidaDoBloco.get(p.id) ?? entrada;
-    if (saida !== entrada) {
-      connections[entrada] = {
-        main: [[{ node: saida, type: "main", index: 0 }]],
+    const cadeia = cadeiaDoBloco.get(p.id) ?? [nomeDoNo(p)];
+    for (let i = 0; i < cadeia.length - 1; i++) {
+      connections[cadeia[i]] = {
+        main: [[{ node: cadeia[i + 1], type: "main", index: 0 }]],
       };
     }
 
-    // Bloco sem saída nenhuma no catálogo (hoje só "Mudar fluxo"): liga direto.
+    // A corrente sai pelo ÚLTIMO nó do bloco. Bloco sem saída nenhuma no
+    // catálogo (hoje só "Mudar fluxo"): liga direto no fim.
+    const saida = cadeia[cadeia.length - 1];
     connections[saida] = { main: main.length > 0 ? main : [paraFim] };
   }
 
   void porId;
 
+  // Rede de segurança para o próximo que mexer aqui: todo bloco que manda algo
+  // para fora tem que entrar por uma guarda. Implementar o nó do e-mail e
+  // esquecer a guarda não apareceria em teste nenhum — apareceria como mensagem
+  // no WhatsApp de quem pediu para sair. Estourar na compilação é barato;
+  // descobrir depois, não.
+  for (const p of plano.passos) {
+    if (BLOCOS_QUE_ENVIAM.has(p.tipo) && !comGuarda.has(p.id)) {
+      throw new Error(
+        `o bloco "${p.tipo}" envia mensagem e ficou sem guarda de inscrição`,
+      );
+    }
+  }
+
   return {
-    name: `[Chroma] ${plano.nome}`,
+    name: `${PREFIXO_NOME} ${plano.nome}`,
     nodes,
     connections,
     settings: { executionOrder: "v1" },
@@ -484,4 +780,72 @@ export async function desativarWorkflow(id: string) {
 // Usado só para reconciliação (§2.5) — nunca para descobrir o que mexer.
 export async function lerWorkflow(id: string) {
   return chamar(`/workflows/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Acha um workflow do Chroma pelo nome exato.
+ *
+ * Existe para não criar duplicata: a automação do RSS é ÚNICA (uma só cobre
+ * todos os blogs), e clicar duas vezes em "criar" não pode deixar dois
+ * agendamentos iguais rodando na segunda de manhã. A API pública não filtra por
+ * nome, então a filtragem é aqui.
+ */
+export async function acharWorkflowPorNome(
+  nome: string,
+): Promise<{ id: string; active: boolean } | null> {
+  const r = (await chamar("/workflows?limit=250")) as {
+    data?: { id: string; name: string; active?: boolean }[];
+  } | null;
+
+  const achado = (r?.data ?? []).find((w) => w.name === nome);
+  return achado ? { id: achado.id, active: achado.active === true } : null;
+}
+
+/**
+ * Cria uma credencial DENTRO do n8n e devolve o id.
+ *
+ * O segredo vai para o cofre do n8n, não para o JSON do workflow. A diferença
+ * importa: workflow é legível por qualquer um com acesso à instância — que aqui
+ * é COMPARTILHADA com a produção do SprintHub —, credencial não é.
+ *
+ * A API pública não lista credenciais, então quem chama precisa guardar o id
+ * (é o que `motor_credenciais` faz) para não criar uma nova a cada chamada.
+ */
+export async function criarCredencial(
+  nome: string,
+  tipo: string,
+  dados: Record<string, unknown>,
+): Promise<string> {
+  const criada = await chamar("/credentials", {
+    method: "POST",
+    body: JSON.stringify({ name: nome, type: tipo, data: dados }),
+  });
+  return criada.id as string;
+}
+
+/**
+ * Apaga o workflow no motor. É a única operação destrutiva deste arquivo, e ela
+ * existe porque a alternativa é pior: excluir a automação no CRM sem apagar lá
+ * deixa um workflow ATIVO, com webhook vivo, que o CRM não gerencia mais.
+ *
+ * Isso não é hipótese. Em 2026-09-09 encontramos um workflow "[Chroma] Novo
+ * fluxo" ativo desde julho, órfão, apontando para uma URL relativa — publicado
+ * por uma versão com bug e nunca mais alcançado por ninguém.
+ *
+ * A TRAVA: o nome é conferido ANTES. A instância é compartilhada com a produção
+ * da empresa (§5.1), e um id errado — de um bug, de um copiar e colar — apagaria
+ * automação da qual outra gente depende. Só apaga o que se chama "[Chroma] …",
+ * que é o prefixo que só este adaptador escreve.
+ */
+export async function apagarWorkflow(id: string): Promise<void> {
+  const atual = (await lerWorkflow(id)) as { name?: string } | null;
+  const nome = String(atual?.name ?? "");
+
+  if (!nome.startsWith(PREFIXO_NOME)) {
+    throw new Error(
+      `Recusado: o workflow ${id} chama-se "${nome}" e não foi criado pelo Chroma. Nada foi apagado.`,
+    );
+  }
+
+  await chamar(`/workflows/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

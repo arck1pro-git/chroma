@@ -7,7 +7,9 @@ import {
   definicaoDoFluxo,
   execucoesPorDia,
   execucoesRecentes,
+  inscritosDoFluxo,
   leadsNoFluxo,
+  versaoNoMotor,
   listarFluxos,
   passosPorBloco,
   segmentosParaDisparo,
@@ -55,7 +57,26 @@ export type ExecucaoLog = {
 
 export type ArestaDoFluxo = { de: string; para: string; ramo?: string };
 
+export type { Inscrito } from "@/lib/automacoes/repositorio";
+
 export type DetalheFluxo = {
+  /**
+   * Quem está DENTRO da automação agora.
+   *
+   * Não é a mesma coisa que `leads`: aquele é só quem está parado numa espera,
+   * e serve ao canvas de métricas. Este é a lista de inscrição — inclui quem
+   * acabou de entrar e ainda não chegou a esperar nada, e é dela que se
+   * desinscreve alguém.
+   */
+  inscritos: import("@/lib/automacoes/repositorio").Inscrito[];
+  /**
+   * Versão do compilado que está no motor hoje, ou null se nunca publicou.
+   *
+   * A tela compara com VERSAO_COMPILADOR: diferente quer dizer que o workflow
+   * lá fora é de antes da guarda de inscrição, e nele desinscrever não para a
+   * mensagem que já está agendada.
+   */
+  versaoNoMotor: string | null;
   porDia: ExecucaoNoDia[];
   porBloco: PassoAgregado[];
   layout: Record<string, { x: number; y: number }>;
@@ -76,13 +97,16 @@ function rotuloDoNo(tipo: string, noId: string) {
 }
 
 export async function detalheDoFluxo(id: string): Promise<DetalheFluxo> {
-  const [definicao, porDia, agregados, execucoes, leads] = await Promise.all([
-    definicaoDoFluxo(id),
-    execucoesPorDia(id),
-    passosPorBloco(id),
-    execucoesRecentes(id),
-    leadsNoFluxo(id),
-  ]);
+  const [definicao, porDia, agregados, execucoes, leads, inscritos, noMotor] =
+    await Promise.all([
+      definicaoDoFluxo(id),
+      execucoesPorDia(id),
+      passosPorBloco(id),
+      execucoesRecentes(id),
+      leadsNoFluxo(id),
+      inscritosDoFluxo(id),
+      versaoNoMotor(id),
+    ]);
 
   const contagem = new Map(agregados.map((a) => [a.no_id, a]));
 
@@ -107,6 +131,8 @@ export async function detalheDoFluxo(id: string): Promise<DetalheFluxo> {
   ];
 
   return {
+    inscritos,
+    versaoNoMotor: noMotor,
     porDia,
     porBloco,
     layout: definicao.layout,

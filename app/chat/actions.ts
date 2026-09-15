@@ -22,9 +22,15 @@ export async function enviarMensagem(
   if (!corpo) throw new Error("Mensagem vazia");
 
   // 1. Nasce 'pendente'. Guarda ANTES de falar com a uazapi.
+  //
+  // `enviada_por = 'crm'`: gente digitando aqui dentro. É o que faz a cadência
+  // parar de mandar mensagem para este contato — a guarda do workflow trata
+  // 'crm' e 'aparelho' como "o atendente assumiu a conversa"
+  // (migration-cadencia-controles.sql).
   const [msg] = await sql`
-    INSERT INTO mensagens (atendimento_id, origem, autor_id, texto, status)
-    VALUES (${atendimentoId}, 'agente', ${autorId}, ${corpo}, 'pendente')
+    INSERT INTO mensagens
+      (atendimento_id, origem, autor_id, texto, status, enviada_por)
+    VALUES (${atendimentoId}, 'agente', ${autorId}, ${corpo}, 'pendente', 'crm')
     RETURNING id`;
 
   // 2. Número do contato desta conversa E o nosso número que a recebeu.

@@ -187,6 +187,120 @@ body {
   .surge {
     animation-name: veu-surge;
   }
+
+  /* As colunas do quadro entram com 0,2s de intervalo entre uma e a seguinte —
+     num funil de oito etapas a última chega depois de 1,5s. Esperar o conteúdo
+     não é o que a preferência pede, então aqui a cascata inteira cai no mesmo
+     quadro e sobra só o fade.
+
+     !important porque o atraso vem de style inline (app/inicio/inicio.tsx), e
+     inline ganha de qualquer regra de folha sem ele. */
+  .etapa-surge {
+    animation-delay: 0s !important;
+  }
+}
+
+/* ── Prévia do artigo (módulo de Blog) ───────────────────────────────────────
+   Tipografia de LEITURA, não de interface: o resto do app usa 11-13px porque é
+   painel e lista; aqui a pessoa lê 1.300 palavras seguidas para decidir se o
+   texto presta. line-height 1.75 e espaço entre blocos irmãos são o que separa
+   "ler" de "escanear".
+
+   O HTML vem de renderArtigo (lib/artigo.ts) — subconjunto fechado de markdown
+   —, então estes seletores cobrem tudo que pode aparecer aqui dentro. Nada de
+   classe por elemento: o renderizador emite tag pura. */
+.artigo-preview {
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--foreground);
+}
+.artigo-preview > * + * {
+  margin-top: 0.85rem;
+}
+.artigo-preview h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.35;
+  /* Sem isto, o clique no índice para o título embaixo do cabeçalho fixo. */
+  scroll-margin-top: 1rem;
+}
+.artigo-preview h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  scroll-margin-top: 1rem;
+}
+.artigo-preview h2,
+.artigo-preview h3 {
+  margin-top: 1.5rem;
+}
+.artigo-preview a {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.artigo-preview ul,
+.artigo-preview ol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-left: 1.25rem;
+}
+.artigo-preview ul {
+  list-style: disc;
+}
+.artigo-preview ol {
+  list-style: decimal;
+}
+.artigo-preview blockquote {
+  border-left: 2px solid var(--scrollbar-thumb);
+  padding-left: 0.85rem;
+  font-style: italic;
+}
+/* display:block + overflow para a tabela poder rolar sozinha: a gaveta tem
+   largura fixa, e uma tabela de 4 colunas estouraria o painel inteiro. */
+.artigo-preview table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  width: 100%;
+}
+.artigo-preview th,
+.artigo-preview td {
+  border: 1px solid var(--scrollbar-thumb);
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  white-space: nowrap;
+}
+.artigo-preview th {
+  background: var(--conteudo);
+  font-weight: 600;
+}
+.artigo-preview code,
+.artigo-preview pre {
+  background: color-mix(in oklab, var(--foreground) 7%, transparent);
+  border-radius: 0.375rem;
+  font-size: 0.9em;
+}
+.artigo-preview code {
+  padding: 0.1rem 0.3rem;
+}
+.artigo-preview pre {
+  overflow-x: auto;
+  padding: 0.6rem 0.8rem;
+}
+.artigo-preview pre code {
+  background: none;
+  padding: 0;
+}
+.artigo-preview img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+}
+.artigo-preview hr {
+  border: 0;
+  border-top: 1px solid var(--scrollbar-thumb);
 }
 
 /* Ondas da home: várias camadas do mesmo traçado deslizando em velocidades

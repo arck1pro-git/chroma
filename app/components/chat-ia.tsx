@@ -21,7 +21,6 @@ import {
   contextosDisponiveis,
   type ContextoDisponivel,
 } from "./acoes-ia";
-import type { EscopoContexto } from "@/lib/contextos-tipos";
 import TextoIa from "./texto-ia";
 
 // Botão flutuante de conversa com a IA. Canto inferior DIREITO. Quando uma
@@ -111,11 +110,13 @@ export default function ChatIa({
   // vez de cobri-lo. É o modo da tela inicial, onde o quadro não pode ficar
   // escondido atrás da conversa.
   modo = "flutuante",
-  // Escopo dos blocos de prompt (módulo Contextos) que este painel oferece.
-  // Separado de `escopo`, que é a lista de CONVERSAS: a conversa da cadência e
-  // a do editor de fluxo são listas diferentes, mas os dois usam contexto de
-  // automação. null = painel sem seletor de contexto.
-  escopoContexto = null,
+  // Este painel oferece o seletor de blocos de prompt (módulo Contextos)?
+  //
+  // Era `escopoContexto`, que dizia QUAL categoria de contexto mostrar. A
+  // categoria saiu do modelo: um contexto é só nome, descrição e prompt, e onde
+  // ele se aplica é decisão da interface. Sobrou o liga/desliga — quais blocos
+  // entram naquela conversa quem marca é a pessoa, na hora.
+  usaContextos = false,
   // Id de conversa vindo da URL (?ia=<id>), posto lá pela sidebar. Quando
   // presente, o painel abre sozinho já nessa conversa — é o que faz clicar numa
   // análise da barra voltar exatamente para onde ela parou.
@@ -138,7 +139,7 @@ export default function ChatIa({
   aoAplicar?: () => void;
   camada?: string;
   modo?: "flutuante" | "lateral";
-  escopoContexto?: EscopoContexto | null;
+  usaContextos?: boolean;
   conversaInicial?: string | null;
   botaoFlutuante?: boolean;
 }) {
@@ -188,10 +189,10 @@ export default function ChatIa({
   // por tela, e nenhum precisa de banco antes de alguém abrir.
   async function carregarLista() {
     setCarregandoLista(true);
-    if (escopoContexto) {
+    if (usaContextos) {
       // Falha aqui não pode derrubar o painel: contexto é acessório, a conversa
       // funciona sem nenhum escolhido.
-      contextosDisponiveis(escopoContexto)
+      contextosDisponiveis()
         .then(setContextos)
         .catch(() => setContextos([]));
     }

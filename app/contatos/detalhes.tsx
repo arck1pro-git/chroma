@@ -265,7 +265,8 @@ export function SecoesContato({
                     {h.descricao}
                   </p>
                   <p className="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
-                    {usuarioPorId.get(h.autor_id)?.nome ?? "Sistema"} ·{" "}
+                    {(h.autor_id && usuarioPorId.get(h.autor_id)?.nome) || "Sistema"}{" "}
+                          ·{" "}
                     {dataHora(h.data_criacao)}
                   </p>
                 </div>

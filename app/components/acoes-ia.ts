@@ -31,7 +31,7 @@ import {
   type ConversaResumo,
 } from "@/lib/ia/conversas";
 
-import { contextosAtivos, ESCOPOS } from "@/lib/contextos";
+import { contextosAtivos } from "@/lib/contextos";
 
 function texto(v: unknown, max: number) {
   return typeof v === "string" ? v.slice(0, max).trim() : "";
@@ -147,13 +147,15 @@ export type ContextoDisponivel = {
   descricao: string | null;
 };
 
-export async function contextosDisponiveis(
-  escopo: string,
-): Promise<ContextoDisponivel[]> {
-  const valido = ESCOPOS.find((e) => e.id === escopo)?.id;
-  if (!valido) return [];
+/**
+ * Todos os contextos ligados. Não recebe mais escopo: o bloco não declara onde
+ * se aplica — quem decide se um painel oferece a lista é o próprio painel (a
+ * prop `usaContextos` do chat), e quem escolhe quais entram na conversa é a
+ * pessoa, marcando na hora.
+ */
+export async function contextosDisponiveis(): Promise<ContextoDisponivel[]> {
   try {
-    const lista = await contextosAtivos(valido);
+    const lista = await contextosAtivos();
     return lista.map((c) => ({ id: c.id, nome: c.nome, descricao: c.descricao }));
   } catch {
     // Tabela ausente (migration não rodada) ou banco fora: o painel funciona

@@ -10,7 +10,12 @@
 // delas substitui sessão + permissão, que continuam bloqueantes para produção.
 
 import { revalidatePath } from "next/cache";
-import { escreverCadencia, type Subetapa } from "@/lib/automacoes/cadencia";
+import { sql } from "@/lib/db";
+import {
+  escreverCadencia,
+  lerCadencia,
+  type Subetapa,
+} from "@/lib/automacoes/cadencia";
 import { compilar, ErroCompilacao } from "@/lib/automacoes/compilador";
 import { dispor } from "@/lib/automacoes/layout";
 import { dispararInscritos } from "@/lib/automacoes/disparo";
@@ -18,6 +23,7 @@ import {
   cancelarNaCadencia,
   criarFluxoDaEtapa,
   dadosDeDisparo,
+  definicaoDoFluxo,
   execucoesPresas,
   inscreverEtapa,
   salvarRascunho,
@@ -103,6 +109,10 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
       // 730 dias = 2 anos. Acima disso é engano de digitação, e cada dia vira
       // um Wait node de verdade segurando execução no motor.
       dia: Number.isFinite(dia) ? Math.min(Math.max(Math.round(dia), 0), 730) : 0,
+      // Tempo e ações NÃO vêm do navegador: são reescritos logo abaixo, a
+      // partir do fluxo que está no banco. Aqui só ocupam o formato.
+      minutos: 0,
+      acoes: [],
       // Só o id: quem resolve base_url e token é o executor, no servidor, e é
       // ele também que recusa instância apagada em vez de cair no .env — que,
       // aqui, é o número compartilhado com o SprintHub.
@@ -127,13 +137,30 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
 export async function salvarCadencia(
   fluxoId: string,
   subetapas: Subetapa[],
+  inscreverAtuais: boolean,
 ): Promise<Resultado> {
   if (!fluxoId) return { ok: false, erro: "Cadência não informada." };
   if (!Array.isArray(subetapas) || subetapas.length === 0) {
     return { ok: false, erro: "Uma cadência precisa de pelo menos uma mensagem." };
   }
 
-  const parcial = escreverCadencia(limpar(subetapas));
+  // O que a tela edita é mensagem. As esperas e as ações (tag, segmento,
+  // requisição…) vêm do FLUXO GRAVADO, relido agora e reancorado na mensagem
+  // que cada uma precede — ver `escreverCadencia`.
+  //
+  // Vem do banco e não do POST por duas razões, e a segunda é a que importa:
+  // o navegador não tem por que devolver o que não mostra, e `config` de bloco
+  // vinda de fora seria um `requisicao_http` para onde o atacante quisesse,
+  // plantado num fluxo que alguém publica sem olhar.
+  const atual = lerCadencia(await definicaoDoFluxo(fluxoId));
+  const acoesPorMensagem = new Map(atual.subetapas.map((s) => [s.id, s]));
+
+  const colunas = limpar(subetapas).map((s) => {
+    const antes = acoesPorMensagem.get(s.id);
+    return antes ? { ...s, minutos: antes.minutos, acoes: antes.acoes } : s;
+  });
+
+  const parcial = escreverCadencia(colunas, atual.acoesFinais);
   const definicao: DefinicaoFluxo = { ...parcial, layout: {} };
   definicao.layout = dispor(definicao);
 
@@ -145,6 +172,10 @@ export async function salvarCadencia(
     if (e instanceof ErroCompilacao) return { ok: false, erro: e.message };
     throw e;
   }
+
+  await sql`
+    UPDATE fluxos SET inscrever_atuais = ${inscreverAtuais === true}
+    WHERE id = ${fluxoId}`;
 
   const versao = await salvarRascunho(fluxoId, definicao, null);
 
@@ -165,6 +196,19 @@ export async function salvarCadencia(
     return {
       ok: false,
       erro: `Rascunho v${versao} salvo, mas não chegou ao n8n: ${r.erro}`,
+    };
+  }
+
+  // QUEM PUBLICAR PEGA depende do campo da tela. Desligado, a cadência passa a
+  // valer só para quem ENTRAR na etapa daqui pra frente (a entrada automática
+  // cuida disso, em app/funil/actions.ts) — as que já estão lá ficam de fora,
+  // que é o pedido de quem não quer despejar 50 mensagens de uma vez numa etapa
+  // cheia de negócio antigo.
+  if (!inscreverAtuais) {
+    revalidatePath("/");
+    return {
+      ok: true,
+      mensagem: `Publicada (v${versao}). Vale para as oportunidades que entrarem na etapa a partir de agora; as que já estão lá não foram inscritas.`,
     };
   }
 

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   CircleCheck,
   CircleX,
@@ -10,22 +11,69 @@ import {
   ListTree,
   LogIn,
   Pencil,
+  Search,
   Send,
+  Trash2,
+  TriangleAlert,
+  UserMinus,
+  UserPlus,
   Users,
   type LucideIcon,
 } from "lucide-react";
 import { dataHora } from "../formato";
 import FluxoComMetricas from "./fluxo-metricas";
 import { ExecucoesPorDia } from "./graficos";
-import { dispararParaSegmento } from "./acoes";
+import {
+  buscarContatosParaInscrever,
+  desinscreverDaAutomacao,
+  dispararParaSegmento,
+  excluirFluxo,
+  inscreverNaAutomacao,
+} from "./acoes";
+import { VERSAO_COMPILADOR } from "@/lib/automacoes/compilador";
 import type { DetalheFluxo, Fluxo, SegmentoParaDisparo } from "./dados";
 
-type Aba = "visao" | "execucoes";
+type Aba = "visao" | "inscritos" | "execucoes";
 
 const ABAS: { id: Aba; rotulo: string; Icone: LucideIcon }[] = [
   { id: "visao", rotulo: "Visao geral", Icone: ListTree },
+  { id: "inscritos", rotulo: "Inscritos", Icone: Users },
   { id: "execucoes", rotulo: "Execucoes", Icone: Clock },
 ];
+
+// Rótulo de cada estado de inscrição, no vocabulário de quem olha a lista. O
+// estado cru ('pendente') responde à pergunta do motor; este responde à de quem
+// quer saber se a pessoa ainda vai receber mensagem.
+const ESTADO_INSCRITO: Record<string, { rotulo: string; classe: string }> = {
+  pendente: {
+    rotulo: "Entrando",
+    classe: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+  },
+  rodando: {
+    rotulo: "Rodando",
+    classe:
+      "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400",
+  },
+  esperando: {
+    rotulo: "Esperando",
+    classe: "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400",
+  },
+  pausada: {
+    rotulo: "Pausado",
+    classe: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
+  },
+};
+
+// De onde veio a inscrição. Responde "por que esta pessoa está recebendo isto?"
+// — a pergunta que aparece quando alguém reclama de ter recebido mensagem.
+const ORIGEM: Record<string, string> = {
+  manual: "à mão",
+  segmento: "segmento",
+  etapa: "cadência da etapa",
+  api: "webhook",
+  lista: "lista",
+  fluxo: "outro fluxo",
+};
 
 function Kpi({
   rotulo,
@@ -180,6 +228,241 @@ function VisaoGeral({ detalhe }: { detalhe: DetalheFluxo }) {
           )}
         </Bloco>
       </div>
+    </div>
+  );
+}
+
+// ── A lista de inscritos ────────────────────────────────────────────────────
+//
+// Não existe tabela de lista: inscrever É criar a execução, então esta tela é a
+// leitura das execuções vivas. É por isso que cada linha mostra o ESTADO —
+// "dentro" não é um sim/não, é em que ponto da cadência a pessoa está.
+function Inscritos({
+  fluxo,
+  detalhe,
+}: {
+  fluxo: Fluxo;
+  detalhe: DetalheFluxo;
+}) {
+  const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [saindo, remover] = useTransition();
+
+  // O workflow que está no n8n é o que foi compilado na publicação. Publicado
+  // antes da guarda de inscrição existir, ele não consulta o CRM entre um passo
+  // e outro — e aí desinscrever marca o banco e a mensagem sai do mesmo jeito.
+  // Dizer isso é obrigatório: um botão que promete parar e não para é pior que
+  // botão nenhum.
+  const motorDesatualizado =
+    detalhe.versaoNoMotor !== null &&
+    detalhe.versaoNoMotor !== VERSAO_COMPILADOR;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {motorDesatualizado && (
+        <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2.5 text-[11px] leading-relaxed text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+          <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            Este fluxo foi publicado por uma versão anterior do compilador
+            (v{detalhe.versaoNoMotor}). Nela o motor não confere a inscrição
+            antes de enviar, então tirar alguém daqui <strong>não impede</strong>{" "}
+            a mensagem já agendada. Publique de novo para fechar isso.
+          </span>
+        </p>
+      )}
+
+      {fluxo.entidade_alvo === "contato" ? (
+        <InscreverContato fluxo={fluxo} aoAvisar={setAviso} />
+      ) : (
+        <p className="rounded-xl border border-dashed border-zinc-200 px-3 py-2.5 text-[11px] leading-relaxed text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+          Automação de oportunidade: quem entra são cards, e a inscrição sai do
+          funil ou da cadência da etapa. Aqui dá para ver quem está dentro e
+          tirar.
+        </p>
+      )}
+
+      {aviso && (
+        <p
+          className={`text-[11px] ${
+            aviso.ok
+              ? "text-emerald-700 dark:text-emerald-400"
+              : "text-amber-700 dark:text-amber-500"
+          }`}
+        >
+          {aviso.texto}
+        </p>
+      )}
+
+      {detalhe.inscritos.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-zinc-200 px-3 py-16 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+          Ninguém inscrito nesta automação
+        </p>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+          <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+            {detalhe.inscritos.map((i, ordem) => {
+              const selo = ESTADO_INSCRITO[i.estado] ?? {
+                rotulo: i.estado,
+                classe: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
+              };
+              return (
+                <li
+                  key={i.execucao_id}
+                  style={{ animationDelay: `${Math.min(ordem, 6) * 14}ms` }}
+                  className="surge-suave flex items-center gap-3 px-4 py-2.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">
+                      {i.nome}
+                    </p>
+                    <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+                      Entrou {dataHora(i.iniciado_em)} · {ORIGEM[i.origem] ?? i.origem}
+                      {i.origem_nome && ` “${i.origem_nome}”`}
+                      {i.retomar_em && ` · retoma ${dataHora(i.retomar_em)}`}
+                    </p>
+                  </div>
+
+                  <span
+                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${selo.classe}`}
+                  >
+                    {selo.rotulo}
+                  </span>
+
+                  <button
+                    type="button"
+                    disabled={saindo}
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          `Tirar ${i.nome} desta automação? A inscrição é cancelada e as mensagens que faltavam não são enviadas. O que já saiu continua no histórico.`,
+                        )
+                      ) {
+                        return;
+                      }
+                      remover(async () => {
+                        const r = await desinscreverDaAutomacao(
+                          fluxo.id,
+                          i.entidade_tipo,
+                          i.entidade_id,
+                        );
+                        setAviso({
+                          ok: r.ok,
+                          texto: r.ok ? r.mensagem : r.erro,
+                        });
+                      });
+                    }}
+                    aria-label={`Tirar ${i.nome} da automação`}
+                    title="Tirar da automação"
+                    className="shrink-0 text-zinc-400 transition hover:text-red-500 disabled:opacity-40"
+                  >
+                    <UserMinus className="size-3.5" aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A busca do "inscrever à mão". Só para fluxo de contato. */
+function InscreverContato({
+  fluxo,
+  aoAvisar,
+}: {
+  fluxo: Fluxo;
+  aoAvisar: (a: { ok: boolean; texto: string }) => void;
+}) {
+  const [termo, setTermo] = useState("");
+  const [achados, setAchados] = useState<
+    { id: string; nome: string; whatsapp: string | null }[]
+  >([]);
+  const [buscando, buscar] = useTransition();
+  const [inscrevendo, inscrever] = useTransition();
+
+  // Busca ao soltar a tecla, com o termo que ESTÁ no campo — sem debounce
+  // porque a consulta é LIMIT 8 e o resultado só substitui a lista anterior.
+  function procurar(valor: string) {
+    setTermo(valor);
+    if (valor.trim().length < 2) {
+      setAchados([]);
+      return;
+    }
+    buscar(async () => {
+      setAchados(await buscarContatosParaInscrever(fluxo.id, valor));
+    });
+  }
+
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+      <h3 className="text-[12px] font-semibold text-zinc-900 dark:text-zinc-50">
+        Inscrever um contato
+      </h3>
+      <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+        Ele entra pelo começo da automação e recebe a cadência inteira. Quem já
+        está dentro não aparece na busca.
+      </p>
+
+      <div className="relative mt-2.5">
+        <Search
+          className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400"
+          aria-hidden="true"
+        />
+        <input
+          type="search"
+          value={termo}
+          onChange={(e) => procurar(e.target.value)}
+          placeholder="Buscar por nome ou WhatsApp…"
+          aria-label="Buscar contato"
+          className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-2.5 text-[12px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-400"
+        />
+      </div>
+
+      {termo.trim().length >= 2 && (
+        <ul className="mt-2 flex flex-col gap-1">
+          {achados.length === 0 ? (
+            <li className="px-1 py-2 text-[11px] text-zinc-400 dark:text-zinc-500">
+              {buscando ? "Buscando…" : "Ninguém novo com esse nome ou número."}
+            </li>
+          ) : (
+            achados.map((c) => (
+              <li key={c.id}>
+                <button
+                  type="button"
+                  disabled={inscrevendo}
+                  onClick={() =>
+                    inscrever(async () => {
+                      const r = await inscreverNaAutomacao(fluxo.id, [c.id]);
+                      aoAvisar({ ok: r.ok, texto: r.ok ? r.mensagem : r.erro });
+                      if (r.ok) {
+                        setTermo("");
+                        setAchados([]);
+                      }
+                    })
+                  }
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800"
+                >
+                  <UserPlus
+                    className="size-3.5 shrink-0 text-zinc-400"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[12px] text-zinc-900 dark:text-zinc-50">
+                      {c.nome}
+                    </span>
+                    {c.whatsapp && (
+                      <span className="block truncate text-[10px] tabular-nums text-zinc-400 dark:text-zinc-500">
+                        {c.whatsapp}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
     </div>
   );
 }
@@ -364,6 +647,9 @@ export default function PainelLateral({
   segmentos: SegmentoParaDisparo[];
 }) {
   const [aba, setAba] = useState<Aba>("visao");
+  const router = useRouter();
+  const [apagando, excluir] = useTransition();
+  const [erroExcluir, setErroExcluir] = useState<string | null>(null);
 
   return (
     <section
@@ -391,6 +677,32 @@ export default function PainelLateral({
             <Pencil className="size-3.5" aria-hidden="true" />
             Editar
           </Link>
+
+          {/* Só o ícone, e cinza: é a ação irreversível do cabeçalho e não deve
+              ter o mesmo peso visual de Editar, que é a de todo dia. */}
+          <button
+            type="button"
+            onClick={() => {
+              if (
+                !window.confirm(
+                  `Excluir "${fluxo.nome}"? As inscrições em andamento são canceladas e o workflow sai do n8n. O histórico do que já foi enviado permanece.`,
+                )
+              ) {
+                return;
+              }
+              excluir(async () => {
+                const r = await excluirFluxo(fluxo.id);
+                if (r.ok) router.push("/automacoes");
+                else setErroExcluir(r.erro);
+              });
+            }}
+            disabled={apagando}
+            aria-label={`Excluir ${fluxo.nome}`}
+            title="Excluir automação"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+          </button>
         </div>
 
         <nav className="flex gap-1 px-3 pt-2" aria-label="Secoes do fluxo">
@@ -413,12 +725,20 @@ export default function PainelLateral({
         </nav>
       </header>
 
+      {erroExcluir && (
+        <p className="shrink-0 border-b border-zinc-200 px-4 py-2 text-[12px] text-amber-700 dark:border-zinc-800 dark:text-amber-500">
+          {erroExcluir}
+        </p>
+      )}
+
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {aba === "visao" ? (
           <div className="flex flex-col gap-4">
             <DisparoPorSegmento fluxo={fluxo} segmentos={segmentos} />
             <VisaoGeral detalhe={detalhe} />
           </div>
+        ) : aba === "inscritos" ? (
+          <Inscritos fluxo={fluxo} detalhe={detalhe} />
         ) : (
           <Execucoes detalhe={detalhe} />
         )}

@@ -10,10 +10,11 @@
 // peneiram os ids de novo — o que chega do navegador nunca é confiável, mesmo
 // tendo saído daqui.
 import { useState, useTransition } from "react";
-import { Download, Send, Users, UserCog, X } from "lucide-react";
+import { Download, Send, Trash2, Users, UserCog, X } from "lucide-react";
 import type { Segmento, Usuario } from "../data";
 import {
   adicionarASegmento,
+  excluirOportunidades,
   exportarOportunidades,
   inscreverEmFluxo,
   moverParaResponsavel,
@@ -38,6 +39,7 @@ export default function BarraSelecao({
 }) {
   const [painel, setPainel] = useState<Painel>(null);
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [armado, setArmado] = useState(false);
   const [ocupado, comecar] = useTransition();
 
   if (selecionados.length === 0) return null;
@@ -46,7 +48,37 @@ export default function BarraSelecao({
 
   function abrir(qual: Painel) {
     setAviso(null);
+    setArmado(false);
     setPainel((atual) => (atual === qual ? null : qual));
+  }
+
+  /**
+   * Excluir é a única ação daqui que não dá para desfazer, e por isso é a única
+   * em dois cliques: o primeiro arma o botão, o segundo apaga. Um `confirm()`
+   * faria o mesmo, mas a contagem fica no próprio botão — "Excluir 12?" é a
+   * pergunta inteira, sem tirar os olhos do quadro.
+   *
+   * Dando certo, a seleção é LIMPA e a barra some com ela: os cartões deixaram
+   * de existir, e uma barra dizendo "12 selecionadas" sobre doze cartões que
+   * sumiram seria a única leitura errada possível desta tela. O sumiço dos
+   * cartões é o retorno. Falhando, a seleção fica e o aviso explica.
+   */
+  function excluir() {
+    if (!armado) {
+      setAviso(null);
+      setPainel(null);
+      setArmado(true);
+      return;
+    }
+    comecar(async () => {
+      const r = await excluirOportunidades(selecionados);
+      setArmado(false);
+      if (r.ok) {
+        aoLimpar();
+        return;
+      }
+      setAviso({ ok: false, texto: r.mensagem });
+    });
   }
 
   // Toda ação segue o mesmo roteiro: roda, mostra o que aconteceu, fecha o
@@ -114,8 +146,23 @@ export default function BarraSelecao({
 
           <button
             type="button"
+            onClick={excluir}
+            onBlur={() => setArmado(false)}
+            disabled={ocupado}
+            className={`ml-auto flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition disabled:opacity-50 ${
+              armado
+                ? "bg-red-600 text-white hover:bg-red-700"
+                : "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+            }`}
+          >
+            <Trash2 className="size-3.5" aria-hidden="true" />
+            {armado ? `Excluir ${n}?` : "Excluir"}
+          </button>
+
+          <button
+            type="button"
             onClick={aoLimpar}
-            className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
             <X className="size-3.5" aria-hidden="true" />
             Limpar

@@ -6,26 +6,286 @@ import { listaUuid, sql } from "@/lib/db";
 import {
   automacoesDaEntidade,
   dadosDeDisparo,
+  inscreverNaCadenciaDaEtapa,
   inscreverOportunidades,
   pausarExecucao,
   retomarExecucao,
   type AutomacaoDaEntidade,
 } from "@/lib/automacoes/repositorio";
 import { dispararInscritos } from "@/lib/automacoes/disparo";
+import {
+  abertaNoFunil,
+  ehDuplicadaNoFunil,
+  jaTemAberta,
+} from "@/lib/oportunidades";
+import {
+  moverEtapaRegistrando,
+  registrarOportunidadeCriada,
+  registrarResponsavel,
+  registrarSegmento,
+  registrarStatus,
+} from "@/lib/historico";
+import { STATUS_OPORTUNIDADE, type StatusOportunidade } from "./status";
 
 // Mover card entre etapas persiste etapa_id + funil_id juntos. A FK composta
 // (etapa_id, funil_id) do schema garante que a etapa é do mesmo funil — um
 // destino inconsistente é recusado pelo banco, não corrompe o quadro.
+//
+// O UPDATE e a linha de histórico saem na MESMA consulta (lib/historico.ts):
+// "movida de X para Y" precisa do nome da etapa de origem, que deixa de existir
+// no instante em que o UPDATE roda.
 export async function moverOportunidade(
   id: string,
   etapaId: string,
   funilId: string,
 ) {
-  await sql`
-    UPDATE oportunidades
-    SET etapa_id = ${etapaId}, funil_id = ${funilId}
-    WHERE id = ${id}`;
+  await moverEtapaRegistrando(id, etapaId, funilId);
+  // Entrar na etapa é entrar na cadência dela, se houver uma rodando. É o que
+  // faz a cadência valer para "as próximas que entrarem" sem ninguém clicar em
+  // nada — ver inscreverNaCadenciaDaEtapa.
+  await entrarNaCadencia(id, etapaId);
   revalidatePath("/");
+}
+
+/**
+ * Põe a oportunidade na cadência da etapa e manda o motor começar.
+ *
+ * NÃO DERRUBA QUEM CHAMOU: mover o card é a ação; a cadência é consequência.
+ * Se o n8n estiver fora do ar, o card fica na etapa nova do mesmo jeito e a
+ * inscrição já está gravada — o próximo Publicar a leva ao motor.
+ */
+async function entrarNaCadencia(oportunidadeId: string, etapaId: string) {
+  try {
+    const r = await inscreverNaCadenciaDaEtapa(oportunidadeId, etapaId);
+    if (r) await dispararInscritos(r.fluxo, "oportunidade", r.inscritos);
+  } catch (e) {
+    console.error("[cadencia] falhou ao inscrever na entrada da etapa:", e);
+  }
+}
+
+// ── Status da oportunidade ──────────────────────────────────────────────────
+//
+// A lista de valores está em ./status.ts, não aqui: "use server" só deixa este
+// arquivo exportar função async, e exportar a constante daqui derruba a página.
+
+/**
+ * Marca a oportunidade como ganha, perdida — ou reabre.
+ *
+ * Fechar NÃO apaga nem esconde: o card continua na etapa em que estava, com o
+ * selo mudado. É de propósito — "ganhamos na proposta" é a informação que a
+ * etapa carrega, e mover o card para uma coluna "Ganhos" perderia isso.
+ *
+ * O efeito colateral que importa: `inscreverEtapa` só pega oportunidade com
+ * status 'aberta' (lib/automacoes/repositorio.ts), então fechar tira o card das
+ * próximas cadências de etapa automaticamente. As inscrições que JÁ estão
+ * rodando seguem — fechar é um fato comercial, não um pedido de parar mensagem;
+ * quem quer parar tira da automação pela ficha.
+ */
+export async function mudarStatusOportunidade(
+  id: string,
+  status: StatusOportunidade,
+): Promise<{ ok: boolean; mensagem: string }> {
+  if (!STATUS_OPORTUNIDADE.includes(status)) {
+    return { ok: false, mensagem: "Status inválido." };
+  }
+
+  // REABRIR é uma criação disfarçada: a oportunidade volta a ocupar a vaga do
+  // contato naquele funil. Se outra já tomou o lugar enquanto esta estava
+  // fechada, o índice recusa — e sem esta checagem o usuário veria o 23505.
+  if (status === "aberta") {
+    const [atual] = await sql`
+      SELECT contato_id, funil_id FROM oportunidades WHERE id = ${id}`;
+    if (!atual) return { ok: false, mensagem: "Oportunidade não encontrada." };
+
+    const ja = await abertaNoFunil(
+      atual.contato_id as string,
+      atual.funil_id as string,
+      id,
+    );
+    if (ja) return { ok: false, mensagem: jaTemAberta(ja.contato) };
+  }
+
+  let linhas;
+  try {
+    linhas = await sql`
+      UPDATE oportunidades SET status = ${status} WHERE id = ${id}
+      RETURNING nome`;
+  } catch (e) {
+    if (!ehDuplicadaNoFunil(e)) throw e;
+    return { ok: false, mensagem: jaTemAberta("Este contato") };
+  }
+
+  if (linhas.length === 0) {
+    return { ok: false, mensagem: "Oportunidade não encontrada." };
+  }
+
+  await registrarStatus(id, status);
+  revalidatePath("/");
+  return {
+    ok: true,
+    mensagem:
+      status === "aberta"
+        ? "Oportunidade reaberta."
+        : `Marcada como ${status}.`,
+  };
+}
+
+/**
+ * Exclui a oportunidade — e SÓ ela.
+ *
+ * O CONTATO NUNCA É TOCADO. É o ponto inteiro desta função: a oportunidade é um
+ * negócio que não vingou; a pessoa continua na base, com o histórico dela, as
+ * anotações (que são do contato, não daqui) e as outras oportunidades.
+ *
+ * A ordem abaixo não é arbitrária — sem os dois primeiros passos o DELETE ou
+ * falha ou deixa lixo perigoso:
+ *
+ *  1. CANCELAR as inscrições vivas em automação. `fluxo_execucoes.entidade_id`
+ *     é polimórfico e NÃO tem FK (schema-automacoes.sql), então o banco deixaria
+ *     a execução apontando para um uuid que não existe mais — e o motor
+ *     continuaria acordando para mandar mensagem de um negócio apagado. Cancelar
+ *     faz a guarda do workflow barrar o envio no próximo passo.
+ *  2. DESANEXAR os atendimentos. `atendimentos.oportunidade_id` tem FK SEM
+ *     ON DELETE (migration-atendimento-oportunidade.sql), o que faz o Postgres
+ *     RECUSAR o DELETE enquanto houver conversa ligada. A conversa é do contato
+ *     e fica; só o vínculo com este negócio se desfaz.
+ *  3. O DELETE. `historico` cai por CASCADE (o histórico é deste negócio) e
+ *     `webhook_recebimentos.oportunidade_id` vira NULL — a prova de que o lead
+ *     chegou pela captação não pode sumir junto.
+ */
+export async function excluirOportunidade(
+  id: string,
+): Promise<{ ok: boolean; mensagem: string }> {
+  const [op] = await sql`SELECT nome FROM oportunidades WHERE id = ${id}`;
+  if (!op) return { ok: false, mensagem: "Oportunidade não encontrada." };
+
+  // 1. As esperas primeiro, com a execução ainda viva: é o predicado dela que
+  //    seleciona quais cancelar. Mesma ordem de `desinscrever`.
+  await sql`
+    UPDATE fluxo_esperas es SET estado = 'cancelada'
+    FROM fluxo_execucoes e
+    WHERE es.execucao_id = e.id
+      AND es.estado IN ('ativa','pausada')
+      AND e.entidade_tipo = 'oportunidade'
+      AND e.entidade_id = ${id}
+      AND e.estado IN ('pendente','rodando','esperando','pausada')`;
+
+  const canceladas = await sql`
+    UPDATE fluxo_execucoes SET
+      estado = 'cancelada',
+      erro_msg = 'Oportunidade excluída',
+      finalizado_em = now()
+    WHERE entidade_tipo = 'oportunidade'
+      AND entidade_id = ${id}
+      AND estado IN ('pendente','rodando','esperando','pausada')
+    RETURNING id`;
+
+  // 2. O vínculo com as conversas. A conversa continua existindo, do contato.
+  const soltas = await sql`
+    UPDATE atendimentos SET oportunidade_id = NULL
+    WHERE oportunidade_id = ${id}
+    RETURNING id`;
+
+  // 3. Só a linha da oportunidade.
+  await sql`DELETE FROM oportunidades WHERE id = ${id}`;
+
+  revalidatePath("/");
+
+  const extras = [
+    canceladas.length
+      ? `${canceladas.length} ${canceladas.length === 1 ? "automação cancelada" : "automações canceladas"}`
+      : null,
+    soltas.length
+      ? `${soltas.length} ${soltas.length === 1 ? "conversa desvinculada" : "conversas desvinculadas"}`
+      : null,
+  ].filter(Boolean);
+
+  return {
+    ok: true,
+    mensagem: `"${op.nome}" excluída. O contato continua na base${
+      extras.length ? ` · ${extras.join(" · ")}` : ""
+    }.`,
+  };
+}
+
+/**
+ * Exclui as oportunidades SELECIONADAS — a mesma operação de `excluirOportunidade`,
+ * em lote.
+ *
+ * É uma função separada e não um laço sobre a de cima porque os três passos
+ * viram três consultas para o lote inteiro, e não três por cartão: apagar
+ * quarenta cartões seriam 120 idas ao banco, cada uma com a sua latência.
+ *
+ * OS CONTATOS NUNCA SÃO TOCADOS, como lá: o que se apaga é o negócio; a pessoa
+ * continua na base, com o histórico, as anotações e as outras oportunidades
+ * dela. E a ordem é a mesma, pelas mesmas razões — cancelar as automações antes
+ * (o motor continuaria acordando para mandar mensagem de um negócio apagado) e
+ * soltar as conversas depois (a FK sem ON DELETE recusaria o DELETE).
+ */
+export async function excluirOportunidades(
+  oportunidadeIds: string[],
+): Promise<ResultadoLote> {
+  const ids = idsValidos(oportunidadeIds);
+  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
+  const lista = listaUuid(ids);
+
+  // 1. As esperas primeiro, com a execução ainda viva: é o predicado dela que
+  //    seleciona quais cancelar.
+  await sql`
+    UPDATE fluxo_esperas es SET estado = 'cancelada'
+    FROM fluxo_execucoes e
+    WHERE es.execucao_id = e.id
+      AND es.estado IN ('ativa','pausada')
+      AND e.entidade_tipo = 'oportunidade'
+      AND e.entidade_id = ANY(string_to_array(${lista}, ',')::uuid[])
+      AND e.estado IN ('pendente','rodando','esperando','pausada')`;
+
+  const canceladas = await sql`
+    UPDATE fluxo_execucoes SET
+      estado = 'cancelada',
+      erro_msg = 'Oportunidade excluída',
+      finalizado_em = now()
+    WHERE entidade_tipo = 'oportunidade'
+      AND entidade_id = ANY(string_to_array(${lista}, ',')::uuid[])
+      AND estado IN ('pendente','rodando','esperando','pausada')
+    RETURNING id`;
+
+  // 2. O vínculo com as conversas. A conversa continua existindo, do contato.
+  const soltas = await sql`
+    UPDATE atendimentos SET oportunidade_id = NULL
+    WHERE oportunidade_id = ANY(string_to_array(${lista}, ',')::uuid[])
+    RETURNING id`;
+
+  // 3. Só as linhas das oportunidades. O histórico delas cai por CASCADE — é o
+  //    histórico daquele negócio, e ele deixou de existir. Por isso também não
+  //    se registra "saiu da automação" aqui: não sobra ficha onde ler.
+  const apagadas = await sql`
+    DELETE FROM oportunidades
+    WHERE id = ANY(string_to_array(${lista}, ',')::uuid[])
+    RETURNING id`;
+
+  revalidatePath("/");
+
+  if (apagadas.length === 0) {
+    return { ok: false, mensagem: "Nenhuma das oportunidades ainda existe." };
+  }
+
+  const extras = [
+    canceladas.length
+      ? `${canceladas.length} ${canceladas.length === 1 ? "automação cancelada" : "automações canceladas"}`
+      : null,
+    soltas.length
+      ? `${soltas.length} ${soltas.length === 1 ? "conversa desvinculada" : "conversas desvinculadas"}`
+      : null,
+  ].filter(Boolean);
+
+  const n = apagadas.length;
+  return {
+    ok: true,
+    mensagem: `${n} ${n === 1 ? "oportunidade excluída" : "oportunidades excluídas"}. Os contatos continuam na base${
+      extras.length ? ` · ${extras.join(" · ")}` : ""
+    }.`,
+  };
 }
 
 // Anexa o atendimento à oportunidade em vista; chamar de novo com a mesma
@@ -77,14 +337,30 @@ export async function criarOportunidade(
   // contato_id é NOT NULL no schema (oportunidade é sempre de um contato).
   if (!dados.contato_id) throw new Error("Selecione um contato");
 
-  const [nova] = await sql`
-    INSERT INTO oportunidades
-      (nome, contato_id, valor, responsavel_id, status, funil_id, etapa_id)
-    VALUES
-      (${nome}, ${dados.contato_id}, ${dados.valor},
-       ${dados.responsavel_id || null}, 'aberta', ${funilId}, ${etapaId})
-    RETURNING id`;
+  // Uma aberta por contato em cada funil (migration-oportunidade-unica.sql).
+  // A consulta aqui é pela MENSAGEM — quem garante a regra é o índice, e é por
+  // isso que o INSERT abaixo também trata a violação: entre esta linha e ele
+  // cabe um segundo clique.
+  const ja = await abertaNoFunil(dados.contato_id, funilId);
+  if (ja) throw new Error(jaTemAberta(ja.contato));
 
+  let nova;
+  try {
+    [nova] = await sql`
+      INSERT INTO oportunidades
+        (nome, contato_id, valor, responsavel_id, status, funil_id, etapa_id)
+      VALUES
+        (${nome}, ${dados.contato_id}, ${dados.valor},
+         ${dados.responsavel_id || null}, 'aberta', ${funilId}, ${etapaId})
+      RETURNING id`;
+  } catch (e) {
+    if (!ehDuplicadaNoFunil(e)) throw e;
+    throw new Error(jaTemAberta("Este contato"));
+  }
+
+  await registrarOportunidadeCriada(nova.id);
+  // Card criado JÁ DENTRO da etapa também é "entrou na etapa".
+  await entrarNaCadencia(nova.id, etapaId);
   revalidatePath("/");
   return nova.id;
 }
@@ -182,6 +458,10 @@ export async function moverParaResponsavel(
     WHERE id = ANY(string_to_array(${listaUuid(ids)}, ',')::uuid[])
     RETURNING id`;
 
+  await registrarResponsavel(
+    linhas.map((l) => l.id as string),
+    alvo,
+  );
   revalidatePath("/");
   return {
     ok: true,
@@ -214,6 +494,10 @@ export async function adicionarASegmento(
     ON CONFLICT (contato_id, segmento_id) DO NOTHING
     RETURNING contato_id`;
 
+  await registrarSegmento(
+    linhas.map((l) => l.contato_id as string),
+    segmentoId,
+  );
   revalidatePath("/");
   return {
     ok: true,

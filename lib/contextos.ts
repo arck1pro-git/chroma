@@ -16,30 +16,33 @@
 // contexto já podia escrever a pergunta; não há escalada. O que continua
 // marcado como dado inerte é o que vem do WhatsApp.
 import { listaUuid, sql } from "@/lib/db";
-import { ESCOPOS, type Contexto, type EscopoContexto } from "./contextos-tipos";
+import { type Contexto } from "./contextos-tipos";
 
 // Reexporta para o lado servidor importar de um lugar só. Quem é de CLIENTE
 // (app/contextos/painel.tsx) importa direto de ./contextos-tipos — daqui
 // arrastaria o driver do Postgres para o bundle do navegador.
-export { ESCOPOS };
-export type { Contexto, EscopoContexto };
+export type { Contexto };
 
-const CAMPOS = `id, nome, descricao, conteudo, escopo, ativo, ordem, versao,
+const CAMPOS = `id, nome, descricao, conteudo, ativo, ordem, versao,
   to_char(data_atualizacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_atualizacao`;
 
 export async function listarContextos(): Promise<Contexto[]> {
   return (await sql`
     SELECT ${sql.unsafe(CAMPOS)} FROM contextos
-    ORDER BY escopo, ordem, lower(nome)`) as unknown as Contexto[];
+    ORDER BY ordem, lower(nome)`) as unknown as Contexto[];
 }
 
-/** Só os ligados de um escopo — é o que o seletor do painel de IA mostra. */
-export async function contextosAtivos(
-  escopo: EscopoContexto,
-): Promise<Contexto[]> {
+/**
+ * Todos os ligados — é o que o seletor do painel de IA mostra.
+ *
+ * Não filtra mais por escopo: o contexto não declara onde se aplica, e QUEM
+ * oferece a lista é a tela. Marcar quais entram naquela conversa é decisão de
+ * quem está perguntando, não do bloco escrito semanas antes.
+ */
+export async function contextosAtivos(): Promise<Contexto[]> {
   return (await sql`
     SELECT ${sql.unsafe(CAMPOS)} FROM contextos
-    WHERE escopo = ${escopo} AND ativo
+    WHERE ativo
     ORDER BY ordem, lower(nome)`) as unknown as Contexto[];
 }
 
@@ -47,11 +50,10 @@ export async function criarContexto(dados: {
   nome: string;
   descricao: string | null;
   conteudo: string;
-  escopo: EscopoContexto;
 }): Promise<string> {
   const [novo] = await sql`
-    INSERT INTO contextos (nome, descricao, conteudo, escopo)
-    VALUES (${dados.nome}, ${dados.descricao}, ${dados.conteudo}, ${dados.escopo})
+    INSERT INTO contextos (nome, descricao, conteudo)
+    VALUES (${dados.nome}, ${dados.descricao}, ${dados.conteudo})
     RETURNING id`;
 
   // A v1 também vira linha no histórico: sem isto, o primeiro texto seria o
@@ -75,7 +77,6 @@ export async function editarContexto(
     nome: string;
     descricao: string | null;
     conteudo: string;
-    escopo: EscopoContexto;
   },
 ): Promise<void> {
   const [atual] = await sql`
@@ -90,7 +91,6 @@ export async function editarContexto(
       nome = ${dados.nome},
       descricao = ${dados.descricao},
       conteudo = ${dados.conteudo},
-      escopo = ${dados.escopo},
       versao = ${versao},
       data_atualizacao = now()
     WHERE id = ${id}`;

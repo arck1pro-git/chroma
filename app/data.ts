@@ -81,7 +81,13 @@ export type Historico = {
   contato_id: string;
   oportunidade_id: string | null;
   descricao: string;
-  autor_id: string;
+  /**
+   * NULO quando quem registrou foi o sistema — que é o caso de tudo o que
+   * lib/historico.ts grava (mudança de etapa, entrada e saída de automação).
+   * A coluna sempre aceitou nulo; o tipo é que dizia o contrário. A ficha
+   * mostra "Sistema" nesses.
+   */
+  autor_id: string | null;
   data_criacao: string;
 };
 

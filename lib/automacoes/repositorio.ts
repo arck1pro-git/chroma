@@ -4,6 +4,10 @@
 import { createHash } from "node:crypto";
 import { listaUuid, sql } from "@/lib/db";
 import { NO_ENTRADA, type DefinicaoFluxo } from "./tipos";
+import {
+  registrarEntradaEmFluxo,
+  registrarSaidaDeFluxo,
+} from "@/lib/historico";
 
 export type EstadoFluxo = "rascunho" | "publicado" | "pausado" | "arquivado";
 
@@ -148,11 +152,13 @@ export type FluxoDeEtapa = {
   publicado_alguma_vez: boolean;
   no_fluxo: number;
   erros_14d: number;
+  /** Publicar pega quem já está na etapa? Ver migration-cadencia-controles.sql. */
+  inscrever_atuais: boolean;
 };
 
 export async function fluxosDeEtapas(): Promise<FluxoDeEtapa[]> {
   const linhas = await sql`
-    SELECT f.id, f.etapa_id, f.nome, f.estado,
+    SELECT f.id, f.etapa_id, f.nome, f.estado, f.inscrever_atuais,
            v.numero AS numero_versao, v.definicao,
            (f.versao_rascunho_id IS NOT NULL
              AND f.versao_rascunho_id IS DISTINCT FROM f.versao_publicada_id) AS rascunho_pendente,
@@ -177,6 +183,76 @@ export async function criarFluxoDaEtapa(nome: string, etapaId: string) {
     VALUES (${nome}, 'oportunidade', ${etapaId})
     RETURNING id`;
   return novo.id as string;
+}
+
+/**
+ * Inscreve UMA oportunidade na cadência da etapa em que ela acabou de entrar.
+ *
+ * É o que dá sentido a "as próximas que entrarem": sem isto, card movido para a
+ * etapa depois da publicação ficava de fora até alguém publicar de novo. Agora
+ * entrar na etapa é entrar na cadência — que é o que a palavra cadência de
+ * etapa sempre prometeu.
+ *
+ * SÓ EM CADÊNCIA PUBLICADA E RODANDO. Rascunho e pausada não pegam ninguém: o
+ * interruptor tem que continuar significando "nada sai daqui".
+ *
+ * O ON CONFLICT é o de sempre — quem já está dentro não entra de novo, então
+ * arrastar o card para fora e de volta não duplica mensagem.
+ *
+ * Devolve o que o motor precisa para começar, ou null quando não há o que
+ * fazer. Quem dispara é quem chamou: este módulo não fala com o n8n.
+ */
+export async function inscreverNaCadenciaDaEtapa(
+  oportunidadeId: string,
+  etapaId: string,
+) {
+  const [fluxo] = await sql`
+    SELECT id, versao_publicada_id, motor_webhook_caminho, motor_webhook_segredo
+    FROM fluxos
+    WHERE etapa_id = ${etapaId}
+      AND estado = 'publicado'
+      AND arquivado_em IS NULL
+      AND versao_publicada_id IS NOT NULL
+      AND motor_webhook_caminho IS NOT NULL`;
+  if (!fluxo) return null;
+
+  const inscritos = (await sql`
+    INSERT INTO fluxo_execucoes (
+      fluxo_id, versao_id, entidade_tipo, entidade_id,
+      origem, origem_etapa_id, motor)
+    SELECT f.id, f.versao_publicada_id, 'oportunidade', o.id,
+           'etapa', ${etapaId}, f.motor
+    FROM oportunidades o
+    CROSS JOIN fluxos f
+    WHERE f.id = ${fluxo.id}
+      AND o.id = ${oportunidadeId}
+      AND o.etapa_id = ${etapaId}
+      AND o.status = 'aberta'
+    ON CONFLICT (fluxo_id, entidade_tipo, entidade_id)
+      WHERE estado IN ('pendente','rodando','esperando','pausada')
+      DO NOTHING
+    RETURNING id, entidade_id`) as unknown as {
+    id: string;
+    entidade_id: string;
+  }[];
+
+  if (inscritos.length === 0) return null;
+
+  await registrarEntradaEmFluxo(
+    fluxo.id as string,
+    "oportunidade",
+    inscritos.map((i) => i.entidade_id),
+    "etapa",
+  );
+
+  return {
+    fluxo: {
+      id: fluxo.id as string,
+      motor_webhook_caminho: fluxo.motor_webhook_caminho as string | null,
+      motor_webhook_segredo: fluxo.motor_webhook_segredo as string | null,
+    },
+    inscritos,
+  };
 }
 
 /**
@@ -248,7 +324,7 @@ export async function inscreverEtapa(
   // DEFAULT, fluxo_execucoes.motor é NOT NULL SEM default (schema-automacoes.sql)
   // — omitir a coluna estoura. Copiar do fluxo também mantém este arquivo sem
   // saber o nome de motor nenhum.
-  return (await sql`
+  const inscritos = (await sql`
     INSERT INTO fluxo_execucoes (
       fluxo_id, versao_id, entidade_tipo, entidade_id,
       origem, origem_etapa_id, motor)
@@ -273,25 +349,44 @@ export async function inscreverEtapa(
     id: string;
     entidade_id: string;
   }[];
+
+  // A trilha do lead: quem entrou, em qual fluxo e por quê. Sai da LISTA QUE
+  // VOLTOU, não da que foi pedida — o ON CONFLICT acima descarta quem já estava
+  // dentro, e registrar a intenção diria que o lead entrou duas vezes.
+  await registrarEntradaEmFluxo(
+    fluxoId,
+    "oportunidade",
+    inscritos.map((i) => i.entidade_id),
+    "etapa",
+  );
+
+  return inscritos;
 }
 
 /**
- * Tira a oportunidade da cadência: a inscrição viva é CANCELADA e a espera
- * pendurada nela também.
+ * Tira alguém da automação: a inscrição viva é CANCELADA e a espera pendurada
+ * nela também.
  *
- * Do lado do motor, a execução continua parada num Wait e um dia acorda — quem
- * barra o efeito dela é o executor, que recusa bloco de execução que não está
- * mais viva (lib/automacoes/executor.ts). Sem as duas pontas, "removi da
- * cadência" duraria até o próximo despertar do motor.
+ * O QUE FAZ A MENSAGEM PARAR DE VERDADE. Do lado do motor, a execução continua
+ * parada num Wait e um dia acorda. Quem barra o efeito dela é a guarda que o
+ * adaptador põe antes de cada bloco de envio — um SELECT que só deixa passar
+ * execução em ('pendente','rodando','esperando') de fluxo publicado
+ * (GUARDA_INSCRITO, em lib/automacoes/motores/n8n/adaptador.ts). Acordando
+ * depois deste cancelamento, o ramo morre na guarda.
+ *
+ * ⚠ Fluxo publicado ANTES da guarda existir não tem esse nó: o workflow que
+ * está no n8n é o que foi compilado na publicação. Nesses, desinscrever marca o
+ * banco e a mensagem sai assim mesmo — republicar o fluxo é o que fecha.
  *
  * Devolve quantas foram canceladas: zero é o caso normal de quem ainda não
  * tinha entrado no fluxo, e não é erro.
  */
-export async function cancelarNaCadencia(
+export async function desinscrever(
   fluxoId: string,
-  oportunidadeId: string,
+  entidadeTipo: "contato" | "oportunidade",
+  entidadeId: string,
   motivo: string,
-) {
+): Promise<number> {
   // As esperas primeiro, com a execução ainda viva: é o predicado dela que
   // seleciona quais cancelar. Depois do UPDATE de baixo, "viva" já não existe.
   await sql`
@@ -300,10 +395,10 @@ export async function cancelarNaCadencia(
     WHERE es.execucao_id = e.id
       AND es.estado IN ('ativa','pausada')
       AND e.fluxo_id = ${fluxoId}
-      AND e.entidade_tipo = 'oportunidade'
-      AND e.entidade_id = ${oportunidadeId}
-      -- inclui 'pausada': sem isto, "remover da cadência" depois de pausar não
-      -- faria nada, em silêncio, e a oportunidade seguiria segurando a vaga.
+      AND e.entidade_tipo = ${entidadeTipo}
+      AND e.entidade_id = ${entidadeId}
+      -- inclui 'pausada': sem isto, desinscrever depois de pausar não faria
+      -- nada, em silêncio, e a entidade seguiria segurando a vaga no índice.
       AND e.estado IN ('pendente','rodando','esperando','pausada')`;
 
   const linhas = await sql`
@@ -313,12 +408,31 @@ export async function cancelarNaCadencia(
       finalizado_em = now(),
       duracao_ms = EXTRACT(EPOCH FROM (now() - iniciado_em))::int * 1000
     WHERE fluxo_id = ${fluxoId}
-      AND entidade_tipo = 'oportunidade'
-      AND entidade_id = ${oportunidadeId}
+      AND entidade_tipo = ${entidadeTipo}
+      AND entidade_id = ${entidadeId}
       AND estado IN ('pendente','rodando','esperando','pausada')
     RETURNING id`;
 
+  // Só registra se alguma execução foi mesmo cancelada: pedir para tirar quem
+  // não estava no fluxo não é evento nenhum na vida do lead.
+  if (linhas.length > 0) {
+    await registrarSaidaDeFluxo(fluxoId, entidadeTipo, [entidadeId], motivo);
+  }
+
   return linhas.length;
+}
+
+/**
+ * O mesmo, com o nome que a cadência de etapa usa desde antes de existir
+ * automação de contato. Fica como apelido em vez de cópia: eram a mesma
+ * consulta, e duas cópias divergiriam na primeira correção.
+ */
+export async function cancelarNaCadencia(
+  fluxoId: string,
+  oportunidadeId: string,
+  motivo: string,
+) {
+  return desinscrever(fluxoId, "oportunidade", oportunidadeId, motivo);
 }
 
 // ── Automações vivas de UMA entidade ────────────────────────────────────────
@@ -366,10 +480,13 @@ export async function automacoesDaEntidade(
 /**
  * Pausa ESTA inscrição — não o fluxo, não as outras oportunidades.
  *
- * Quem faz a mensagem não sair é o executor: ele recusa bloco cuja execução não
- * esteja em ('pendente','rodando','esperando'), e 'pausada' está fora dessa
- * lista (lib/automacoes/executor.ts). Do lado do motor a execução continua
- * parada num Wait e um dia acorda; ao acordar, o executor recusa.
+ * Quem faz a mensagem não sair é a guarda que o adaptador põe antes de cada
+ * bloco de envio: ela só deixa passar execução em
+ * ('pendente','rodando','esperando'), e 'pausada' está fora dessa lista
+ * (GUARDA_INSCRITO, em lib/automacoes/motores/n8n/adaptador.ts). Do lado do
+ * motor a execução continua parada num Wait e um dia acorda; ao acordar, o ramo
+ * morre na guarda. Vale a mesma ressalva de `desinscrever`: fluxo publicado
+ * antes da guarda existir precisa ser republicado.
  *
  * A espera também congela: sem isso o motor acorda no dia marcado, o bloco é
  * recusado e a linha fica 'ativa' para sempre, mostrando na tela "retoma dia X"
@@ -455,7 +572,7 @@ export async function inscreverOportunidades(
   oportunidadeIds: string[],
 ) {
   if (oportunidadeIds.length === 0) return [];
-  return (await sql`
+  const inscritos = (await sql`
     INSERT INTO fluxo_execucoes (
       fluxo_id, versao_id, entidade_tipo, entidade_id, origem, motor)
     SELECT f.id, ${versaoId}, 'oportunidade', o.id, 'manual', f.motor
@@ -469,6 +586,172 @@ export async function inscreverOportunidades(
     RETURNING id, entidade_id`) as unknown as {
     id: string;
     entidade_id: string;
+  }[];
+
+  await registrarEntradaEmFluxo(
+    fluxoId,
+    "oportunidade",
+    inscritos.map((i) => i.entidade_id),
+    "manual",
+  );
+
+  return inscritos;
+}
+
+/**
+ * Inscreve uma LISTA explícita de contatos — o "adicionar à automação" da lista
+ * de inscritos.
+ *
+ * O espelho de `inscreverOportunidades` para o outro tipo de entidade. São duas
+ * consultas e não uma com a tabela variável porque `contatos` e `oportunidades`
+ * são tabelas diferentes: o FROM não parametriza, e montar o nome da tabela por
+ * concatenação é abrir injeção para economizar oito linhas.
+ */
+export async function inscreverContatos(
+  fluxoId: string,
+  versaoId: string,
+  contatoIds: string[],
+) {
+  if (contatoIds.length === 0) return [];
+  const inscritos = (await sql`
+    INSERT INTO fluxo_execucoes (
+      fluxo_id, versao_id, entidade_tipo, entidade_id, origem, motor)
+    SELECT f.id, ${versaoId}, 'contato', c.id, 'manual', f.motor
+    FROM contatos c
+    CROSS JOIN fluxos f
+    WHERE f.id = ${fluxoId}
+      AND c.id = ANY(string_to_array(${listaUuid(contatoIds)}, ',')::uuid[])
+    -- Mesmo predicado do índice parcial ux_execucao_ativa_por_entidade: sem ele
+    -- idêntico, o Postgres não infere o índice do ON CONFLICT. É o que impede
+    -- inscrever duas vezes quem já está dentro e mandar a cadência em dobro.
+    ON CONFLICT (fluxo_id, entidade_tipo, entidade_id)
+      WHERE estado IN ('pendente','rodando','esperando','pausada')
+      DO NOTHING
+    RETURNING id, entidade_id`) as unknown as {
+    id: string;
+    entidade_id: string;
+  }[];
+
+  await registrarEntradaEmFluxo(
+    fluxoId,
+    "contato",
+    inscritos.map((i) => i.entidade_id),
+    "manual",
+  );
+
+  return inscritos;
+}
+
+// ── A lista de inscritos de um fluxo ────────────────────────────────────────
+//
+// Não há tabela de inscrição: inscrever É criar a execução (schema-automacoes.sql
+// §"Execuções"). Então a lista é uma leitura de fluxo_execucoes — e é por isso
+// que ela traz o ESTADO junto: "dentro" não é um booleano, é em que ponto a
+// pessoa está.
+
+export type Inscrito = {
+  execucao_id: string;
+  entidade_tipo: "contato" | "oportunidade";
+  entidade_id: string;
+  nome: string;
+  contato_id: string | null;
+  whatsapp: string | null;
+  estado: string;
+  origem: string;
+  /** De onde veio, por extenso: "Webhook Site", "Segmento Clientes"… */
+  origem_nome: string | null;
+  no_id: string | null;
+  retomar_em: string | null;
+  iniciado_em: string;
+};
+
+/**
+ * Quem está DENTRO do fluxo agora.
+ *
+ * Só estado vivo: terminado não é inscrito, é histórico — e histórico já tem
+ * lugar, que é a aba de execuções. Misturar os dois faria a lista crescer para
+ * sempre e responder outra pergunta.
+ */
+export async function inscritosDoFluxo(fluxoId: string): Promise<Inscrito[]> {
+  return (await sql`
+    SELECT e.id AS execucao_id, e.entidade_tipo, e.entidade_id, e.estado, e.origem,
+           COALESCE(o.nome, c.nome, '—') AS nome,
+           c.id AS contato_id,
+           c.whatsapp,
+           -- De onde veio a inscrição, no vocabulário de quem pergunta "por que
+           -- este contato recebeu esta mensagem?". Cada origem guarda o id numa
+           -- coluna própria, então são quatro LEFT JOIN e um COALESCE.
+           COALESCE(w.nome, s.nome, et.nome, fo.nome) AS origem_nome,
+           es.no_id,
+           to_char(es.retomar_em  AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS retomar_em,
+           to_char(e.iniciado_em  AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS iniciado_em
+    FROM fluxo_execucoes e
+    LEFT JOIN oportunidades o ON e.entidade_tipo = 'oportunidade' AND o.id = e.entidade_id
+    LEFT JOIN contatos      c ON c.id = COALESCE(o.contato_id, e.entidade_id)
+    -- LEFT: execução 'pendente' ou 'rodando' não tem espera pendurada, e some
+    -- com JOIN comum.
+    LEFT JOIN fluxo_esperas es
+      ON es.execucao_id = e.id AND es.estado IN ('ativa','pausada')
+    LEFT JOIN webhooks  w  ON w.id  = e.origem_webhook_id
+    LEFT JOIN segmentos s  ON s.id  = e.origem_segmento_id
+    LEFT JOIN etapas    et ON et.id = e.origem_etapa_id
+    LEFT JOIN fluxos    fo ON fo.id = e.origem_fluxo_id
+    WHERE e.fluxo_id = ${fluxoId}
+      AND e.estado IN ('pendente','rodando','esperando','pausada')
+    ORDER BY e.iniciado_em DESC`) as unknown as Inscrito[];
+}
+
+/**
+ * Com que versão do compilado está o workflow que hoje roda no motor.
+ *
+ * Serve a uma pergunta só, e importante: o workflow lá fora foi gerado pelo
+ * código de agora? Quem publicou com 1.0.0 não tem a guarda de inscrição, e
+ * nesse fluxo desinscrever não para a mensagem. Nulo = nunca publicou.
+ */
+export async function versaoNoMotor(fluxoId: string): Promise<string | null> {
+  const [p] = await sql`
+    SELECT compilador_versao
+    FROM fluxo_publicacoes
+    WHERE fluxo_id = ${fluxoId} AND estado = 'sucesso'
+    ORDER BY data_criacao DESC
+    LIMIT 1`;
+  return (p?.compilador_versao as string | undefined) ?? null;
+}
+
+/**
+ * Contatos para a busca do "inscrever à mão", já sem quem está dentro.
+ *
+ * Devolve poucos de propósito: é um seletor de busca, não uma listagem. O
+ * ILIKE varre a tabela (não há índice de trigrama em `nome`, só em `whatsapp`),
+ * o que em ~18 mil linhas é barato — se um dia doer, o índice é o conserto, não
+ * a paginação.
+ */
+export async function contatosParaInscrever(
+  fluxoId: string,
+  termo: string,
+): Promise<{ id: string; nome: string; whatsapp: string | null }[]> {
+  const like = `%${termo.trim()}%`;
+  const digitos = `%${termo.replace(/\D/g, "")}%`;
+  return (await sql`
+    SELECT c.id, c.nome, c.whatsapp
+    FROM contatos c
+    WHERE (
+      c.nome ILIKE ${like}
+      OR (${termo.replace(/\D/g, "")} <> ''
+          AND regexp_replace(c.whatsapp, '\D', '', 'g') LIKE ${digitos})
+    )
+      AND NOT EXISTS (
+        SELECT 1 FROM fluxo_execucoes e
+        WHERE e.fluxo_id = ${fluxoId}
+          AND e.entidade_tipo = 'contato'
+          AND e.entidade_id = c.id
+          AND e.estado IN ('pendente','rodando','esperando','pausada')
+      )
+    ORDER BY c.nome
+    LIMIT 8`) as unknown as {
+    id: string;
+    nome: string;
+    whatsapp: string | null;
   }[];
 }
 
@@ -528,7 +811,7 @@ export async function inscreverSegmento(
   versaoId: string,
   segmentoId: string,
 ) {
-  return (await sql`
+  const inscritos = (await sql`
     INSERT INTO fluxo_execucoes (
       fluxo_id, versao_id, entidade_tipo, entidade_id,
       origem, origem_segmento_id, motor)
@@ -545,6 +828,15 @@ export async function inscreverSegmento(
     id: string;
     entidade_id: string;
   }[];
+
+  await registrarEntradaEmFluxo(
+    fluxoId,
+    "contato",
+    inscritos.map((i) => i.entidade_id),
+    "segmento",
+  );
+
+  return inscritos;
 }
 
 /**

@@ -1,7 +1,11 @@
 "use server";
 
-// Mutações das Configurações: criar funil e criar etapa dentro do funil.
-// Revalida /configuracoes (a própria tela) e / (a raiz, onde o quadro mora).
+// Mutações das Configurações — de funil e etapa a instância de WhatsApp.
+//
+// Revalida /configuracoes e / (a raiz, onde o quadro mora). O "layout" no
+// revalidatePath das Configurações é obrigatório desde que cada seção virou
+// uma rota (/configuracoes/funis, /configuracoes/whatsapp, …): sem ele, o
+// caminho literal invalidaria só a tela índice, que hoje nem existe mais.
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { corValida } from "@/lib/cores-funil";
@@ -19,7 +23,7 @@ export async function criarFunil(
     VALUES (${n}, ${descricao.trim()}, ${corValida(cor)})
     RETURNING id`;
 
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
   return f.id;
 }
@@ -34,7 +38,7 @@ export async function criarFunil(
  */
 export async function editarCorDoFunil(id: string, cor: string): Promise<void> {
   await sql`UPDATE funis SET cor = ${corValida(cor)} WHERE id = ${id}`;
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
 }
 
@@ -59,7 +63,7 @@ export async function criarEtapa(
     )
     RETURNING id`;
 
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
   return e.id;
 }
@@ -68,7 +72,7 @@ export async function editarEtapa(id: string, nome: string): Promise<void> {
   const n = nome.trim();
   if (!n) throw new Error("Nome da etapa é obrigatório");
   await sql`UPDATE etapas SET nome = ${n} WHERE id = ${id}`;
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
 }
 
@@ -81,7 +85,7 @@ export async function reordenarEtapas(etapaIds: string[]): Promise<void> {
       await tx`UPDATE etapas SET ordem = ${i + 1} WHERE id = ${etapaIds[i]}`;
     }
   });
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
 }
 
@@ -92,7 +96,7 @@ function ehDuplicado(e: unknown) {
 }
 
 function revalidarTags() {
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
 }
 
@@ -130,7 +134,7 @@ export async function deletarTag(id: string): Promise<void> {
 // ── Segmentos ────────────────────────────────────────────────────────────────
 // Mesma modelagem de tags: nome UNIQUE, CASCADE em contato_segmentos.
 function revalidarSegmentos() {
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
 }
 
@@ -172,7 +176,7 @@ function iniciaisDe(nome: string) {
 }
 
 function revalidarUsuarios() {
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath("/chat");
   revalidatePath("/");
 }
@@ -217,7 +221,7 @@ function chaveDe(rotulo: string) {
 }
 
 function revalidarCampos() {
-  revalidatePath("/configuracoes");
+  revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
   revalidatePath("/chat");
 }
@@ -295,39 +299,146 @@ export async function excluirCampoPersonalizado(id: string): Promise<void> {
 }
 
 // ── Instâncias uazapi ────────────────────────────────────────────────────────
-// "Conectar" testa a credencial de verdade antes de gravar — não é só salvar
-// texto num formulário. Sem isso, um token errado só apareceria como erro
-// silencioso lá na frente, no primeiro webhook ou no primeiro envio.
+// Aqui mora TODO o contato do CRM com a uazapi que não é envio de mensagem:
+// cadastrar a instância, gerar o QR Code, acompanhar o pareamento e desligar.
+//
+// A regra que vale para tudo abaixo: o TOKEN nunca sai do servidor. A tela
+// manda o id da linha, nós buscamos a credencial no banco e falamos com a
+// uazapi daqui. Por isso nenhuma action abaixo recebe token vindo do navegador
+// — só `conectarInstancia`, no cadastro, e ela grava e esquece.
+//
+// Contrato confirmado contra o OpenAPI da uazapiGO 2.1.1:
+//   GET  {base}/instance/status      header token  → { instance, status }
+//   POST {base}/instance/connect     header token  → { instance, connected, … }
+//        body {} gera QR Code; body { phone } gera código de pareamento
+//   POST {base}/instance/disconnect  header token
 function revalidarInstancias() {
-  revalidatePath("/configuracoes");
+  // "layout": as Configurações viraram várias rotas (/configuracoes/funis,
+  // /configuracoes/whatsapp, …) e o caminho literal só invalidaria uma delas.
+  revalidatePath("/configuracoes", "layout");
 }
 
-async function statusDaInstancia(baseUrl: string, token: string) {
+/** Estados da uazapi. `hibernated` = sessão pausada, credencial preservada. */
+export type EstadoConexao = "disconnected" | "connecting" | "connected" | "hibernated";
+
+// O que a tela do WhatsApp recebe a cada consulta. Repare no que NÃO está
+// aqui: token e base_url. Desenhar um QR Code não precisa deles.
+export type ConexaoUazapi = {
+  estado: EstadoConexao;
+  // Pronto para entrar num <img src>: a uazapi ora devolve o base64 cru, ora
+  // já com o prefixo data:. Normalizado em `conexaoDaResposta`.
+  qrcode: string | null;
+  // Alternativa ao QR: código que se digita no celular.
+  paircode: string | null;
+  numero: string | null;
+  perfil: string | null;
+};
+
+async function credencial(id: string) {
+  const [linha] = await sql`
+    SELECT base_url, token FROM instancias_uazapi WHERE id = ${id}`;
+  if (!linha) throw new Error("Essa instância não existe mais em Configurações");
+  return { baseUrl: linha.base_url as string, token: linha.token as string };
+}
+
+// Toda chamada à uazapi passa por aqui: mesmo tratamento de rede, mesmo
+// tratamento de 401 e o mesmo teto de tempo. Sem o teto, uma instância
+// pendurada segura a action até o timeout do servidor — e esta é uma tela que
+// fica consultando em laço.
+async function chamarUazapi(
+  baseUrl: string,
+  token: string,
+  caminho: string,
+  corpo?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   let res: Response;
   try {
-    res = await fetch(`${baseUrl}/instance/status`, {
-      headers: { token },
+    res = await fetch(`${baseUrl}${caminho}`, {
+      method: corpo === undefined ? "GET" : "POST",
+      headers:
+        corpo === undefined
+          ? { token }
+          : { token, "Content-Type": "application/json" },
+      body: corpo === undefined ? undefined : JSON.stringify(corpo),
       cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
     });
   } catch {
     throw new Error("Não consegui alcançar essa URL — confira o endereço");
   }
   if (!res.ok) {
+    const erro = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new Error(
       res.status === 401 || res.status === 403
         ? "Token inválido para essa instância"
-        : `A uazapi respondeu ${res.status} — confira URL e token`,
+        : erro?.error ?? `A uazapi respondeu ${res.status} — confira URL e token`,
     );
   }
-  const data = await res.json().catch(() => ({}));
+  return (await res.json().catch(() => ({}))) as Record<string, unknown>;
+}
+
+/**
+ * O número pareado, a partir da resposta da uazapi.
+ *
+ * `status.jid` chega nas DUAS formas e é por isso que há dois caminhos aqui:
+ * o OpenAPI 2.1.1 declara um objeto ({ user, agent, device, server }), mas a
+ * arckwpp, conferida ao vivo, devolve o texto "554788060306:11@s.whatsapp.net".
+ * Só o caminho do texto existia antes, e ele funciona nessa instância — o do
+ * objeto é para não quebrar num servidor que siga a especificação à risca.
+ * `instance.owner`, o último recurso, é sempre texto.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function numeroDaResposta(data: any): string | null {
+  const jid = data?.status?.jid;
+  if (jid && typeof jid === "object" && typeof jid.user === "string") {
+    return jid.user.replace(/\D/g, "") || null;
+  }
+  const texto = (typeof jid === "string" ? jid : null) ?? data?.instance?.owner;
+  if (typeof texto !== "string" || !texto) return null;
+  // Descarta sufixo de dispositivo e domínio; o que sobra tem que ser número.
+  const so = texto.split(":")[0].split("@")[0].replace(/\D/g, "");
+  return so || null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function conexaoDaResposta(data: any): ConexaoUazapi {
+  const inst = data?.instance ?? {};
+  const qr = typeof inst.qrcode === "string" ? inst.qrcode.trim() : "";
   return {
-    numero: (data?.status?.jid as string | undefined)?.split(":")[0]?.split("@")[0]
-      ?? (data?.instance?.owner as string | undefined)
-      ?? null,
-    instanciaId: (data?.instance?.id as string | undefined) ?? null,
+    estado: (inst.status as EstadoConexao) ?? "disconnected",
+    // Base64 cru vira data URI; o que já veio prefixado passa direto.
+    qrcode: qr ? (qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`) : null,
+    paircode: (typeof inst.paircode === "string" && inst.paircode.trim()) || null,
+    numero: numeroDaResposta(data),
+    perfil: (typeof inst.profileName === "string" && inst.profileName.trim()) || null,
   };
 }
 
+// O número descoberto na uazapi é gravado na nossa linha — é ele que faz o
+// /chat responder PELO MESMO número em que a conversa entrou
+// (instanciaPorNumero, em lib/uazapi.ts) e que carimba
+// atendimentos.numero_instancia. Sem gravar, parear pelo QR aqui não teria
+// efeito nenhum no resto do CRM.
+async function gravarNumero(id: string, numero: string | null) {
+  if (!numero) return;
+  await sql`
+    UPDATE instancias_uazapi SET numero = ${numero}
+    WHERE id = ${id} AND numero IS DISTINCT FROM ${numero}`;
+}
+
+async function statusDaInstancia(baseUrl: string, token: string) {
+  const data = await chamarUazapi(baseUrl, token, "/instance/status");
+  return {
+    numero: numeroDaResposta(data),
+    instanciaId:
+      ((data as { instance?: { id?: string } })?.instance?.id as string | undefined) ??
+      null,
+  };
+}
+
+// "Conectar" testa a credencial de verdade antes de gravar — não é só salvar
+// texto num formulário. Sem isso, um token errado só apareceria como erro
+// silencioso lá na frente, no primeiro webhook ou no primeiro envio.
 export async function conectarInstancia(
   nome: string,
   baseUrl: string,
@@ -369,7 +480,89 @@ export async function renomearInstancia(id: string, nome: string): Promise<void>
   }
 }
 
-export async function desconectarInstancia(id: string): Promise<void> {
+/**
+ * Tira a instância do CRM. NÃO mexe na uazapi: a instância continua lá e o
+ * WhatsApp segue pareado — quem desliga o aparelho é `desconectarDoWhatsApp`.
+ *
+ * São coisas separadas de propósito, e a arckwpp é o motivo: ela é
+ * compartilhada com o SprintHub, então apagar o rótulo daqui não pode derrubar
+ * o número de lá.
+ */
+export async function removerInstancia(id: string): Promise<void> {
   await sql`DELETE FROM instancias_uazapi WHERE id = ${id}`;
   revalidarInstancias();
+}
+
+/**
+ * Começa o pareamento e devolve o QR Code — ou o código, quando vem telefone.
+ *
+ * Sem `telefone` a uazapi gera um QR Code que vale 2 minutos; com ele, um
+ * código de pareamento que vale 5. Quem renova é a tela, consultando
+ * `consultarConexao` em laço: o /instance/status devolve o QR atualizado
+ * enquanto o estado for "connecting".
+ */
+export async function gerarQrCode(
+  id: string,
+  telefone?: string,
+): Promise<ConexaoUazapi> {
+  const { baseUrl, token } = await credencial(id);
+  const fone = (telefone ?? "").replace(/\D/g, "");
+  if (telefone && fone.length < 10) {
+    throw new Error(
+      "Número incompleto — use o formato 5547999999999, com DDI e DDD",
+    );
+  }
+
+  const data = await chamarUazapi(
+    baseUrl,
+    token,
+    "/instance/connect",
+    fone ? { phone: fone } : {},
+  );
+  const conexao = conexaoDaResposta(data);
+  if (conexao.numero) {
+    await gravarNumero(id, conexao.numero);
+    revalidarInstancias();
+  }
+  return conexao;
+}
+
+/**
+ * O estado atual do pareamento — é o que a tela consulta em laço enquanto o QR
+ * Code está na frente do usuário.
+ *
+ * NÃO revalida a rota a cada consulta, de propósito: seria re-renderizar a
+ * página inteira a cada poucos segundos. Revalida só quando o número muda —
+ * ou seja, quando o pareamento de fato aconteceu e a lista precisa refletir.
+ */
+export async function consultarConexao(id: string): Promise<ConexaoUazapi> {
+  const { baseUrl, token } = await credencial(id);
+  const data = await chamarUazapi(baseUrl, token, "/instance/status");
+  const conexao = conexaoDaResposta(data);
+
+  if (conexao.numero) {
+    const [linha] = await sql`SELECT numero FROM instancias_uazapi WHERE id = ${id}`;
+    if (linha?.numero !== conexao.numero) {
+      await gravarNumero(id, conexao.numero);
+      revalidarInstancias();
+    }
+  }
+  return conexao;
+}
+
+/**
+ * Desliga o WhatsApp da instância NA UAZAPI: o aparelho sai de "Aparelhos
+ * conectados" no celular e reconectar exige QR Code novo.
+ *
+ * ⚠ Não é o mesmo que `removerInstancia`. Se a instância for compartilhada (a
+ * arckwpp é, com o SprintHub), o número cai para os dois lados. A tela confirma
+ * antes, com esse aviso escrito.
+ */
+export async function desconectarDoWhatsApp(id: string): Promise<ConexaoUazapi> {
+  const { baseUrl, token } = await credencial(id);
+  await chamarUazapi(baseUrl, token, "/instance/disconnect", {});
+  // Relê em vez de presumir "disconnected": quem manda no estado é a uazapi.
+  const data = await chamarUazapi(baseUrl, token, "/instance/status");
+  revalidarInstancias();
+  return conexaoDaResposta(data);
 }

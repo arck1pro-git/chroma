@@ -190,12 +190,17 @@ export async function POST(req: NextRequest) {
 
     const inseridas = await sql`
       INSERT INTO mensagens (
-        atendimento_id, origem, texto, status, id_externo,
+        atendimento_id, origem, enviada_por, texto, status, id_externo,
         tipo, midia_url_origem, midia_mime, midia_nome,
         midia_tamanho, midia_duracao, midia_estado)
       VALUES (
         ${atendimentoId},
         ${fromMe ? "agente" : "contato"},
+        -- fromMe aqui é SEMPRE do aparelho: o webhook da instância exclui o que
+        -- sai por API (excludeMessages: ["wasSentByApi"]), que é justamente o
+        -- caminho da automação. Então esta linha é o atendente respondendo pelo
+        -- celular — e é ela que cala a cadência na guarda do workflow.
+        ${fromMe ? "aparelho" : null},
         ${corpo},
         ${fromMe ? "enviado" : "recebido"},
         ${idExterno ?? null},

@@ -170,7 +170,10 @@ const detalheContato = betaZodTool({
       })),
       historico: (d.historicoDoContato.get(c.id) ?? []).map((h) => ({
         descricao: h.descricao,
-        autor: d.usuarioPorId.get(h.autor_id)?.nome,
+        // Sem autor = registrado pelo sistema (mudança de etapa, entrada e
+        // saída de automação). "Sistema" é o que a ficha mostra, e a IA lê o
+        // mesmo rótulo para não inventar um responsável que não existe.
+        autor: (h.autor_id && d.usuarioPorId.get(h.autor_id)?.nome) || "Sistema",
         data: h.data_criacao,
       })),
       atendimentos: (d.atendimentosDoContato.get(c.id) ?? []).map((a) => ({

@@ -7,23 +7,23 @@
 // lista fica visível o tempo todo.
 import { useState } from "react";
 import { Blocks, Check, Plus, Power } from "lucide-react";
-import { ESCOPOS, type Contexto, type EscopoContexto } from "@/lib/contextos-tipos";
+import { type Contexto } from "@/lib/contextos-tipos";
 import { dataCurta } from "../formato";
 import { ligarContexto, salvarContexto } from "./actions";
 
+// Um contexto é nome, descrição e o prompt. Nada mais: onde ele se aplica é
+// decisão da interface que o oferece, não do bloco.
 type Rascunho = {
   id?: string;
   nome: string;
   descricao: string;
   conteudo: string;
-  escopo: EscopoContexto;
 };
 
 const VAZIO: Rascunho = {
   nome: "",
   descricao: "",
   conteudo: "",
-  escopo: "analise",
 };
 
 function deContexto(c: Contexto): Rascunho {
@@ -32,7 +32,6 @@ function deContexto(c: Contexto): Rascunho {
     nome: c.nome,
     descricao: c.descricao ?? "",
     conteudo: c.conteudo,
-    escopo: c.escopo,
   };
 }
 
@@ -92,70 +91,59 @@ export default function PainelContextos({ contextos }: { contextos: Contexto[] }
               Nenhum contexto ainda.
             </p>
           ) : (
-            ESCOPOS.filter((e) => contextos.some((c) => c.escopo === e.id)).map(
-              (escopo) => (
-                <section key={escopo.id} className="mb-3">
-                  <h2 className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                    {escopo.rotulo}
-                  </h2>
-                  <ul className="flex flex-col gap-1">
-                    {contextos
-                      .filter((c) => c.escopo === escopo.id)
-                      .map((c) => (
-                        <li key={c.id}>
-                          <div
-                            className={`flex items-start gap-2 rounded-lg px-2 py-1.5 transition ${
-                              rascunho?.id === c.id
-                                ? "bg-zinc-100 dark:bg-zinc-800"
-                                : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRascunho(deContexto(c));
-                                setAviso(null);
-                              }}
-                              className="min-w-0 flex-1 text-left"
-                            >
-                              <span
-                                className={`block truncate text-[13px] font-medium ${
-                                  c.ativo
-                                    ? "text-zinc-900 dark:text-zinc-50"
-                                    : "text-zinc-400 line-through dark:text-zinc-500"
-                                }`}
-                              >
-                                {c.nome}
-                              </span>
-                              <span className="mt-0.5 block truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                                v{c.versao} · {dataCurta(c.data_atualizacao)}
-                                {c.descricao ? ` · ${c.descricao}` : ""}
-                              </span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => alternar(c)}
-                              title={c.ativo ? "Desligar" : "Ligar"}
-                              aria-label={
-                                c.ativo
-                                  ? `Desligar ${c.nome}`
-                                  : `Ligar ${c.nome}`
-                              }
-                              className={`mt-0.5 shrink-0 rounded p-1 transition ${
-                                c.ativo
-                                  ? "text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
-                                  : "text-zinc-300 hover:bg-zinc-100 dark:text-zinc-600 dark:hover:bg-zinc-800"
-                              }`}
-                            >
-                              <Power className="size-3.5" aria-hidden="true" />
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                  </ul>
-                </section>
-              ),
-            )
+            /* Lista única: não há mais seção por escopo para agrupar. A ordem
+               é a de lib/contextos.ts (ordem manual, nome como desempate). */
+            <ul className="flex flex-col gap-1">
+              {contextos.map((c) => (
+                <li key={c.id}>
+                  <div
+                    className={`flex items-start gap-2 rounded-lg px-2 py-1.5 transition ${
+                      rascunho?.id === c.id
+                        ? "bg-zinc-100 dark:bg-zinc-800"
+                        : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRascunho(deContexto(c));
+                        setAviso(null);
+                      }}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <span
+                        className={`block truncate text-[13px] font-medium ${
+                          c.ativo
+                            ? "text-zinc-900 dark:text-zinc-50"
+                            : "text-zinc-400 line-through dark:text-zinc-500"
+                        }`}
+                      >
+                        {c.nome}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+                        v{c.versao} · {dataCurta(c.data_atualizacao)}
+                        {c.descricao ? ` · ${c.descricao}` : ""}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => alternar(c)}
+                      title={c.ativo ? "Desligar" : "Ligar"}
+                      aria-label={
+                        c.ativo ? `Desligar ${c.nome}` : `Ligar ${c.nome}`
+                      }
+                      className={`mt-0.5 shrink-0 rounded p-1 transition ${
+                        c.ativo
+                          ? "text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
+                          : "text-zinc-300 hover:bg-zinc-100 dark:text-zinc-600 dark:hover:bg-zinc-800"
+                      }`}
+                    >
+                      <Power className="size-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </aside>
@@ -208,28 +196,10 @@ export default function PainelContextos({ contextos }: { contextos: Contexto[] }
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                Onde vale
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {ESCOPOS.map((e) => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    onClick={() => setRascunho({ ...rascunho, escopo: e.id })}
-                    title={e.dica}
-                    className={`rounded-lg border px-2.5 py-1.5 text-[12px] transition ${
-                      rascunho.escopo === e.id
-                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                        : "border-zinc-200 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    {e.rotulo}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {/* O seletor "Onde vale" saiu daqui: um contexto não declara mais
+                onde se aplica. Quem escolhe é a interface, no ponto de uso — o
+                blog aponta para um contexto no cadastro dele, o painel de IA
+                deixa marcar quais entram naquela conversa. */}
 
             <div className="flex flex-col gap-1.5">
               <label

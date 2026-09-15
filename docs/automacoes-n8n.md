@@ -66,12 +66,14 @@ N8N_BASE_URL=https://n8n.suaempresa.com.br
 N8N_API_KEY=<secreto>
 
 # ── n8n → CRM ───────────────────────────────────────────────────────────────
-# URL pública do CRM. O compilador assa isto nos nós de HTTP Request, então o
-# n8n precisa alcançar este endereço — em desenvolvimento, um túnel.
-CRM_BASE_URL=https://crm.suaempresa.com.br
 # Token que o n8n manda de volta. Gere com: openssl rand -hex 32
 CRM_SERVICE_TOKEN=<secreto>
 ```
+
+**Não há `CRM_BASE_URL`** (removida em 2026-09-11). Onde o endereço do CRM ainda
+precisa ser assado num nó — hoje só o workflow de RSS do Blog —, ele sai do
+domínio do request que criou o workflow (`lib/endereco.ts`). Criar workflow a
+partir de um endereço local é recusado, porque o n8n não alcançaria o localhost.
 
 Nenhum destes vai para o navegador — sem `NEXT_PUBLIC_`.
 
@@ -152,8 +154,12 @@ Um workflow n8n por fluxo publicado:
   produto — ver `docs/cadencia-etapa.md`. Fica registrado porque o formato do
   parâmetro custou a ser descoberto, e é o que se usaria para reintroduzi-lo.
 - **HTTP Request node** por bloco de ação, apontando para
-  `{CRM_BASE_URL}/api/automacoes/acao`, com o header `Authorization` montado do
-  `CRM_SERVICE_TOKEN` (ver §3).
+  `/api/automacoes/acao` com o header `Authorization` montado do
+  `CRM_SERVICE_TOKEN` (ver §3). ⚠ **Este desenho não é mais o vigente**: o
+  adaptador passou a emitir nós que falam direto com a uazapi e com o Postgres,
+  sem HTTP de volta ao CRM — ver o comentário de `paraWorkflow` em
+  `lib/automacoes/motores/n8n/adaptador.ts`. Foi essa mudança que dispensou o
+  túnel em desenvolvimento.
 - **IF / Switch node** para `se` e `alternador`.
 - **Wait node** para `esperar` e `verificar_resposta`.
 - **HTTP Request final** para `/api/automacoes/callback`.
@@ -238,8 +244,10 @@ Verificado no banco em 2026-09-04:
   publicar nem disparar.
 - `CRM_SERVICE_TOKEN` **está** no `.env`, e é o que os nós vão carregar. Se
   faltar, `publicar` recusa em vez de gerar nós com `Bearer undefined`.
-- `CRM_BASE_URL` precisa ser um endereço que o n8n alcance. Em desenvolvimento,
-  um túnel — o compilador assa esse valor dentro de cada nó.
+- `CRM_BASE_URL` **não existe mais** (removida em 2026-09-11). Publicar cadência
+  não precisa de endereço do CRM nenhum: os nós falam direto com a uazapi e com
+  o Postgres. O único lugar que ainda assa um endereço é o workflow de RSS do
+  Blog, e ele o tira do domínio do request (`lib/endereco.ts`).
 
 ## 8. Segurança do webhook de entrada — em aberto
 

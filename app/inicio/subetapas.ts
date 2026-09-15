@@ -13,7 +13,11 @@ import type { Subetapa } from "@/lib/automacoes/cadencia";
 //   1. o bloco que o motor executou por último para ela (`posicao`). É FATO, e
 //      é o que muda na hora quando alguém arrasta o card de uma coluna para
 //      outra — o arraste move a inscrição no motor, não só o desenho.
-//   2. a régua de dias, para quem nunca entrou no fluxo: a última mensagem
+//   2. o COMEÇO, para quem está no fluxo e ainda não tem passo marcado: foi
+//      inscrito agora, ou o workflow publicado é velho e não grava passo. A
+//      régua de dias não serve a esses — ela apontaria a última mensagem para
+//      uma oportunidade antiga que acabou de entrar na primeira.
+//   3. a régua de dias, para quem nunca entrou no fluxo: a última mensagem
 //      cujo `dia` já venceu para a idade da oportunidade. É PREVISÃO — onde
 //      ela cairia se a cadência disparasse agora.
 //
@@ -30,6 +34,20 @@ export type ColunaSubetapa = {
   // só na última coluna: quantas dessas já passaram do dia da última mensagem.
   // Elas ficam aqui em vez de sumirem da tela.
   alemDaUltima: number;
+};
+
+/**
+ * O quadro inteiro: as colunas de mensagem e quem está parado nas AÇÕES entre
+ * elas.
+ *
+ * A espera é um passo como os outros — e é o único em que o lead realmente
+ * fica. Mostrá-lo na mensagem anterior dizia que ele tinha acabado de receber
+ * aquela mensagem quando, na verdade, ele está esperando a próxima.
+ */
+export type QuadroCadencia = {
+  colunas: ColunaSubetapa[];
+  /** id do bloco de ação -> quem está parado nele. */
+  porAcao: Map<string, Oportunidade[]>;
 };
 
 // Meia-noite local do dia de `data`. Sem passar a string por new Date(): o
@@ -64,17 +82,23 @@ function indicePorIdade(subetapas: Subetapa[], idade: number) {
 
 /**
  * Coluna em que a oportunidade cai: o bloco em que ela está, se estiver no
- * fluxo; senão, a régua de dias.
+ * fluxo; o começo, se estiver dentro sem passo marcado; senão, a régua de dias.
  *
  * `posicao` mapeia oportunidade → id do bloco. Um id que não existe mais nas
- * colunas (a mensagem foi apagada depois que ela passou por lá) cai na régua
- * em vez de sumir do quadro.
+ * colunas (a mensagem foi apagada depois que ela passou por lá) cai nas regras
+ * seguintes em vez de sumir do quadro.
+ *
+ * `dentro` são as que têm inscrição viva. Elas NÃO passam pela régua de dias:
+ * quem está no fluxo começa na primeira mensagem, não importa há quanto tempo a
+ * oportunidade existe — e era exatamente isso que punha todo mundo na última
+ * coluna quando a posição não chegava.
  */
 export function colunaDe(
   oportunidade: Oportunidade,
   subetapas: Subetapa[],
   hoje: Date,
   posicao?: Map<string, string>,
+  dentro?: Set<string>,
 ) {
   if (subetapas.length === 0) return 0;
 
@@ -83,6 +107,8 @@ export function colunaDe(
     const i = subetapas.findIndex((s) => s.id === noId);
     if (i >= 0) return i;
   }
+
+  if (dentro?.has(oportunidade.id)) return 0;
 
   const idade = diasDesde(oportunidade.data_criacao, hoje);
   return Math.max(0, indicePorIdade(subetapas, idade));
@@ -95,27 +121,43 @@ export function distribuir(
   oportunidades: Oportunidade[],
   hoje: Date,
   posicao?: Map<string, string>,
-): ColunaSubetapa[] {
+  dentro?: Set<string>,
+  /** Ids dos blocos de ação do fluxo — quem estiver num deles sai das colunas. */
+  acoes?: Set<string>,
+): QuadroCadencia {
   const colunas: ColunaSubetapa[] = subetapas.map((subetapa) => ({
     subetapa,
     oportunidades: [],
     alemDaUltima: 0,
   }));
-  if (colunas.length === 0) return colunas;
+  const porAcao = new Map<string, Oportunidade[]>();
+  if (colunas.length === 0) return { colunas, porAcao };
 
   const ultima = colunas.length - 1;
   const diaFinal = subetapas[ultima].dia;
 
   for (const o of oportunidades) {
-    const alvo = colunaDe(o, subetapas, hoje, posicao);
+    // Parado numa ação (quase sempre um "Esperar"): o lugar dele é ali, e não
+    // numa coluna. Sem esta saída ele apareceria na mensagem que já recebeu.
+    const no = posicao?.get(o.id);
+    if (no && acoes?.has(no)) {
+      porAcao.set(no, [...(porAcao.get(no) ?? []), o]);
+      continue;
+    }
+
+    const alvo = colunaDe(o, subetapas, hoje, posicao, dentro);
     colunas[alvo].oportunidades.push(o);
     // "já passou da última" é leitura da RÉGUA: quem está no fluxo tem lugar
     // próprio, e contá-lo aqui misturaria de novo fato com previsão.
-    if (!posicao?.has(o.id) && diasDesde(o.data_criacao, hoje) > diaFinal) {
+    if (
+      !posicao?.has(o.id) &&
+      !dentro?.has(o.id) &&
+      diasDesde(o.data_criacao, hoje) > diaFinal
+    ) {
       colunas[ultima].alemDaUltima += 1;
     }
   }
-  return colunas;
+  return { colunas, porAcao };
 }
 
 // ── Cor da etapa ao longo da cadência ──────────────────────────────────────

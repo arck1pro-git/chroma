@@ -85,6 +85,24 @@ export async function instanciaPadrao(): Promise<Instancia> {
  * O token sai do banco e fica só no servidor — nenhuma tela recebe esta função
  * (as Configurações leem a versão mascarada, ver app/configuracoes/dados.ts).
  */
+/**
+ * Todas as instâncias cadastradas, pelo id. É o que a publicação usa para
+ * montar um nó de envio por instância: cada mensagem da cadência pode sair de
+ * um número diferente, e quem resolve isso é o compilador, no servidor.
+ *
+ * O TOKEN VEM JUNTO e não pode vazar para tela nenhuma — quem chama isto grava
+ * o segredo no cofre do n8n e descarta. Ver `credenciaisDaUazapi` em
+ * app/automacoes/acoes.ts.
+ */
+export async function instanciasPorId(): Promise<Map<string, Instancia>> {
+  const linhas = await sql`
+    SELECT id, nome, base_url, token, numero
+    FROM instancias_uazapi ORDER BY data_criacao`;
+  return new Map(
+    linhas.map((l) => [l.id as string, daLinha(l)] as const),
+  );
+}
+
 export async function instanciaPorId(id: string | null): Promise<Instancia> {
   if (!id) return instanciaPadrao();
 

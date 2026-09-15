@@ -12,8 +12,6 @@ import {
   alternarContexto,
   criarContexto,
   editarContexto,
-  ESCOPOS,
-  type EscopoContexto,
 } from "@/lib/contextos";
 
 const TETO_CONTEUDO = 8000;
@@ -23,11 +21,6 @@ function texto(v: unknown, max: number): string {
   return typeof v === "string" ? v.trim().slice(0, max) : "";
 }
 
-function escopoValido(v: unknown): EscopoContexto {
-  const s = String(v ?? "");
-  return (ESCOPOS.find((e) => e.id === s)?.id ?? "analise") as EscopoContexto;
-}
-
 export type Resultado = { ok: boolean; mensagem: string };
 
 export async function salvarContexto(dados: {
@@ -35,7 +28,6 @@ export async function salvarContexto(dados: {
   nome: unknown;
   descricao: unknown;
   conteudo: unknown;
-  escopo: unknown;
 }): Promise<Resultado> {
   const nome = texto(dados.nome, TETO_NOME);
   const conteudo = texto(dados.conteudo, TETO_CONTEUDO);
@@ -47,7 +39,6 @@ export async function salvarContexto(dados: {
     nome,
     descricao: texto(dados.descricao, 200) || null,
     conteudo,
-    escopo: escopoValido(dados.escopo),
   };
 
   try {

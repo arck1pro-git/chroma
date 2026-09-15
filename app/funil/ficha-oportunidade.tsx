@@ -18,6 +18,7 @@ import {
   Play,
   Workflow,
   Phone,
+  Trash2,
   User,
   Wallet,
   X,
@@ -40,9 +41,12 @@ import { brl, dataCurta, dataHora } from "../formato";
 import {
   anexarAtendimento,
   automacoesDaOportunidade,
+  excluirOportunidade,
+  mudarStatusOportunidade,
   pausarAutomacao,
   retomarAutomacao,
 } from "./actions";
+import { STATUS_OPORTUNIDADE, type StatusOportunidade } from "./status";
 import type { AutomacaoDaEntidade } from "@/lib/automacoes/repositorio";
 import { CamposDoContato, ListaCampos } from "../components/campos-personalizados";
 
@@ -57,6 +61,16 @@ const CANAL: Record<
   whatsapp_oficial: { rotulo: "WhatsApp API", Icone: MessageCircle },
   instagram: { rotulo: "Instagram", Icone: Camera },
   email: { rotulo: "E-mail", Icone: Mail },
+};
+
+// A cor de cada status, e só quando ele está SELECIONADO. Verde e vermelho aqui
+// não são série de gráfico, são estado — vêm com a palavra ao lado, nunca
+// sozinhos, que é o que os mantém legíveis em daltonismo e em print cinza.
+const CLASSE_STATUS: Record<StatusOportunidade, string> = {
+  aberta: "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50",
+  ganha:
+    "bg-emerald-600 text-white shadow-sm dark:bg-emerald-500 dark:text-zinc-950",
+  perdida: "bg-rose-600 text-white shadow-sm dark:bg-rose-500 dark:text-zinc-950",
 };
 
 // Estado da inscrição em palavras. 'pendente' quase nunca aparece — é a janela
@@ -194,6 +208,56 @@ export default function FichaOportunidade({
   const [mexendo, setMexendo] = useState<string | null>(null);
   const [avisoAuto, setAvisoAuto] = useState<string | null>(null);
 
+  // ── Status ────────────────────────────────────────────────────────────────
+  // Guarda de QUAL oportunidade é a mudança, pelo mesmo motivo de `carga`: a
+  // ficha é reaproveitada ao abrir outro card, e um estado local solto mostraria
+  // nela o status do anterior até o servidor responder.
+  const [mudanca, setMudanca] = useState<{
+    opId: string;
+    status: StatusOportunidade;
+  } | null>(null);
+  const status =
+    mudanca?.opId === oportunidade.id ? mudanca.status : oportunidade.status;
+
+  const [salvandoStatus, salvarStatus] = useTransition();
+  const [avisoStatus, setAvisoStatus] = useState<string | null>(null);
+
+  function mudarStatus(novo: StatusOportunidade) {
+    // Otimista: o botão acende na hora. O revalidatePath da action traz o valor
+    // do banco logo atrás, e é ele que vale — se a escrita falhar, o aviso
+    // aparece e a prop devolve o status verdadeiro.
+    setMudanca({ opId: oportunidade.id, status: novo });
+    setAvisoStatus(null);
+    salvarStatus(async () => {
+      const r = await mudarStatusOportunidade(oportunidade.id, novo);
+      if (!r.ok) {
+        setMudanca(null);
+        setAvisoStatus(r.mensagem);
+      }
+    });
+  }
+
+  // ── Excluir ───────────────────────────────────────────────────────────────
+  const [excluindo, excluirAgora] = useTransition();
+  const [avisoExcluir, setAvisoExcluir] = useState<string | null>(null);
+
+  function excluir() {
+    if (
+      !window.confirm(
+        `Excluir a oportunidade "${oportunidade.nome}"?\n\nO CONTATO NÃO é excluído — ele continua na base com as anotações, as conversas e as outras oportunidades.\n\nO que some: este negócio, o histórico dele e as automações em que ele estava inscrito.`,
+      )
+    ) {
+      return;
+    }
+    setAvisoExcluir(null);
+    excluirAgora(async () => {
+      const r = await excluirOportunidade(oportunidade.id);
+      // Fecha só no sucesso: fechar em cima de um erro esconderia o motivo.
+      if (r.ok) aoFechar();
+      else setAvisoExcluir(r.mensagem);
+    });
+  }
+
   useEffect(() => {
     let vivo = true;
     const opId = oportunidade.id;
@@ -308,9 +372,42 @@ export default function FichaOportunidade({
               <p className="text-2xl font-semibold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
                 {brl(oportunidade.valor)}
               </p>
-              <span className="mt-2 inline-flex rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-medium capitalize text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                {oportunidade.status}
-              </span>
+
+              {/* O status virou controle, não selo. Mesmo segmentado das abas
+                  logo acima — clicar em "Ganha" É marcar como ganha; não há
+                  Salvar. A cor só aparece no estado escolhido: três botões
+                  coloridos ao mesmo tempo seriam decoração, não informação. */}
+              <div
+                className="mt-3 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900"
+                role="group"
+                aria-label="Status da oportunidade"
+              >
+                {STATUS_OPORTUNIDADE.map((s) => {
+                  const ativo = status === s;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => mudarStatus(s)}
+                      disabled={salvandoStatus || ativo}
+                      aria-pressed={ativo}
+                      className={`flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium capitalize transition disabled:cursor-default ${
+                        ativo
+                          ? CLASSE_STATUS[s]
+                          : "text-zinc-500 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:text-zinc-50"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {avisoStatus && (
+                <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {avisoStatus}
+                </p>
+              )}
             </div>
 
             <Secao Icone={Layers} titulo="Pipeline">
@@ -375,6 +472,29 @@ export default function FichaOportunidade({
               definicoes={camposOportunidade}
               valores={oportunidade.campos}
             />
+
+            {/* Última seção da ficha, e discreta de propósito: é destrutiva e
+                não é o que se vem fazer aqui. O texto diz o que NÃO acontece,
+                que é a dúvida real de quem clica. */}
+            <Secao Icone={Trash2} titulo="Excluir">
+              <button
+                type="button"
+                onClick={excluir}
+                disabled={excluindo}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[12px] font-medium text-zinc-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-red-900/60 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+              >
+                <Trash2 className="size-3.5" aria-hidden="true" />
+                {excluindo ? "Excluindo…" : "Excluir oportunidade"}
+              </button>
+              <p className="mt-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                Some só este negócio. O contato{contato ? ` ${contato.nome}` : ""}{" "}
+                continua na base, com as anotações, as conversas e as outras
+                oportunidades dele.
+              </p>
+              {avisoExcluir && (
+                <p className="mt-2 text-[11px] text-red-500">{avisoExcluir}</p>
+              )}
+            </Secao>
           </>
         )}
 
@@ -635,7 +755,8 @@ export default function FichaOportunidade({
                           {h.descricao}
                         </p>
                         <p className="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
-                          {usuarioPorId.get(h.autor_id)?.nome ?? "Sistema"} ·{" "}
+                          {(h.autor_id && usuarioPorId.get(h.autor_id)?.nome) || "Sistema"}{" "}
+                          ·{" "}
                           {dataHora(h.data_criacao)}
                         </p>
                       </div>

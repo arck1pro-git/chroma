@@ -3,6 +3,11 @@
 // Mutações de Contatos. Roda no servidor — trate a entrada como não confiável.
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
+import {
+  atualizarContatoRegistrando,
+  registrarContatoCriado,
+  registrarTag,
+} from "@/lib/historico";
 
 export type NovoContato = {
   nome: string;
@@ -23,6 +28,7 @@ export async function criarContato(dados: NovoContato): Promise<string> {
             ${dados.cidade}, ${dados.estado}, ${dados.pais || "Brasil"})
     RETURNING id`;
 
+  await registrarContatoCriado(novo.id);
   revalidatePath("/");
   return novo.id;
 }
@@ -34,12 +40,17 @@ export async function atualizarContato(
 ): Promise<void> {
   const nome = dados.nome.trim();
   if (!nome) throw new Error("Nome é obrigatório");
-  await sql`
-    UPDATE contatos SET
-      nome = ${nome}, whatsapp = ${dados.whatsapp.trim()}, email = ${dados.email.trim()},
-      cidade = ${dados.cidade.trim()}, estado = ${dados.estado.trim()},
-      pais = ${dados.pais.trim() || "Brasil"}
-    WHERE id = ${id}`;
+  // O UPDATE mora em lib/historico.ts junto com a linha que ele gera: dizer
+  // QUAIS campos mudaram exige comparar com o valor anterior, e ele só existe
+  // dentro da mesma consulta.
+  await atualizarContatoRegistrando(id, {
+    nome,
+    whatsapp: dados.whatsapp.trim(),
+    email: dados.email.trim(),
+    cidade: dados.cidade.trim(),
+    estado: dados.estado.trim(),
+    pais: dados.pais.trim() || "Brasil",
+  });
   revalidatePath("/");
   revalidatePath("/chat");
 }
@@ -48,14 +59,23 @@ export async function atualizarContato(
 // ON CONFLICT DO NOTHING: a PK (contato_id, x_id) já impede duplicar; ignora o
 // clique repetido em vez de estourar.
 export async function adicionarTag(contatoId: string, tagId: string) {
-  await sql`
+  // RETURNING para não registrar o clique repetido: o ON CONFLICT engole a
+  // segunda inserção, e sem esta checagem o histórico ganharia "Tag X
+  // adicionada" duas vezes por uma tag só.
+  const linhas = await sql`
     INSERT INTO contato_tags (contato_id, tag_id)
-    VALUES (${contatoId}, ${tagId}) ON CONFLICT DO NOTHING`;
+    VALUES (${contatoId}, ${tagId}) ON CONFLICT DO NOTHING
+    RETURNING contato_id`;
+  if (linhas.length) await registrarTag(contatoId, tagId, "adicionada");
   revalidatePath("/");
 }
 
 export async function removerTag(contatoId: string, tagId: string) {
-  await sql`DELETE FROM contato_tags WHERE contato_id = ${contatoId} AND tag_id = ${tagId}`;
+  const linhas = await sql`
+    DELETE FROM contato_tags
+    WHERE contato_id = ${contatoId} AND tag_id = ${tagId}
+    RETURNING contato_id`;
+  if (linhas.length) await registrarTag(contatoId, tagId, "removida");
   revalidatePath("/");
 }
 

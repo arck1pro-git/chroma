@@ -1,7 +1,14 @@
+import type { Metadata } from "next";
 import Inicio from "./inicio/inicio";
 import { carregarFunil } from "./funil/dados";
 import { carregarCadencias } from "./inicio/cadencias";
 import { fluxosParaInscricao } from "@/lib/automacoes/repositorio";
+
+// O título segue a forma dos outros módulos ("X · Chroma"); sem ele a raiz
+// herdava só "Chroma" do layout e era a única aba sem nome próprio.
+export const metadata: Metadata = {
+  title: "Dashboard · Chroma",
+};
 
 // A raiz concentra dashboard, funis/kanbans e contatos — /dashboard, /funil e
 // /contatos deixaram de existir como rota.

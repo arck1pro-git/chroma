@@ -11,8 +11,10 @@ import { randomBytes, createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { compilar, ErroCompilacao, VERSAO_COMPILADOR } from "@/lib/automacoes/compilador";
 import {
+  apagarWorkflow,
   atualizarWorkflow,
   ativarWorkflow,
+  criarCredencial,
   criarWorkflow,
   desativarWorkflow,
   paraWorkflow,
@@ -22,7 +24,10 @@ import {
   concluirPublicacao,
   criarFluxo as criarNoBanco,
   dadosDeDisparo,
+  contatosParaInscrever,
   definicaoDoFluxo,
+  desinscrever,
+  inscreverContatos,
   inscreverSegmento,
   marcarPublicado,
   registrarPublicacao,
@@ -30,7 +35,7 @@ import {
 } from "@/lib/automacoes/repositorio";
 import { sql } from "@/lib/db";
 import { credencialDoMotor } from "@/lib/automacoes/repositorio";
-import { instanciaPadrao } from "@/lib/uazapi";
+import { instanciaPadrao, instanciasPorId } from "@/lib/uazapi";
 
 /**
  * As credenciais que os nós publicados usam DENTRO do n8n.
@@ -48,14 +53,71 @@ async function credenciaisDoMotor() {
       `Credencial do n8n não cadastrada (${!banco ? "banco" : "uazapi"}). Os nós publicados precisam dela para gravar no banco e falar com a uazapi.`,
     );
   }
-  const instancia = await instanciaPadrao();
+  // A PADRÃO PODE NÃO EXISTIR, e isso deixou de ser erro aqui: com duas
+  // instâncias cadastradas, `instanciaPadrao` recusa escolher por conta
+  // própria — e está certa. Só que agora cada mensagem pode ter a sua, e um
+  // fluxo em que TODAS escolheram não precisa de padrão nenhuma. Quem reclama,
+  // se faltar, é o adaptador, dizendo QUAL bloco ficou sem número.
+  const padrao = await instanciaPadrao().catch(() => null);
+
   return {
     banco: banco.id,
     uazapi: uazapi.id,
-    uazapiBaseUrl: instancia.baseUrl.replace(/\/+$/, ""),
+    uazapiBaseUrl: padrao ? padrao.baseUrl.replace(/\/+$/, "") : "",
+    porInstancia: await credenciaisDaUazapi(),
   };
 }
+
+/**
+ * Uma credencial do n8n POR INSTÂNCIA de WhatsApp.
+ *
+ * É o que faz o número escolhido em cada mensagem valer de verdade. Antes o
+ * workflow inteiro saía por uma URL e uma credencial só — a da instância
+ * padrão —, e escolher outro número na 5ª mensagem não mudava nada: o campo
+ * existia na tela e morria na compilação.
+ *
+ * O TOKEN NÃO ENTRA NO WORKFLOW. Ele vai para o cofre do n8n via
+ * `criarCredencial`, e o que sobra no JSON é o id — a instância do motor é
+ * compartilhada com a produção do SprintHub, e workflow é legível por quem tem
+ * acesso lá.
+ *
+ * O id da credencial fica em `motor_credenciais` com a chave
+ * `uazapi:<instancia_id>`, porque a API pública do n8n NÃO LISTA credenciais:
+ * quem não guardar o id cria uma nova a cada publicação. Criada uma vez, é
+ * reusada em toda publicação seguinte.
+ */
+async function credenciaisDaUazapi() {
+  const instancias = await instanciasPorId();
+  const mapa = new Map<string, { credencialId: string; baseUrl: string }>();
+
+  for (const [id, i] of instancias) {
+    const chave = `uazapi:${id}`;
+    let cred = await credencialDoMotor("n8n", chave);
+
+    if (!cred) {
+      // O header é `token: <TOKEN>`, não Bearer — ver o topo de lib/uazapi.ts.
+      const novoId = await criarCredencial(`Chroma · uazapi · ${i.nome}`, "httpHeaderAuth", {
+        name: "token",
+        value: i.token,
+      });
+      await sql`
+        INSERT INTO motor_credenciais (chave, motor, motor_cred_id, motor_cred_tipo, descricao)
+        VALUES (${chave}, 'n8n', ${novoId}, 'httpHeaderAuth',
+                ${`Token da instância "${i.nome}" para os nós de envio`})
+        ON CONFLICT (motor, chave) DO NOTHING`;
+      cred = { id: novoId, nome: chave };
+    }
+
+    mapa.set(id, {
+      credencialId: cred.id,
+      baseUrl: i.baseUrl.replace(/\/+$/, ""),
+    });
+  }
+
+  return mapa;
+}
 import type { DefinicaoFluxo } from "@/lib/automacoes/tipos";
+import { registrarSaidaDeFluxo } from "@/lib/historico";
 
 const MOTOR = "n8n";
 
@@ -335,5 +397,235 @@ export async function dispararParaSegmento(
   return {
     ok: true,
     mensagem: `${entraram} ${entraram === 1 ? "contato entrou" : "contatos entraram"} na automação a partir de "${segmento.nome}". ${falhou}`,
+  };
+}
+
+
+// ── A lista de inscritos ────────────────────────────────────────────────────
+//
+// Não há tabela de lista: inscrever É criar a execução, e a lista é a leitura
+// das execuções vivas (ver inscritosDoFluxo, em lib/automacoes/repositorio.ts).
+// Estas duas ações são as duas pontas dela.
+
+/**
+ * Busca contatos para o seletor do "inscrever à mão".
+ *
+ * É leitura, mas mora aqui pelo mesmo motivo de `camposDoContato` em
+ * app/funil/actions.ts: precisa ser chamável do cliente enquanto se digita, e a
+ * lista de contatos é grande demais para viajar inteira com a página.
+ */
+export async function buscarContatosParaInscrever(
+  fluxoId: string,
+  termo: string,
+): Promise<{ id: string; nome: string; whatsapp: string | null }[]> {
+  const t = termo.trim();
+  // Dois caracteres é o piso: com um, a busca devolve um recorte arbitrário de
+  // 18 mil linhas e não ajuda ninguém a achar ninguém.
+  if (t.length < 2) return [];
+  return contatosParaInscrever(fluxoId, t);
+}
+
+/**
+ * Tira alguém da automação.
+ *
+ * Cancela a inscrição viva e a espera pendurada nela. A mensagem para de sair
+ * porque o workflow publicado consulta o CRM antes de cada envio — a guarda que
+ * o adaptador gera (GUARDA_INSCRITO).
+ *
+ * ⚠ Fluxo publicado ANTES da guarda existir não tem esse nó, e nele a mensagem
+ * sai mesmo depois de desinscrever. A tela avisa; republicar resolve.
+ */
+export async function desinscreverDaAutomacao(
+  fluxoId: string,
+  entidadeTipo: "contato" | "oportunidade",
+  entidadeId: string,
+): Promise<Resultado> {
+  if (entidadeTipo !== "contato" && entidadeTipo !== "oportunidade") {
+    return { ok: false, erro: "Tipo de entidade inválido." };
+  }
+
+  const n = await desinscrever(
+    fluxoId,
+    entidadeTipo,
+    entidadeId,
+    "Desinscrito na lista da automação",
+  );
+
+  revalidatePath("/automacoes");
+  revalidatePath(`/automacoes/${fluxoId}`);
+
+  // Zero é o caso de quem já tinha saído — clique repetido, ou duas abas
+  // abertas. Não é erro, e tratar como erro faria a tela acusar quem acertou.
+  return n > 0
+    ? { ok: true, mensagem: "Fora da automação. A próxima mensagem não sai." }
+    : { ok: true, mensagem: "Já não estava mais na automação." };
+}
+
+/**
+ * Põe contatos na automação à mão — a outra ponta da lista.
+ *
+ * As validações são as mesmas do disparo por segmento, e pelos mesmos motivos:
+ * fluxo de contato (inscrever contato em fluxo de oportunidade só falharia lá
+ * dentro, no primeiro bloco que pede o negócio), publicado (sem workflow no
+ * motor não há o que disparar) e não pausado (pausado, o motor nem reconhece o
+ * webhook).
+ */
+export async function inscreverNaAutomacao(
+  fluxoId: string,
+  contatoIds: string[],
+): Promise<Resultado> {
+  const ids = contatoIds.filter(Boolean);
+  if (ids.length === 0) return { ok: false, erro: "Escolha ao menos um contato." };
+
+  const fluxo = await dadosDeDisparo(fluxoId);
+  if (!fluxo) return { ok: false, erro: "Automação não encontrada." };
+
+  if (fluxo.entidade_alvo !== "contato") {
+    return {
+      ok: false,
+      erro: "Esta automação é de oportunidade — inscreva pelo funil, escolhendo os cards.",
+    };
+  }
+  if (!fluxo.versao_publicada_id || !fluxo.motor_webhook_caminho) {
+    return {
+      ok: false,
+      erro: "Publique a automação antes de inscrever alguém — é a publicação que cria o workflow no motor.",
+    };
+  }
+  if (fluxo.estado === "pausado") {
+    return {
+      ok: false,
+      erro: "Automação pausada — ligue-a antes de inscrever. Pausada, o motor nem reconhece o webhook.",
+    };
+  }
+
+  const inscritos = await inscreverContatos(
+    fluxoId,
+    fluxo.versao_publicada_id,
+    ids,
+  );
+
+  if (inscritos.length === 0) {
+    return {
+      ok: false,
+      erro:
+        ids.length === 1
+          ? "Esse contato já está nesta automação."
+          : "Todos esses contatos já estão nesta automação.",
+    };
+  }
+
+  const { entraram, perdidas } = await dispararInscritos(fluxo, "contato", inscritos);
+
+  revalidatePath("/automacoes");
+  revalidatePath(`/automacoes/${fluxoId}`);
+
+  if (entraram === 0) {
+    return {
+      ok: false,
+      erro: "Nenhuma execução chegou ao motor. Confira se o workflow está ativo e se o CRM alcança o motor.",
+    };
+  }
+
+  const falhou = perdidas
+    ? ` ${perdidas} não chegaram ao motor e voltam no próximo disparo.`
+    : "";
+
+  return {
+    ok: true,
+    mensagem: `${entraram} ${entraram === 1 ? "contato entrou" : "contatos entraram"} na automação.${falhou}`,
+  };
+}
+
+/**
+ * Exclui uma automação (ou a cadência de uma etapa).
+ *
+ * ARQUIVA, não apaga a linha. A diferença importa: `fluxo_execucoes` guarda que
+ * mensagens foram para gente real, e `fluxo_versoes` guarda o texto exato que
+ * saiu. Um DELETE cascatearia nos dois e apagaria a prova do que foi enviado —
+ * exatamente o registro que alguém procura quando um cliente reclama.
+ *
+ * Como as duas listagens já filtram `arquivado_em IS NULL`, arquivar É sumir da
+ * tela. E o índice ux_fluxos_etapa também ignora arquivado, então a etapa fica
+ * livre para receber uma cadência nova.
+ *
+ * O QUE É apagado de verdade é o workflow no n8n: deixá-lo lá significaria um
+ * webhook vivo que o CRM não gerencia mais.
+ */
+export async function excluirFluxo(fluxoId: string): Promise<Resultado> {
+  const [fluxo] = await sql`
+    SELECT id, nome, motor_workflow_id FROM fluxos WHERE id = ${fluxoId}`;
+  if (!fluxo) return { ok: false, erro: "Automação não encontrada." };
+
+  // 1. Ninguém pode continuar andando num fluxo que deixou de existir. Cancela
+  //    as inscrições vivas e as esperas penduradas nelas — na ordem, porque é o
+  //    predicado da execução viva que seleciona quais esperas congelar.
+  await sql`
+    UPDATE fluxo_esperas es SET estado = 'cancelada'
+    FROM fluxo_execucoes e
+    WHERE es.execucao_id = e.id
+      AND es.estado IN ('ativa','pausada')
+      AND e.fluxo_id = ${fluxoId}
+      AND e.estado IN ('pendente','rodando','esperando','pausada')`;
+
+  const canceladas = (await sql`
+    UPDATE fluxo_execucoes SET
+      estado = 'cancelada',
+      erro_msg = 'Automação excluída',
+      finalizado_em = now()
+    WHERE fluxo_id = ${fluxoId}
+      AND estado IN ('pendente','rodando','esperando','pausada')
+    RETURNING entidade_tipo, entidade_id`) as unknown as {
+    entidade_tipo: "contato" | "oportunidade";
+    entidade_id: string;
+  }[];
+
+  // A saída entra no histórico de cada lead que estava dentro. AQUI e não
+  // depois do UPDATE de baixo: a frase leva o nome do fluxo, e é só uma questão
+  // de tempo até "excluir" passar a apagar a linha em vez de arquivá-la.
+  //
+  // Um fluxo tem um `entidade_alvo` só, então na prática uma das duas listas
+  // vem vazia — separá-las é o que mantém a função de registro sem adivinhar
+  // em qual tabela procurar cada id.
+  for (const tipo of ["contato", "oportunidade"] as const) {
+    await registrarSaidaDeFluxo(
+      fluxoId,
+      tipo,
+      canceladas.filter((c) => c.entidade_tipo === tipo).map((c) => c.entidade_id),
+      "Automação excluída",
+    );
+  }
+
+  // 2. O workflow no motor. Falhar aqui NÃO impede o arquivamento: um workflow
+  //    que sobrou é ruído visível no n8n; um fluxo que não arquiva porque o
+  //    motor está fora do ar é uma tela que não obedece.
+  let avisoMotor = "";
+  if (fluxo.motor_workflow_id) {
+    try {
+      await apagarWorkflow(fluxo.motor_workflow_id as string);
+    } catch (e) {
+      avisoMotor = ` O workflow no n8n não foi apagado (${
+        e instanceof Error ? e.message : String(e)
+      }) — apague à mão.`;
+    }
+  }
+
+  await sql`
+    UPDATE fluxos SET
+      arquivado_em = now(),
+      estado = 'arquivado',
+      motor_workflow_id = NULL,
+      data_atualizacao = now()
+    WHERE id = ${fluxoId}`;
+
+  revalidatePath("/automacoes");
+  revalidatePath("/");
+
+  const n = canceladas.length;
+  return {
+    ok: true,
+    mensagem: `"${fluxo.nome}" excluída.${
+      n ? ` ${n} ${n === 1 ? "inscrição foi cancelada" : "inscrições foram canceladas"}.` : ""
+    }${avisoMotor}`,
   };
 }

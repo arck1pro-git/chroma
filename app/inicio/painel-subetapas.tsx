@@ -1,12 +1,12 @@
 "use client";
 
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
   useState,
   useTransition,
-  type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -26,7 +26,6 @@ import {
   Sparkles,
   Trash2,
   UserMinus,
-  Workflow,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -34,19 +33,21 @@ import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
 import { brl } from "../formato";
 import CartaoOportunidade from "../funil/cartao";
 import ChatIa from "../components/chat-ia";
-import { proximoIdDeMensagem } from "@/lib/automacoes/cadencia";
+import {
+  proximoIdDeMensagem,
+  type AcaoCadencia,
+} from "@/lib/automacoes/cadencia";
+import { ICONE_PADRAO, ICONES } from "../automacoes/aparencia";
 import type { CadenciaDaEtapa, InstanciaEscolhivel } from "./cadencias";
+import { excluirFluxo } from "../automacoes/acoes";
 import {
   alternarCadencia,
   criarCadencia,
-  dispararCadencia,
   removerDaCadencia,
   salvarCadencia,
 } from "./acoes-cadencia";
 import {
-  corDaEtapa,
   distribuir,
-  passoDaCadencia,
   rotuloDoDia,
   type ColunaSubetapa,
   type Subetapa,
@@ -101,11 +102,26 @@ type Rascunho = {
 // apagada" não é enfeite: se ela sumiu de Configurações depois de publicada, o
 // bloco FALHA no disparo em vez de cair no .env — e a coluna precisa dizer
 // isso antes de alguém apertar Disparar.
+/**
+ * De qual número a mensagem sai, dito na tela.
+ *
+ * Sem escolha, sai pela única cadastrada — e o nome dela é o que interessa
+ * mostrar. O rótulo dizia "instância do .env", resquício de antes da tabela
+ * `instancias_uazapi` existir: não há número nenhum no .env, e quem responde
+ * é sempre o que está em Integrações.
+ */
 function nomeDaInstancia(
   id: string | null,
   instancias: InstanciaEscolhivel[],
 ): string {
-  if (!id) return "instância do .env";
+  if (!id) {
+    if (instancias.length === 1) return `${instancias[0].nome} (padrão)`;
+    // Com duas ou mais, escolher é obrigatório: a publicação recusa e diz
+    // qual mensagem ficou sem.
+    return instancias.length === 0
+      ? "nenhuma instância cadastrada"
+      : "escolha o número";
+  }
   const i = instancias.find((x) => x.id === id);
   return i ? i.nome : "instância apagada";
 }
@@ -325,11 +341,84 @@ function CartaoNaCadencia({
 
 // ── Uma coluna ──────────────────────────────────────────────────────────────
 
+/**
+ * O que o fluxo faz ENTRE duas mensagens: esperar, mudar tag, mudar segmento,
+ * chamar um serviço. Uma pill por bloco, na ordem em que rodam.
+ *
+ * DISCRETA DE PROPÓSITO, e estreita: a coluna é da mensagem, e a leitura da
+ * cadência é a sequência de mensagens. O que acontece no intervalo importa,
+ * mas não compete — quem varre o quadro está procurando em que mensagem cada
+ * lead está, não quantas tags o fluxo mexe.
+ *
+ * Só leitura. Editar estes blocos é no builder, com o painel de cada um; o que
+ * esta tela garante é que eles não somem ao salvar (ver `escreverCadencia`) e
+ * que quem olha a cadência sabe que existem.
+ *
+ * Quem está PARADO num deles aparece embaixo da pill. Na prática é sempre a
+ * espera: os outros blocos o lead atravessa em milissegundos.
+ */
+function Acoes({
+  acoes,
+  porAcao,
+  contatoPorId,
+  usuarioPorId,
+  tagsDoContato,
+}: {
+  acoes: AcaoCadencia[];
+  porAcao: Map<string, Oportunidade[]>;
+  contatoPorId: Map<string, Contato>;
+  usuarioPorId: Map<string, Usuario>;
+  tagsDoContato: Map<string, Tag[]>;
+}) {
+  if (acoes.length === 0) return null;
+
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-2 self-start pt-9">
+      {acoes.map((a) => {
+        const Icone = ICONES[a.tipo] ?? ICONE_PADRAO;
+        const parados = porAcao.get(a.id) ?? [];
+        const rotulo = a.detalhe || a.rotulo;
+
+        return (
+          <div key={a.id} className="flex flex-col gap-2">
+            <span
+              title={a.detalhe ? `${a.rotulo} · ${a.detalhe}` : a.rotulo}
+              className="inline-flex max-w-32 items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-400"
+            >
+              <Icone className="size-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{rotulo}</span>
+              {parados.length > 0 && (
+                <span className="shrink-0 font-semibold tabular-nums">
+                  · {parados.length}
+                </span>
+              )}
+            </span>
+
+            {/* O card tem largura propria: sem ela a faixa encolheria para o
+                tamanho da pill e o cartao ficaria espremido. */}
+            {parados.map((o) => (
+              <div key={o.id} className="w-36">
+              <CartaoOportunidade
+                oportunidade={o}
+                contato={contatoPorId.get(o.contato_id)}
+                responsavel={
+                  o.responsavel_id ? usuarioPorId.get(o.responsavel_id) : undefined
+                }
+                tags={tagsDoContato.get(o.contato_id) ?? []}
+              />
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Coluna({
   coluna,
   indice,
   cor,
-  passo,
   instancias,
   emCadencia,
   removendoId,
@@ -342,10 +431,9 @@ function Coluna({
 }: {
   coluna: ColunaSubetapa;
   indice: number;
-  // cor da etapa já traduzida para valor CSS
+  // A classe de cor da etapa ("bg-sky-500"), a mesma que pinta a faixa da
+  // coluna no quadro de trás.
   cor: string;
-  // posição desta coluna na cadência, de 0 a 100
-  passo: number;
   instancias: InstanciaEscolhivel[];
   // quem tem inscrição viva neste fluxo agora
   emCadencia: Set<string>;
@@ -363,23 +451,24 @@ function Coluna({
 
   return (
     <section
-      // .subetapa e .subetapa-faixa (logo abaixo) misturam --cor-etapa conforme
-      // --passo, cada uma na sua proporção e com anexo próprio por tema; ver
-      // globals.css. Daqui saem só a cor e a posição na cadência.
-      className="subetapa group/coluna flex max-h-full w-64 shrink-0 flex-col rounded-2xl"
-      style={{ "--cor-etapa": cor, "--passo": passo } as CSSProperties}
+      // A MESMA CASCA DA ETAPA DO FUNIL (app/inicio/inicio.tsx): mesma largura,
+      // mesmo raio, mesmo fundo, mesma faixa de cor no topo. Uma mensagem da
+      // cadência é um passo da etapa, e ler as duas telas tem que ser a mesma
+      // leitura — antes a coluna daqui tinha fundo próprio, tingido conforme a
+      // posição na sequência, e parecia outro componente.
+      className="group/coluna relative flex max-h-full w-72 shrink-0 flex-col rounded-xl bg-zinc-100/70 dark:bg-zinc-900/50"
       aria-label={`Mensagem ${indice + 1} · ${subetapa.nome}`}
     >
-      {/* Mesma faixa que identifica a etapa no quadro de trás, aqui na cor
-          cheia e subindo com a cadência. É o sinal de cor à primeira vista: o
-          corpo da coluna, preso ao teto de contraste, não chega lá sozinho. */}
-      <span className="subetapa-faixa h-1.5 shrink-0 rounded-t-2xl" aria-hidden="true" />
+      <span
+        className={`h-1.5 shrink-0 rounded-t-xl ${cor}`}
+        aria-hidden="true"
+      />
 
       {/* Daqui pra baixo NÃO há cinza fixo: divisórias e rótulos são a própria
           tinta com alfa (zinc-900/N no claro, zinc-50/N no escuro). Sobre uma
           coluna que muda de tom a cada passo, um zinc-500 legível na 1ª coluna
           fica abaixo de 4,5:1 na 18ª — o alfa acompanha o fundo, o cinza não. */}
-      <div className="shrink-0 border-b border-zinc-900/10 px-3 py-2.5 dark:border-zinc-50/15">
+      <div className="shrink-0 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
         <div className="flex items-center gap-2">
           {/* o número da mensagem é o que identifica a coluna — vem antes do nome */}
           <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-zinc-900 text-[11px] font-semibold tabular-nums text-white dark:bg-zinc-100 dark:text-zinc-900">
@@ -389,17 +478,17 @@ function Coluna({
             {subetapa.nome}
           </h3>
           {/* "no topo o número de oportunidades ali" */}
-          <span className="min-w-5 shrink-0 rounded-full bg-white/80 px-1.5 py-0.5 text-center text-[11px] font-semibold tabular-nums text-zinc-800 dark:bg-black/40 dark:text-zinc-50">
+          <span className="min-w-5 shrink-0 rounded-full bg-zinc-200 px-1.5 py-0.5 text-center text-[11px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
             {oportunidades.length}
           </span>
         </div>
 
         <div className="mt-1 flex items-center justify-between gap-2 pl-7">
-          <span className="inline-flex min-w-0 items-center gap-1 text-[11px] text-zinc-900/80 dark:text-zinc-50/80">
+          <span className="inline-flex min-w-0 items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
             <canal.Icone className="size-3 shrink-0" aria-hidden="true" />
             <span className="truncate">{canal.rotulo}</span>
           </span>
-          <span className="shrink-0 text-[11px] font-medium tabular-nums text-zinc-900/80 dark:text-zinc-50/80">
+          <span className="shrink-0 text-[11px] font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
             {brl(total)}
           </span>
         </div>
@@ -409,7 +498,7 @@ function Coluna({
             cadência de fora é a única forma de perceber que a 5ª sai por outro
             número. */}
         {subetapa.canal === "whatsapp" && (
-          <p className="mt-0.5 flex items-center gap-1 pl-7 text-[11px] text-zinc-900/70 dark:text-zinc-50/70">
+          <p className="mt-0.5 flex items-center gap-1 pl-7 text-[11px] text-zinc-500 dark:text-zinc-400">
             <Send className="size-2.5 shrink-0" aria-hidden="true" />
             <span className="truncate">
               {nomeDaInstancia(subetapa.instanciaId, instancias)}
@@ -418,7 +507,7 @@ function Coluna({
         )}
 
         <div className="mt-0.5 flex items-center gap-1 pl-7">
-          <p className="min-w-0 flex-1 truncate text-[11px] text-zinc-900/70 dark:text-zinc-50/70">
+          <p className="min-w-0 flex-1 truncate text-[11px] text-zinc-500 dark:text-zinc-400">
             {rotuloDoDia(subetapa.dia)}
             {alemDaUltima > 0 ? " ou depois" : ""}
           </p>
@@ -428,7 +517,7 @@ function Coluna({
             type="button"
             onClick={aoEditar}
             aria-label={`Editar mensagem ${indice + 1}`}
-            className="shrink-0 rounded p-1 text-zinc-900/50 opacity-0 transition hover:bg-white/60 hover:text-zinc-900 focus-visible:opacity-100 group-hover/coluna:opacity-100 dark:text-zinc-50/60 dark:hover:bg-black/30 dark:hover:text-zinc-50"
+            className="shrink-0 rounded p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-zinc-900 focus-visible:opacity-100 group-hover/coluna:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
           >
             <Pencil className="size-3" aria-hidden="true" />
           </button>
@@ -436,7 +525,7 @@ function Coluna({
             type="button"
             onClick={aoExcluir}
             aria-label={`Excluir mensagem ${indice + 1}`}
-            className="shrink-0 rounded p-1 text-zinc-900/50 opacity-0 transition hover:bg-white/60 hover:text-red-700 focus-visible:opacity-100 group-hover/coluna:opacity-100 dark:text-zinc-50/60 dark:hover:bg-black/30 dark:hover:text-red-400"
+            className="shrink-0 rounded p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-700 focus-visible:opacity-100 group-hover/coluna:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-red-400"
           >
             <Trash2 className="size-3" aria-hidden="true" />
           </button>
@@ -444,8 +533,8 @@ function Coluna({
       </div>
 
       {/* a mensagem em si, em balão: é ela que dá nome à subetapa */}
-      <div className="shrink-0 border-b border-zinc-900/10 px-3 py-2.5 dark:border-zinc-50/15">
-        <p className="rounded-xl rounded-tl-sm bg-white px-2.5 py-2 text-[12px] leading-snug text-zinc-600 shadow-sm dark:bg-zinc-950/70 dark:text-zinc-300">
+      <div className="shrink-0 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
+        <p className="rounded-xl rounded-tl-sm bg-white px-2.5 py-2 text-[12px] leading-snug text-zinc-600 shadow-sm dark:bg-zinc-950 dark:text-zinc-300">
           {subetapa.mensagem || (
             <span className="italic text-zinc-400 dark:text-zinc-500">
               Sem mensagem escrita
@@ -454,9 +543,9 @@ function Coluna({
         </p>
       </div>
 
-      <div className="rolagem-oculta flex min-h-0 flex-col gap-2.5 overflow-y-auto rounded-b-2xl p-2.5">
+      <div className="rolagem-oculta flex min-h-0 flex-col gap-2.5 overflow-y-auto rounded-b-xl p-2.5">
         {oportunidades.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-900/20 px-3 py-4 text-center text-[11px] text-zinc-900/70 dark:border-zinc-50/25 dark:text-zinc-50/70">
+          <p className="rounded-xl border border-dashed border-zinc-300 px-3 py-4 text-center text-[11px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
             Ninguém nesta mensagem
           </p>
         ) : (
@@ -527,7 +616,7 @@ export default function PainelSubetapas({
   // mas recalcular a cada render faria as colunas mudarem no meio da sessão se
   // ela cruzasse a meia-noite, no meio de uma rolagem.
   const hoje = useMemo(() => new Date(), []);
-  const cor = corDaEtapa(etapa.cor);
+  const cor = etapa.cor;
 
   // Edição local. O que está aqui é o rascunho da tela; só vai ao banco no
   // Salvar. `chave` reseta o estado quando o servidor devolve outra versão —
@@ -538,6 +627,11 @@ export default function PainelSubetapas({
   );
   const [chaveVista, setChaveVista] = useState(chave);
   const [sujo, setSujo] = useState(false);
+  // Quem o próximo Publicar pega. Mora aqui e vai junto no salvar: é decisão
+  // da publicação, e não faz sentido gravá-la sem publicar.
+  const [inscreverAtuais, setInscreverAtuais] = useState(
+    cadencia?.inscreverAtuais ?? true,
+  );
   const [aviso, setAviso] = useState<{ tom: "ok" | "erro"; texto: string } | null>(
     null,
   );
@@ -558,12 +652,23 @@ export default function PainelSubetapas({
   const [criando, setCriando] = useState(false);
 
   // Onde cada oportunidade está: o último bloco que o motor executou para ela.
-  // Quem nunca entrou no fluxo cai na régua de dias (ver `distribuir`).
+  // Quem está no fluxo sem passo marcado começa na primeira; quem nunca entrou
+  // cai na régua de dias (ver `distribuir`).
   const posicao = cadencia?.posicao;
 
-  const colunas = useMemo(
-    () => distribuir(subetapas, oportunidades, hoje, posicao),
-    [subetapas, oportunidades, hoje, posicao],
+  // Os blocos de acao do fluxo, pelo id: e o que diz a `distribuir` que aquela
+  // posicao nao e uma coluna, e sim uma espera (ou uma tag) entre duas.
+  const idsDeAcao = useMemo(() => {
+    const ids = new Set<string>();
+    for (const s of subetapas) for (const a of s.acoes) ids.add(a.id);
+    for (const a of cadencia?.acoesFinais ?? []) ids.add(a.id);
+    return ids;
+  }, [subetapas, cadencia?.acoesFinais]);
+
+  const { colunas, porAcao } = useMemo(
+    () =>
+      distribuir(subetapas, oportunidades, hoje, posicao, emCadencia, idsDeAcao),
+    [subetapas, oportunidades, hoje, posicao, emCadencia, idsDeAcao],
   );
 
   const quantidade = oportunidades.length;
@@ -588,6 +693,11 @@ export default function PainelSubetapas({
         id: proximoIdDeMensagem(atuais),
         ordem: atuais.length + 1,
         ...dados,
+        // Coluna nova não tem ação nenhuma antes dela, e o instante é o que o
+        // dia disser. Quem grava reescreve os dois a partir do fluxo no banco
+        // (ver salvarCadencia) — aqui é só para o objeto nascer completo.
+        minutos: dados.dia * 1440,
+        acoes: [],
       };
       return ordenar([...atuais, nova]);
     });
@@ -702,17 +812,22 @@ export default function PainelSubetapas({
 
   return (
     <>
-      {/* Véu mais forte que o das gavetas: aqui o pedido é desfocar o fundo,
-          não só escurecê-lo — o quadro atrás tem colunas de cartões e
-          continuaria disputando a leitura com as daqui. */}
+      {/* `absolute` e não `fixed`: o painel vive DENTRO da área de conteúdo
+          (a raiz de inicio.tsx é `relative`), não sobre a janela inteira. Sem
+          isso ele cobria a sidebar da esquerda — e a barra de navegação do app
+          não é fundo de modal, é por onde se sai daqui.
+
+          Sem escurecer: o véu só apanha o clique de fora e desfoca a moldura
+          que sobra em volta. Escurecer aqui não separava nada que o próprio
+          painel, opaco e ocupando quase toda a área, já não separe. */}
       <div
-        className="veu-surge fixed inset-0 z-[60] bg-black/50 backdrop-blur-md"
+        className="veu-surge absolute inset-0 z-[60] backdrop-blur-md"
         onClick={aoFechar}
         aria-hidden="true"
       />
 
       <section
-        className="surge fixed inset-3 z-[61] flex flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl md:inset-6 dark:border-zinc-800 dark:bg-zinc-950"
+        className="surge absolute inset-3 z-[61] flex flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl md:inset-6 dark:border-zinc-800 dark:bg-zinc-950"
         role="dialog"
         aria-modal="true"
         aria-label={`Cadência de ${etapa.nome}`}
@@ -748,13 +863,6 @@ export default function PainelSubetapas({
                   </span>
                 )}
               </div>
-              <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                Cada coluna é uma mensagem da automação desta etapa, e cada uma
-                sai pelo número escolhido nela. O card fica na última mensagem
-                que o motor já executou para aquela oportunidade; quem ainda não
-                entrou no fluxo aparece pela régua de dias. Para tirar alguém da
-                sequência, use o botão no card.
-              </p>
             </div>
             <button
               type="button"
@@ -766,9 +874,16 @@ export default function PainelSubetapas({
             </button>
           </div>
 
-          {/* Barra de ações. O interruptor vem primeiro, à esquerda: é o estado
-              da cadência, e é ele que decide se qualquer outra coisa aqui tem
-              efeito no mundo. */}
+          {/* Barra de ações: DOIS controles, e não mais.
+              
+              À esquerda, o estado no n8n — rodando ou pausada —, que é o que
+              decide se qualquer coisa aqui tem efeito no mundo. À direita,
+              Publicar, que grava a versão, sobe pro motor, liga a cadência e
+              inscreve as oportunidades abertas desta etapa.
+
+              O que saiu: "Disparar" (Publicar já inscreve), o link do Builder e
+              "Excluir". A cadência é editada AQUI; quem quiser o grafo inteiro
+              ou apagar o fluxo tem /automacoes, onde ele também aparece. */}
           {cadencia && (
             <div className="flex flex-wrap items-center gap-2 pl-6">
               <button
@@ -813,16 +928,40 @@ export default function PainelSubetapas({
                 )}
               </button>
 
-              <div className="ml-auto flex flex-wrap items-center gap-2">
+              {/* O campo fica COLADO no Publicar, e não no cabeçalho, porque é
+                  dele que ele fala: é o próximo Publicar que decide se as
+                  oportunidades que já estão na etapa entram. Quem chegar
+                  depois entra sozinho de qualquer jeito. */}
+              <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[12px] text-zinc-600 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={inscreverAtuais}
+                  onChange={(e) => setInscreverAtuais(e.target.checked)}
+                  disabled={pendente}
+                  className="size-3.5 accent-zinc-900 dark:accent-zinc-100"
+                />
+                Incluir as {quantidade} que já estão na etapa
+              </label>
+
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() =>
-                    executar(salvarCadencia(cadencia.fluxoId, subetapas), {
-                      aoDarCerto: () => setSujo(false),
-                    })
+                    executar(
+                      salvarCadencia(
+                        cadencia.fluxoId,
+                        subetapas,
+                        inscreverAtuais,
+                      ),
+                      { aoDarCerto: () => setSujo(false) },
+                    )
                   }
                   disabled={pendente || subetapas.length === 0}
-                  title="Grava a versão, sobe pro n8n, liga a cadência e inscreve as oportunidades abertas desta etapa. As mensagens saem."
+                  title={
+                    inscreverAtuais
+                      ? "Grava a versão, sobe pro n8n, liga a cadência e inscreve as oportunidades abertas desta etapa. As mensagens saem."
+                      : "Grava a versão, sobe pro n8n e liga a cadência. Quem já está na etapa NÃO é inscrito — só quem entrar daqui pra frente."
+                  }
                   className={botaoClaro}
                 >
                   {pendente ? (
@@ -833,29 +972,31 @@ export default function PainelSubetapas({
                   Publicar{sujo ? " •" : ""}
                 </button>
 
+                {/* Remover fica por último e sem destaque: é a única ação
+                    irreversível da barra, e não deve competir por atenção com
+                    Publicar, que é a que se usa todo dia. */}
                 <button
                   type="button"
-                  onClick={() => executar(dispararCadencia(cadencia.fluxoId))}
-                  disabled={pendente || sujo || !rodando}
-                  title={
-                    rodando
-                      ? "Inscreve de uma vez as oportunidades abertas desta etapa"
-                      : "A cadência precisa estar rodando para inscrever alguém"
-                  }
-                  className={botaoEscuro}
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        `Remover a cadência da etapa "${etapa.nome}"? As inscrições em andamento são canceladas e o workflow sai do n8n. As mensagens já enviadas continuam no histórico de cada lead.`,
+                      )
+                    ) {
+                      return;
+                    }
+                    executar(excluirFluxo(cadencia.fluxoId), {
+                      aoDarCerto: aoFechar,
+                    });
+                  }}
+                  disabled={pendente}
+                  title="Remover esta cadência"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-zinc-500 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-red-500/10 dark:hover:text-red-400"
                 >
-                  <Send className="size-3.5" aria-hidden="true" />
-                  Disparar
+                  <Trash2 className="size-3.5" aria-hidden="true" />
+                  Remover cadência
                 </button>
 
-                <Link
-                  href={`/automacoes/${cadencia.fluxoId}`}
-                  className={botaoClaro}
-                  title="Abrir no editor de fluxo, com todos os blocos"
-                >
-                  <Workflow className="size-3.5" aria-hidden="true" />
-                  Builder
-                </Link>
               </div>
             </div>
           )}
@@ -954,10 +1095,20 @@ export default function PainelSubetapas({
             </div>
           ) : (
             <>
-                {colunas.map((coluna, i) =>
-                  editando === coluna.subetapa.id ? (
+                {colunas.map((coluna, i) => (
+                  <Fragment key={coluna.subetapa.id}>
+                    {/* O que o fluxo faz ANTES desta mensagem. Entre as
+                        colunas porque é onde acontece — no intervalo. */}
+                    <Acoes
+                      acoes={coluna.subetapa.acoes}
+                      porAcao={porAcao}
+                      contatoPorId={contatoPorId}
+                      usuarioPorId={usuarioPorId}
+                      tagsDoContato={tagsDoContato}
+                    />
+
+                    {editando === coluna.subetapa.id ? (
                     <FormSubetapa
-                      key={coluna.subetapa.id}
                       titulo={`Mensagem ${i + 1}`}
                       rotuloAcao="Salvar"
                       instancias={instancias}
@@ -973,11 +1124,9 @@ export default function PainelSubetapas({
                     />
                   ) : (
                     <Coluna
-                      key={coluna.subetapa.id}
                       coluna={coluna}
                       indice={i}
                       cor={cor}
-                      passo={passoDaCadencia(i, colunas.length)}
                       instancias={instancias}
                       emCadencia={emCadencia}
                       removendoId={removendoId}
@@ -988,8 +1137,19 @@ export default function PainelSubetapas({
                       aoExcluir={() => excluir(coluna.subetapa.id)}
                       aoRemover={remover}
                     />
-                  ),
-                )}
+                    )}
+                  </Fragment>
+                ))}
+
+                {/* Depois da última mensagem o fluxo ainda pode fazer coisa —
+                    marcar uma tag no fim da sequência, por exemplo. */}
+                <Acoes
+                  acoes={cadencia.acoesFinais}
+                  porAcao={porAcao}
+                  contatoPorId={contatoPorId}
+                  usuarioPorId={usuarioPorId}
+                  tagsDoContato={tagsDoContato}
+                />
 
                 {/* A coluna nova nasce no FIM da fila, e não num botão do
                     cabeçalho: o lugar em que ela vai aparecer é o mesmo em que

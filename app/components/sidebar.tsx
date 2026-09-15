@@ -31,10 +31,13 @@ import {
   Blocks,
   LayoutDashboard,
   Mail,
+  Megaphone,
   MessagesSquare,
+  Newspaper,
   Plus,
   Settings,
   Sparkles,
+  Webhook,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
@@ -43,15 +46,19 @@ import type { ConversaNaBarra } from "@/lib/ia/conversas";
 import { lugarDoEscopo, rotaDaConversa } from "@/lib/ia/navegacao";
 
 // Dashboard, funil/kanbans e contatos moram todos na raiz — um item só,
-// "Início". As rotas /dashboard, /funil e /contatos não existem mais.
+// "Dashboard". As rotas /dashboard, /funil e /contatos não existem mais: o
+// nome do item é o do conteúdo, mas o href continua sendo a raiz.
 //
 // /meta e /integracoes continuam existindo como rota, mas ficam fora daqui: a
 // barra é para o que se usa todo dia.
 const modulos: { href: string; rotulo: string; Icone: LucideIcon }[] = [
-  { href: "/", rotulo: "Início", Icone: LayoutDashboard },
+  { href: "/", rotulo: "Dashboard", Icone: LayoutDashboard },
   { href: "/chat", rotulo: "Chat", Icone: MessagesSquare },
   { href: "/emails", rotulo: "E-mails", Icone: Mail },
   { href: "/automacoes", rotulo: "Automações", Icone: Workflow },
+  { href: "/campanhas", rotulo: "Campanhas", Icone: Megaphone },
+  { href: "/blog", rotulo: "Blog", Icone: Newspaper },
+  { href: "/webhooks", rotulo: "Webhooks", Icone: Webhook },
   { href: "/contextos", rotulo: "Contextos", Icone: Blocks },
 ];
 
@@ -60,11 +67,31 @@ const modulos: { href: string; rotulo: string; Icone: LucideIcon }[] = [
 //
 // O ativo usa o MESMO cinza do hover. No ChatGPT a diferença entre "onde estou"
 // e "onde o mouse está" é só a permanência, não a intensidade.
+//
+// 14px em peso 300, e não 13px em 400: corpo maior com traço mais leve lê
+// melhor na barra do que corpo menor em peso normal — a mancha de tinta fica
+// parecida e o desenho da letra é que cresce. Só vale porque o Inter daqui é
+// variável (app/layout.tsx, sem weight fixo) e tem o eixo até 300 de verdade;
+// com fonte estática o navegador sintetizaria o peso e o traço sujaria.
+//
+// Inativo e ativo agora dividem a MESMA cor de texto (zinc-900 / zinc-100 no
+// escuro): a barra inteira é tinta cheia, e o que diz "onde estou" passou a ser
+// só o fundo do ativo. É o extremo da escala — daqui não dá pra escurecer mais
+// sem mudar a cor de fundo da barra.
+//
+// Efeito colateral aceito: sem degrau de cor, o item ativo depende inteiramente
+// do bg-zinc-100. Se algum dia esse fundo sair, a marcação de posição vai junto.
+//
+// No escuro o equivalente é SUBIR (zinc-100), não descer: contraste é distância
+// da superfície, e a superfície lá é preta.
 function classesDoItem(ativo: boolean) {
-  return `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
+  return `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[14px] font-light transition-colors ${
     ativo
-      ? "bg-zinc-100 font-medium text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-50"
+      // O ativo não volta pra font-medium: a 14px o degrau de peso ficava
+      // gritante ao lado dos finos. Peso normal basta — quem separa mesmo é o
+      // fundo.
+      ? "bg-zinc-100 font-normal text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+      : "text-zinc-900 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-50"
   }`;
 }
 
@@ -100,12 +127,16 @@ export default function Sidebar() {
     <aside className="sticky top-0 z-30 flex h-screen w-[260px] shrink-0 flex-col gap-1 border-r border-zinc-200 p-2 dark:border-zinc-800">
       {/* A marca: só o nome, na fonte da interface. O quadradinho com o "C"
           saiu — era um segundo logotipo ao lado do primeiro, e com a barra
-          larga o nome por extenso já cumpre o papel sozinho. */}
+          larga o nome por extenso já cumpre o papel sozinho.
+
+          Maior que os itens de módulo (14px) de propósito: no mesmo corpo, a
+          marca virava só mais uma linha da lista. O degrau de tamanho é o que
+          diz que ela é o topo da barra, e não o primeiro item dela. */}
       <Link
         href="/"
-        className="flex items-center rounded-lg px-2.5 py-2 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800/60"
+        className="mb-1 flex items-center rounded-lg px-2.5 py-1.5 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800/60"
       >
-        <span className="text-[13px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        <span className="text-[20px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
           Chroma
         </span>
       </Link>
@@ -133,7 +164,7 @@ export default function Sidebar() {
           quem rola vira a página. */}
       <div className="mt-2 flex min-h-0 flex-1 flex-col">
         <div className="flex items-center justify-between gap-1 pb-1 pl-2.5 pr-1">
-          <h2 className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+          <h2 className="text-[12px] font-normal text-zinc-700 dark:text-zinc-200">
             Análises
           </h2>
 
@@ -159,7 +190,7 @@ export default function Sidebar() {
         </div>
 
         {conversas.length === 0 ? (
-          <p className="px-2.5 text-[12px] leading-relaxed text-zinc-400 dark:text-zinc-600">
+          <p className="px-2.5 text-[13px] font-light leading-relaxed text-zinc-700 dark:text-zinc-300">
             Suas conversas com a IA aparecem aqui.
           </p>
         ) : (
@@ -203,7 +234,7 @@ export default function Sidebar() {
           <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
             FA
           </span>
-          <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-600 dark:text-zinc-400">
+          <span className="min-w-0 flex-1 truncate text-[14px] font-light text-zinc-900 dark:text-zinc-100">
             Fabrício
           </span>
         </div>

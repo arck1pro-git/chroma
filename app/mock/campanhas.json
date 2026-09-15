@@ -1,0 +1,268 @@
+{
+  "_nota": "Dados de teste do modulo Campanhas. O canal e a API oficial do WhatsApp, que ainda nao esta ligada - enquanto nao estiver, a tela le daqui. Nada disto vai para o banco: quando a API existir, app/campanhas/dados.ts troca a leitura deste arquivo por SQL e os tipos continuam os mesmos. O bloco `meta`, no fim da corrente, e quem define o que a campanha conta - chegar nele e o resultado. `custoPorMensagem` e em reais; a cobranca real da API e por JANELA DE CONVERSA de 24h, nao por mensagem - a simplificacao esta registrada em dados.ts.",
+  "segmentos": [
+    {
+      "id": "seg-vip",
+      "nome": "Clientes VIP",
+      "contatos": 312
+    },
+    {
+      "id": "seg-frios",
+      "nome": "Leads frios 90d",
+      "contatos": 1840
+    },
+    {
+      "id": "seg-evento",
+      "nome": "Evento Construir 2026",
+      "contatos": 427
+    },
+    {
+      "id": "seg-carrinho",
+      "nome": "Orçamento sem resposta",
+      "contatos": 96
+    }
+  ],
+  "campanhas": [
+    {
+      "id": "camp-black",
+      "nome": "Black Friday · aquecimento",
+      "segmentoId": "seg-vip",
+      "estado": "ativa",
+      "criadaEm": "2026-09-08T13:20:00Z",
+      "blocos": [
+        {
+          "id": "lote-1",
+          "tipo": "liberar_lote",
+          "quantidade": 40,
+          "minutos": 60
+        },
+        {
+          "id": "msg-1",
+          "tipo": "mensagem",
+          "nome": "Aviso de antecipação",
+          "texto": "Oi {{primeiro_nome}}! A Black começa antes pra quem já é cliente. Quer que eu te mande a lista antes de abrir pro público?"
+        },
+        {
+          "id": "esp-1",
+          "tipo": "esperar",
+          "minutos": 2880
+        },
+        {
+          "id": "msg-2",
+          "tipo": "mensagem",
+          "nome": "Lista de ofertas",
+          "texto": "Separei as 6 ofertas que mais combinam com o que você já levou. Te mando por aqui mesmo?"
+        },
+        {
+          "id": "esp-2",
+          "tipo": "esperar",
+          "minutos": 4320
+        },
+        {
+          "id": "msg-3",
+          "tipo": "mensagem",
+          "nome": "Último dia",
+          "texto": "Hoje é o último dia da condição. Se quiser, eu seguro uma unidade no seu nome."
+        },
+        {
+          "id": "meta-1",
+          "tipo": "meta",
+          "rotulo": "Leads gerados"
+        }
+      ],
+      "leads": [
+        {
+          "id": "l-1",
+          "nome": "Mariana Alves",
+          "whatsapp": "5547999340011",
+          "blocoId": "msg-3",
+          "estado": "andando"
+        },
+        {
+          "id": "l-2",
+          "nome": "Fábio Torres",
+          "whatsapp": "5547999340022",
+          "blocoId": "meta-1",
+          "estado": "andando"
+        },
+        {
+          "id": "l-3",
+          "nome": "Renata Dias",
+          "whatsapp": "5547999340033",
+          "blocoId": "esp-2",
+          "estado": "andando"
+        },
+        {
+          "id": "l-4",
+          "nome": "Luciana Prado",
+          "whatsapp": "5547999340044",
+          "blocoId": "esp-2",
+          "estado": "andando"
+        },
+        {
+          "id": "l-5",
+          "nome": "Tânia Moreira",
+          "whatsapp": "5547999340055",
+          "blocoId": "msg-2",
+          "estado": "respondeu"
+        },
+        {
+          "id": "l-6",
+          "nome": "Carlos Beltrão",
+          "whatsapp": "5547999340066",
+          "blocoId": "msg-2",
+          "estado": "andando"
+        },
+        {
+          "id": "l-7",
+          "nome": "Paulo Serrano",
+          "whatsapp": "5547999340077",
+          "blocoId": "esp-1",
+          "estado": "andando"
+        },
+        {
+          "id": "l-8",
+          "nome": "Ana Figueiredo",
+          "whatsapp": "5547999340088",
+          "blocoId": "esp-1",
+          "estado": "falhou"
+        },
+        {
+          "id": "l-9",
+          "nome": "Rodrigo Lemos",
+          "whatsapp": "5547999340099",
+          "blocoId": "msg-1",
+          "estado": "andando"
+        },
+        {
+          "id": "l-10",
+          "nome": "Beatriz Nunes",
+          "whatsapp": "5547999340100",
+          "blocoId": "msg-1",
+          "estado": "andando"
+        },
+        {
+          "id": "l-11",
+          "nome": "Sérgio Vasques",
+          "whatsapp": "5547999340111",
+          "blocoId": "lote-1",
+          "estado": "na_fila"
+        },
+        {
+          "id": "l-12",
+          "nome": "Helena Castro",
+          "whatsapp": "5547999340122",
+          "blocoId": "lote-1",
+          "estado": "na_fila"
+        },
+        {
+          "id": "l-13",
+          "nome": "Ivo Bittencourt",
+          "whatsapp": "5547999340133",
+          "blocoId": "lote-1",
+          "estado": "na_fila"
+        }
+      ],
+      "custoPorMensagem": 0.34,
+      "enviadas": 268
+    },
+    {
+      "id": "camp-reativa",
+      "nome": "Reativação de orçamento",
+      "segmentoId": "seg-carrinho",
+      "estado": "pausada",
+      "criadaEm": "2026-08-27T09:05:00Z",
+      "blocos": [
+        {
+          "id": "lote-1",
+          "tipo": "liberar_lote",
+          "quantidade": 15,
+          "minutos": 240
+        },
+        {
+          "id": "msg-1",
+          "tipo": "mensagem",
+          "nome": "Retomada",
+          "texto": "Oi {{primeiro_nome}}, o orçamento que montei pra você ainda está de pé. Quer que eu revise os valores?"
+        },
+        {
+          "id": "esp-1",
+          "tipo": "esperar",
+          "minutos": 1440
+        },
+        {
+          "id": "msg-2",
+          "tipo": "mensagem",
+          "nome": "Fechamento",
+          "texto": "Consigo segurar a condição até sexta. Te ajudo a fechar por aqui?"
+        },
+        {
+          "id": "meta-1",
+          "tipo": "meta",
+          "rotulo": "Leads gerados"
+        }
+      ],
+      "leads": [
+        {
+          "id": "l-1",
+          "nome": "Otávio Bastos",
+          "whatsapp": "5547999341011",
+          "blocoId": "meta-1",
+          "estado": "andando"
+        },
+        {
+          "id": "l-2",
+          "nome": "Cláudia Reis",
+          "whatsapp": "5547999341022",
+          "blocoId": "esp-1",
+          "estado": "andando"
+        },
+        {
+          "id": "l-3",
+          "nome": "Marcelo Pinho",
+          "whatsapp": "5547999341033",
+          "blocoId": "msg-1",
+          "estado": "andando"
+        },
+        {
+          "id": "l-4",
+          "nome": "Vera Lucchesi",
+          "whatsapp": "5547999341044",
+          "blocoId": "lote-1",
+          "estado": "na_fila"
+        }
+      ],
+      "custoPorMensagem": 0.34,
+      "enviadas": 41
+    },
+    {
+      "id": "camp-evento",
+      "nome": "Convite · Construir 2026",
+      "segmentoId": "seg-evento",
+      "estado": "pausada",
+      "criadaEm": "2026-09-12T16:40:00Z",
+      "blocos": [
+        {
+          "id": "lote-1",
+          "tipo": "liberar_lote",
+          "quantidade": 100,
+          "minutos": 1440
+        },
+        {
+          "id": "msg-1",
+          "tipo": "mensagem",
+          "nome": "Convite",
+          "texto": "Oi {{primeiro_nome}}! Vamos estar no Construir 2026, estande 114. Passa lá pra tomar um café com a gente?"
+        },
+        {
+          "id": "meta-1",
+          "tipo": "meta",
+          "rotulo": "Entradas na comunidade"
+        }
+      ],
+      "leads": [],
+      "custoPorMensagem": 0.29,
+      "enviadas": 0
+    }
+  ]
+}

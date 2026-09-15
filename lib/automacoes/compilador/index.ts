@@ -11,7 +11,18 @@
 import { blocoPorTipo } from "../catalogo";
 import { NO_ENTRADA, type DefinicaoFluxo } from "../tipos";
 
-export const VERSAO_COMPILADOR = "1.0.0";
+/**
+ * Versão do ARTEFATO que vai ao motor — compilador e adaptador juntos, não só
+ * este arquivo. É ela que `fluxo_publicacoes.compilador_versao` grava, e é
+ * comparando com ela que a tela sabe se o workflow que está no n8n foi gerado
+ * pelo código de hoje ou por um anterior.
+ *
+ * Mudou para 1.1.0 quando o adaptador passou a pôr a guarda de inscrição antes
+ * de cada envio: fluxo publicado com 1.0.0 não tem esse nó, e nele desinscrever
+ * não para a mensagem. Republicar é o que resolve — e é a tela que pede, porque
+ * ninguém adivinha isso olhando o fluxo.
+ */
+export const VERSAO_COMPILADOR = "1.1.0";
 
 // Passo já resolvido: posição, tipo, config e para onde vai cada saída.
 export type PassoCompilado = {

@@ -1,16 +1,8 @@
-import type { Metadata } from "next";
-import Configuracoes from "./configuracoes";
-import { carregarConfiguracoes } from "./dados";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Configurações · Chroma",
-};
-
-// Server: carrega funis + etapas do banco e passa pro client. Sem cache: funil
-// criado aqui tem que aparecer na hora (e refletir no /funil).
-export const dynamic = "force-dynamic";
-
-export default async function ConfiguracoesPage() {
-  const dados = await carregarConfiguracoes();
-  return <Configuracoes dados={dados} />;
+// /configuracoes não tem tela própria: a barra da esquerda sempre tem um item
+// marcado, e "nenhum" não é um estado que valha desenhar. Funis é a primeira
+// entidade da lista e a que estrutura o resto do CRM.
+export default function ConfiguracoesPage() {
+  redirect("/configuracoes/funis");
 }

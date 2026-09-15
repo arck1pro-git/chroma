@@ -164,9 +164,10 @@ A instância uazapi é compartilhada com o SprintHub (`docs/automacoes-n8n.md`
 
 1. Rodar `migration-cadencia-etapa.sql` (`fluxos.etapa_id` + as partições de
    `fluxo_execucao_passos`, que existiam só até julho/2026).
-2. `N8N_BASE_URL`, `N8N_API_KEY` e um `CRM_BASE_URL` que o n8n alcance. O
-   `CRM_SERVICE_TOKEN` já está no `.env` e é o que autentica os nós de volta
-   (docs/automacoes-n8n.md §3) — nada a cadastrar no motor.
+2. `N8N_BASE_URL` e `N8N_API_KEY`. O `CRM_SERVICE_TOKEN` já está no `.env`
+   (docs/automacoes-n8n.md §3) — nada a cadastrar no motor. Não há mais
+   `CRM_BASE_URL`: os nós da cadência falam direto com a uazapi e com o
+   Postgres, então publicar não precisa que o n8n alcance o CRM.
 3. Salvar a cadência **depois** de conferir a instância de cada mensagem: sem
    ela escolhida, o bloco cai na do `.env` — o número compartilhado com o
    SprintHub. Salvar é o que republica no motor.

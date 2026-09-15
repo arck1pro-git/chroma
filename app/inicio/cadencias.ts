@@ -11,7 +11,7 @@ import {
   posicaoNaCadencia,
 } from "@/lib/automacoes/repositorio";
 import { sql } from "@/lib/db";
-import type { Subetapa } from "@/lib/automacoes/cadencia";
+import type { AcaoCadencia, Subetapa } from "@/lib/automacoes/cadencia";
 
 // Instância de WhatsApp como a TELA a vê: sem token, sem base_url. O painel só
 // precisa saber qual escolher; quem resolve o segredo é o executor, no
@@ -28,10 +28,17 @@ export type CadenciaDaEtapa = {
   estado: "rascunho" | "publicado" | "pausado" | "arquivado";
   numeroVersao: number | null;
   subetapas: Subetapa[];
+  // O que roda depois da última mensagem. As ações ENTRE mensagens vão dentro
+  // de cada subetapa; estas não têm coluna depois em que se pendurar.
+  acoesFinais: AcaoCadencia[];
   // false quando o fluxo ganhou desvio no builder e não cabe mais em colunas.
   linear: boolean;
   rascunhoPendente: boolean;
   publicadoAlgumaVez: boolean;
+  // Publicar pega quem já está na etapa, ou só quem entrar daqui pra frente?
+  // Quem entra depois entra sozinho nos dois casos — ver
+  // inscreverNaCadenciaDaEtapa.
+  inscreverAtuais: boolean;
   // quantas oportunidades estão dentro do fluxo agora
   noFluxo: number;
   erros14d: number;
@@ -98,9 +105,9 @@ export async function carregarCadencias(): Promise<DadosCadencias> {
 
   const porEtapa = new Map<string, CadenciaDaEtapa>();
   for (const f of fluxos) {
-    const { subetapas, linear } = f.definicao
+    const { subetapas, linear, acoesFinais } = f.definicao
       ? lerCadencia(f.definicao)
-      : { subetapas: [], linear: true };
+      : { subetapas: [], linear: true, acoesFinais: [] };
 
     porEtapa.set(f.etapa_id, {
       fluxoId: f.id,
@@ -108,9 +115,11 @@ export async function carregarCadencias(): Promise<DadosCadencias> {
       estado: f.estado,
       numeroVersao: f.numero_versao,
       subetapas,
+      acoesFinais,
       linear,
       rascunhoPendente: f.rascunho_pendente,
       publicadoAlgumaVez: f.publicado_alguma_vez,
+      inscreverAtuais: f.inscrever_atuais,
       noFluxo: f.no_fluxo,
       erros14d: f.erros_14d,
       posicao: posicaoPorFluxo.get(f.id) ?? new Map(),
