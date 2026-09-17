@@ -226,13 +226,27 @@ export type CredenciaisMotor = {
    * Opcional para não quebrar chamada antiga — sem ele tudo cai na padrão, que
    * é como era antes.
    */
-  porInstancia?: Map<string, { credencialId: string; baseUrl: string }>;
+  porInstancia?: Map<
+    string,
+    { credencialId: string; baseUrl: string; numero?: string | null }
+  >;
   /**
    * Id do workflow que recolhe os erros (ver NOME_WORKFLOW_ERROS). Vai em
    * `settings.errorWorkflow`: sem ele, uma falha no motor morre no histórico do
    * n8n e a execução fica `pendente` no CRM para sempre.
    */
   erroWorkflowId?: string;
+  /**
+   * Endereço PÚBLICO do CRM, do ponto de vista do motor. Presente = o nó de
+   * envio chama /api/automacoes/enviar em vez de falar com a uazapi.
+   *
+   * Vazio (localhost, sem túnel) = caminho antigo, direto na uazapi. Não é
+   * preferência: é que o motor não alcança a sua máquina, e publicar um nó que
+   * chama um endereço inalcançável seria publicar uma cadência quebrada.
+   */
+  crmBaseUrl?: string;
+  /** Credencial Header Auth do n8n com o `Authorization: Bearer <token>`. */
+  crmCredencialId?: string;
 };
 
 function credPostgres(c: CredenciaisMotor) {
@@ -471,18 +485,51 @@ export function paraWorkflow(
       const daInstancia = instanciaId
         ? cred.porInstancia?.get(instanciaId)
         : undefined;
-      const baseUrl = daInstancia?.baseUrl ?? cred.uazapiBaseUrl;
-      const credencialUazapi = daInstancia?.credencialId ?? cred.uazapi;
 
-      // Sem instância no bloco E sem padrão: há mais de uma cadastrada e
-      // ninguém escolheu. Falhar AQUI, com o nome do bloco, é o que separa
-      // "corrija a 5ª mensagem" de um workflow publicado que erra calado no
-      // primeiro disparo.
-      if (!baseUrl) {
+      // TODA MENSAGEM TEM QUE DIZER POR QUAL NÚMERO SAI. Não há "a padrão".
+      //
+      // Antes, bloco sem número caía na instância padrão e bloco apontando para
+      // instância removida caía nela também — os dois em silêncio. O lead
+      // recebia a mensagem de um remetente que ele não conhece, e não havia
+      // como descobrir isso pelo CRM: só do outro lado, pelo cliente.
+      //
+      // Estourar aqui custa uma escolha na tela e uma republicação. É a troca
+      // certa: a compilação é o último lugar onde isso ainda é barato.
+      if (!instanciaId) {
         throw new Error(
-          `A mensagem "${passo.rotulo}" não tem número escolhido, e há mais de uma instância de WhatsApp cadastrada. Escolha o número nesta mensagem.`,
+          `A mensagem "${passo.rotulo}" está sem número de WhatsApp. Escolha por qual número ela sai.`,
         );
       }
+      if (!daInstancia) {
+        throw new Error(
+          `A mensagem "${passo.rotulo}" está presa a um número de WhatsApp que não existe mais em Configurações. Escolha o número de novo nesta mensagem.`,
+        );
+      }
+      if (!daInstancia.numero) {
+        throw new Error(
+          `O número escolhido na mensagem "${passo.rotulo}" ainda não foi pareado. Conecte o WhatsApp dele em Configurações antes de publicar.`,
+        );
+      }
+      const baseUrl = daInstancia.baseUrl;
+      const credencialUazapi = daInstancia.credencialId;
+      // O que viaja no workflow publicado. Token muda, id de linha some — o
+      // número, não: é ele que o CRM usa para achar a credencial na hora do
+      // envio.
+      const numeroDeOrigem = daInstancia.numero;
+
+      // DUAS FORMAS DO MESMO NÓ. A primeira é a que vale:
+      //
+      // · PELO CRM (quando há endereço público): o motor manda texto e NÚMERO
+      //   DE ORIGEM, e quem resolve a credencial da instância é o CRM, no
+      //   instante do envio. Instância recriada, token trocado, sessão que caiu
+      //   e voltou — nada disso exige republicar, porque o que viaja no
+      //   workflow é o número, que não muda.
+      //
+      // · DIRETO NA UAZAPI (fallback de desenvolvimento): o token vai no cofre
+      //   do n8n, copiado. É o caminho que produziu o "401 Invalid token"
+      //   depois de a instância ser recriada — fica só porque em localhost o
+      //   motor não alcança o CRM.
+      const pelosCrm = Boolean(cred.crmBaseUrl && cred.crmCredencialId);
 
       nodes.push({
         id: passo.id,
@@ -490,22 +537,45 @@ export function paraWorkflow(
         type: "n8n-nodes-base.httpRequest",
         typeVersion: 4.2,
         position: [passo.posicao.x, passo.posicao.y],
-        parameters: {
-          method: "POST",
-          url: `${baseUrl}/send/text`,
-          authentication: "genericCredentialType",
-          genericAuthType: "httpHeaderAuth",
-          sendBody: true,
-          specifyBody: "json",
-          jsonBody: expr(
-            JSON.stringify({
-              number: `{{ $('${NOME_LEAD}').first().json.numero }}`,
-              text: textoParaExpressao(String(passo.config.texto ?? "")),
-            }),
-          ),
-        },
+        parameters: pelosCrm
+          ? {
+              method: "POST",
+              url: `${cred.crmBaseUrl}/api/automacoes/enviar`,
+              authentication: "genericCredentialType",
+              genericAuthType: "httpHeaderAuth",
+              sendBody: true,
+              specifyBody: "json",
+              jsonBody: expr(
+                JSON.stringify({
+                  execucao_id: EXECUCAO_ID,
+                  no_id: passo.id,
+                  // O número de origem, e não o id da instância: o id é da
+                  // LINHA do CRM e morre quando alguém apaga e recadastra o
+                  // número. O número sobrevive a isso.
+                  numero_origem: numeroDeOrigem,
+                  para: `{{ $('${NOME_LEAD}').first().json.numero }}`,
+                  texto: textoParaExpressao(String(passo.config.texto ?? "")),
+                }),
+              ),
+            }
+          : {
+              method: "POST",
+              url: `${baseUrl}/send/text`,
+              authentication: "genericCredentialType",
+              genericAuthType: "httpHeaderAuth",
+              sendBody: true,
+              specifyBody: "json",
+              jsonBody: expr(
+                JSON.stringify({
+                  number: `{{ $('${NOME_LEAD}').first().json.numero }}`,
+                  text: textoParaExpressao(String(passo.config.texto ?? "")),
+                }),
+              ),
+            },
         credentials: {
-          httpHeaderAuth: { id: credencialUazapi, name: "Chroma · uazapi" },
+          httpHeaderAuth: pelosCrm
+            ? { id: cred.crmCredencialId!, name: "Chroma · CRM" }
+            : { id: credencialUazapi, name: "Chroma · uazapi" },
         },
       });
 

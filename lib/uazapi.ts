@@ -124,6 +124,30 @@ export async function instanciaPorId(id: string | null): Promise<Instancia> {
 }
 
 /**
+ * A instância daquele número — e SÓ dela. Sem casar, devolve `null`.
+ *
+ * É a irmã severa de `instanciaPorNumero`, e a diferença é o que está em jogo
+ * em cada caso. No /chat, responder pela instância conhecida quando o número da
+ * conversa sumiu é melhor que não responder. Numa automação não é: a mensagem
+ * sai para um lead que não pediu nada agora, e sair pelo número ERRADO faz o
+ * cliente ver um remetente que ele não conhece. Aí não mandar é o certo.
+ */
+export async function instanciaExataPorNumero(
+  numero: string,
+): Promise<Instancia | null> {
+  const fim8 = soDigitos(numero).slice(-8);
+  if (fim8.length < 8) return null;
+
+  const [linha] = await sql`
+    SELECT id, nome, base_url, token, numero
+    FROM instancias_uazapi
+    WHERE regexp_replace(numero, '\\D', '', 'g') LIKE ${"%" + fim8}
+    LIMIT 1`;
+
+  return linha ? daLinha(linha) : null;
+}
+
+/**
  * A instância dona de um número nosso — é assim que o /chat responde PELO MESMO
  * número em que a conversa entrou.
  *

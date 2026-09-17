@@ -14,6 +14,8 @@ import { exigirModulo } from "@/lib/auth/dal";
 
 import { randomBytes, createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { enderecoDoCrm } from "@/lib/endereco";
 import { compilar, ErroCompilacao, VERSAO_COMPILADOR } from "@/lib/automacoes/compilador";
 import {
   apagarWorkflow,
@@ -67,15 +69,78 @@ async function credenciaisDoMotor() {
   // fluxo em que TODAS escolheram não precisa de padrão nenhuma. Quem reclama,
   // se faltar, é o adaptador, dizendo QUAL bloco ficou sem número.
   const padrao = await instanciaPadrao().catch(() => null);
+  const porInstancia = await credenciaisDaUazapi();
+
+  // A CREDENCIAL PADRÃO SAI DA INSTÂNCIA PADRÃO DE HOJE, e não da linha
+  // `motor_credenciais` com chave 'uazapi'.
+  //
+  // Aquela linha é de quando havia uma instância só, e ela guarda o token da
+  // instância que existia NA ÉPOCA. Apagar a instância no CRM e cadastrar outra
+  // — o que passou a ser um clique, desde que a tela cria e apaga instância na
+  // uazapi — deixava a linha apontando para um token morto. O nó de envio de
+  // toda mensagem SEM número escolhido usava esse token e o motor respondia:
+  //
+  //   Authorization failed - please check your credentials
+  //
+  // Com a credencial derivada da instância padrão atual, o token velho deixa de
+  // ser alcançável: `credenciaisDaUazapi` cria (e reusa) uma credencial por
+  // instância viva, chaveada pelo id da linha do CRM.
+  const doPadrao = padrao?.id ? porInstancia.get(padrao.id) : undefined;
+
+  const crm = await credencialDoCrm();
 
   const base = {
     banco: banco.id,
-    uazapi: uazapi.id,
-    uazapiBaseUrl: padrao ? padrao.baseUrl.replace(/\/+$/, "") : "",
-    porInstancia: await credenciaisDaUazapi(),
+    uazapi: doPadrao?.credencialId ?? uazapi.id,
+    crmBaseUrl: crm?.baseUrl,
+    crmCredencialId: crm?.credencialId,
+    uazapiBaseUrl: doPadrao?.baseUrl ?? (padrao ? padrao.baseUrl.replace(/\/+$/, "") : ""),
+    porInstancia,
   };
 
   return { ...base, erroWorkflowId: await garantirWorkflowDeErros(base) };
+}
+
+/**
+ * A credencial com que o MOTOR chama o CRM de volta, mais o endereço a chamar.
+ *
+ * Devolve `null` quando o CRM não é alcançável de fora (localhost, sem túnel)
+ * ou quando falta CRM_SERVICE_TOKEN — e aí a publicação usa o caminho antigo,
+ * com o token da uazapi dentro do n8n.
+ *
+ * A CHAVE CARREGA A IMPRESSÃO DIGITAL DO TOKEN (`crm:<12 hex>`). É de
+ * propósito: a API pública do n8n cria e apaga credencial, mas não atualiza.
+ * Com a chave fixa, trocar o CRM_SERVICE_TOKEN deixaria uma credencial velha
+ * no cofre e todo envio responderia 401 — exatamente o problema que este
+ * caminho veio consertar do lado da uazapi. Com a impressão digital na chave,
+ * token novo é credencial nova, e a antiga simplesmente deixa de ser usada.
+ */
+async function credencialDoCrm(): Promise<
+  { baseUrl: string; credencialId: string } | null
+> {
+  const token = process.env.CRM_SERVICE_TOKEN;
+  if (!token) return null;
+
+  const endereco = enderecoDoCrm(await headers());
+  if (!endereco.publico) return null;
+
+  const digital = createHash("sha256").update(token).digest("hex").slice(0, 12);
+  const chave = `crm:${digital}`;
+
+  const existente = await credencialDoMotor("n8n", chave);
+  if (existente) return { baseUrl: endereco.url, credencialId: existente.id };
+
+  const id = await criarCredencial("Chroma · CRM", "httpHeaderAuth", {
+    name: "Authorization",
+    value: `Bearer ${token}`,
+  });
+  await sql`
+    INSERT INTO motor_credenciais (chave, motor, motor_cred_id, motor_cred_tipo, descricao)
+    VALUES (${chave}, 'n8n', ${id}, 'httpHeaderAuth',
+            'Token de serviço do CRM: é com ele que o motor pede o envio em /api/automacoes/enviar')
+    ON CONFLICT (motor, chave) DO NOTHING`;
+
+  return { baseUrl: endereco.url, credencialId: id };
 }
 
 /**
@@ -127,7 +192,10 @@ async function garantirWorkflowDeErros(
  */
 async function credenciaisDaUazapi() {
   const instancias = await instanciasPorId();
-  const mapa = new Map<string, { credencialId: string; baseUrl: string }>();
+  const mapa = new Map<
+    string,
+    { credencialId: string; baseUrl: string; numero?: string | null }
+  >();
 
   for (const [id, i] of instancias) {
     const chave = `uazapi:${id}`;
@@ -150,6 +218,10 @@ async function credenciaisDaUazapi() {
     mapa.set(id, {
       credencialId: cred.id,
       baseUrl: i.baseUrl.replace(/\/+$/, ""),
+      // O número vai junto porque é ELE que o nó de envio carrega quando o CRM
+      // está na frente: o id desta linha morre se alguém recadastrar o número,
+      // o número não.
+      numero: i.numero,
     });
   }
 

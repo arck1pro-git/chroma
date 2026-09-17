@@ -41,6 +41,9 @@ const SERVICO_EXATAS = new Set([
   "/api/blogs/rss/gerar",
   "/api/blogs/rss/pauta",
   "/api/midia/fila",
+  // O motor pedindo o envio de uma mensagem da cadência. Quem tem a credencial
+  // da uazapi é o CRM, não o n8n — ver app/api/automacoes/enviar/route.ts.
+  "/api/automacoes/enviar",
 ]);
 
 function dispensaSessao(caminho: string): boolean {
