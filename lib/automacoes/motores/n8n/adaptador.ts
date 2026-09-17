@@ -53,6 +53,17 @@ const PREFIXO_NOME = "[Chroma]";
 
 const NOME_ENTRADA = "Entrada do fluxo";
 const NOME_FIM = "Fim da execução";
+const NOME_MARCAR = "Marcar em execução";
+
+/**
+ * O workflow que recebe o erro de TODOS os fluxos do Chroma.
+ *
+ * Nome fixo porque é assim que ele é encontrado de novo: a API pública do n8n
+ * não guarda "qual é o meu workflow de erro", então quem publica procura por
+ * este nome antes de criar outro. Carrega o prefixo [Chroma] pela mesma razão
+ * dos demais — é a marca que autoriza apagar.
+ */
+export const NOME_WORKFLOW_ERROS = `${PREFIXO_NOME} Erros`;
 
 // De onde cada bloco tira o execucao_id.
 //
@@ -216,6 +227,12 @@ export type CredenciaisMotor = {
    * é como era antes.
    */
   porInstancia?: Map<string, { credencialId: string; baseUrl: string }>;
+  /**
+   * Id do workflow que recolhe os erros (ver NOME_WORKFLOW_ERROS). Vai em
+   * `settings.errorWorkflow`: sem ele, uma falha no motor morre no histórico do
+   * n8n e a execução fica `pendente` no CRM para sempre.
+   */
+  erroWorkflowId?: string;
 };
 
 function credPostgres(c: CredenciaisMotor) {
@@ -266,6 +283,37 @@ export function paraWorkflow(
     },
   };
   nodes.push(gatilho);
+
+  // PRIMEIRA COISA DEPOIS DO GATILHO: dizer que esta execução começou, e gravar
+  // o id que o motor deu a ela.
+  //
+  // O id é o que costura os dois lados. Quando um nó falha lá na frente, quem
+  // avisa é o workflow de erros (NOME_WORKFLOW_ERROS), e tudo que ele recebe do
+  // n8n é o id DA EXECUÇÃO DO MOTOR — nada do nosso vocabulário. Sem esta
+  // gravação no começo, não há como voltar dele até a linha em
+  // `fluxo_execucoes`, e o erro fica sem dono.
+  //
+  // `estado = 'pendente'` no WHERE, e não uma lista: só a primeira passagem
+  // marca. Reentrada e retomada não podem reescrever o id de outra execução.
+  const marcar: NoN8n = {
+    id: "__marcar__",
+    name: NOME_MARCAR,
+    type: "n8n-nodes-base.postgres",
+    typeVersion: 2.4,
+    position: [plano.entrada.posicao.x, plano.entrada.posicao.y + 65],
+    parameters: {
+      operation: "executeQuery",
+      query: `
+        UPDATE fluxo_execucoes
+           SET estado = 'rodando', motor_execucao_id = $2
+         WHERE id = $1::uuid AND estado = 'pendente'`,
+      options: {
+        queryReplacement: expr([EXECUCAO_ID, "{{ $execution.id }}"].join(",")),
+      },
+    },
+    credentials: credPostgres(cred),
+  };
+  nodes.push(marcar);
 
   // Carrega o lead UMA vez, no começo. Os blocos leem daqui em vez de receber
   // os dados no corpo do webhook — e a diferença importa: uma cadência espera
@@ -624,6 +672,9 @@ export function paraWorkflow(
     ? (nomePorId.get(plano.entrada.proximo) ?? null)
     : null;
   connections[gatilho.name] = {
+    main: [[{ node: NOME_MARCAR, type: "main", index: 0 }]],
+  };
+  connections[NOME_MARCAR] = {
     main: [[{ node: NOME_LEAD, type: "main", index: 0 }]],
   };
   connections[NOME_LEAD] = {
@@ -681,6 +732,82 @@ export function paraWorkflow(
     name: `${PREFIXO_NOME} ${plano.nome}`,
     nodes,
     connections,
+    settings: {
+      executionOrder: "v1",
+      // Falhou qualquer nó, o n8n chama este workflow. É o que transforma "a
+      // execução ficou pendente e ninguém soube" em um card vermelho com o
+      // motivo escrito.
+      ...(cred.erroWorkflowId ? { errorWorkflow: cred.erroWorkflowId } : {}),
+    },
+  };
+}
+
+/**
+ * O workflow de erros: Error Trigger → um UPDATE.
+ *
+ * É um só para todos os fluxos, e por isso não conhece nenhum deles: ele acha a
+ * execução pelo `motor_execucao_id` que o nó "Marcar em execução" gravou no
+ * começo.
+ *
+ * O NOME DO NÓ CARREGA O ID DO BLOCO no vocabulário do CRM ("Enviar WhatsApp
+ * (web) [msg1]"), e é daí que sai `erro_no` — o `substring` extrai o que está
+ * entre colchetes. É o que deixa a tela dizer QUAL mensagem quebrou em vez de
+ * mostrar o nome de um nó de n8n.
+ *
+ * VÍRGULA VIRA PONTO E VÍRGULA na mensagem de erro, e não é preciosismo: o nó
+ * Postgres separa os parâmetros da consulta por vírgula, então uma mensagem com
+ * vírgula desalinharia $2 e $3 e gravaria lixo na linha errada.
+ *
+ * NÃO É ATIVADO: workflow de Error Trigger não tem gatilho ativável no n8n —
+ * quem o chama é o motor, por causa de `settings.errorWorkflow`.
+ */
+export function workflowDeErros(cred: CredenciaisMotor): WorkflowMotor {
+  return {
+    name: NOME_WORKFLOW_ERROS,
+    nodes: [
+      {
+        id: "__erro_trigger__",
+        name: "Erro no motor",
+        type: "n8n-nodes-base.errorTrigger",
+        typeVersion: 1,
+        position: [0, 0],
+        parameters: {},
+      },
+      {
+        id: "__erro_update__",
+        name: "Marcar execução com erro",
+        type: "n8n-nodes-base.postgres",
+        typeVersion: 2.4,
+        position: [220, 0],
+        parameters: {
+          operation: "executeQuery",
+          query: `
+            UPDATE fluxo_execucoes SET
+              estado        = 'erro',
+              erro_msg      = left($2, 500),
+              erro_no       = substring($3 from '\\[([^\\]]+)\\]$'),
+              finalizado_em = now(),
+              duracao_ms    = EXTRACT(EPOCH FROM (now() - iniciado_em))::int * 1000
+            WHERE motor_execucao_id = $1
+              AND estado IN ('pendente','rodando','esperando')`,
+          options: {
+            queryReplacement: expr(
+              [
+                "{{ $json.execution.id }}",
+                "{{ String($json.execution.error?.message ?? 'falha no motor').replaceAll(',', ';').slice(0, 500) }}",
+                "{{ String($json.execution.lastNodeExecuted ?? '').replaceAll(',', ';') }}",
+              ].join(","),
+            ),
+          },
+        },
+        credentials: credPostgres(cred),
+      },
+    ],
+    connections: {
+      "Erro no motor": {
+        main: [[{ node: "Marcar execução com erro", type: "main", index: 0 }]],
+      },
+    },
     settings: { executionOrder: "v1" },
   };
 }

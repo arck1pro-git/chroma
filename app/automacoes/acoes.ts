@@ -17,6 +17,9 @@ import { revalidatePath } from "next/cache";
 import { compilar, ErroCompilacao, VERSAO_COMPILADOR } from "@/lib/automacoes/compilador";
 import {
   apagarWorkflow,
+  acharWorkflowPorNome,
+  workflowDeErros,
+  NOME_WORKFLOW_ERROS,
   atualizarWorkflow,
   ativarWorkflow,
   criarCredencial,
@@ -65,12 +68,43 @@ async function credenciaisDoMotor() {
   // se faltar, é o adaptador, dizendo QUAL bloco ficou sem número.
   const padrao = await instanciaPadrao().catch(() => null);
 
-  return {
+  const base = {
     banco: banco.id,
     uazapi: uazapi.id,
     uazapiBaseUrl: padrao ? padrao.baseUrl.replace(/\/+$/, "") : "",
     porInstancia: await credenciaisDaUazapi(),
   };
+
+  return { ...base, erroWorkflowId: await garantirWorkflowDeErros(base) };
+}
+
+/**
+ * Acha (ou cria) o workflow que recolhe os erros de todos os fluxos.
+ *
+ * Procurar POR NOME é exceção à regra deste arquivo — publicar um fluxo nunca
+ * procura por nome, usa o id gravado. Aqui não há id a gravar: o workflow de
+ * erros não pertence a nenhum fluxo, e guardar o id exigiria uma tabela para
+ * uma linha. O nome tem o prefixo [Chroma], que só este adaptador escreve.
+ *
+ * FALHA EM SILÊNCIO: se o n8n não responder, a publicação continua sem o
+ * `errorWorkflow`. Perder o relatório de erro é ruim; não conseguir publicar
+ * por causa dele seria pior.
+ */
+async function garantirWorkflowDeErros(
+  cred: Parameters<typeof workflowDeErros>[0],
+): Promise<string | undefined> {
+  try {
+    const existente = await acharWorkflowPorNome(NOME_WORKFLOW_ERROS);
+    if (existente) {
+      // Reescreve a cada publicação: assim uma correção na consulta de erro
+      // chega ao motor sem ninguém precisar apagar nada à mão.
+      await atualizarWorkflow(existente.id, workflowDeErros(cred));
+      return existente.id;
+    }
+    return await criarWorkflow(workflowDeErros(cred));
+  } catch {
+    return undefined;
+  }
 }
 
 /**
