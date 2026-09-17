@@ -5,6 +5,7 @@
 // só na tela, porque é a API que garante a regra para quem chamar de fora.
 import { NextRequest } from "next/server";
 import { sql } from "@/lib/db";
+import { exigirModuloApi } from "@/lib/auth/dal";
 import {
   blogDepoisDeGravar,
   campo,
@@ -16,11 +17,15 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const auditoriaId = req.nextUrl.searchParams.get("auditoriaId");
   return Response.json(await listarBlogs(auditoriaId));
 }
 
 export async function POST(req: NextRequest) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const corpo = await lerCorpo(req);
   if (!corpo) return Response.json({ error: "Corpo inválido." }, { status: 400 });
 

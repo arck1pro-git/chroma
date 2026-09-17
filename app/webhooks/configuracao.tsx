@@ -54,9 +54,13 @@ import {
   rotuloCampo,
 } from "./estilos";
 import {
-  DESTINOS,
+  type CampoDoCrm,
+  lerValorDeDestino,
+  opcoesDeDestino,
   rotuloDoDestino,
+  valorDeDestino,
   type DestinoCampo,
+  type OpcaoDestino,
   type TipoCampo,
   type WebhookCampo,
 } from "@/lib/webhooks";
@@ -212,7 +216,11 @@ export default function Configuracao({
           </div>
 
           {etapa === "campos" ? (
-            <PassoCampos webhookId={webhookId} campos={detalhe.campos} />
+            <PassoCampos
+              webhookId={webhookId}
+              campos={detalhe.campos}
+              camposCrm={alvos.camposCrm}
+            />
           ) : (
             <PassoAcoes webhookId={webhookId} detalhe={detalhe} alvos={alvos} />
           )}
@@ -260,12 +268,61 @@ const TIPOS: { valor: TipoCampo; rotulo: string }[] = [
   { valor: "booleano", rotulo: "Sim/Não" },
 ];
 
+/**
+ * O seletor "Vira o quê no CRM", igual no formulário de cima e na linha em
+ * edição. Uma peça só porque as duas listas TÊM que ser a mesma: se divergirem,
+ * um destino escolhido ao criar some ao editar.
+ */
+function SeletorDestino({
+  opcoes,
+  destino,
+  destinoChave,
+  aoMudar,
+  rotuloAcessivel,
+  className,
+}: {
+  opcoes: OpcaoDestino[];
+  destino: DestinoCampo;
+  destinoChave: string;
+  aoMudar: (destino: DestinoCampo, destinoChave: string) => void;
+  rotuloAcessivel?: string;
+  className?: string;
+}) {
+  return (
+    <select
+      value={valorDeDestino(destino, destinoChave || null)}
+      onChange={(e) => {
+        const lido = lerValorDeDestino(e.target.value);
+        aoMudar(lido.destino, lido.destinoChave);
+      }}
+      aria-label={rotuloAcessivel}
+      className={className ?? campoTexto}
+    >
+      {["Contato", "Oportunidade", "Outros"].map((grupo) => {
+        const doGrupo = opcoes.filter((o) => o.grupo === grupo);
+        if (doGrupo.length === 0) return null;
+        return (
+          <optgroup key={grupo} label={grupo}>
+            {doGrupo.map((o) => (
+              <option key={o.valor} value={o.valor}>
+                {o.rotulo}
+              </option>
+            ))}
+          </optgroup>
+        );
+      })}
+    </select>
+  );
+}
+
 function PassoCampos({
   webhookId,
   campos,
+  camposCrm,
 }: {
   webhookId: string;
   campos: WebhookCampo[];
+  camposCrm: CampoDoCrm[];
 }) {
   const [chave, setChave] = useState("");
   const [rotulo, setRotulo] = useState("");
@@ -276,7 +333,9 @@ function PassoCampos({
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
 
-  const precisaChave = destino.endsWith(".campo");
+  // A lista inclui os campos personalizados que ESTA webhook já usa, mesmo que
+  // algum tenha sido apagado do cadastro depois — ver opcoesDeDestino.
+  const opcoes = opcoesDeDestino(camposCrm, campos);
 
   function adicionar() {
     if (!chave.trim()) return;
@@ -327,34 +386,16 @@ function PassoCampos({
         <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
           <label className="flex min-w-0 flex-1 flex-col gap-1.5">
             <span className={rotuloCampo}>Vira o quê no CRM</span>
-            <select
-              value={destino}
-              onChange={(e) => setDestino(e.target.value as DestinoCampo)}
-              className={campoTexto}
-            >
-              {["Contato", "Oportunidade", "Outros"].map((grupo) => (
-                <optgroup key={grupo} label={grupo}>
-                  {DESTINOS.filter((d) => d.grupo === grupo).map((d) => (
-                    <option key={d.valor} value={d.valor}>
-                      {d.rotulo}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            <SeletorDestino
+              opcoes={opcoes}
+              destino={destino}
+              destinoChave={destinoChave}
+              aoMudar={(d, c) => {
+                setDestino(d);
+                setDestinoChave(c);
+              }}
+            />
           </label>
-
-          {precisaChave && (
-            <label className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <span className={rotuloCampo}>Chave do campo</span>
-              <input
-                value={destinoChave}
-                onChange={(e) => setDestinoChave(e.target.value)}
-                placeholder="utm_source"
-                className={`${campoTexto} font-mono`}
-              />
-            </label>
-          )}
 
           <label className="flex min-w-0 flex-col gap-1.5 sm:w-28">
             <span className={rotuloCampo}>Tipo</span>
@@ -401,7 +442,7 @@ function PassoCampos({
         ) : (
           <ul className="mt-3 flex flex-col divide-y divide-zinc-100 dark:divide-zinc-800/70">
             {campos.map((c) => (
-              <LinhaCampo key={c.id} campo={c} />
+              <LinhaCampo key={c.id} campo={c} opcoes={opcoes} />
             ))}
           </ul>
         )}
@@ -422,7 +463,13 @@ function PassoCampos({
   );
 }
 
-function LinhaCampo({ campo }: { campo: WebhookCampo }) {
+function LinhaCampo({
+  campo,
+  opcoes,
+}: {
+  campo: WebhookCampo;
+  opcoes: OpcaoDestino[];
+}) {
   const [editando, setEditando] = useState(false);
   const [rotulo, setRotulo] = useState(campo.rotulo);
   const [tipo, setTipo] = useState<TipoCampo>(campo.tipo);
@@ -462,27 +509,16 @@ function LinhaCampo({ campo }: { campo: WebhookCampo }) {
             aria-label="Rótulo"
             className={campoTexto}
           />
-          <select
-            value={destino}
-            onChange={(e) => setDestino(e.target.value as DestinoCampo)}
-            aria-label="Destino"
-            className={campoTexto}
-          >
-            {DESTINOS.map((d) => (
-              <option key={d.valor} value={d.valor}>
-                {d.grupo} · {d.rotulo}
-              </option>
-            ))}
-          </select>
-          {destino.endsWith(".campo") && (
-            <input
-              value={destinoChave}
-              onChange={(e) => setDestinoChave(e.target.value)}
-              placeholder="chave"
-              aria-label="Chave do campo personalizado"
-              className={`${campoTexto} font-mono`}
-            />
-          )}
+          <SeletorDestino
+            opcoes={opcoes}
+            destino={destino}
+            destinoChave={destinoChave}
+            aoMudar={(d, c) => {
+              setDestino(d);
+              setDestinoChave(c);
+            }}
+            rotuloAcessivel="Destino"
+          />
           <select
             value={tipo}
             onChange={(e) => setTipo(e.target.value as TipoCampo)}

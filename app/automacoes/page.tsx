@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import ListaFluxos from "./lista";
 import PainelLateral from "./painel-lateral";
+import { exigirModulo } from "@/lib/auth/dal";
 import {
   buscarFluxo,
   detalheDoFluxo,
@@ -23,6 +24,11 @@ export default async function AutomacoesPage({
 }: {
   searchParams: Promise<{ fluxo?: string }>;
 }) {
+  // Checagem POR PÁGINA, e não no layout: com Partial Rendering o layout não
+  // re-renderiza a cada navegação, então a checagem lá deixaria de rodar
+  // justamente quando a pessoa troca de tela (guia de autenticação do Next,
+  // "Layouts and auth checks"). Aqui ela roda antes de qualquer consulta.
+  await exigirModulo("automacoes");
   const { fluxo: selecionadoId } = await searchParams;
   const fluxos = await listarFluxos();
 

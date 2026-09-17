@@ -458,7 +458,7 @@ export default function ListaContatos({ dados }: { dados: DadosContatos }) {
       </div>
 
       {novoAberto && (
-        <FormContato aoCriar={registrar} aoFechar={() => setNovoAberto(false)} />
+        <FormContato aoSalvar={registrar} aoFechar={() => setNovoAberto(false)} />
       )}
     </div>
   );

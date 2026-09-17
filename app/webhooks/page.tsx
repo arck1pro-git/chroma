@@ -3,6 +3,8 @@ import { headers } from "next/headers";
 import { enderecoDoCrm } from "@/lib/endereco";
 import ListaWebhooks from "./lista";
 import PainelWebhook from "./painel";
+import IaWebhooks from "./ia";
+import { exigirModulo } from "@/lib/auth/dal";
 import {
   buscarWebhook,
   carregarAlvos,
@@ -29,9 +31,14 @@ export const dynamic = "force-dynamic";
 export default async function WebhooksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ webhook?: string }>;
+  searchParams: Promise<{ webhook?: string; ia?: string }>;
 }) {
-  const { webhook: selecionadoId } = await searchParams;
+  // Checagem POR PÁGINA, e não no layout: com Partial Rendering o layout não
+  // re-renderiza a cada navegação, então a checagem lá deixaria de rodar
+  // justamente quando a pessoa troca de tela (guia de autenticação do Next,
+  // "Layouts and auth checks"). Aqui ela roda antes de qualquer consulta.
+  await exigirModulo("webhooks");
+  const { webhook: selecionadoId, ia: conversaInicial } = await searchParams;
   const [webhooks, cabecalhos] = await Promise.all([listarWebhooks(), headers()]);
   const base = enderecoDoCrm(cabecalhos);
 
@@ -63,6 +70,15 @@ export default async function WebhooksPage({
           </p>
         </div>
       )}
+
+      {/* A IA que MONTA captação: cria a webhook, declara os campos e liga as
+          ações (app/api/ia/webhooks). Fica na tela inteira, e não dentro do
+          painel, porque o caso principal é criar uma captação que ainda não
+          existe — dentro do painel ela só alcançaria a que já está aberta. */}
+      <IaWebhooks
+        webhookAberta={selecionado?.nome ?? null}
+        conversaInicial={conversaInicial ?? null}
+      />
     </div>
   );
 }

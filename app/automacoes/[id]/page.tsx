@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { definicaoDoFluxo } from "@/lib/automacoes/repositorio";
 import { buscarFluxo } from "../dados";
 import EditorFluxo from "./painel";
+import { exigirModulo } from "@/lib/auth/dal";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,11 @@ export default async function EditarFluxoPage({
   // ?ia=<id>: a sidebar linkou uma conversa feita neste editor.
   searchParams: Promise<{ ia?: string | string[] }>;
 }) {
+  // Checagem POR PÁGINA, e não no layout: com Partial Rendering o layout não
+  // re-renderiza a cada navegação, então a checagem lá deixaria de rodar
+  // justamente quando a pessoa troca de tela (guia de autenticação do Next,
+  // "Layouts and auth checks"). Aqui ela roda antes de qualquer consulta.
+  await exigirModulo("automacoes");
   const [{ id }, { ia }] = await Promise.all([params, searchParams]);
   const [fluxo, definicao] = await Promise.all([
     buscarFluxo(id),

@@ -11,10 +11,13 @@
 // lógica editorial para formato de artigo mesmo que o bloco tenha sido escrito
 // pensando em outro canal.
 import { sql } from "@/lib/db";
+import { exigirModuloApi } from "@/lib/auth/dal";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const linhas = await sql`
     SELECT id, nome FROM contextos
     WHERE ativo

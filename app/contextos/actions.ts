@@ -1,5 +1,10 @@
 "use server";
 
+// Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
+// O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
+// pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
+import { exigirModulo } from "@/lib/auth/dal";
+
 // Mutações dos Contextos. Roda no servidor — entrada não confiável, como toda
 // server action deste app (que ainda não tem sessão: docs/automacoes-arquitetura
 // §3.1).
@@ -29,6 +34,7 @@ export async function salvarContexto(dados: {
   descricao: unknown;
   conteudo: unknown;
 }): Promise<Resultado> {
+  await exigirModulo("contextos");
   const nome = texto(dados.nome, TETO_NOME);
   const conteudo = texto(dados.conteudo, TETO_CONTEUDO);
 
@@ -60,6 +66,7 @@ export async function salvarContexto(dados: {
 }
 
 export async function ligarContexto(id: string, ativo: boolean): Promise<Resultado> {
+  await exigirModulo("contextos");
   if (!/^[0-9a-f-]{36}$/i.test(id)) {
     return { ok: false, mensagem: "Contexto inválido." };
   }

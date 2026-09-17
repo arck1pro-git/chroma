@@ -9,10 +9,13 @@ import { sql } from "@/lib/db";
 import { slugify } from "@/lib/artigo";
 import { slugLivre } from "@/lib/artigo-server";
 import { artigosDoBlog, campo, camposArtigo, lerCorpo } from "@/lib/blog";
+import { exigirModuloApi } from "@/lib/auth/dal";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const blogId = req.nextUrl.searchParams.get("blogId");
 
   if (blogId && /^\d+$/.test(blogId)) {
@@ -30,6 +33,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const corpo = await lerCorpo(req);
   if (!corpo) return Response.json({ error: "Corpo inválido." }, { status: 400 });
 

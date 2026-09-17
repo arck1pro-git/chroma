@@ -21,13 +21,12 @@
 //
 // · O token não passa por aqui em nenhum momento. As actions recebem o id da
 //   linha e buscam a credencial no servidor (ver ../actions.ts).
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   Check,
   Link2,
   Loader2,
   Pencil,
-  Plug,
   PlugZap,
   QrCode,
   RefreshCw,
@@ -38,12 +37,14 @@ import {
 } from "lucide-react";
 import type { InstanciaUazapi } from "../dados";
 import {
-  conectarInstancia,
   consultarConexao,
+  criarInstanciaNaUazapi,
   desconectarDoWhatsApp,
   gerarQrCode,
   removerInstancia,
   renomearInstancia,
+  sincronizarWebhook,
+  statusDasInstancias,
   type ConexaoUazapi,
   type EstadoConexao,
 } from "../actions";
@@ -77,6 +78,36 @@ const ESTADOS: Record<EstadoConexao, { rotulo: string; classe: string }> = {
 };
 
 export function SecaoWhatsApp({ instancias }: { instancias: InstanciaUazapi[] }) {
+  // O estado de TODAS as instâncias numa chamada só (/instance/all com o admin
+  // token). É o que permite pintar o ponto de cada linha assim que a tela abre:
+  // uma consulta por instância deixaria a página fazendo N chamadas à uazapi, e
+  // foi por isso que antes só havia estado depois de abrir o painel.
+  //
+  // Mapa vazio = não deu para saber (sem admin token, ou a uazapi fora). A
+  // tela mostra o ponto cinza; nada quebra.
+  const [status, setStatus] = useState<Record<string, EstadoConexao>>({});
+
+  // Id da instância recém-criada. O cartão dela monta com o painel aberto e
+  // pede o QR Code sozinho. Some depois de usado — reabrir a tela não deve
+  // gerar QR de novo.
+  const [novaId, setNovaId] = useState<string | null>(null);
+
+  const recarregarStatus = useCallback(() => {
+    statusDasInstancias()
+      .then(setStatus)
+      .catch(() => setStatus({}));
+  }, []);
+
+  useEffect(() => {
+    let vivo = true;
+    statusDasInstancias()
+      .then((m) => vivo && setStatus(m))
+      .catch(() => vivo && setStatus({}));
+    return () => {
+      vivo = false;
+    };
+  }, [instancias]);
+
   return (
     <section className="flex flex-col gap-3">
       <div>
@@ -90,16 +121,22 @@ export function SecaoWhatsApp({ instancias }: { instancias: InstanciaUazapi[] })
         </p>
       </div>
 
-      <NovaInstancia />
+      <NovaInstancia aoCriar={setNovaId} />
 
       {instancias.length === 0 ? (
         <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center text-[13px] text-zinc-400 dark:border-zinc-700">
-          Nenhuma instância conectada ainda. Cadastre a primeira acima.
+          Nenhuma instância conectada ainda. Crie a primeira acima.
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
           {instancias.map((i) => (
-            <InstanciaCard key={i.id} instancia={i} />
+            <InstanciaCard
+              key={i.id}
+              instancia={i}
+              estado={status[i.id] ?? null}
+              aoMudarConexao={recarregarStatus}
+              recemCriada={i.id === novaId}
+            />
           ))}
         </ul>
       )}
@@ -119,27 +156,37 @@ export function SecaoWhatsApp({ instancias }: { instancias: InstanciaUazapi[] })
   );
 }
 
-// ── Cadastro ────────────────────────────────────────────────────────────────
-// A credencial é testada contra a própria uazapi antes de gravar (GET
-// /instance/status, em ../actions.ts) — token errado não entra na tabela.
-function NovaInstancia() {
+// ── Nova instância ──────────────────────────────────────────────────────────
+// UM formulário, e só o nome dentro dele. Eram dois — "criar na uazapi" e
+// "cadastrar com URL e token" —, e os dois lado a lado faziam a tela perguntar
+// algo que ela já sabe: a URL do servidor está no .env e o token quem devolve é
+// a própria uazapi, ao criar.
+//
+// O botão leva direto ao QR: criar a instância e parear o celular são o mesmo
+// pedido ("quero mais um número no CRM"), e separá-los em dois cliques deixava
+// a instância recém-criada parada na lista, sem WhatsApp nenhum.
+function NovaInstancia({ aoCriar }: { aoCriar: (id: string) => void }) {
   const [nome, setNome] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [token, setToken] = useState("");
   const [erro, setErro] = useState<string | null>(null);
-  const [conectando, iniciar] = useTransition();
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [criando, iniciar] = useTransition();
 
-  function conectar() {
-    if (!nome.trim() || !baseUrl.trim() || !token.trim()) return;
+  function criar() {
+    const n = nome.trim();
+    if (!n) return;
     setErro(null);
+    setAviso(null);
     iniciar(async () => {
       try {
-        await conectarInstancia(nome, baseUrl, token);
+        const { id, aviso: pendencia } = await criarInstanciaNaUazapi(n);
         setNome("");
-        setBaseUrl("");
-        setToken("");
+        setAviso(pendencia);
+        // Abre o cartão da instância nova já pedindo o QR Code — é o passo
+        // seguinte inevitável, e quem acabou de clicar não deveria ter que
+        // procurá-lo na lista.
+        aoCriar(id);
       } catch (e) {
-        setErro(e instanceof Error ? e.message : "Falha ao conectar instância");
+        setErro(e instanceof Error ? e.message : "Falha ao criar instância");
       }
     });
   }
@@ -149,64 +196,63 @@ function NovaInstancia() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Nome
+            Nome da instância
           </span>
           <input
             type="text"
             value={nome}
             onChange={(e) => setNome(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && conectar()}
+            onKeyDown={(e) => e.key === "Enter" && criar()}
             placeholder="Ex.: Comercial"
-            className={campoTexto}
-          />
-        </label>
-        <label className="flex min-w-0 flex-[1.4] flex-col gap-1.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            URL da instância
-          </span>
-          <input
-            type="text"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && conectar()}
-            placeholder="https://sua-instancia.uazapi.com"
-            className={campoTexto}
-          />
-        </label>
-        <label className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Token
-          </span>
-          <input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && conectar()}
-            placeholder="Token da instância"
             className={campoTexto}
           />
         </label>
         <button
           type="button"
-          onClick={conectar}
-          disabled={!nome.trim() || !baseUrl.trim() || !token.trim() || conectando}
+          onClick={criar}
+          disabled={!nome.trim() || criando}
           className={botao}
         >
-          <Plug className="size-4" aria-hidden="true" />
-          {conectando ? "Conectando…" : "Cadastrar"}
+          {criando ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <QrCode className="size-4" aria-hidden="true" />
+          )}
+          {criando ? "Criando…" : "Gerar QR Code"}
         </button>
       </div>
+
       {erro && <p className="mt-2 text-xs text-red-500">{erro}</p>}
+      {aviso && (
+        <p className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+          <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+          <span>{aviso}</span>
+        </p>
+      )}
+
       <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500">
-        A URL e o token vêm do painel da uazapi. O token é conferido contra a
-        instância antes de ser gravado e nunca volta inteiro para esta tela.
+        A instância é criada na uazapi, já com o webhook apontado para este CRM,
+        e o QR Code abre em seguida no cartão dela. O código vale 2 minutos e se
+        renova sozinho enquanto o cartão estiver aberto.
       </p>
     </div>
   );
 }
 
 // ── Uma instância ───────────────────────────────────────────────────────────
-function InstanciaCard({ instancia }: { instancia: InstanciaUazapi }) {
+function InstanciaCard({
+  instancia,
+  /** Estado vindo de /instance/all. `null` = ainda não sei. */
+  estado,
+  aoMudarConexao,
+  /** Criada agora, nesta tela: abre já pedindo o QR Code. */
+  recemCriada = false,
+}: {
+  instancia: InstanciaUazapi;
+  estado: EstadoConexao | null;
+  aoMudarConexao: () => void;
+  recemCriada?: boolean;
+}) {
   const [editando, setEditando] = useState(false);
   const [nome, setNome] = useState(instancia.nome);
   const [erro, setErro] = useState<string | null>(null);
@@ -216,7 +262,7 @@ function InstanciaCard({ instancia }: { instancia: InstanciaUazapi }) {
   // estado da conexão só é buscado quando alguém quer ver — a lista com cinco
   // instâncias não sai fazendo cinco chamadas à uazapi ao carregar a página.
   const [conexao, setConexao] = useState<ConexaoUazapi | null>(null);
-  const [aberto, setAberto] = useState(false);
+  const [aberto, setAberto] = useState(recemCriada);
 
   function salvar() {
     const n = nome.trim();
@@ -241,12 +287,17 @@ function InstanciaCard({ instancia }: { instancia: InstanciaUazapi }) {
   function remover() {
     if (
       !window.confirm(
-        `Remover "${instancia.nome}" do CRM? A instância continua existindo na uazapi e o WhatsApp segue pareado — só o CRM deixa de conhecer esse número. Os atendimentos já gravados continuam.`,
+        `Remover "${instancia.nome}"? A instância é APAGADA na uazapi — o aparelho desconecta e o número some do servidor — e sai do CRM. Não tem volta. Os atendimentos já gravados continuam.`,
       )
     )
       return;
-    iniciar(() => {
-      removerInstancia(instancia.id);
+    setErro(null);
+    iniciar(async () => {
+      try {
+        await removerInstancia(instancia.id);
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Falha ao remover a instância");
+      }
     });
   }
 
@@ -276,10 +327,13 @@ function InstanciaCard({ instancia }: { instancia: InstanciaUazapi }) {
             />
           ) : (
             <div className="flex flex-wrap items-center gap-2">
+              <Ponto estado={conexao?.estado ?? estado} />
               <p className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">
                 {instancia.nome}
               </p>
-              {conexao && <Selo estado={conexao.estado} />}
+              {(conexao?.estado ?? estado) && (
+                <Selo estado={conexao?.estado ?? estado!} />
+              )}
             </div>
           )}
           <p className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
@@ -331,7 +385,7 @@ function InstanciaCard({ instancia }: { instancia: InstanciaUazapi }) {
               type="button"
               onClick={remover}
               disabled={salvando}
-              aria-label={`Remover ${instancia.nome} do CRM`}
+              aria-label={`Remover ${instancia.nome} do CRM e da uazapi`}
               className="p-1 text-zinc-400 transition hover:text-red-500"
             >
               <Trash2 className="size-3.5" aria-hidden="true" />
@@ -346,11 +400,47 @@ function InstanciaCard({ instancia }: { instancia: InstanciaUazapi }) {
         <PainelConexao
           instanciaId={instancia.id}
           nome={instancia.nome}
+          gerarAoAbrir={recemCriada}
           conexao={conexao}
-          aoMudar={setConexao}
+          aoMudar={(c) => {
+            setConexao(c);
+            // O ponto da lista vem de outra consulta (/instance/all). Sem este
+            // aviso, parear deixaria o cartão dizendo "Conectado" e o ponto
+            // ainda vermelho até alguém recarregar a página.
+            aoMudarConexao();
+          }}
         />
       )}
     </li>
+  );
+}
+
+/**
+ * O ponto de status: verde conectado, vermelho desconectado, âmbar no meio do
+ * caminho, cinza quando não deu para saber.
+ *
+ * Existe ao lado do selo, e não no lugar dele, porque os dois respondem
+ * perguntas diferentes: o ponto responde "posso usar este número?" de relance,
+ * varrendo a lista; o selo diz qual é o estado exato, que é o que importa quando
+ * a resposta é não.
+ */
+const PONTOS: Record<EstadoConexao, string> = {
+  connected: "bg-emerald-500",
+  connecting: "bg-amber-500",
+  hibernated: "bg-amber-500",
+  disconnected: "bg-red-500",
+};
+
+function Ponto({ estado }: { estado: EstadoConexao | null }) {
+  const classe = estado ? (PONTOS[estado] ?? PONTOS.disconnected) : "bg-zinc-300 dark:bg-zinc-700";
+  const rotulo = estado ? (ESTADOS[estado]?.rotulo ?? "Desconectado") : "Estado desconhecido";
+  return (
+    <span
+      className={`size-2 shrink-0 rounded-full ${classe}`}
+      title={rotulo}
+      aria-label={rotulo}
+      role="img"
+    />
   );
 }
 
@@ -371,11 +461,14 @@ function PainelConexao({
   nome,
   conexao,
   aoMudar,
+  /** Instância criada agora: em vez de só consultar, já pede o QR Code. */
+  gerarAoAbrir = false,
 }: {
   instanciaId: string;
   nome: string;
   conexao: ConexaoUazapi | null;
   aoMudar: (c: ConexaoUazapi | null) => void;
+  gerarAoAbrir?: boolean;
 }) {
   const [erro, setErro] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -384,9 +477,19 @@ function PainelConexao({
 
   // `aoMudar` é o setState do pai — estável entre renders, então pode entrar
   // nas dependências sem reiniciar nada.
+  // `pedirQr` é uma trava de uma vez só: a primeira consulta do painel de uma
+  // instância recém-criada GERA o QR em vez de só perguntar o estado. Sem a
+  // trava, o laço de 3 em 3 segundos pediria um QR novo a cada volta e o código
+  // na tela mudaria debaixo da câmera de quem está tentando ler.
+  const pedirQr = useRef(gerarAoAbrir);
+
   const consultar = useCallback(async () => {
     try {
-      const c = await consultarConexao(instanciaId);
+      const primeira = pedirQr.current;
+      pedirQr.current = false;
+      const c = primeira
+        ? await gerarQrCode(instanciaId)
+        : await consultarConexao(instanciaId);
       aoMudar(c);
       setErro(null);
     } catch (e) {
@@ -450,6 +553,23 @@ function PainelConexao({
 
   const conectado = conexao?.estado === "connected";
 
+  // O webhook da instância: é ele que faz a resposta do cliente aparecer no
+  // /chat. Quem cria a instância por aqui já nasce com ele apontado — mas sem
+  // o número, que só existe depois de parear. Este botão fecha esse ciclo, e
+  // recusa mexer quando o webhook é de outro sistema (ver sincronizarWebhook).
+  const [webhook, setWebhook] = useState<string | null>(null);
+
+  function sincronizar() {
+    setOcupado(true);
+    setWebhook(null);
+    sincronizarWebhook(instanciaId)
+      .then(setWebhook)
+      .catch((e) =>
+        setWebhook(e instanceof Error ? e.message : "Falha ao falar com a uazapi"),
+      )
+      .finally(() => setOcupado(false));
+  }
+
   return (
     <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800/70">
       {conexao === null && !erro ? (
@@ -474,7 +594,23 @@ function PainelConexao({
               <RefreshCw className="size-3" aria-hidden="true" />
               Atualizar
             </button>
+            <button
+              type="button"
+              onClick={sincronizar}
+              disabled={ocupado}
+              title="Aponta o webhook desta instância para este CRM, com o número pareado"
+              className="inline-flex items-center gap-1.5 text-[12px] text-zinc-400 transition hover:text-zinc-900 disabled:opacity-40 dark:hover:text-zinc-50"
+            >
+              <Link2 className="size-3" aria-hidden="true" />
+              Webhook
+            </button>
           </div>
+
+          {webhook && (
+            <p className="rounded-lg border border-zinc-200 px-2.5 py-2 text-[11px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:text-zinc-300">
+              {webhook}
+            </p>
+          )}
 
           {/* Conectado: nada de QR. O que resta é poder desligar. */}
           {conectado ? (

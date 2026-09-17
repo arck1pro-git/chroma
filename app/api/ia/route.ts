@@ -3,6 +3,17 @@ import { ferramentas } from "@/lib/ia/ferramentas";
 import { conversar, historicoDe, texto } from "@/lib/ia/conversa";
 import { REGRA_DADO_NAO_CONFIAVEL } from "@/lib/ia/sanitizar";
 import { blocoDeContexto, registrarContextosUsados } from "@/lib/contextos";
+import { exigirLoginApi } from "@/lib/auth/dal";
+
+// SEM `exigirModuloApi` DE PROPÓSITO, e isto é decisão, não esquecimento: o
+// painel de IA abre em várias telas (raiz, editor de fluxo, cadência) e a
+// conversa é a MESMA em todas. Prender esta rota a um módulo quebraria o painel
+// em todas as outras.
+//
+// O que a IA alcança já é limitado noutro lugar: as ferramentas de leitura em
+// lib/ia/ferramentas.ts. Se um dia uma delas passar a devolver dado de módulo
+// restrito, o filtro entra LÁ, junto do dado — não aqui, onde só daria pra
+// escolher um módulo e errar nos outros.
 
 // Conversa com a IA sobre a tela. RODA NO SERVIDOR porque a chave da API não
 // pode chegar ao navegador — o cliente só manda a pergunta e o que está aberto
@@ -72,6 +83,8 @@ LIMITES
 ${REGRA_DADO_NAO_CONFIAVEL}`;
 
 export async function POST(req: NextRequest) {
+  const sessao = await exigirLoginApi();
+  if (sessao instanceof Response) return sessao;
   let corpo: Record<string, unknown>;
   try {
     corpo = await req.json();

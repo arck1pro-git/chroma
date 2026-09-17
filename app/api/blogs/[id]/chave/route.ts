@@ -9,6 +9,7 @@
 import type { NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { blogDepoisDeGravar } from "@/lib/blog";
+import { exigirModuloApi } from "@/lib/auth/dal";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export async function POST(
   _req: NextRequest,
   ctx: RouteContext<"/api/blogs/[id]/chave">,
 ) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const bruto = (await ctx.params).id;
   if (!/^\d+$/.test(bruto)) {
     return Response.json({ error: "Blog não encontrado." }, { status: 404 });

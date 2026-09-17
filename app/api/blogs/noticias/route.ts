@@ -12,6 +12,7 @@
 // nenhuma tela pede isso hoje; fica porque o recorte é do banco, não daqui.
 import { NextRequest } from "next/server";
 import { POR_BLOG_TELA, pautaDosBlogs } from "@/lib/blog-pauta";
+import { exigirModuloApi } from "@/lib/auth/dal";
 
 // Buscar até 5 feeds de cada blog é espera de rede, não de CPU — mas com
 // vários blogs o padrão do runtime corta antes de o último responder.
@@ -19,6 +20,8 @@ export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const bruto = req.nextUrl.searchParams.get("blogId");
   if (bruto && !/^\d+$/.test(bruto)) {
     return Response.json({ error: "blogId inválido." }, { status: 400 });

@@ -14,6 +14,7 @@
 import { NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { lerArquivo } from "@/lib/midia";
+import { exigirModuloApi } from "@/lib/auth/dal";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const sessao = await exigirModuloApi("chat");
+  if (sessao instanceof Response) return sessao;
   const { id } = await params;
 
   // Formato antes do banco: sem isto, um id inválido vira erro de sintaxe de

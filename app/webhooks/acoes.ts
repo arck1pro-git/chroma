@@ -1,5 +1,10 @@
 "use server";
 
+// Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
+// O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
+// pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
+import { exigirModulo } from "@/lib/auth/dal";
+
 // Mutações do módulo Webhooks. Roda no servidor — trate a entrada como não
 // confiável, mesmo vindo da nossa própria tela.
 import { randomBytes } from "node:crypto";
@@ -41,6 +46,7 @@ const novoSegredo = () => randomBytes(32).toString("hex");
  * pior estado possível para depurar.
  */
 export async function criarWebhook(nome: string): Promise<string> {
+  await exigirModulo("webhooks");
   const n = nome.trim();
   if (!n) throw new Error("Nome é obrigatório");
 
@@ -62,6 +68,7 @@ export async function editarWebhook(
   nome: string,
   descricao: string,
 ): Promise<void> {
+  await exigirModulo("webhooks");
   const n = nome.trim();
   if (!n) throw new Error("Nome é obrigatório");
   await sql`
@@ -73,6 +80,7 @@ export async function editarWebhook(
 }
 
 export async function alternarAtivo(id: string, ativo: boolean): Promise<void> {
+  await exigirModulo("webhooks");
   await sql`
     UPDATE webhooks SET ativo = ${ativo}, data_atualizacao = now()
     WHERE id = ${id}`;
@@ -84,6 +92,7 @@ export async function alternarAtivo(id: string, ativo: boolean): Promise<void> {
  * lado ser atualizado — é o ponto: é o botão de "vazou".
  */
 export async function girarSegredo(id: string): Promise<void> {
+  await exigirModulo("webhooks");
   await sql`
     UPDATE webhooks SET segredo = ${novoSegredo()}, data_atualizacao = now()
     WHERE id = ${id}`;
@@ -93,6 +102,7 @@ export async function girarSegredo(id: string): Promise<void> {
 // CASCADE leva campos, ações e recebimentos junto. O contato já criado fica: o
 // lead é dele, não da webhook.
 export async function excluirWebhook(id: string): Promise<void> {
+  await exigirModulo("webhooks");
   await sql`DELETE FROM webhooks WHERE id = ${id}`;
   revalidar();
 }
@@ -110,6 +120,7 @@ export async function criarCampo(
   destino: DestinoCampo,
   destinoChave: string,
 ): Promise<void> {
+  await exigirModulo("webhooks");
   const k = chave.trim();
   if (!k) throw new Error("A chave do campo é obrigatória");
   if (!/^[A-Za-z0-9_.-]+$/.test(k)) {
@@ -145,6 +156,7 @@ export async function editarCampo(
   destino: DestinoCampo,
   destinoChave: string,
 ): Promise<void> {
+  await exigirModulo("webhooks");
   const precisaChave = destino.endsWith(".campo");
   const dc = destinoChave.trim();
   if (precisaChave && !dc) {
@@ -159,6 +171,7 @@ export async function editarCampo(
 }
 
 export async function excluirCampo(id: string): Promise<void> {
+  await exigirModulo("webhooks");
   await sql`DELETE FROM webhook_campos WHERE id = ${id}`;
   revalidar();
 }
@@ -176,6 +189,7 @@ export async function configurarCriarLead(
   funilId: string,
   etapaId: string,
 ): Promise<void> {
+  await exigirModulo("webhooks");
   if (criarOportunidade && (!funilId || !etapaId)) {
     throw new Error("Escolha o funil e a etapa onde o card vai nascer");
   }
@@ -193,6 +207,7 @@ export async function adicionarAcao(
   tipo: "inscrever_fluxo" | "adicionar_segmento" | "adicionar_tag",
   alvoId: string,
 ): Promise<void> {
+  await exigirModulo("webhooks");
   if (!alvoId) throw new Error("Escolha o alvo da ação");
 
   try {
@@ -213,6 +228,7 @@ export async function adicionarAcao(
 
 // 'criar_lead' não sai: é ela que resolve o contato de quem as outras dependem.
 export async function excluirAcao(id: string): Promise<void> {
+  await exigirModulo("webhooks");
   await sql`DELETE FROM webhook_acoes WHERE id = ${id} AND tipo <> 'criar_lead'`;
   revalidar();
 }

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { ferramentasDoFluxo, SISTEMA_AUTOMACOES } from "@/lib/ia/automacoes";
 import { conversar, historicoDe, texto } from "@/lib/ia/conversa";
+import { exigirModuloApi } from "@/lib/auth/dal";
 
 // Conversa que MONTA automação. Irmã de /api/ia, com uma diferença de postura:
 // aquela só lê o CRM, esta escreve — o rascunho do fluxo aberto no builder.
@@ -17,6 +18,8 @@ import { conversar, historicoDe, texto } from "@/lib/ia/conversa";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const sessao = await exigirModuloApi("automacoes");
+  if (sessao instanceof Response) return sessao;
   let corpo: Record<string, unknown>;
   try {
     corpo = await req.json();

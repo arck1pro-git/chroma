@@ -1,6 +1,7 @@
 // Um blog: abrir (com os artigos), editar e excluir.
 import { NextRequest } from "next/server";
 import { sql } from "@/lib/db";
+import { exigirModuloApi } from "@/lib/auth/dal";
 import {
   artigosDoBlog,
   blogDepoisDeGravar,
@@ -23,6 +24,8 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const id = idValido((await params).id);
   if (id === null) return Response.json(NAO_ENCONTRADO, { status: 404 });
 
@@ -36,6 +39,8 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const id = idValido((await params).id);
   if (id === null) return Response.json(NAO_ENCONTRADO, { status: 404 });
 
@@ -73,6 +78,8 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const id = idValido((await params).id);
   if (id === null) return Response.json(NAO_ENCONTRADO, { status: 404 });
 

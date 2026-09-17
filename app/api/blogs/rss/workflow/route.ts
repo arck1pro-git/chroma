@@ -17,6 +17,7 @@ import {
 } from "@/lib/automacoes/motores/n8n/adaptador";
 import { credencialDoMotor } from "@/lib/automacoes/repositorio";
 import { enderecoDoCrm } from "@/lib/endereco";
+import { exigirModuloApi } from "@/lib/auth/dal";
 import {
   CRON_SEMANAL,
   NOME_WORKFLOW,
@@ -41,6 +42,8 @@ const NOME_CRED = "Chroma · CRM (token de serviço)";
 // segunda-feira de madrugada, dentro da instância do n8n compartilhada com o
 // SprintHub. Publique pelo domínio público.
 export async function POST(req: Request) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const { url: crmBaseUrl, publico, host } = enderecoDoCrm(req.headers);
   const token = process.env.CRM_SERVICE_TOKEN;
 

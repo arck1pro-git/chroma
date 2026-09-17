@@ -55,7 +55,11 @@ export type DadosCadencias = {
   emCadencia: Set<string>;
 };
 
-const VAZIO: DadosCadencias = {
+// Exportado desde os departamentos: a raiz usa este mesmo objeto quando quem
+// abriu NÃO tem o módulo de Automações. A tela já sabe desenhar o estado vazio
+// (era o caso da migração não aplicada), então não foi preciso inventar um
+// segundo caminho de "sem cadência" pra permissão.
+export const CADENCIAS_VAZIAS: DadosCadencias = {
   porEtapa: new Map(),
   instancias: [],
   emCadencia: new Set(),
@@ -92,7 +96,7 @@ export async function carregarCadencias(): Promise<DadosCadencias> {
     console.warn(
       "[cadencias] migration-cadencia-etapa.sql ainda não foi aplicada — o quadro abre sem cadências.",
     );
-    return VAZIO;
+    return CADENCIAS_VAZIAS;
   }
 
   // fluxo → (oportunidade → bloco em que ela está)

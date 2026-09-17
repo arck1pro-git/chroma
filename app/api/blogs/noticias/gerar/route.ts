@@ -14,6 +14,7 @@ import { NextRequest } from "next/server";
 import { campo, lerCorpo } from "@/lib/blog";
 import { gerarDaPauta } from "@/lib/blog-pauta";
 import { tamanhoValido } from "@/lib/artigo-geracao";
+import { exigirModuloApi } from "@/lib/auth/dal";
 
 // Ler a matéria + escrever ~1.300 palavras no Opus. O mesmo teto da geração
 // manual — a espera é do modelo, não da rota.
@@ -21,6 +22,8 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const corpo = await lerCorpo(req);
   if (!corpo) return Response.json({ error: "Corpo inválido." }, { status: 400 });
 

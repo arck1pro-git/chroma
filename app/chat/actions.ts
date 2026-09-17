@@ -1,5 +1,10 @@
 "use server";
 
+// Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
+// O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
+// pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
+import { exigirModulo } from "@/lib/auth/dal";
+
 // Envio real de mensagem. Fluxo que o schema.sql já previa:
 //   1. grava a linha 'pendente' no Neon (não perde a mensagem se a rede cair)
 //   2. dispara pela uazapi
@@ -18,6 +23,7 @@ export async function enviarMensagem(
   autorId: string | null,
   texto: string,
 ) {
+  await exigirModulo("chat");
   const corpo = texto.trim();
   if (!corpo) throw new Error("Mensagem vazia");
 
@@ -86,6 +92,7 @@ export async function iniciarAtendimento(
   contatoId: string,
   usuarioId: string | null,
 ): Promise<string> {
+  await exigirModulo("chat");
   const [existente] = await sql`
     SELECT id FROM atendimentos
     WHERE contato_id = ${contatoId} AND status <> 'encerrado'
@@ -102,6 +109,7 @@ export async function iniciarAtendimento(
 
 // Assumir um da fila: vira meu e abre. lido_em = agora zera as não lidas.
 export async function assumirAtendimento(id: string, usuarioId: string | null) {
+  await exigirModulo("chat");
   await sql`
     UPDATE atendimentos
     SET responsavel_id = ${usuarioId}, status = 'aberto', lido_em = now()
@@ -110,11 +118,13 @@ export async function assumirAtendimento(id: string, usuarioId: string | null) {
 }
 
 export async function encerrarAtendimento(id: string) {
+  await exigirModulo("chat");
   await sql`UPDATE atendimentos SET status = 'encerrado' WHERE id = ${id}`;
   revalidatePath("/chat");
 }
 
 export async function reabrirAtendimento(id: string, usuarioId: string | null) {
+  await exigirModulo("chat");
   await sql`
     UPDATE atendimentos
     SET status = 'aberto', responsavel_id = ${usuarioId}
@@ -124,6 +134,7 @@ export async function reabrirAtendimento(id: string, usuarioId: string | null) {
 
 // Marca como lido até agora (abriu = leu). É o que zera as não lidas na lista.
 export async function marcarLido(id: string) {
+  await exigirModulo("chat");
   await sql`UPDATE atendimentos SET lido_em = now() WHERE id = ${id}`;
   revalidatePath("/chat");
 }
@@ -138,6 +149,7 @@ export async function criarOportunidade(
   valor: number,
   responsavelId: string | null,
 ): Promise<string> {
+  await exigirModulo("chat");
   const n = nome.trim();
   if (!n) throw new Error("Nome da oportunidade é obrigatório");
   if (!contatoId) throw new Error("Sem contato");

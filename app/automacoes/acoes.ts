@@ -1,5 +1,10 @@
 "use server";
 
+// Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
+// O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
+// pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
+import { exigirModulo } from "@/lib/auth/dal";
+
 // Mutações das Automações. Roda no servidor — trate a entrada como não confiável.
 //
 // ⚠ NÃO HÁ AUTENTICAÇÃO no app ainda (docs/automacoes-arquitetura.md §3.1).
@@ -129,6 +134,7 @@ export async function criarFluxo(
   nome: string,
   entidade: "contato" | "oportunidade",
 ): Promise<string> {
+  await exigirModulo("automacoes");
   const limpo = nome.trim();
   if (!limpo) throw new Error("Nome é obrigatório");
   if (entidade !== "contato" && entidade !== "oportunidade") {
@@ -144,6 +150,7 @@ export async function salvarRascunho(
   fluxoId: string,
   definicao: DefinicaoFluxo,
 ): Promise<number> {
+  await exigirModulo("automacoes");
   if (definicao?.schema !== "chroma.flow/v1") {
     throw new Error("Formato de definição desconhecido");
   }
@@ -169,6 +176,7 @@ export async function publicar(
   fluxoId: string,
   opcoes?: { ativar?: boolean },
 ): Promise<Resultado> {
+  await exigirModulo("automacoes");
   const ativar = opcoes?.ativar ?? true;
   const definicao = await definicaoDoFluxo(fluxoId);
 
@@ -268,6 +276,7 @@ export async function publicar(
 }
 
 export async function pausar(fluxoId: string): Promise<Resultado> {
+  await exigirModulo("automacoes");
   const [fluxo] = await sql`
     SELECT motor_workflow_id FROM fluxos WHERE id = ${fluxoId}`;
   if (!fluxo?.motor_workflow_id) {
@@ -295,6 +304,7 @@ export async function pausar(fluxoId: string): Promise<Resultado> {
  * edição que ninguém pediu para publicar.
  */
 export async function retomar(fluxoId: string): Promise<Resultado> {
+  await exigirModulo("automacoes");
   const [fluxo] = await sql`
     SELECT motor_workflow_id, versao_publicada_id FROM fluxos WHERE id = ${fluxoId}`;
   if (!fluxo?.motor_workflow_id || !fluxo.versao_publicada_id) {
@@ -334,6 +344,7 @@ export async function dispararParaSegmento(
   fluxoId: string,
   segmentoId: string,
 ): Promise<Resultado> {
+  await exigirModulo("automacoes");
   const fluxo = await dadosDeDisparo(fluxoId);
   if (!fluxo) return { ok: false, erro: "Automação não encontrada." };
 
@@ -418,6 +429,7 @@ export async function buscarContatosParaInscrever(
   fluxoId: string,
   termo: string,
 ): Promise<{ id: string; nome: string; whatsapp: string | null }[]> {
+  await exigirModulo("automacoes");
   const t = termo.trim();
   // Dois caracteres é o piso: com um, a busca devolve um recorte arbitrário de
   // 18 mil linhas e não ajuda ninguém a achar ninguém.
@@ -440,6 +452,7 @@ export async function desinscreverDaAutomacao(
   entidadeTipo: "contato" | "oportunidade",
   entidadeId: string,
 ): Promise<Resultado> {
+  await exigirModulo("automacoes");
   if (entidadeTipo !== "contato" && entidadeTipo !== "oportunidade") {
     return { ok: false, erro: "Tipo de entidade inválido." };
   }
@@ -474,6 +487,7 @@ export async function inscreverNaAutomacao(
   fluxoId: string,
   contatoIds: string[],
 ): Promise<Resultado> {
+  await exigirModulo("automacoes");
   const ids = contatoIds.filter(Boolean);
   if (ids.length === 0) return { ok: false, erro: "Escolha ao menos um contato." };
 
@@ -553,6 +567,7 @@ export async function inscreverNaAutomacao(
  * webhook vivo que o CRM não gerencia mais.
  */
 export async function excluirFluxo(fluxoId: string): Promise<Resultado> {
+  await exigirModulo("automacoes");
   const [fluxo] = await sql`
     SELECT id, nome, motor_workflow_id FROM fluxos WHERE id = ${fluxoId}`;
   if (!fluxo) return { ok: false, erro: "Automação não encontrada." };

@@ -22,6 +22,7 @@ import {
   Boxes,
   Layers,
   Settings,
+  ShieldCheck,
   SlidersHorizontal,
   Smartphone,
   Tag as TagIcon,
@@ -57,6 +58,17 @@ const GRUPOS: { titulo: string; itens: Item[] }[] = [
   },
 ];
 
+// Fora dos GRUPOS acima de propósito: Acessos não é uma entidade do CRM nem uma
+// conexão com sistema de fora — é a portaria. E não é liberada pelo módulo
+// 'configuracoes', e sim pela coluna `gerencia_acessos` do departamento, que é
+// o que impede quem tem Configurações de se dar qualquer módulo (ver
+// migration-departamentos.sql).
+const ACESSOS: Item = {
+  href: "/configuracoes/acessos",
+  rotulo: "Acessos",
+  Icone: ShieldCheck,
+};
+
 function classesDoItem(ativo: boolean) {
   return `flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
     ativo
@@ -65,7 +77,13 @@ function classesDoItem(ativo: boolean) {
   }`;
 }
 
-export default function NavConfiguracoes() {
+export default function NavConfiguracoes({
+  temConfiguracoes,
+  gerenciaAcessos,
+}: {
+  temConfiguracoes: boolean;
+  gerenciaAcessos: boolean;
+}) {
   const pathname = usePathname();
 
   return (
@@ -77,7 +95,7 @@ export default function NavConfiguracoes() {
         </h1>
       </div>
 
-      {GRUPOS.map(({ titulo, itens }) => (
+      {(temConfiguracoes ? GRUPOS : []).map(({ titulo, itens }) => (
         <nav key={titulo} className="flex flex-col gap-0.5" aria-label={titulo}>
           <h2 className="px-2.5 pb-1 pt-2 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
             {titulo}
@@ -98,6 +116,22 @@ export default function NavConfiguracoes() {
           })}
         </nav>
       ))}
+
+      {gerenciaAcessos && (
+        <nav className="flex flex-col gap-0.5" aria-label="Permissões">
+          <h2 className="px-2.5 pb-1 pt-2 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+            Permissões
+          </h2>
+          <Link
+            href={ACESSOS.href}
+            aria-current={pathname === ACESSOS.href ? "page" : undefined}
+            className={classesDoItem(pathname === ACESSOS.href)}
+          >
+            <ACESSOS.Icone className="size-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">{ACESSOS.rotulo}</span>
+          </Link>
+        </nav>
+      )}
     </aside>
   );
 }

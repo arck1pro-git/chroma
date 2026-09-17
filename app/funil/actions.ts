@@ -1,5 +1,10 @@
 "use server";
 
+// Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
+// O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
+// pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
+import { exigirModulo } from "@/lib/auth/dal";
+
 // Mutações do Funil. Roda no servidor — entrada é não confiável.
 import { revalidatePath } from "next/cache";
 import { listaUuid, sql } from "@/lib/db";
@@ -39,6 +44,7 @@ export async function moverOportunidade(
   etapaId: string,
   funilId: string,
 ) {
+  await exigirModulo("inicio");
   await moverEtapaRegistrando(id, etapaId, funilId);
   // Entrar na etapa é entrar na cadência dela, se houver uma rodando. É o que
   // faz a cadência valer para "as próximas que entrarem" sem ninguém clicar em
@@ -85,6 +91,7 @@ export async function mudarStatusOportunidade(
   id: string,
   status: StatusOportunidade,
 ): Promise<{ ok: boolean; mensagem: string }> {
+  await exigirModulo("inicio");
   if (!STATUS_OPORTUNIDADE.includes(status)) {
     return { ok: false, mensagem: "Status inválido." };
   }
@@ -156,6 +163,7 @@ export async function mudarStatusOportunidade(
 export async function excluirOportunidade(
   id: string,
 ): Promise<{ ok: boolean; mensagem: string }> {
+  await exigirModulo("inicio");
   const [op] = await sql`SELECT nome FROM oportunidades WHERE id = ${id}`;
   if (!op) return { ok: false, mensagem: "Oportunidade não encontrada." };
 
@@ -225,6 +233,7 @@ export async function excluirOportunidade(
 export async function excluirOportunidades(
   oportunidadeIds: string[],
 ): Promise<ResultadoLote> {
+  await exigirModulo("inicio");
   const ids = idsValidos(oportunidadeIds);
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
   const lista = listaUuid(ids);
@@ -296,6 +305,7 @@ export async function anexarAtendimento(
   atendimentoId: string,
   oportunidadeId: string,
 ) {
+  await exigirModulo("inicio");
   // Cast explícito nos dois lados: dentro de um CASE o postgres.js não tem
   // como inferir que o parâmetro é uuid (funciona sozinho num "SET col = $1"
   // simples, porque aí o driver usa o tipo da coluna; aqui ele manda text e o
@@ -316,6 +326,7 @@ export async function anexarAtendimento(
 export async function camposDoContato(
   contatoId: string,
 ): Promise<Record<string, string>> {
+  await exigirModulo("inicio");
   const [c] = await sql`SELECT campos FROM contatos WHERE id = ${contatoId}`;
   return (c?.campos ?? {}) as Record<string, string>;
 }
@@ -332,6 +343,7 @@ export async function criarOportunidade(
   funilId: string,
   etapaId: string,
 ): Promise<string> {
+  await exigirModulo("inicio");
   const nome = dados.nome.trim();
   if (!nome) throw new Error("Nome é obrigatório");
   // contato_id é NOT NULL no schema (oportunidade é sempre de um contato).
@@ -374,6 +386,7 @@ export async function criarOportunidade(
 export async function automacoesDaOportunidade(
   oportunidadeId: string,
 ): Promise<AutomacaoDaEntidade[]> {
+  await exigirModulo("inicio");
   return automacoesDaEntidade("oportunidade", oportunidadeId);
 }
 
@@ -390,6 +403,7 @@ export type ResultadoAutomacao = { ok: boolean; mensagem: string };
 export async function pausarAutomacao(
   execucaoId: string,
 ): Promise<ResultadoAutomacao> {
+  await exigirModulo("inicio");
   try {
     const n = await pausarExecucao(execucaoId, "Pausada na ficha da oportunidade");
     revalidatePath("/");
@@ -406,6 +420,7 @@ export async function pausarAutomacao(
 export async function retomarAutomacao(
   execucaoId: string,
 ): Promise<ResultadoAutomacao> {
+  await exigirModulo("inicio");
   try {
     const n = await retomarExecucao(execucaoId);
     revalidatePath("/");
@@ -446,6 +461,7 @@ export async function moverParaResponsavel(
   oportunidadeIds: string[],
   usuarioId: string | null,
 ): Promise<ResultadoLote> {
+  await exigirModulo("inicio");
   const ids = idsValidos(oportunidadeIds);
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
 
@@ -480,6 +496,7 @@ export async function adicionarASegmento(
   oportunidadeIds: string[],
   segmentoId: string,
 ): Promise<ResultadoLote> {
+  await exigirModulo("inicio");
   const ids = idsValidos(oportunidadeIds);
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
   if (!/^[0-9a-f-]{36}$/i.test(segmentoId)) {
@@ -512,6 +529,7 @@ export async function inscreverEmFluxo(
   oportunidadeIds: string[],
   fluxoId: string,
 ): Promise<ResultadoLote> {
+  await exigirModulo("inicio");
   const ids = idsValidos(oportunidadeIds);
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
 
@@ -576,6 +594,7 @@ function csv(valor: unknown): string {
 export async function exportarOportunidades(
   oportunidadeIds: string[],
 ): Promise<{ ok: boolean; conteudo?: string; mensagem?: string }> {
+  await exigirModulo("inicio");
   const ids = idsValidos(oportunidadeIds);
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
 

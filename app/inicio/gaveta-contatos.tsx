@@ -1,7 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ChevronRight, Search, UserSearch, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  ChevronRight,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  UserSearch,
+  X,
+} from "lucide-react";
 import type {
   Anotacao,
   CampoPersonalizado,
@@ -23,12 +33,87 @@ import {
   SecoesContato,
 } from "../contatos/detalhes";
 import { CamposDoContato } from "../components/campos-personalizados";
+import FormContato, { type DadosContato } from "../contatos/form-contato";
+import {
+  atualizarContato,
+  criarContato,
+  excluirContato,
+  resumoExclusaoContato,
+  type ResumoExclusao,
+} from "../contatos/actions";
 
 // Gaveta da direita da tela inicial. Dois níveis no MESMO painel: lista de
-// contatos → dados do contato clicado (voltar traz a lista de volta). Só
-// leitura — quem edita é a ficha em app/contatos/ficha.tsx, hoje sem rota.
+// contatos → dados do contato clicado (voltar traz a lista de volta).
+//
+// DEIXOU DE SER SÓ LEITURA: com /contatos fora do ar como rota, esta gaveta é o
+// único caminho para criar, editar e excluir contato. O formulário é o MESMO de
+// app/contatos/form-contato.tsx (um componente, dois modos) — não uma segunda
+// cópia dos campos para divergir da primeira.
+//
+// A lista chega por props, do servidor. Depois de cada gravação vem um
+// router.refresh(): é ele que traz a lista nova: sem isso a gaveta mostraria o
+// estado anterior até a próxima navegação.
 
 const semTags: Tag[] = [];
+
+/**
+ * Excluir em dois passos, sem window.confirm.
+ *
+ * Mesmo desenho do BotaoExcluir de app/blog/pecas.tsx, escrito aqui em vez de
+ * importado: aquele arquivo se declara "as peças que as quatro telas do Blog
+ * repetem" e traz lib/artigo junto. São vinte linhas — melhor repeti-las do que
+ * amarrar a gaveta de contatos ao módulo de Blog.
+ *
+ * O primeiro clique troca o rótulo pelo que vai acontecer DE VERDADE ("Excluir
+ * e apagar 34 mensagens"). Só o segundo executa. Sair do botão desarma.
+ */
+function BotaoExcluir({
+  confirmacao,
+  aoConfirmar,
+  ocupado,
+}: {
+  confirmacao: string;
+  aoConfirmar: () => void;
+  ocupado?: boolean;
+}) {
+  const [armado, setArmado] = useState(false);
+
+  return (
+    <button
+      type="button"
+      disabled={ocupado}
+      onBlur={() => setArmado(false)}
+      onClick={() => (armado ? aoConfirmar() : setArmado(true))}
+      className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition disabled:opacity-50 ${
+        armado
+          ? "bg-red-600 text-white hover:bg-red-700"
+          : "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+      }`}
+    >
+      <Trash2 className="size-3.5 shrink-0" aria-hidden="true" />
+      {armado ? confirmacao : "Excluir contato"}
+    </button>
+  );
+}
+
+/**
+ * A frase do segundo clique. Enumera só o que EXISTE — "e apagar 0 mensagens"
+ * assustaria à toa — e some inteira quando não há nada pendurado no contato.
+ */
+function frasePerda(r: ResumoExclusao): string {
+  const partes: string[] = [];
+  if (r.mensagens > 0) {
+    partes.push(`${r.mensagens} mensagem${r.mensagens === 1 ? "" : "s"}`);
+  }
+  if (r.atendimentos > 0) {
+    partes.push(`${r.atendimentos} atendimento${r.atendimentos === 1 ? "" : "s"}`);
+  }
+  if (r.anotacoes > 0) {
+    partes.push(`${r.anotacoes} anotação${r.anotacoes === 1 ? "" : "ões"}`);
+  }
+  if (partes.length === 0) return "Confirmar exclusão";
+  return `Excluir e apagar ${partes.join(", ")}`;
+}
 
 function Avatar({ nome, grande = false }: { nome: string; grande?: boolean }) {
   return (
@@ -69,8 +154,28 @@ export default function GavetaContatos({
   aoAbrirOportunidade: (id: string) => void;
   aoFechar: () => void;
 }) {
+  const router = useRouter();
+  const [gravando, iniciarGravacao] = useTransition();
+
   const [termo, setTermo] = useState("");
   const [abertoId, setAbertoId] = useState<string | null>(null);
+
+  // null = formulário fechado; "novo" = criar; objeto = editar aquele contato.
+  const [form, setForm] = useState<"novo" | Contato | null>(null);
+
+  // O que a exclusão levaria junto, buscado no servidor quando o contato abre.
+  // Não dá pra tirar das props: mensagens não chegam aqui, e é justamente a
+  // contagem delas que a confirmação precisa dizer.
+  //
+  // Os dois guardam o ID JUNTO do valor, e a tela deriva daí (resumoAtual /
+  // erroAtual). Assim trocar de contato descarta o valor antigo por comparação,
+  // sem um setState de limpeza dentro do efeito — que é justamente o que
+  // dispara renderização em cascata.
+  const [resumo, setResumo] = useState<{ id: string; dados: ResumoExclusao } | null>(null);
+  const [erro, setErro] = useState<{ id: string; texto: string } | null>(null);
+
+  const resumoAtual = resumo && resumo.id === abertoId ? resumo.dados : null;
+  const erroAtual = erro && erro.id === abertoId ? erro.texto : null;
 
   // Mesmo índice da lista de /contatos: normalizar (NFD + regex unicode) é o
   // passo caro e o texto do contato não muda enquanto se digita.
@@ -87,17 +192,73 @@ export default function GavetaContatos({
     [contatos, abertoId],
   );
 
+  // Busca o resumo a cada contato aberto. `vivo` descarta a resposta que
+  // chegar depois de a pessoa já ter trocado de contato — senão o rótulo do
+  // botão mostraria a contagem do contato anterior.
+  useEffect(() => {
+    if (!abertoId) return;
+    let vivo = true;
+    resumoExclusaoContato(abertoId)
+      .then((r) => {
+        if (vivo) setResumo({ id: abertoId, dados: r });
+      })
+      .catch(() => {
+        // Sem resumo o botão continua funcionando, só com a frase genérica.
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [abertoId]);
+
+  const salvar = useCallback(
+    (dados: DadosContato) => {
+      const alvo = form;
+      setForm(null);
+      iniciarGravacao(async () => {
+        if (alvo === "novo") {
+          const id = await criarContato(dados);
+          // Abre o recém-criado: é a confirmação de que gravou, e já deixa a
+          // pessoa onde ela vai querer continuar (tags, segmentos, campos).
+          setAbertoId(id);
+        } else if (alvo) {
+          await atualizarContato(alvo.id, dados);
+        }
+        router.refresh();
+      });
+    },
+    [form, router],
+  );
+
+  const excluir = useCallback(() => {
+    if (!abertoId) return;
+    iniciarGravacao(async () => {
+      const r = await excluirContato(abertoId);
+      if (!r.ok) {
+        // Caso real e esperado: contato com oportunidade no funil. O banco
+        // recusaria de qualquer jeito; a ação devolve a frase em vez do erro
+        // cru de chave estrangeira.
+        setErro({ id: abertoId, texto: r.erro ?? "Não foi possível excluir." });
+        return;
+      }
+      setAbertoId(null);
+      router.refresh();
+    });
+  }, [abertoId, router]);
+
   // Esc desce um nível por vez: dos dados volta pra lista, da lista fecha a
   // gaveta. Fechar direto perderia a busca digitada sem o usuário ter pedido.
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
+      // Com o formulário aberto, o Esc é dele: o FormContato tem o próprio
+      // listener e fecha sozinho. Sem esta saída, uma tecla fecharia os dois.
+      if (form) return;
       if (abertoId) setAbertoId(null);
       else aoFechar();
     }
     document.addEventListener("keydown", aoTeclar);
     return () => document.removeEventListener("keydown", aoTeclar);
-  }, [abertoId, aoFechar]);
+  }, [abertoId, aoFechar, form]);
 
   return (
     <>
@@ -131,6 +292,19 @@ export default function GavetaContatos({
                 {aberto.cidade}/{aberto.estado}
               </p>
             </div>
+            {/* Editar fica no cabeçalho porque é a ação frequente. Excluir
+                ficou lá embaixo, no fim da rolagem: é rara e destrutiva, e não
+                deve estar a um pixel de distância do botão de fechar. */}
+            <button
+              type="button"
+              onClick={() => setForm(aberto)}
+              disabled={gravando}
+              aria-label={`Editar ${aberto.nome}`}
+              title="Editar contato"
+              className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+            </button>
             <button
               type="button"
               onClick={aoFechar}
@@ -151,9 +325,19 @@ export default function GavetaContatos({
               </span>
               <button
                 type="button"
+                onClick={() => setForm("novo")}
+                disabled={gravando}
+                aria-label="Novo contato"
+                title="Novo contato"
+                className="ml-auto shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+              >
+                <Plus className="size-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
                 onClick={aoFechar}
                 aria-label="Fechar contatos"
-                className="-mr-1 ml-auto shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+                className="-mr-1 shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
               >
                 <X className="size-4" aria-hidden="true" />
               </button>
@@ -194,6 +378,24 @@ export default function GavetaContatos({
                 usuarioPorId={usuarioPorId}
                 aoAbrirOportunidade={aoAbrirOportunidade}
               />
+
+              <div className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+                <BotaoExcluir
+                  ocupado={gravando}
+                  confirmacao={
+                    resumoAtual ? frasePerda(resumoAtual) : "Confirmar exclusão"
+                  }
+                  aoConfirmar={excluir}
+                />
+                {erroAtual && (
+                  <p
+                    role="alert"
+                    className="surge mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-[12px] leading-relaxed text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                  >
+                    {erroAtual}
+                  </p>
+                )}
+              </div>
             </>
           ) : visiveis.length === 0 ? (
             <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
@@ -208,7 +410,7 @@ export default function GavetaContatos({
               </p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 {contatos.length === 0
-                  ? "Contatos entram por /contatos ou pelo webhook do chat."
+                  ? "Use o + aqui em cima, ou deixe o webhook do chat trazer quem chamar no WhatsApp."
                   : `Os ${contatos.length} da base continuam aqui — só não batem com a busca.`}
               </p>
             </div>
@@ -257,6 +459,29 @@ export default function GavetaContatos({
         </div>
 
       </aside>
+
+      {/* key por contato: trocar de alvo remonta o formulário, senão os campos
+          ficariam com os valores do contato anterior (useState só lê o inicial
+          na primeira montagem). */}
+      {form && (
+        <FormContato
+          key={form === "novo" ? "novo" : form.id}
+          inicial={
+            form === "novo"
+              ? undefined
+              : {
+                  nome: form.nome,
+                  email: form.email,
+                  whatsapp: form.whatsapp,
+                  cidade: form.cidade,
+                  estado: form.estado,
+                  pais: form.pais,
+                }
+          }
+          aoSalvar={salvar}
+          aoFechar={() => setForm(null)}
+        />
+      )}
     </>
   );
 }

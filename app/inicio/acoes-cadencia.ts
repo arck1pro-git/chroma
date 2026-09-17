@@ -1,5 +1,10 @@
 "use server";
 
+// Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
+// O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
+// pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
+import { exigirModulo } from "@/lib/auth/dal";
+
 // Mutações da cadência de uma etapa: criar, salvar as colunas, publicar no
 // motor e disparar. É o ciclo inteiro do painel de subetapas da raiz.
 //
@@ -39,6 +44,7 @@ export async function criarCadencia(
   etapaId: string,
   nomeEtapa: string,
 ): Promise<string> {
+  await exigirModulo("automacoes");
   if (!etapaId) throw new Error("Etapa não informada");
   const nome = `Cadência · ${nomeEtapa.trim() || "etapa"}`.slice(0, 120);
 
@@ -139,6 +145,7 @@ export async function salvarCadencia(
   subetapas: Subetapa[],
   inscreverAtuais: boolean,
 ): Promise<Resultado> {
+  await exigirModulo("automacoes");
   if (!fluxoId) return { ok: false, erro: "Cadência não informada." };
   if (!Array.isArray(subetapas) || subetapas.length === 0) {
     return { ok: false, erro: "Uma cadência precisa de pelo menos uma mensagem." };
@@ -240,6 +247,7 @@ export async function alternarCadencia(
   fluxoId: string,
   rodar: boolean,
 ): Promise<Resultado> {
+  await exigirModulo("automacoes");
   if (!fluxoId) return { ok: false, erro: "Cadência não informada." };
   const r = rodar ? await retomar(fluxoId) : await pausar(fluxoId);
   revalidatePath("/");
@@ -256,6 +264,7 @@ export async function alternarCadencia(
  * o segundo clique pega só quem entrou na etapa desde o primeiro.
  */
 export async function dispararCadencia(fluxoId: string): Promise<Resultado> {
+  await exigirModulo("automacoes");
   const fluxo = await dadosDeDisparo(fluxoId);
   if (!fluxo) return { ok: false, erro: "Cadência não encontrada." };
   if (!fluxo.etapa_id) return { ok: false, erro: "Cadência sem etapa." };
@@ -345,6 +354,7 @@ export async function removerDaCadencia(
   fluxoId: string,
   oportunidadeId: string,
 ): Promise<Resultado> {
+  await exigirModulo("automacoes");
   if (!fluxoId || !oportunidadeId) {
     return { ok: false, erro: "Faltou a cadência ou a oportunidade." };
   }

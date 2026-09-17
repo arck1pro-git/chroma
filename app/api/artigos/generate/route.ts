@@ -9,6 +9,7 @@
 // descartado, um por tentativa.
 import { NextRequest } from "next/server";
 import { campo, lerCorpo } from "@/lib/blog";
+import { exigirModuloApi } from "@/lib/auth/dal";
 import {
   FalhaGeracao,
   gerarArtigoDeMateria,
@@ -20,6 +21,8 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const sessao = await exigirModuloApi("blog");
+  if (sessao instanceof Response) return sessao;
   const corpo = await lerCorpo(req);
   if (!corpo) return Response.json({ error: "Corpo inválido." }, { status: 400 });
 

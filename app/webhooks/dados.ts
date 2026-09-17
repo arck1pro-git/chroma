@@ -5,7 +5,13 @@
 // copiado para dentro do sistema do outro lado, então a tela tem que conseguir
 // mostrá-lo. É o mesmo raciocínio de uma chave de API em painel de provedor.
 import { sql } from "@/lib/db";
-import type { Recebimento, Webhook, WebhookAcao, WebhookCampo } from "@/lib/webhooks";
+import type {
+  CampoDoCrm,
+  Recebimento,
+  Webhook,
+  WebhookAcao,
+  WebhookCampo,
+} from "@/lib/webhooks";
 
 /** Um dia da série do gráfico. `falha` junta recusado e erro — ver abaixo. */
 export type RecebimentoNoDia = { dia: string; ok: number; falha: number };
@@ -39,13 +45,21 @@ export type DetalheWebhook = {
   metricas: MetricasWebhook;
 };
 
-/** Alvos que as ações podem escolher. Uma consulta por lista, em paralelo. */
+/**
+ * O que a configuração de uma webhook precisa escolher, em consultas paralelas:
+ * os alvos das AÇÕES (tag, segmento, fluxo, funil, etapa) e os campos
+ * personalizados do CRM, que são o destino possível de um CAMPO.
+ *
+ * Os dois vêm juntos porque são carregados no mesmo momento — quando a pessoa
+ * abre uma webhook — e uma segunda ida ao banco para três colunas não se paga.
+ */
 export type Alvos = {
   tags: { id: string; nome: string }[];
   segmentos: { id: string; nome: string }[];
   fluxos: { id: string; nome: string; entidade_alvo: string }[];
   funis: { id: string; nome: string }[];
   etapas: { id: string; nome: string; funil_id: string }[];
+  camposCrm: CampoDoCrm[];
 };
 
 export async function listarWebhooks(): Promise<Webhook[]> {
@@ -158,7 +172,7 @@ export async function detalheDoWebhook(id: string): Promise<DetalheWebhook> {
 }
 
 export async function carregarAlvos(): Promise<Alvos> {
-  const [tags, segmentos, fluxos, funis, etapas] = await Promise.all([
+  const [tags, segmentos, fluxos, funis, etapas, camposCrm] = await Promise.all([
     sql`SELECT id, nome FROM tags ORDER BY nome`,
     sql`SELECT id, nome FROM segmentos ORDER BY nome`,
     // Só fluxo PUBLICADO entra na lista: inscrever num rascunho não tem
@@ -171,6 +185,12 @@ export async function carregarAlvos(): Promise<Alvos> {
       ORDER BY nome`,
     sql`SELECT id, nome FROM funis ORDER BY data_criacao`,
     sql`SELECT id, nome, funil_id FROM etapas ORDER BY funil_id, ordem`,
+    // Sem `opcoes` e sem `tipo`: o seletor de destino só precisa saber que o
+    // campo existe, onde ele mora e como chamá-lo na tela. O TIPO do valor que
+    // chega é do campo da webhook, e quem o escolhe é a pessoa, ao lado.
+    sql`
+      SELECT entidade, chave, rotulo FROM campos_personalizados
+      ORDER BY entidade, ordem, rotulo`,
   ]);
 
   return {
@@ -179,5 +199,6 @@ export async function carregarAlvos(): Promise<Alvos> {
     fluxos: fluxos as unknown as Alvos["fluxos"],
     funis: funis as unknown as Alvos["funis"],
     etapas: etapas as unknown as Alvos["etapas"],
+    camposCrm: camposCrm as unknown as CampoDoCrm[],
   };
 }

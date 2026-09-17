@@ -12,6 +12,11 @@
 //   'funil'                  → a raiz
 //   'automacoes:<fluxo_id>'  → o editor daquele fluxo
 //   'cadencia:<fluxo_id>'    → o painel de cadência daquela etapa, na raiz
+//   'webhooks'               → a tela de Webhooks
+//
+// 'webhooks' não carrega id, e é a diferença de postura daquela conversa: ela
+// CRIA captação, e captação que ainda não existe não tem id para prender. A
+// conversa é da tela.
 //
 // ⚠ O escopo do editor era só 'automacoes', sem o id — o que tornava
 // impossível saber a qual fluxo a conversa pertencia. Passou a carregar o id
@@ -24,6 +29,7 @@ export type EscopoConversa = string;
 /** O rótulo do lugar, para a sidebar mostrar de onde veio a conversa. */
 export function lugarDoEscopo(escopo: EscopoConversa): string {
   if (escopo === "funil") return "Funil";
+  if (escopo === "webhooks") return "Webhooks";
   if (escopo.startsWith("cadencia:")) return "Cadência";
   if (escopo.startsWith("automacoes")) return "Automação";
   return "CRM";
@@ -47,6 +53,8 @@ export function rotaDaConversa(escopo: EscopoConversa, id: string): string {
     const fluxoId = escopo.slice("automacoes:".length);
     return `/automacoes/${encodeURIComponent(fluxoId)}?ia=${id}`;
   }
+
+  if (escopo === "webhooks") return `/webhooks?ia=${id}`;
 
   // 'automacoes' sem id (formato antigo): sem saber o fluxo, a lista é o
   // destino honesto. Abrir um fluxo qualquer seria pior que não abrir nenhum.

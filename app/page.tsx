@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Inicio from "./inicio/inicio";
 import { carregarFunil } from "./funil/dados";
-import { carregarCadencias } from "./inicio/cadencias";
+import { CADENCIAS_VAZIAS, carregarCadencias } from "./inicio/cadencias";
 import { fluxosParaInscricao } from "@/lib/automacoes/repositorio";
+import { exigirModulo } from "@/lib/auth/dal";
 
 // O título segue a forma dos outros módulos ("X · Chroma"); sem ele a raiz
 // herdava só "Chroma" do layout e era a única aba sem nome próprio.
@@ -32,6 +33,21 @@ export default async function Home({
     cadencia?: string | string[];
   }>;
 }) {
+  // Checagem POR PÁGINA, e não no layout: com Partial Rendering o layout não
+  // re-renderiza a cada navegação, então a checagem lá deixaria de rodar
+  // justamente quando a pessoa troca de tela (guia de autenticação do Next,
+  // "Layouts and auth checks"). Aqui ela roda antes de qualquer consulta.
+  const { usuario } = await exigirModulo("inicio");
+
+  // O painel de cadência mora na raiz, mas o que ele faz é AUTOMAÇÃO: cria,
+  // publica e DISPARA fluxo de WhatsApp pela instância compartilhada. Por isso
+  // ele segue o módulo 'automacoes', e não o 'inicio' que abriu esta tela —
+  // as ações em app/inicio/acoes-cadencia.ts exigem o mesmo.
+  //
+  // Sem o módulo a consulta nem roda: carregar pra depois esconder no React
+  // mandaria a cadência inteira no HTML de quem não pode vê-la.
+  const podeAutomacoes = usuario.modulos.has("automacoes");
+
   const { op, ia, cadencia } = await searchParams;
   const um = (v: string | string[] | undefined) =>
     typeof v === "string" ? v : null;
@@ -39,10 +55,10 @@ export default async function Home({
   // somaria o tempo das duas na primeira pintura.
   const [dados, cadencias, fluxos] = await Promise.all([
     carregarFunil(),
-    carregarCadencias(),
+    podeAutomacoes ? carregarCadencias() : CADENCIAS_VAZIAS,
     // As automações que a seleção do kanban pode disparar. Consulta pequena e
     // independente das outras duas — entra no mesmo Promise.all.
-    fluxosParaInscricao(),
+    podeAutomacoes ? fluxosParaInscricao() : [],
   ]);
 
   return (

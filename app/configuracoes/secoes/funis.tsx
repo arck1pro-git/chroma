@@ -26,7 +26,14 @@ import { CSS } from "@dnd-kit/utilities";
 import { Check, FolderPlus, GripVertical, Layers, Pencil, Plus, X } from "lucide-react";
 import type { Etapa, Funil } from "../../data";
 import { amostraDoTom, TOM_PADRAO, TONS_FUNIL } from "@/lib/cores-funil";
-import { criarEtapa, criarFunil, editarCorDoFunil, editarEtapa, reordenarEtapas } from "../actions";
+import {
+  criarEtapa,
+  criarFunil,
+  editarCorDoFunil,
+  editarEtapa,
+  editarFunil,
+  reordenarEtapas,
+} from "../actions";
 import { botao, campoTexto } from "./ui";
 
 export function SecaoFunis({
@@ -153,20 +160,110 @@ function FunilCard({ funil, etapas }: { funil: Funil; etapas: Etapa[] }) {
   const [cor, setCor] = useState(funil.cor);
   const [, trocarCor] = useTransition();
 
+  // Edição do NOME (e da descrição) no mesmo gesto da etapa logo abaixo:
+  // lápis, campo no lugar do título, Enter salva e Esc cancela. Era a única
+  // coisa do funil que não se corrigia na tela — errou o nome ao criar, e só
+  // restava criar outro e mover as oportunidades à mão.
+  const [editando, setEditando] = useState(false);
+  const [nome, setNome] = useState(funil.nome);
+  const [descricao, setDescricao] = useState(funil.descricao ?? "");
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, iniciar] = useTransition();
+
+  function salvar() {
+    const n = nome.trim();
+    if (!n) return;
+    setErro(null);
+    iniciar(async () => {
+      try {
+        await editarFunil(funil.id, n, descricao);
+        setEditando(false);
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Falha ao salvar");
+      }
+    });
+  }
+
+  function cancelar() {
+    setNome(funil.nome);
+    setDescricao(funil.descricao ?? "");
+    setErro(null);
+    setEditando(false);
+  }
+
   return (
     <li className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex items-start gap-2">
         <Layers className="mt-0.5 size-4 shrink-0 text-zinc-400" aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-50">
-            {funil.nome}
-          </h3>
-          {funil.descricao && (
-            <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-              {funil.descricao}
-            </p>
-          )}
-        </div>
+        {editando ? (
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <input
+              value={nome}
+              onChange={(ev) => setNome(ev.target.value)}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter") salvar();
+                if (ev.key === "Escape") cancelar();
+              }}
+              autoFocus
+              aria-label="Nome do funil"
+              className={`${campoTexto} py-1`}
+            />
+            <input
+              value={descricao}
+              onChange={(ev) => setDescricao(ev.target.value)}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter") salvar();
+                if (ev.key === "Escape") cancelar();
+              }}
+              placeholder="Descrição (opcional)"
+              aria-label="Descrição do funil"
+              className={`${campoTexto} py-1`}
+            />
+            {erro && <p className="text-xs text-red-500">{erro}</p>}
+          </div>
+        ) : (
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-50">
+              {funil.nome}
+            </h3>
+            {funil.descricao && (
+              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                {funil.descricao}
+              </p>
+            )}
+          </div>
+        )}
+
+        {editando ? (
+          <div className="mt-0.5 flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={salvar}
+              disabled={salvando || !nome.trim()}
+              aria-label="Salvar"
+              className="text-zinc-400 transition hover:text-emerald-600 disabled:opacity-40"
+            >
+              <Check className="size-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={cancelar}
+              aria-label="Cancelar"
+              className="text-zinc-400 transition hover:text-zinc-900 dark:hover:text-zinc-50"
+            >
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditando(true)}
+            aria-label={`Editar ${funil.nome}`}
+            className="mt-0.5 shrink-0 text-zinc-400 transition hover:text-zinc-900 dark:hover:text-zinc-50"
+          >
+            <Pencil className="size-3.5" aria-hidden="true" />
+          </button>
+        )}
 
         {/* Trocar aqui repinta TODAS as etapas do funil de uma vez: os tons são
             derivados da cor dele, não gravados por etapa. */}

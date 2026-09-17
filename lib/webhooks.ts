@@ -109,6 +109,120 @@ export const DESTINOS: { valor: DestinoCampo; rotulo: string; grupo: string }[] 
   { valor: "ignorar", rotulo: "Não usar", grupo: "Outros" },
 ];
 
+/**
+ * Um campo personalizado do CRM (campos_personalizados), como o seletor de
+ * destino precisa vê-lo: onde ele mora e como se chama.
+ */
+export type CampoDoCrm = {
+  entidade: "contato" | "oportunidade";
+  chave: string;
+  rotulo: string;
+};
+
+/**
+ * Uma linha do seletor "Vira o quê no CRM".
+ *
+ * O `valor` é o que vai no <option>, e ele CARREGA A CHAVE quando o destino é
+ * campo personalizado: "contato.campo:utm_source". Antes o seletor tinha uma
+ * opção genérica "Campo personalizado" e um input ao lado onde a pessoa
+ * DIGITAVA a chave — e digitar chave de campo personalizado é errar chave de
+ * campo personalizado: um "utm-source" com hífen grava um valor que nenhuma
+ * tela do CRM lê, e nada avisa.
+ *
+ * Com cada campo virando uma opção, o par (destino, chave) sempre sai de algo
+ * que existe no banco.
+ */
+export type OpcaoDestino = {
+  valor: string;
+  rotulo: string;
+  grupo: string;
+  destino: DestinoCampo;
+  destinoChave: string | null;
+};
+
+const GRUPOS_DESTINO = ["Contato", "Oportunidade", "Outros"] as const;
+
+/** O par (destino, chave) colapsado no valor de um <option>. */
+export function valorDeDestino(destino: DestinoCampo, chave: string | null) {
+  return destino.endsWith(".campo") && chave ? `${destino}:${chave}` : destino;
+}
+
+/** O caminho de volta: do valor do <option> para o par que o banco guarda. */
+export function lerValorDeDestino(valor: string): {
+  destino: DestinoCampo;
+  destinoChave: string;
+} {
+  const corte = valor.indexOf(":");
+  if (corte < 0) return { destino: valor as DestinoCampo, destinoChave: "" };
+  return {
+    destino: valor.slice(0, corte) as DestinoCampo,
+    destinoChave: valor.slice(corte + 1),
+  };
+}
+
+/**
+ * Todas as linhas do seletor: os campos fixos do contato e da oportunidade,
+ * mais UMA LINHA POR CAMPO PERSONALIZADO cadastrado, mais "Não usar".
+ *
+ * `emUso` são os pares que os campos já declarados desta webhook apontam. Um
+ * deles pode apontar para um campo personalizado que foi apagado depois em
+ * Configurações — e essa linha tem que continuar aparecendo, marcada, senão o
+ * seletor mostraria outro destino e a primeira edição gravaria um destino que
+ * ninguém escolheu.
+ */
+export function opcoesDeDestino(
+  camposCrm: CampoDoCrm[],
+  emUso: { destino: DestinoCampo; destino_chave: string | null }[] = [],
+): OpcaoDestino[] {
+  const opcoes: OpcaoDestino[] = [];
+
+  for (const grupo of GRUPOS_DESTINO) {
+    // Os fixos, menos as duas entradas genéricas de campo personalizado: quem
+    // as substitui é a lista logo abaixo, campo a campo.
+    for (const d of DESTINOS) {
+      if (d.grupo !== grupo || d.valor.endsWith(".campo")) continue;
+      opcoes.push({
+        valor: d.valor,
+        rotulo: d.rotulo,
+        grupo,
+        destino: d.valor,
+        destinoChave: null,
+      });
+    }
+
+    const entidade = grupo === "Contato" ? "contato" : "oportunidade";
+    const destino: DestinoCampo =
+      entidade === "contato" ? "contato.campo" : "oportunidade.campo";
+
+    for (const c of camposCrm) {
+      if (c.entidade !== entidade) continue;
+      opcoes.push({
+        valor: valorDeDestino(destino, c.chave),
+        rotulo: `${c.rotulo} (personalizado)`,
+        grupo,
+        destino,
+        destinoChave: c.chave,
+      });
+    }
+  }
+
+  // Campo personalizado que sumiu do cadastro mas ainda é destino de alguém.
+  for (const campo of emUso) {
+    if (!campo.destino.endsWith(".campo") || !campo.destino_chave) continue;
+    const valor = valorDeDestino(campo.destino, campo.destino_chave);
+    if (opcoes.some((o) => o.valor === valor)) continue;
+    opcoes.push({
+      valor,
+      rotulo: `"${campo.destino_chave}" (não cadastrado)`,
+      grupo: campo.destino.startsWith("contato") ? "Contato" : "Oportunidade",
+      destino: campo.destino,
+      destinoChave: campo.destino_chave,
+    });
+  }
+
+  return opcoes;
+}
+
 export function rotuloDoDestino(campo: WebhookCampo): string {
   const base = DESTINOS.find((d) => d.valor === campo.destino);
   if (!base) return campo.destino;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { UserPlus, X } from "lucide-react";
+import { Pencil, UserPlus, X } from "lucide-react";
 
 const campoTexto =
   "w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-2 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus-visible:ring-zinc-100/10";
@@ -32,21 +32,34 @@ function Campo({
   );
 }
 
+/**
+ * Um formulário só para criar e para editar.
+ *
+ * O que muda entre os dois é o que cabe em três strings (título, subtítulo,
+ * rótulo do botão) e o estado inicial dos campos — não é diferença que valha um
+ * segundo componente para sair de sincronia com este.
+ *
+ * `inicial` ausente = novo contato.
+ */
 export default function FormContato({
-  aoCriar,
+  inicial,
+  aoSalvar,
   aoFechar,
 }: {
-  aoCriar: (dados: DadosContato) => void;
+  inicial?: DadosContato;
+  aoSalvar: (dados: DadosContato) => void;
   aoFechar: () => void;
 }) {
-  const [nome, setNome] = useState("");
-  const [email, setEmail] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
-  const [cidade, setCidade] = useState("");
-  const [estado, setEstado] = useState("");
+  const editando = inicial !== undefined;
+
+  const [nome, setNome] = useState(inicial?.nome ?? "");
+  const [email, setEmail] = useState(inicial?.email ?? "");
+  const [whatsapp, setWhatsapp] = useState(inicial?.whatsapp ?? "");
+  const [cidade, setCidade] = useState(inicial?.cidade ?? "");
+  const [estado, setEstado] = useState(inicial?.estado ?? "");
   // País quase sempre é Brasil na base; começar preenchido poupa o campo mais
   // comum sem impedir a troca.
-  const [pais, setPais] = useState("Brasil");
+  const [pais, setPais] = useState(inicial?.pais ?? "Brasil");
 
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
@@ -59,7 +72,7 @@ export default function FormContato({
   function enviar(e: React.FormEvent) {
     e.preventDefault();
     if (!nome.trim()) return;
-    aoCriar({
+    aoSalvar({
       nome: nome.trim(),
       email: email.trim(),
       whatsapp: whatsapp.trim(),
@@ -75,7 +88,7 @@ export default function FormContato({
       onClick={aoFechar}
       role="dialog"
       aria-modal="true"
-      aria-label="Registrar novo contato"
+      aria-label={editando ? "Editar contato" : "Registrar novo contato"}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -84,11 +97,15 @@ export default function FormContato({
         <header className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
           <div className="flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-              <UserPlus className="size-4" aria-hidden="true" />
+              {editando ? (
+                <Pencil className="size-4" aria-hidden="true" />
+              ) : (
+                <UserPlus className="size-4" aria-hidden="true" />
+              )}
             </span>
             <div>
               <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                Novo contato
+                {editando ? "Editar contato" : "Novo contato"}
               </h2>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 Só o nome é obrigatório.
@@ -182,7 +199,7 @@ export default function FormContato({
               disabled={!nome.trim()}
               className="rounded-lg bg-zinc-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
-              Registrar contato
+              {editando ? "Salvar alterações" : "Registrar contato"}
             </button>
           </div>
         </form>

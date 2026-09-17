@@ -1,5 +1,16 @@
 "use server";
 
+// Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
+// O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
+// pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
+import { exigirLogin } from "@/lib/auth/dal";
+
+// `exigirLogin` e não `exigirModulo`: estas ações servem a lista de conversas da
+// barra lateral, que aparece em TODAS as telas e junta análises feitas em
+// módulos diferentes. Prender a um módulo esvaziaria a lista de quem está noutro.
+// A conversa em si já é do usuário — o escopo no WHERE de lib/ia/conversas.ts é
+// o que impede ler a de outra pessoa.
+
 // O painel de IA falando com o banco. É a única porta: o componente é de
 // cliente e não importa lib/db.ts.
 //
@@ -51,6 +62,7 @@ export type Resposta<T> =
 export async function listarConversasIa(
   escopo: string,
 ): Promise<Resposta<ConversaResumo[]>> {
+  await exigirLogin();
   try {
     return { ok: true, dados: await listarConversas(escopoDe(escopo)) };
   } catch (e) {
@@ -63,6 +75,7 @@ export async function lerConversaIa(
   id: string,
   escopo: string,
 ): Promise<Resposta<ConversaCompleta | null>> {
+  await exigirLogin();
   try {
     return { ok: true, dados: await lerConversa(texto(id, 64), escopoDe(escopo)) };
   } catch (e) {
@@ -82,6 +95,7 @@ export async function criarConversaIa(
   titulo: string,
   falas: unknown,
 ): Promise<Resposta<ConversaResumo>> {
+  await exigirLogin();
   const limpas = limparFalas(falas);
   if (limpas.length === 0) {
     return { ok: false, erro: "Conversa sem nenhuma fala." };
@@ -106,6 +120,7 @@ export async function gravarConversaIa(
   escopo: string,
   falas: unknown,
 ): Promise<Resposta<{ em: string | null }>> {
+  await exigirLogin();
   try {
     const em = await gravarFalas(
       texto(id, 64),
@@ -123,6 +138,7 @@ export async function apagarConversaIa(
   id: string,
   escopo: string,
 ): Promise<Resposta<null>> {
+  await exigirLogin();
   try {
     await apagarConversa(texto(id, 64), escopoDe(escopo));
     return { ok: true, dados: null };
@@ -154,6 +170,7 @@ export type ContextoDisponivel = {
  * pessoa, marcando na hora.
  */
 export async function contextosDisponiveis(): Promise<ContextoDisponivel[]> {
+  await exigirLogin();
   try {
     const lista = await contextosAtivos();
     return lista.map((c) => ({ id: c.id, nome: c.nome, descricao: c.descricao }));
@@ -173,6 +190,7 @@ export async function contextosDisponiveis(): Promise<ContextoDisponivel[]> {
  * inteiro por causa de uma lista acessória.
  */
 export async function conversasDaBarra(): Promise<ConversaNaBarra[]> {
+  await exigirLogin();
   try {
     return await listarTodasConversas();
   } catch {

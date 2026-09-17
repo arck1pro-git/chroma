@@ -7,6 +7,7 @@
 // uma mesma tela precisa de fato.
 import { sql } from "@/lib/db";
 import type { Etapa, Funil, Segmento, Tag, Usuario } from "../data";
+import { ehChaveModulo, ehEscopo, type ChaveModulo, type Escopo } from "@/lib/auth/modulos";
 
 // Nasce da conexão com a uazapi (GET /instance/status), não de digitação livre
 // — ver conectarInstancia em ./actions.ts. token NUNCA sai daqui inteiro: só
@@ -89,4 +90,83 @@ export async function carregarInstancias(): Promise<InstanciaUazapi[]> {
            to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
     FROM instancias_uazapi ORDER BY data_criacao`;
   return instancias as unknown as InstanciaUazapi[];
+}
+
+// ── Acessos ──────────────────────────────────────────────────────────────────
+// Departamentos, os módulos de cada um e quem está dentro. Lido só por
+// /configuracoes/acessos, que é tela de quem administra (ver
+// exigirGerenciaAcessos em lib/auth/dal.ts).
+
+export type DepartamentoConfig = {
+  id: string;
+  nome: string;
+  slug: string;
+  nivel: number;
+  /** Os três do seed (Comercial/Admin/TI) não se apagam. */
+  sistema: boolean;
+  gerenciaAcessos: boolean;
+  /**
+   * chave do módulo → escopo. Objeto e não Map: isto atravessa a fronteira
+   * servidor→cliente, e objeto simples é o que não depende de serialização
+   * especial pra chegar inteiro do outro lado.
+   */
+  modulos: Partial<Record<ChaveModulo, Escopo>>;
+};
+
+export type ParticipanteConfig = {
+  id: string;
+  nome: string;
+  iniciais: string;
+  email: string;
+  departamentoId: string | null;
+};
+
+export type DadosAcessos = {
+  departamentos: DepartamentoConfig[];
+  participantes: ParticipanteConfig[];
+};
+
+export async function carregarAcessos(): Promise<DadosAcessos> {
+  const [departamentos, participantes] = await Promise.all([
+    // jsonb_object_agg pelo mesmo motivo da DAL: com `fetch_types:false`
+    // (exigido pelo pooler, ver lib/db.ts) array nativo não volta confiável.
+    sql`
+      SELECT d.id, d.nome, d.slug, d.nivel, d.sistema,
+             d.gerencia_acessos AS "gerenciaAcessos",
+             COALESCE(
+               jsonb_object_agg(dm.modulo, dm.escopo)
+                 FILTER (WHERE dm.modulo IS NOT NULL),
+               '{}'::jsonb
+             ) AS modulos
+        FROM departamentos d
+        LEFT JOIN departamento_modulos dm ON dm.departamento_id = d.id
+       GROUP BY d.id, d.nome, d.slug, d.nivel, d.sistema, d.gerencia_acessos
+       ORDER BY d.nivel DESC, d.nome
+    `,
+    // Só quem TEM login. Usuário sem email existe só pra aparecer como
+    // responsável no card e no balão (ver migration-front.sql) — dar
+    // departamento a ele seria oferecer acesso a uma conta que não entra.
+    sql`
+      SELECT id, nome, iniciais, email, departamento_id AS "departamentoId"
+        FROM usuarios
+       WHERE email IS NOT NULL
+         AND ativo = true
+       ORDER BY nome
+    `,
+  ]);
+
+  return {
+    departamentos: (departamentos as DepartamentoConfig[]).map((d) => {
+      // Peneira contra o catálogo do código: módulo removido de
+      // lib/auth/modulos.ts deixa linha órfã na tabela (não há CHECK lá, de
+      // propósito), e essa linha não pode virar caixinha fantasma na tela.
+      const modulos: Partial<Record<ChaveModulo, Escopo>> = {};
+      for (const [chave, escopo] of Object.entries(d.modulos ?? {})) {
+        if (!ehChaveModulo(chave)) continue;
+        modulos[chave] = ehEscopo(escopo as string) ? (escopo as Escopo) : "proprio";
+      }
+      return { ...d, modulos };
+    }),
+    participantes: participantes as unknown as ParticipanteConfig[],
+  };
 }
