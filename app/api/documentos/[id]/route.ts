@@ -34,9 +34,9 @@ export async function GET(
   try {
     bytes = await lerArquivo(documento.caminho);
   } catch (e) {
-    // A linha existe e o arquivo não abriu: disco limpo por deploy, ou
-    // DOCUMENTOS_DIR apontando para outro lugar. Vale log — é perda de dado,
-    // não erro de uso.
+    // A linha existe e o objeto não veio do Storage: apagado do bucket por
+    // fora, ou bucket trocado no env. Vale log — é perda de dado, não erro de
+    // uso.
     console.error(`[documentos] ${id} está no banco mas não abriu:`, e);
     return new Response("arquivo indisponível", { status: 410 });
   }

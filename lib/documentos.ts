@@ -12,15 +12,19 @@
 // é ACERVO — alguém sobe, renomeia, arquiva, e o mesmo arquivo sai mil vezes.
 // Juntar os dois faria a fila de download carregar regra de acervo e vice-versa.
 //
-// ONDE FICA O ARQUIVO: disco local, sob DOCUMENTOS_DIR. Mesma escolha (e mesmo
-// custo) de lib/midia.ts — em serverless o disco é efêmero e isto NÃO sobrevive
-// a um deploy; enquanto o app roda em servidor próprio, sobrevive. `caminho`
-// guarda o relativo justamente para a troca por bucket ser de adaptador
-// (`salvarArquivo`/`lerArquivo`) e não de schema.
+// ONDE FICA O ARQUIVO: Supabase Storage, bucket `crm-documentos`
+// (lib/armazenamento.ts). Era disco local até 2026-09-18, e a troca não foi
+// preferência — era bug: o CRM roda na Vercel, onde não há disco gravável, e a
+// primeira cadência com anexo morreu com ENOENT apontando para um arquivo que
+// só existia na máquina de quem subiu. Ver o cabeçalho de lib/armazenamento.ts.
+//
+// `caminho` continua guardando um caminho RELATIVO, e é por isso que a troca
+// foi de adaptador e não de schema: mudou o que lê e escreve os bytes, não o
+// que a tabela guarda.
 import "server-only";
-import fs from "fs/promises";
 import path from "path";
 import { sql } from "@/lib/db";
+import { BUCKET_DOCUMENTOS, baixar, remover, subir } from "@/lib/armazenamento";
 
 /** O que a uazapi precisa saber para escolher como a mídia chega no WhatsApp. */
 export type TipoDocumento = "imagem" | "video" | "audio" | "documento";
@@ -39,10 +43,8 @@ export type Documento = {
   arquivado: boolean;
 };
 
-/** O que o envio precisa e a tela não: o caminho no disco. */
+/** O que o envio precisa e a tela não: o caminho do objeto no bucket. */
 type DocumentoComCaminho = Documento & { caminho: string };
-
-const RAIZ = process.env.DOCUMENTOS_DIR ?? ".documentos";
 
 // Teto por arquivo. 32 MB é o mesmo de lib/midia.ts, e não é coincidência: o
 // WhatsApp recusa documento acima de ~100 MB, mas o gargalo real aqui é o
@@ -79,7 +81,7 @@ export function tipoDeMime(mime: string, nome: string): TipoDocumento {
 }
 
 // Nome de arquivo vindo do navegador é entrada NÃO CONFIÁVEL: ele decide o
-// `docName` que sai no WhatsApp e a extensão gravada no disco. Barra, backslash
+// `docName` que sai no WhatsApp e a extensão do objeto. Barra, backslash
 // e caractere de controle saem; o resto é preservado, inclusive acento, porque
 // é isto que o lead vê do outro lado.
 function nomeSeguro(bruto: string): string {
@@ -91,19 +93,19 @@ function nomeSeguro(bruto: string): string {
 }
 
 /**
- * Bytes de um documento. `caminho` vem do banco, NUNCA do usuário — a
- * normalização existe pelo mesmo motivo da irmã em lib/midia.ts: é uma linha, e
- * o dia em que alguém ligar um parâmetro de rota direto aqui, `../../.env` não
- * sai do lugar.
+ * Bytes de um documento. `caminho` vem do banco, NUNCA do usuário.
+ *
+ * A normalização continua aqui mesmo com o arquivo fora do disco: o caminho vai
+ * para dentro de uma URL do Storage, e um `..` no meio dele pediria objeto de
+ * outra pasta do bucket. É uma linha, e fecha a porta antes de alguém ligar um
+ * parâmetro de rota direto nela.
  */
 export async function lerArquivo(caminho: string): Promise<Buffer> {
-  const seguro = path
-    .normalize(caminho)
-    .replace(/^(\.\.(\/|\\|$))+/, "")
-    .split(/[\\/]/)
-    .filter((p) => p && p !== "..")
-    .join(path.sep);
-  return fs.readFile(path.join(RAIZ, seguro));
+  const seguro = caminho
+    .split("/")
+    .filter((p) => p && p !== "." && p !== "..")
+    .join("/");
+  return baixar(BUCKET_DOCUMENTOS, seguro);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -184,13 +186,14 @@ export async function documentoPorId(id: string): Promise<Documento | null> {
 }
 
 /**
- * Grava os bytes no disco e a linha no banco.
+ * Sobe os bytes para o Storage e grava a linha no banco.
  *
- * O DISCO VEM ANTES DO BANCO, e a ordem não é arbitrária: invertida, uma falha
- * de escrita deixaria uma linha apontando para um arquivo que não existe — e
- * isso só apareceria no dia em que alguém tentasse mandar o documento para um
- * lead. Nesta ordem, a falha do banco deixa um arquivo órfão no disco, que não
- * quebra nada e não engana ninguém (e o catch abaixo ainda o remove).
+ * O STORAGE VEM ANTES DO BANCO, e a ordem não é arbitrária: invertida, uma
+ * falha de upload deixaria uma linha apontando para um objeto que não existe —
+ * e isso só apareceria no dia em que alguém tentasse mandar o documento para um
+ * lead, que foi exatamente como o bug do disco local apareceu. Nesta ordem, a
+ * falha do banco deixa um objeto órfão no bucket, que não quebra nada e não
+ * engana ninguém (e o catch abaixo ainda o remove).
  */
 export async function criarDocumento(dados: {
   nome: string;
@@ -210,23 +213,18 @@ export async function criarDocumento(dados: {
   const mime = (dados.mime || "application/octet-stream").split(";")[0].trim();
   const tipo = tipoDeMime(mime, arquivoNome);
 
-  // Pasta por ano/mês, como em lib/midia.ts: mantém o diretório navegável
-  // quando forem milhares de arquivos, em vez de uma pasta só com tudo dentro.
+  // Pasta por ano/mês: mantém o bucket navegável quando forem milhares de
+  // arquivos, em vez de uma pasta só com tudo dentro. Separador literal "/" —
+  // é caminho de objeto no Storage, não do sistema de arquivos, então `path.join`
+  // aqui produziria "\" no Windows e quebraria a URL.
   const agora = new Date();
-  const pasta = path.join(
-    String(agora.getUTCFullYear()),
-    String(agora.getUTCMonth() + 1).padStart(2, "0"),
-  );
-  // Nome no disco é sorteado, não é o do usuário: dois "contrato.pdf" não podem
+  const pasta = `${agora.getUTCFullYear()}/${String(agora.getUTCMonth() + 1).padStart(2, "0")}`;
+  // Nome do objeto é sorteado, não é o do usuário: dois "contrato.pdf" não podem
   // se sobrescrever, e o nome original já está guardado na coluna.
   const unico = `${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
-  const relativo = path.join(pasta, `${unico}${path.extname(arquivoNome)}`);
-  const destino = path.join(RAIZ, relativo);
+  const caminho = `${pasta}/${unico}${path.extname(arquivoNome)}`;
 
-  await fs.mkdir(path.dirname(destino), { recursive: true });
-  await fs.writeFile(destino, bytes);
-  // Sempre com "/": o caminho vai para o banco e é lido em qualquer SO.
-  const caminho = relativo.split(path.sep).join("/");
+  await subir(BUCKET_DOCUMENTOS, caminho, bytes, mime);
 
   try {
     const [l] = await sql`
@@ -239,9 +237,9 @@ export async function criarDocumento(dados: {
                 tipo, criado_por, data_criacao, arquivado`;
     return semCaminho(daLinha({ ...l, autor: null }));
   } catch (e) {
-    // A linha não entrou: o arquivo no disco é lixo, e lixo que ninguém
+    // A linha não entrou: o objeto no bucket é lixo, e lixo que ninguém
     // referencia é lixo que ninguém vai limpar depois. Some com ele agora.
-    await fs.rm(destino).catch(() => {});
+    await remover(BUCKET_DOCUMENTOS, caminho);
     throw e;
   }
 }
@@ -286,7 +284,7 @@ export async function excluirDocumento(id: string): Promise<void> {
   // o DELETE é quem pode ser RECUSADO pela FK. Apagando o arquivo antes, uma
   // recusa deixaria a linha viva apontando para o vazio.
   await sql`DELETE FROM documentos WHERE id = ${id}`;
-  await fs.rm(path.join(RAIZ, doc.caminho)).catch(() => {});
+  await remover(BUCKET_DOCUMENTOS, doc.caminho);
 }
 
 /**
