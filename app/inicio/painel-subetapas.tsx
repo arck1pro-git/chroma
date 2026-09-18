@@ -39,7 +39,11 @@ import {
   type AcaoCadencia,
 } from "@/lib/automacoes/cadencia";
 import { ICONE_PADRAO, ICONES } from "../automacoes/aparencia";
-import type { CadenciaDaEtapa, InstanciaEscolhivel } from "./cadencias";
+import type {
+  CadenciaDaEtapa,
+  InstanciaEscolhivel,
+  PessoaAvisavel,
+} from "./cadencias";
 import type { Documento } from "@/lib/documentos";
 import { excluirFluxo } from "../automacoes/acoes";
 import {
@@ -99,6 +103,7 @@ type Rascunho = {
   dia: number;
   instanciaId: string | null;
   documentoId: string | null;
+  usuarioId: string | null;
 };
 
 /**
@@ -154,6 +159,7 @@ function FormSubetapa({
   rotuloAcao,
   instancias,
   documentos,
+  avisaveis,
   aoConfirmar,
   aoCancelar,
 }: {
@@ -162,6 +168,7 @@ function FormSubetapa({
   rotuloAcao: string;
   instancias: InstanciaEscolhivel[];
   documentos: Documento[];
+  avisaveis: PessoaAvisavel[];
   aoConfirmar: (dados: Rascunho) => void;
   aoCancelar: () => void;
 }) {
@@ -175,6 +182,7 @@ function FormSubetapa({
   const [documentoId, setDocumentoId] = useState<string | null>(
     inicial.documentoId,
   );
+  const [usuarioId, setUsuarioId] = useState<string | null>(inicial.usuarioId);
   const nomeRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -197,6 +205,9 @@ function FormSubetapa({
           // Trocar o canal depois de escolher o documento limpa a escolha em
           // vez de guardar um anexo que nada leria.
           documentoId: canal === "whatsapp" ? documentoId : null,
+          // Só a notificação tem alguém para avisar. Trocar o canal limpa a
+          // escolha em vez de guardar um destinatário que nada leria.
+          usuarioId: canal === "ligacao" ? usuarioId : null,
         });
       }}
       onKeyDown={(e) => {
@@ -260,7 +271,7 @@ function FormSubetapa({
       {/* A INSTÂNCIA é POR MENSAGEM: é ela que decide de qual número esta sai.
           Só aparece no WhatsApp porque é o único canal que fala com a uazapi —
           num bloco de e-mail ou de aviso ninguém a leria. */}
-      {canal === "whatsapp" && (
+      {(canal === "whatsapp" || canal === "ligacao") && (
         <label className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
           <Send className="size-3 shrink-0" aria-hidden="true" />
           <span className="shrink-0">Enviar por</span>
@@ -304,6 +315,35 @@ function FormSubetapa({
         </label>
       )}
 
+      {/* QUEM AVISAR. O aviso é um WhatsApp para o número da pessoa
+          (usuarios.whatsapp) — por isso só aparece quem tem número cadastrado:
+          oferecer os demais deixaria escolher um aviso que a publicação recusa. */}
+      {canal === "ligacao" && (
+        <label className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
+          <PhoneCall className="size-3 shrink-0" aria-hidden="true" />
+          <span className="shrink-0">Avisar</span>
+          <select
+            value={usuarioId ?? ""}
+            onChange={(e) => setUsuarioId(e.target.value || null)}
+            className={`${campoTexto} min-w-0 flex-1`}
+          >
+            <option value="">escolha quem recebe</option>
+            {avisaveis.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.nome}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {canal === "ligacao" && avisaveis.length === 0 && (
+        <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-300">
+          Ninguém tem WhatsApp cadastrado. Preencha o número em Configurações →
+          Usuários para poder avisar alguém.
+        </p>
+      )}
+
       {canal === "whatsapp" && documentos.length === 0 && (
         <p className="text-[10px] leading-snug text-zinc-400 dark:text-zinc-500">
           A biblioteca está vazia. Suba os arquivos em Documentos para poder
@@ -339,7 +379,7 @@ function FormSubetapa({
         <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-300">
           {canal === "email"
             ? "E-mail ainda não sai: o motor pula este bloco e registra o motivo."
-            : "Ligação não é discada pelo motor: vira um aviso no histórico do contato."}
+            : "O motor não disca: ele manda um WhatsApp para a pessoa escolhida avisando que é hora de ligar."}
         </p>
       )}
 
@@ -670,6 +710,7 @@ export default function PainelSubetapas({
   emCadencia,
   instancias,
   documentos,
+  avisaveis,
   contatoPorId,
   usuarioPorId,
   tagsDoContato,
@@ -683,6 +724,7 @@ export default function PainelSubetapas({
   oportunidades: Oportunidade[];
   instancias: InstanciaEscolhivel[];
   documentos: Documento[];
+  avisaveis: PessoaAvisavel[];
   // quem tem inscrição viva em alguma cadência agora — é quem pode sair dela
   emCadencia: Set<string>;
   contatoPorId: Map<string, Contato>;
@@ -1197,6 +1239,7 @@ export default function PainelSubetapas({
                       rotuloAcao="Salvar"
                       instancias={instancias}
                       documentos={documentos}
+                      avisaveis={avisaveis}
                       inicial={{
                         nome: coluna.subetapa.nome,
                         canal: coluna.subetapa.canal,
@@ -1204,6 +1247,7 @@ export default function PainelSubetapas({
                         dia: coluna.subetapa.dia,
                         instanciaId: coluna.subetapa.instanciaId,
                         documentoId: coluna.subetapa.documentoId,
+                        usuarioId: coluna.subetapa.usuarioId,
                       }}
                       aoConfirmar={(d) => editar(coluna.subetapa.id, d)}
                       aoCancelar={() => setEditando(null)}
@@ -1247,6 +1291,7 @@ export default function PainelSubetapas({
                     rotuloAcao="Criar"
                     instancias={instancias}
                     documentos={documentos}
+                    avisaveis={avisaveis}
                     inicial={{
                       nome: "",
                       canal: "whatsapp",
@@ -1267,6 +1312,9 @@ export default function PainelSubetapas({
                       // proposta sair de novo na mensagem seguinte sem ninguém
                       // pedir.
                       documentoId: null,
+                      // Nem o anexo nem o destinatário do aviso são herdados:
+                      // são escolhas de UMA mensagem, não da cadência.
+                      usuarioId: null,
                     }}
                     aoConfirmar={criar}
                     aoCancelar={() => setCriando(false)}

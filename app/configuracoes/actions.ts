@@ -227,16 +227,41 @@ function revalidarUsuarios() {
   revalidatePath("/");
 }
 
+/**
+ * O WhatsApp de quem trabalha aqui, normalizado para o formato do banco: só
+ * dígitos, com DDI. É por este número que a automação AVISA a pessoa (o bloco
+ * "Enviar notificação"), então vazio é legítimo — a maioria não recebe aviso
+ * nenhum, e exigir telefone travaria o cadastro de quem só existe para aparecer
+ * como responsável.
+ *
+ * Número curto vira erro em vez de ser gravado torto: o CHECK da tabela recusa
+ * de qualquer jeito, e o erro do Postgres não serve para ler.
+ */
+function whatsappOuNulo(bruto: string): string | null {
+  const so = bruto.replace(/\D/g, "");
+  if (!so) return null;
+  // 10 = fixo com DDD sem DDI; 15 = teto do E.164. Fora disso é engano de
+  // digitação, e um aviso indo para um número inexistente falha semanas depois.
+  if (so.length < 10 || so.length > 15) {
+    throw new Error(
+      "WhatsApp inválido — use DDI, DDD e número (ex.: 5547921379 73)",
+    );
+  }
+  return so;
+}
+
 export async function criarUsuario(
   nome: string,
   iniciais: string,
+  whatsapp = "",
 ): Promise<string> {
   await exigirModulo("configuracoes");
   const n = nome.trim();
   if (!n) throw new Error("Nome é obrigatório");
   const ini = (iniciais.trim() || iniciaisDe(n)).slice(0, 4).toUpperCase();
   const [u] = await sql`
-    INSERT INTO usuarios (nome, iniciais) VALUES (${n}, ${ini}) RETURNING id`;
+    INSERT INTO usuarios (nome, iniciais, whatsapp)
+    VALUES (${n}, ${ini}, ${whatsappOuNulo(whatsapp)}) RETURNING id`;
   revalidarUsuarios();
   return u.id;
 }
@@ -245,12 +270,16 @@ export async function editarUsuario(
   id: string,
   nome: string,
   iniciais: string,
+  whatsapp = "",
 ): Promise<void> {
   await exigirModulo("configuracoes");
   const n = nome.trim();
   if (!n) throw new Error("Nome é obrigatório");
   const ini = (iniciais.trim() || iniciaisDe(n)).slice(0, 4).toUpperCase();
-  await sql`UPDATE usuarios SET nome = ${n}, iniciais = ${ini} WHERE id = ${id}`;
+  await sql`
+    UPDATE usuarios
+       SET nome = ${n}, iniciais = ${ini}, whatsapp = ${whatsappOuNulo(whatsapp)}
+     WHERE id = ${id}`;
   revalidarUsuarios();
 }
 

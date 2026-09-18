@@ -116,7 +116,8 @@ const ACOES: Bloco[] = [
     familia: "acao",
     dominio: "comunicacao",
     rotulo: "Enviar notificação",
-    descricao: "Avisa alguém do time dentro do CRM. Não vai para o contato.",
+    descricao:
+      "Manda um WhatsApp para alguém do time. Não vai para o contato — é o aviso de que alguém precisa agir.",
     entradas: 1,
     saidas: PADRAO,
     contrato: ESCRITA,

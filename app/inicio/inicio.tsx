@@ -1027,6 +1027,7 @@ export default function Inicio({
           oportunidades={quadro[etapaSubetapas.id] ?? []}
           instancias={cadencias.instancias}
           documentos={cadencias.documentos}
+          avisaveis={cadencias.avisaveis}
           // quem tem inscrição viva: é para esses que o card mostra o botão de
           // sair da cadência
           emCadencia={cadencias.emCadencia}

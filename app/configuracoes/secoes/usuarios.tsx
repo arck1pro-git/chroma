@@ -5,7 +5,7 @@
 // dois "Fabrício Almeida" na mesma tela precisam de um jeito de se distinguir.
 import { useState, useTransition } from "react";
 import { Check, Pencil, UserPlus, Users, X } from "lucide-react";
-import type { Usuario } from "../../data";
+import type { UsuarioConfig } from "../dados";
 import { criarUsuario, editarUsuario } from "../actions";
 import { botao, campoTexto } from "./ui";
 
@@ -16,9 +16,12 @@ function iniciaisDe(nome: string) {
 }
 
 // ── Usuários ─────────────────────────────────────────────────────────────────
-export function UsuariosSection({ usuarios }: { usuarios: Usuario[] }) {
+export function UsuariosSection({ usuarios }: { usuarios: UsuarioConfig[] }) {
   const [nome, setNome] = useState("");
   const [iniciais, setIniciais] = useState("");
+  // O número por onde a automação AVISA a pessoa (bloco "Enviar notificação").
+  // Vazio é o normal: quem não recebe aviso não precisa dele.
+  const [whatsapp, setWhatsapp] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
 
@@ -28,9 +31,10 @@ export function UsuariosSection({ usuarios }: { usuarios: Usuario[] }) {
     setErro(null);
     iniciar(async () => {
       try {
-        await criarUsuario(n, iniciais);
+        await criarUsuario(n, iniciais, whatsapp);
         setNome("");
         setIniciais("");
+        setWhatsapp("");
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao criar usuário");
       }
@@ -45,7 +49,9 @@ export function UsuariosSection({ usuarios }: { usuarios: Usuario[] }) {
           Usuários
         </h2>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Quem aparece como responsável e autor. (Ainda não é login.)
+          Quem aparece como responsável e autor. O WhatsApp é por onde a
+          automação avisa a pessoa — vazio, ela não pode ser escolhida no bloco
+          de notificação.
         </p>
       </div>
 
@@ -77,6 +83,19 @@ export function UsuariosSection({ usuarios }: { usuarios: Usuario[] }) {
               className={`${campoTexto} text-center uppercase`}
             />
           </label>
+          <label className="flex w-full flex-col gap-1.5 sm:w-44">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              WhatsApp
+            </span>
+            <input
+              type="text"
+              value={whatsapp}
+              onChange={(e) => setWhatsapp(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && criar()}
+              placeholder="5547999999999"
+              className={`${campoTexto} tabular-nums`}
+            />
+          </label>
           <button
             type="button"
             onClick={criar}
@@ -105,21 +124,26 @@ export function UsuariosSection({ usuarios }: { usuarios: Usuario[] }) {
   );
 }
 
-function UsuarioRow({ usuario }: { usuario: Usuario }) {
+function UsuarioRow({ usuario }: { usuario: UsuarioConfig }) {
   const [editando, setEditando] = useState(false);
   const [nome, setNome] = useState(usuario.nome);
   const [iniciais, setIniciais] = useState(usuario.iniciais);
+  const [whatsapp, setWhatsapp] = useState(usuario.whatsapp ?? "");
+  const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
 
   function salvar() {
     const n = nome.trim();
     if (!n) return;
+    setErro(null);
     iniciar(async () => {
       try {
-        await editarUsuario(usuario.id, n, iniciais);
+        await editarUsuario(usuario.id, n, iniciais, whatsapp);
         setEditando(false);
-      } catch {
-        // mantém em edição
+      } catch (e) {
+        // Mantém em edição E DIZ O MOTIVO: o número inválido é recusado pela
+        // action, e sem esta linha a linha só piscava e voltava ao mesmo lugar.
+        setErro(e instanceof Error ? e.message : "Falha ao salvar");
       }
     });
   }
@@ -127,6 +151,8 @@ function UsuarioRow({ usuario }: { usuario: Usuario }) {
   function cancelar() {
     setNome(usuario.nome);
     setIniciais(usuario.iniciais);
+    setWhatsapp(usuario.whatsapp ?? "");
+    setErro(null);
     setEditando(false);
   }
 
@@ -151,6 +177,17 @@ function UsuarioRow({ usuario }: { usuario: Usuario }) {
           aria-label="Nome"
           className={`${campoTexto} min-w-0 flex-1`}
         />
+        <input
+          value={whatsapp}
+          onChange={(e) => setWhatsapp(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") salvar();
+            if (e.key === "Escape") cancelar();
+          }}
+          placeholder="5547999999999"
+          aria-label="WhatsApp"
+          className={`${campoTexto} w-40 shrink-0 tabular-nums`}
+        />
         <button
           type="button"
           onClick={salvar}
@@ -168,6 +205,7 @@ function UsuarioRow({ usuario }: { usuario: Usuario }) {
         >
           <X className="size-4" aria-hidden="true" />
         </button>
+        {erro && <p className="ml-2 shrink-0 text-xs text-red-500">{erro}</p>}
       </li>
     );
   }
@@ -179,6 +217,11 @@ function UsuarioRow({ usuario }: { usuario: Usuario }) {
       </span>
       <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-900 dark:text-zinc-50">
         {usuario.nome}
+      </span>
+      {/* Sem número, a pessoa não aparece no seletor de "Avisar" da cadência —
+          e isso precisa ser visível aqui, que é onde se resolve. */}
+      <span className="shrink-0 text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500">
+        {usuario.whatsapp ?? "sem WhatsApp"}
       </span>
       <button
         type="button"

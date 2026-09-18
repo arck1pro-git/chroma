@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { autorizado, naoAutorizado } from "@/lib/automacoes/servico";
 import { enviarMidia, enviarTexto, instanciaExataPorNumero } from "@/lib/uazapi";
 import { paraEnvio } from "@/lib/documentos";
+import { sql } from "@/lib/db";
 import { soDigitos } from "@/lib/telefone";
 
 // O CRM NA FRENTE DO ENVIO. O motor não fala mais com a uazapi: ele diz "manda
@@ -49,8 +50,45 @@ export async function POST(req: NextRequest) {
   // O anexo da mensagem, quando há. Só o id chega aqui — os bytes nunca saíram
   // do CRM, e é por isso que trocar o arquivo não exige republicar a cadência.
   const documentoId = String(corpo.documento_id ?? "").trim();
+  // NOTIFICAÇÃO PARA O TIME. Quando vem, o destino não é o lead: é o número de
+  // quem trabalha aqui (usuarios.whatsapp). O bloco "Enviar notificação" da
+  // cadência manda este campo em vez de `para`.
+  const usuarioId = String(corpo.usuario_id ?? "").trim();
 
-  if (!para) return Response.json({ erro: "destinatário sem número" }, { status: 400 });
+  // O NÚMERO DO USUÁRIO É RESOLVIDO AQUI, não no workflow publicado — mesmo
+  // motivo do número de origem: telefone de gente muda, e um número copiado
+  // para dentro do n8n no dia da publicação vira aviso indo para o celular
+  // errado semanas depois, sem nada no CRM dizendo isso.
+  let destino = para;
+  let avisado: string | null = null;
+  if (usuarioId) {
+    if (!/^[0-9a-f-]{36}$/i.test(usuarioId)) {
+      return Response.json({ erro: "usuário inválido" }, { status: 400 });
+    }
+    const [u] = await sql`
+      SELECT nome, whatsapp, ativo FROM usuarios WHERE id = ${usuarioId}`;
+    if (!u) {
+      return Response.json(
+        { erro: "a pessoa a notificar não existe mais — nada foi enviado" },
+        { status: 400 },
+      );
+    }
+    if (!u.whatsapp) {
+      return Response.json(
+        {
+          erro: `${u.nome} não tem WhatsApp cadastrado em Configurações → Usuários — nada foi enviado`,
+        },
+        { status: 400 },
+      );
+    }
+    // Desativado ainda RECEBE: desligar o acesso ao CRM não é o mesmo que
+    // desligar o telefone, e engolir o aviso em silêncio deixaria uma cadência
+    // avisando o vazio. Quem não deve mais ser avisado sai do bloco.
+    destino = soDigitos(u.whatsapp as string);
+    avisado = u.nome as string;
+  }
+
+  if (!destino) return Response.json({ erro: "destinatário sem número" }, { status: 400 });
   // Com anexo, texto vazio é legítimo: manda só o arquivo. Sem anexo continua
   // sendo erro — uma mensagem sem texto e sem arquivo não é mensagem.
   if (!texto && !documentoId) {
@@ -101,7 +139,7 @@ export async function POST(req: NextRequest) {
         );
       }
       r = await enviarMidia(
-        para,
+        destino,
         doc.base64,
         {
           tipo: doc.tipo,
@@ -114,7 +152,7 @@ export async function POST(req: NextRequest) {
         instancia,
       );
     } else {
-      r = await enviarTexto(para, texto, instancia);
+      r = await enviarTexto(destino, texto, instancia);
     }
 
     // `text` vai no retorno porque o nó que registra a mensagem no motor lê o
@@ -124,6 +162,9 @@ export async function POST(req: NextRequest) {
       ...r,
       text: texto,
       documento_id: documentoId || null,
+      // Quem foi avisado, quando é notificação. O nó que registra lê daqui
+      // para escrever no histórico do lead.
+      avisado,
       numero_instancia: instancia.numero,
       instancia: instancia.nome,
     });

@@ -101,6 +101,13 @@ export async function detalheDoWebhook(id: string): Promise<DetalheWebhook> {
     sql`
       SELECT a.id, a.tipo, a.ordem, a.fluxo_id, a.segmento_id, a.tag_id,
              a.criar_oportunidade, a.funil_id, a.etapa_id,
+             -- OS IDS, e não só os nomes do JOIN. Sem eles o seletor de
+             -- responsável abria sempre em "Ninguém": ele é controlado pelo id
+             -- (useState de acao.responsavel_id), e o id não vinha. A escolha
+             -- era gravada no banco e a tela voltava ao vazio no recarregamento
+             -- — parecia que não salvava. O funil não tinha o problema porque
+             -- a.funil_id já estava aqui.
+             a.responsavel_id, a.responsavel_alternado_id,
              COALESCE(f.nome, s.nome, t.nome) AS alvo_nome,
              fu.nome AS funil_nome, et.nome AS etapa_nome,
              ur.nome  AS responsavel_nome,

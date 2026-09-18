@@ -67,9 +67,20 @@ export async function carregarSegmentos(): Promise<Segmento[]> {
   return segmentos as unknown as Segmento[];
 }
 
-export async function carregarUsuarios(): Promise<Usuario[]> {
-  const usuarios = await sql`SELECT id, nome, iniciais FROM usuarios ORDER BY nome`;
-  return usuarios as unknown as Usuario[];
+/**
+ * Usuário como a tela de Configurações o vê: com o WhatsApp junto.
+ *
+ * Tipo PRÓPRIO, e não `Usuario` alargado: aquele viaja para o quadro, o chat e
+ * cada card (app/data.ts), e todas as consultas que o produzem selecionam três
+ * colunas. Acrescentar o telefone lá obrigaria a tocar em todas — e mandaria o
+ * número de todo mundo para o navegador de quem só quer ver um avatar.
+ */
+export type UsuarioConfig = Usuario & { whatsapp: string | null };
+
+export async function carregarUsuarios(): Promise<UsuarioConfig[]> {
+  const usuarios = await sql`
+    SELECT id, nome, iniciais, whatsapp FROM usuarios ORDER BY nome`;
+  return usuarios as unknown as UsuarioConfig[];
 }
 
 export async function carregarCampos(): Promise<CampoPersonalizado[]> {

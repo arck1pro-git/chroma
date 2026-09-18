@@ -132,6 +132,12 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
       documentoId: /^[0-9a-f-]{36}$/i.test(texto(s.documentoId, 36))
         ? texto(s.documentoId, 36)
         : null,
+      // Quem é avisado no canal "ligação". Mesmo tratamento do anexo: só o
+      // uuid atravessa, e o número de quem recebe é lido de `usuarios` no
+      // instante do envio — nunca vem do navegador.
+      usuarioId: /^[0-9a-f-]{36}$/i.test(texto(s.usuarioId, 36))
+        ? texto(s.usuarioId, 36)
+        : null,
     };
   });
 }

@@ -74,6 +74,10 @@ export type Subetapa = {
   // chegariam como duas notificações no celular do lead e dobrariam o consumo
   // da instância, que é compartilhada.
   documentoId: string | null;
+  // Quem é AVISADO, no canal "ligação". Id em `usuarios`, e o aviso sai por
+  // WhatsApp para o número dele (usuarios.whatsapp). Nulo nos outros canais:
+  // só a notificação tem destinatário do time.
+  usuarioId: string | null;
 };
 
 /**
@@ -204,6 +208,7 @@ export function lerCadencia(definicao: DefinicaoFluxo): Cadencia {
         // lê na hora de resolver base_url/token (lib/uazapi.ts).
         instanciaId: texto(no.config.instancia_id) || null,
         documentoId: texto(no.config.documento_id) || null,
+        usuarioId: texto(no.config.usuario_id) || null,
       });
       pendentes = [];
     } else if ((blocoPorTipo(no.tipo)?.saidas.length ?? 0) <= 1) {
@@ -348,6 +353,13 @@ export function escreverCadencia(
     // gravado no fluxo sem nada no caminho que o lesse — promessa muda.
     if (tipo === TIPO_POR_CANAL.whatsapp && s.documentoId) {
       config.documento_id = s.documentoId;
+    }
+    // A notificação também sai por uma instância — é WhatsApp como o resto,
+    // só que para o time. Sem isso a publicação recusaria o bloco por falta de
+    // número de saída, e a coluna "Ligação" não teria como informá-lo.
+    if (tipo === TIPO_POR_CANAL.ligacao) {
+      if (s.instanciaId) config.instancia_id = s.instanciaId;
+      if (s.usuarioId) config.usuario_id = s.usuarioId;
     }
 
     emendar(msgId, { tipo, config });

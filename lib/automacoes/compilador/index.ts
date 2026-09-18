@@ -33,8 +33,13 @@ import { NO_ENTRADA, type DefinicaoFluxo } from "../tipos";
  * lead e não aparecia no histórico do /chat — a conversa guardava só a legenda,
  * como se fosse texto puro. Republicar corrige daí pra frente; o que já foi
  * registrado não volta atrás.
+ *
+ * 1.4.0: "Enviar notificação" deixou de ser No-Op e passou a mandar WhatsApp
+ * para a pessoa escolhida (usuarios.whatsapp). Fluxo publicado antes atravessa
+ * o bloco sem avisar ninguém — era o que acontecia com toda coluna "Ligação" da
+ * cadência. Republicar é o que liga.
  */
-export const VERSAO_COMPILADOR = "1.3.0";
+export const VERSAO_COMPILADOR = "1.4.0";
 
 // Passo já resolvido: posição, tipo, config e para onde vai cada saída.
 export type PassoCompilado = {

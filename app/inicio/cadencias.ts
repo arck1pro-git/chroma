@@ -23,6 +23,14 @@ export type InstanciaEscolhivel = {
   numero: string | null;
 };
 
+// Quem pode ser AVISADO pela cadência. Só quem tem WhatsApp cadastrado entra:
+// oferecer na tela alguém sem número seria deixar escolher um aviso que a
+// publicação recusa depois.
+export type PessoaAvisavel = {
+  id: string;
+  nome: string;
+};
+
 export type CadenciaDaEtapa = {
   fluxoId: string;
   nome: string;
@@ -57,6 +65,8 @@ export type DadosCadencias = {
   // A biblioteca, para o seletor de anexo da coluna. Só os não arquivados:
   // a lista existe para escolher o que ainda vale mandar.
   documentos: Documento[];
+  // Quem pode receber notificação — os que têm WhatsApp em Configurações.
+  avisaveis: PessoaAvisavel[];
 };
 
 // Exportado desde os departamentos: a raiz usa este mesmo objeto quando quem
@@ -68,6 +78,7 @@ export const CADENCIAS_VAZIAS: DadosCadencias = {
   instancias: [],
   emCadencia: new Set(),
   documentos: [],
+  avisaveis: [],
 };
 
 // 42703 = undefined_column. É o que o Postgres devolve enquanto o
@@ -86,9 +97,9 @@ function faltaMigration(e: unknown) {
 }
 
 export async function carregarCadencias(): Promise<DadosCadencias> {
-  let fluxos, posicoes, dentro, instancias, documentos;
+  let fluxos, posicoes, dentro, instancias, documentos, avisaveis;
   try {
-    [fluxos, posicoes, dentro, instancias, documentos] = await Promise.all([
+    [fluxos, posicoes, dentro, instancias, documentos, avisaveis] = await Promise.all([
       fluxosDeEtapas(),
       posicaoNaCadencia(),
       oportunidadesEmCadencia(),
@@ -100,6 +111,11 @@ export async function carregarCadencias(): Promise<DadosCadencias> {
       // lista vazia em vez de derrubar o quadro — mesma postura do catch
       // de `faltaMigration` logo abaixo.
       documentosEscolhiveis().catch(() => []),
+      // `usuarios.whatsapp` pode não existir ainda (migration-usuario-whatsapp).
+      // Sem ela a cadência funciona inteira menos o aviso, então a falta vira
+      // lista vazia em vez de derrubar o quadro.
+      sql`SELECT id, nome FROM usuarios
+           WHERE ativo AND whatsapp IS NOT NULL ORDER BY nome`.catch(() => []),
     ]);
   } catch (e) {
     if (!faltaMigration(e)) throw e;
@@ -145,5 +161,6 @@ export async function carregarCadencias(): Promise<DadosCadencias> {
     instancias: instancias as unknown as InstanciaEscolhivel[],
     emCadencia: new Set(dentro.map((d) => d.entidade_id)),
     documentos,
+    avisaveis: avisaveis as unknown as PessoaAvisavel[],
   };
 }

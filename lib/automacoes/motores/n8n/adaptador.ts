@@ -698,6 +698,145 @@ export function paraWorkflow(
       continue;
     }
 
+    if (passo.tipo === "enviar_notificacao") {
+      // AVISAR ALGUÉM DO TIME. Até aqui este bloco compilava como No-Op: o
+      // fluxo o atravessava sem efeito, e a coluna "Ligação" da cadência
+      // prometia avisar uma pessoa e não avisava ninguém.
+      //
+      // DOIS NÓS, e não três como o envio ao lead: não há guarda de inscrição.
+      // A guarda existe para parar de importunar um lead que saiu da cadência;
+      // aqui o destinatário é do time, e o aviso é justamente o que faz alguém
+      // agir. Segurá-lo por causa do estado do lead inverteria o propósito —
+      // quem saiu do fluxo é exatamente sobre quem o time precisa saber.
+      const envio = nomeDoNo(passo);
+      const registro = `Registrar aviso [${passo.id}]`;
+
+      const usuarioId =
+        typeof passo.config.usuario_id === "string" ? passo.config.usuario_id : "";
+      if (!usuarioId) {
+        throw new Error(
+          `O bloco "${passo.rotulo}" não diz quem avisar. Escolha a pessoa no bloco.`,
+        );
+      }
+
+      // A INSTÂNCIA, como no envio ao lead. Sem "a padrão": o aviso sai por um
+      // número que a empresa escolheu, e cair em qualquer um faz o colega
+      // receber mensagem de um remetente que ele não conhece.
+      const instanciaId =
+        typeof passo.config.instancia_id === "string"
+          ? passo.config.instancia_id
+          : "";
+      const daInstancia = instanciaId
+        ? cred.porInstancia?.get(instanciaId)
+        : undefined;
+      if (!instanciaId || !daInstancia) {
+        throw new Error(
+          `O bloco "${passo.rotulo}" está sem número de WhatsApp de saída. Escolha por qual número o aviso sai.`,
+        );
+      }
+      if (!daInstancia.numero) {
+        throw new Error(
+          `O número escolhido no bloco "${passo.rotulo}" ainda não foi pareado. Conecte o WhatsApp dele em Configurações antes de publicar.`,
+        );
+      }
+
+      // SÓ PELO CRM. O n8n não pode resolver o telefone de quem avisar — ele
+      // está em `usuarios`, e copiá-lo para dentro do workflow publicado faria
+      // o aviso ir para um número velho depois da primeira troca de telefone.
+      const pelosCrm = Boolean(cred.crmBaseUrl && cred.crmCredencialId);
+      if (!pelosCrm) {
+        throw new Error(
+          `O bloco "${passo.rotulo}" avisa alguém do time, e isso exige que o motor alcance o CRM por um endereço público. Em localhost isso não acontece: publique a partir do CRM publicado, ou tire o bloco.`,
+        );
+      }
+
+      nodes.push({
+        id: passo.id,
+        name: envio,
+        type: "n8n-nodes-base.httpRequest",
+        typeVersion: 4.2,
+        position: [passo.posicao.x, passo.posicao.y],
+        parameters: {
+          method: "POST",
+          url: `${cred.crmBaseUrl}/api/automacoes/enviar`,
+          authentication: "genericCredentialType",
+          genericAuthType: "httpHeaderAuth",
+          sendBody: true,
+          specifyBody: "json",
+          jsonBody: expr(
+            JSON.stringify({
+              execucao_id: EXECUCAO_ID,
+              no_id: passo.id,
+              numero_origem: daInstancia.numero,
+              // `usuario_id` no lugar de `para`: quem resolve o telefone é o
+              // CRM, no instante do envio.
+              usuario_id: usuarioId,
+              // O texto aceita as mesmas marcas do envio ao lead — é o que
+              // deixa o aviso dizer DE QUEM se trata ("Ligar para {{nome}}").
+              texto: textoParaExpressao(String(passo.config.texto ?? "")),
+            }),
+          ),
+        },
+        credentials: {
+          httpHeaderAuth: { id: cred.crmCredencialId!, name: "Chroma · CRM" },
+        },
+      });
+
+      // O aviso vai para o HISTÓRICO DO LEAD, não para `mensagens`.
+      //
+      // `mensagens` é a conversa com o cliente, e esta mensagem não foi para
+      // ele: gravá-la lá faria aparecer no /chat do lead um texto que fala
+      // SOBRE ele para outra pessoa. O histórico é onde cabe — é a trilha do
+      // que o CRM fez, e "avisamos a Patricia" é exatamente isso.
+      nodes.push({
+        id: `${passo.id}__reg`,
+        name: registro,
+        type: "n8n-nodes-base.postgres",
+        typeVersion: 2.4,
+        position: [passo.posicao.x + 190, passo.posicao.y],
+        parameters: {
+          operation: "executeQuery",
+          query: `
+            WITH passo AS (
+              INSERT INTO fluxo_execucao_passos
+                (execucao_id, no_id, no_tipo, ordem, estado)
+              SELECT $1::uuid, $2, $3,
+                     (SELECT count(*) + 1 FROM fluxo_execucao_passos p
+                       WHERE p.execucao_id = $1::uuid)::smallint,
+                     'sucesso'
+              RETURNING execucao_id
+            )
+            INSERT INTO historico (contato_id, oportunidade_id, descricao)
+            SELECT coalesce(o.contato_id, c.id), o.id,
+                   'Avisou ' || $4 || ' no WhatsApp'
+            FROM passo
+            JOIN fluxo_execucoes e ON e.id = passo.execucao_id
+            LEFT JOIN oportunidades o
+              ON e.entidade_tipo = 'oportunidade' AND o.id = e.entidade_id
+            LEFT JOIN contatos c
+              ON e.entidade_tipo = 'contato' AND c.id = e.entidade_id
+            WHERE o.id IS NOT NULL OR c.id IS NOT NULL`,
+          options: {
+            queryReplacement: expr(
+              [
+                EXECUCAO_ID,
+                passo.id,
+                passo.tipo,
+                // Quem foi avisado sai da RESPOSTA do CRM, não de um nome
+                // copiado na publicação: se a pessoa for renomeada, o histórico
+                // novo já sai com o nome novo.
+                `{{ $('${envio}').first().json.avisado ?? 'alguem do time' }}`,
+              ].join(","),
+            ),
+          },
+        },
+        credentials: credPostgres(cred),
+      });
+
+      cadeiaDoBloco.set(passo.id, [envio, registro]);
+      continue;
+    }
+
     // Bloco de ação que ainda não tem nó nativo: um No-Op nomeado, para o
     // desenho continuar ligado e a falta ficar VISÍVEL no motor em vez de o
     // fluxo terminar calado no meio.
