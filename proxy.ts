@@ -18,6 +18,10 @@ import { COOKIE_SESSAO, verificar } from "@/lib/auth/sessao";
 // Telas e endpoints que respondem sem sessão.
 const PUBLICAS_EXATAS = new Set([
   "/login",
+  // Rasga o cookie e volta pro login. Público porque quem precisa dele está
+  // justamente com um cookie que o proxy considera válido e o banco não — ver
+  // app/sair/route.ts.
+  "/sair",
   // Entrada do WhatsApp. Confere UAZAPI_WEBHOOK_SECRET na querystring, dentro
   // do próprio handler — quem chama é a uazapi, que não tem como ter cookie.
   "/api/uazapi/webhook",

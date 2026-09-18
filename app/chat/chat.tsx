@@ -24,6 +24,7 @@ import {
   Mail,
   MapPin,
   MessageCircle,
+  Paperclip,
   Plus,
   Search,
   SendHorizonal,
@@ -42,12 +43,14 @@ import {
   type Oportunidade,
   type Usuario,
 } from "../data";
+import type { Documento } from "@/lib/documentos";
 import type { DadosChat } from "./dados";
 import { SeletorMenu } from "../components/filtros-ui";
 import {
   assumirAtendimento,
   criarOportunidade,
   encerrarAtendimento,
+  enviarDocumento,
   enviarMensagem,
   iniciarAtendimento,
   marcarLido,
@@ -313,9 +316,11 @@ export default function Chat({
         status: "pendente",
         id_externo: null,
         data_criacao: new Date().toISOString(),
-        // O que se digita no CRM é sempre texto: anexar arquivo daqui ainda
-        // não existe (só recebemos mídia, ver lib/midia.ts).
+        // Este otimista é só do caminho de TEXTO. Anexar já existe (o clipe do
+        // compositor), mas o envio de documento não desenha balão otimista —
+        // ver `enviarDoc` para o porquê.
         tipo: "texto",
+        documento_id: null,
         midia_estado: "ausente",
         midia_mime: null,
         midia_nome: null,
@@ -335,6 +340,32 @@ export default function Chat({
         } catch {
           // O action já marcou a linha como 'erro' no banco; o revalidate a traz.
           setOtimistas((atuais) => atuais.filter((o) => o.id !== otimista.id));
+        }
+      });
+    },
+    [selecionado, usuarioAtual, startTransition],
+  );
+
+  /**
+   * Manda um documento da biblioteca nesta conversa.
+   *
+   * SEM BALÃO OTIMISTA, ao contrário do texto. O otimista do texto é casado com
+   * a linha real por atendimento+texto (ver o efeito de limpeza acima), e um
+   * anexo pode ir com legenda vazia — duas fotos seguidas sem legenda casariam
+   * com o otimista errado e um dos balões ficaria preso na tela. O envio de
+   * arquivo demora o bastante para o `startTransition` já dar o retorno visual,
+   * e o revalidate traz a linha de verdade com o anexo.
+   */
+  const enviarDoc = useCallback(
+    (documentoId: string, legenda: string) => {
+      if (!selecionado) return;
+      if (selecionado.status !== "aberto") setAba("meus");
+      startTransition(async () => {
+        try {
+          await enviarDocumento(selecionado.id, usuarioAtual, documentoId, legenda);
+        } catch {
+          // O action já marcou a linha como 'erro' no banco, com o motivo; o
+          // revalidate a traz para a conversa.
         }
       });
     },
@@ -498,6 +529,8 @@ export default function Chat({
             aoEncerrar={() => encerrar(selecionado.id)}
             aoReabrir={() => reabrir(selecionado.id)}
             aoEnviar={enviar}
+            aoEnviarDocumento={enviarDoc}
+            documentos={dados.documentos}
           />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
@@ -582,6 +615,8 @@ function Conversa({
   aoEncerrar,
   aoReabrir,
   aoEnviar,
+  aoEnviarDocumento,
+  documentos,
 }: {
   atendimento: Atendimento;
   contato: Contato | undefined;
@@ -598,10 +633,16 @@ function Conversa({
   aoEncerrar: () => void;
   aoReabrir: () => void;
   aoEnviar: (texto: string) => void;
+  aoEnviarDocumento: (documentoId: string, legenda: string) => void;
+  documentos: Documento[];
 }) {
   const { rotulo: canalRotulo, Icone: IconeCanal } = CANAL[atendimento.canal];
   const [texto, setTexto] = useState("");
   const [opAberta, setOpAberta] = useState(false);
+  // O documento escolhido para ir junto. null = mensagem de texto, que é o
+  // caso normal. A gaveta abre por cima do compositor.
+  const [anexo, setAnexo] = useState<Documento | null>(null);
+  const [gavetaAnexo, setGavetaAnexo] = useState(false);
   const fimRef = useRef<HTMLDivElement>(null);
 
   // Rola pro fim ao abrir a conversa e a cada mensagem nova.
@@ -610,6 +651,14 @@ function Conversa({
   }, [mensagens.length, atendimento.id]);
 
   function submeter() {
+    // COM ANEXO o texto é opcional: vira a legenda do arquivo, e mandar só o
+    // arquivo é legítimo. Sem anexo, mensagem vazia continua não sendo enviada.
+    if (anexo) {
+      aoEnviarDocumento(anexo.id, texto);
+      setTexto("");
+      setAnexo(null);
+      return;
+    }
     if (!texto.trim()) return;
     aoEnviar(texto);
     setTexto("");
@@ -732,7 +781,86 @@ function Conversa({
       </div>
 
       <div className="border-t border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950">
+        {/* O anexo escolhido, acima do campo: é o que estará indo junto quando
+            a pessoa apertar Enter, e escondê-lo faria o arquivo sair sem aviso. */}
+        {anexo && (
+          <div className="mx-auto mb-2 flex max-w-2xl items-center gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
+            <Paperclip className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-700 dark:text-zinc-200">
+              {anexo.nome}
+              <span className="ml-1.5 text-zinc-400">{anexo.arquivoNome}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setAnexo(null)}
+              aria-label="Tirar anexo"
+              className="shrink-0 rounded-lg p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            >
+              <X className="size-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        {/* A gaveta da biblioteca. Lista e não upload: o arquivo entra pelo
+            módulo Documentos, e subir daqui faria cada atendente ter a sua
+            cópia da tabela de preços — o problema que a biblioteca resolve. */}
+        {gavetaAnexo && (
+          <div className="mx-auto mb-2 max-w-2xl overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                Biblioteca
+              </span>
+              <button
+                type="button"
+                onClick={() => setGavetaAnexo(false)}
+                aria-label="Fechar biblioteca"
+                className="rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
+              >
+                <X className="size-3.5" aria-hidden="true" />
+              </button>
+            </div>
+            {documentos.length === 0 ? (
+              <p className="px-3 py-4 text-center text-[11px] text-zinc-400">
+                Nenhum documento na biblioteca. Suba os arquivos em Documentos.
+              </p>
+            ) : (
+              <ul className="max-h-52 overflow-y-auto">
+                {documentos.map((d) => (
+                  <li key={d.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAnexo(d);
+                        setGavetaAnexo(false);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                    >
+                      <Paperclip className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-zinc-800 dark:text-zinc-100">
+                        {d.nome}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-zinc-400">
+                        {d.arquivoNome}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         <div className="mx-auto flex max-w-2xl items-end gap-2">
+          <button
+            type="button"
+            onClick={() => setGavetaAnexo((v) => !v)}
+            disabled={encerrado}
+            aria-label="Anexar documento"
+            aria-expanded={gavetaAnexo}
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-zinc-300 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+          >
+            <Paperclip className="size-4" aria-hidden="true" />
+          </button>
           <textarea
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
@@ -744,13 +872,19 @@ function Conversa({
               }
             }}
             rows={1}
-            placeholder={encerrado ? "Reabra para responder…" : "Escreva uma mensagem…"}
+            placeholder={
+              encerrado
+                ? "Reabra para responder…"
+                : anexo
+                  ? "Legenda do anexo (opcional)…"
+                  : "Escreva uma mensagem…"
+            }
             className="max-h-32 min-h-[40px] flex-1 resize-none rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus-visible:ring-zinc-100/10"
           />
           <button
             type="button"
             onClick={submeter}
-            disabled={!texto.trim()}
+            disabled={!texto.trim() && !anexo}
             aria-label="Enviar mensagem"
             className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white transition hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >

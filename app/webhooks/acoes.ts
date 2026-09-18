@@ -188,16 +188,39 @@ export async function configurarCriarLead(
   criarOportunidade: boolean,
   funilId: string,
   etapaId: string,
+  // Quem recebe o lead. Vazio = ninguém (a oportunidade nasce sem dono, e com o
+  // Dashboard no escopo 'proprio' ela não aparece para o comercial).
+  // `alternadoId` preenchido liga o rodízio entre os dois.
+  responsavelId = "",
+  alternadoId = "",
 ): Promise<void> {
   await exigirModulo("webhooks");
   if (criarOportunidade && (!funilId || !etapaId)) {
     throw new Error("Escolha o funil e a etapa onde o card vai nascer");
   }
+
+  const dono = responsavelId.trim() || null;
+  const alternado = alternadoId.trim() || null;
+
+  // As duas recusas abaixo existem porque o CHECK da tabela devolveria um erro
+  // de Postgres na cara de quem está configurando, sem dizer o que fazer.
+  if (alternado && !dono) {
+    throw new Error("Para alternar, escolha o primeiro responsável também");
+  }
+  if (alternado && alternado === dono) {
+    throw new Error("A alternância precisa de duas pessoas diferentes");
+  }
+
   await sql`
     UPDATE webhook_acoes
     SET criar_oportunidade = ${criarOportunidade},
         funil_id = ${criarOportunidade ? funilId : null},
-        etapa_id = ${criarOportunidade ? etapaId : null}
+        etapa_id = ${criarOportunidade ? etapaId : null},
+        responsavel_id = ${dono},
+        responsavel_alternado_id = ${alternado},
+        -- Trocar quem está no rodízio zera a vez: senão o próximo lead iria
+        -- para "quem não recebeu o anterior" comparando com alguém que saiu.
+        ultimo_responsavel_id = NULL
     WHERE webhook_id = ${webhookId} AND tipo = 'criar_lead'`;
   revalidar();
 }

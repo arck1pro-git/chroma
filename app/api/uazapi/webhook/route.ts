@@ -160,24 +160,46 @@ export async function POST(req: NextRequest) {
     // Vale também pro fromMe: conversa iniciada pelo celular tem que aparecer
     // no Chroma, e 'na_fila' é o único status sem dono que a tela lista (um
     // 'aberto' com responsavel_id NULL não cai em nenhuma das três abas).
-    const [aberto] = await sql`
-      SELECT id FROM atendimentos
-      WHERE contato_id = ${contatoId}
-        AND numero_instancia IS NOT DISTINCT FROM ${numeroInstancia}
-        AND status <> 'encerrado'
-      ORDER BY data_criacao DESC
-      LIMIT 1`;
-
-    let atendimentoId: string;
-    if (aberto) {
-      atendimentoId = aberto.id;
-    } else {
-      const [novoAt] = await sql`
-        INSERT INTO atendimentos (contato_id, status, canal, numero_instancia)
-        VALUES (${contatoId}, 'na_fila', 'whatsapp', ${numeroInstancia})
-        RETURNING id`;
-      atendimentoId = novoAt.id;
+    // ADOÇÃO: conversa daquele contato que ficou SEM número (a tela do chat
+    // criava assim) recebe o número agora, em vez de virar uma segunda linha ao
+    // lado da do par. Só adota quando a do par ainda não existe — senão a
+    // atualização bateria na trava `ux_atendimento_contato_numero`.
+    if (numeroInstancia) {
+      await sql`
+        UPDATE atendimentos a
+           SET numero_instancia = ${numeroInstancia}, data_atualizacao = now()
+         WHERE a.contato_id = ${contatoId}
+           AND a.numero_instancia IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM atendimentos b
+              WHERE b.contato_id = ${contatoId}
+                AND b.numero_instancia = ${numeroInstancia})`;
     }
+
+    // UMA CONVERSA POR PAR DE NÚMEROS, e a trava é do banco
+    // (migration-atendimento-unico.sql). Aqui o upsert faz as três coisas de
+    // uma vez: acha a que existe, reabre a que estava encerrada e cria quando
+    // não há nenhuma.
+    //
+    // Era SELECT e depois INSERT, e isso tinha dois furos. O primeiro: conversa
+    // encerrada não era encontrada (o WHERE pedia `status <> 'encerrado'`), e a
+    // pessoa voltando ganhava uma linha nova — o histórico dela partido em
+    // pedaços. O segundo é corrida: dois eventos no mesmo instante passavam os
+    // dois pelo SELECT vazio e inseriam dois.
+    //
+    // `DO UPDATE` e não `DO NOTHING` porque o RETURNING precisa da linha: com
+    // NOTHING, o conflito devolve zero linhas e o código ficaria sem id.
+    const [at] = await sql`
+      INSERT INTO atendimentos (contato_id, status, canal, numero_instancia)
+      VALUES (${contatoId}, 'na_fila', 'whatsapp', ${numeroInstancia})
+      ON CONFLICT (contato_id, numero_instancia) DO UPDATE
+        SET status = CASE
+              WHEN atendimentos.status = 'encerrado' THEN 'na_fila'
+              ELSE atendimentos.status
+            END,
+            data_atualizacao = now()
+      RETURNING id`;
+    const atendimentoId: string = at.id;
 
     // ON CONFLICT: o mesmo evento pode chegar duas vezes (retentativa da uazapi,
     // reenvio do n8n) e a linha já pode existir se foi o Chroma que enviou. O

@@ -25,6 +25,7 @@ export type ChaveModulo =
   | "campanhas"
   | "blog"
   | "webhooks"
+  | "documentos"
   | "contextos"
   | "meta"
   | "integracoes"
@@ -44,11 +45,13 @@ export type Modulo = {
    * O módulo sabe filtrar por dono? Só quem é `escopavel` oferece a escolha
    * entre "próprio" e "todos" na tela de acessos.
    *
-   * Hoje só Métricas. O Dashboard NÃO é escopável e a razão é honesta: o quadro
-   * do funil mostra a oportunidade de todo mundo e a gaveta de contatos idem —
-   * fazer "só as minhas" ali é outro trabalho, não uma bandeira. Marcar como
-   * escopável sem filtrar de verdade seria prometer na tela o que o dado não
-   * cumpre.
+   * Métricas e Dashboard. O Dashboard entrou depois, quando o filtro passou a
+   * existir de verdade: com escopo 'proprio', `carregarFunil` só traz as
+   * oportunidades em que a pessoa é a responsável (app/funil/dados.ts), e o
+   * quadro, os totais e a exportação saem todos dessa mesma consulta.
+   *
+   * A regra continua valendo para os próximos: só marque escopável o módulo que
+   * FILTRA. Bandeira sem filtro promete na tela o que o dado não cumpre.
    */
   escopavel: boolean;
   /**
@@ -67,9 +70,10 @@ export const MODULOS: readonly Modulo[] = [
     chave: "inicio",
     rotulo: "Dashboard",
     href: "/",
-    escopavel: false,
+    escopavel: true,
     naBarra: true,
-    descricao: "Quadro do funil, oportunidades e a gaveta de contatos.",
+    descricao:
+      "Quadro do funil, oportunidades e a gaveta de contatos. Com escopo 'próprio', cada pessoa vê só as oportunidades em que é a responsável.",
   },
   {
     chave: "chat",
@@ -135,6 +139,15 @@ export const MODULOS: readonly Modulo[] = [
     escopavel: false,
     naBarra: true,
     descricao: "Captação de formulário de site e o que cada um faz ao chegar.",
+  },
+  {
+    chave: "documentos",
+    rotulo: "Documentos",
+    href: "/documentos",
+    escopavel: false,
+    naBarra: true,
+    descricao:
+      "Biblioteca de arquivos (PDF, imagem, vídeo) para anexar na cadência e no chat. Quem tem o módulo vê e sobe arquivo para todo mundo — o acervo é da empresa, não de cada um.",
   },
   {
     chave: "contextos",

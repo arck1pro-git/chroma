@@ -34,12 +34,10 @@ export type RetornoEnvio = {
 };
 
 // A ÚNICA fonte de instância é a tabela `instancias_uazapi`, alimentada por
-// Configurações. O fallback para UAZAPI_BASE_URL/UAZAPI_TOKEN do .env foi
-// removido, e é uma remoção com consequência boa: aquele caminho mandava
-// mensagem por um número que não estava cadastrado em lugar nenhum, então o
-// CRM não sabia de qual número a mensagem tinha saído — `numero` vinha null e
-// o atendimento nascia sem `numero_instancia`. Agora todo envio tem número
-// conhecido.
+// Configurações. Não existe instância no .env, e não existe envio sem instância:
+// `enviarTexto` exige uma, e quem chama diz qual. O que o .env guarda hoje é o
+// SERVIDOR uazapi e o token de admin — para criar e listar instância, nunca
+// para enviar.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function daLinha(linha: any): Instancia {
@@ -80,12 +78,6 @@ export async function instanciaPadrao(): Promise<Instancia> {
 }
 
 /**
- * Resolve a instância que um envio deve usar.
- *
- * O token sai do banco e fica só no servidor — nenhuma tela recebe esta função
- * (as Configurações leem a versão mascarada, ver app/configuracoes/dados.ts).
- */
-/**
  * Todas as instâncias cadastradas, pelo id. É o que a publicação usa para
  * montar um nó de envio por instância: cada mensagem da cadência pode sair de
  * um número diferente, e quem resolve isso é o compilador, no servidor.
@@ -98,29 +90,7 @@ export async function instanciasPorId(): Promise<Map<string, Instancia>> {
   const linhas = await sql`
     SELECT id, nome, base_url, token, numero
     FROM instancias_uazapi ORDER BY data_criacao`;
-  return new Map(
-    linhas.map((l) => [l.id as string, daLinha(l)] as const),
-  );
-}
-
-export async function instanciaPorId(id: string | null): Promise<Instancia> {
-  if (!id) return instanciaPadrao();
-
-  const [linha] = await sql`
-    SELECT id, nome, base_url, token, numero
-    FROM instancias_uazapi WHERE id = ${id}`;
-
-  // Instância apagada em Configurações depois de o fluxo ter sido publicado:
-  // falhar aqui é melhor que escolher outra em silêncio e a mensagem sair pelo
-  // número errado — que, no nosso caso, é o número compartilhado com o
-  // SprintHub.
-  if (!linha) {
-    throw new Error(
-      "A instância de WhatsApp escolhida nesta automação não existe mais em Configurações",
-    );
-  }
-
-  return daLinha(linha);
+  return new Map(linhas.map((l) => [l.id as string, daLinha(l)] as const));
 }
 
 /**
@@ -175,9 +145,13 @@ export async function instanciaPorNumero(
 export async function enviarTexto(
   number: string,
   text: string,
-  instancia?: Instancia,
+  // OBRIGATÓRIA. Era opcional e caía na padrão — o jeito silencioso de mandar
+  // pelo número errado. Quem chama já sabe de onde a mensagem sai: o /chat
+  // responde pelo número que recebeu a conversa, a automação usa o número
+  // escolhido na mensagem.
+  instancia: Instancia,
 ): Promise<RetornoEnvio> {
-  const { baseUrl, token } = instancia ?? (await instanciaPadrao());
+  const { baseUrl, token } = instancia;
 
   const res = await fetch(`${baseUrl}/send/text`, {
     method: "POST",
@@ -193,6 +167,83 @@ export async function enviarTexto(
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     // A uazapi devolve { error } no 400; outros status podem vir sem corpo.
+    throw new Error(data?.error ?? `uazapi respondeu ${res.status}`);
+  }
+  return data as RetornoEnvio;
+}
+
+// ── Mídia ───────────────────────────────────────────────────────────────────
+//
+// Contrato CONFERIDO no OpenAPI da uazapi (docs.uazapi.com/openapi-bundled.json,
+// POST /send/media) — não é deduzido como o do webhook:
+//
+//   obrigatórios  number, type, file
+//   type          image | video | videoplay | document | audio | myaudio
+//                 | ptt | ptv | sticker
+//   file          "URL ou base64 do arquivo"
+//   text          legenda
+//   docName       "Nome do arquivo (apenas para documents)"
+//   mimetype      opcional, "detectado automaticamente"
+//   header        token: <TOKEN>, igual ao /send/text
+//
+// Dos nove tipos usamos quatro. Os outros cinco são variações de apresentação
+// (`ptt` é áudio de voz, `ptv` é vídeo redondo, `sticker` exige quadrado com
+// transparência) que a biblioteca não tem como inferir de um upload — e mandar
+// um webp comum como `sticker` faz chegar cortado do outro lado.
+const TIPO_UAZAPI: Record<string, string> = {
+  imagem: "image",
+  video: "video",
+  audio: "audio",
+  documento: "document",
+};
+
+/**
+ * Manda um arquivo. `arquivo` é URL ou base64 puro (sem o prefixo `data:`).
+ *
+ * `docName` só vai em documento, que é o que a uazapi documenta ("apenas para
+ * documents"). Em imagem e vídeo o nome não aparece para quem recebe — o que
+ * aparece é a legenda, e é ela que `texto` carrega.
+ */
+export async function enviarMidia(
+  number: string,
+  arquivo: string,
+  opcoes: {
+    tipo: "imagem" | "video" | "audio" | "documento";
+    /** Legenda. Vazia é legítimo: manda só o arquivo. */
+    texto?: string;
+    /** Nome que o lead vê no anexo. Só usado quando tipo = documento. */
+    arquivoNome?: string;
+    mime?: string;
+  },
+  instancia: Instancia,
+): Promise<RetornoEnvio> {
+  const { baseUrl, token } = instancia;
+
+  const corpo: Record<string, unknown> = {
+    number,
+    type: TIPO_UAZAPI[opcoes.tipo] ?? "document",
+    file: arquivo,
+  };
+  if (opcoes.texto) corpo.text = opcoes.texto;
+  if (opcoes.mime) corpo.mimetype = opcoes.mime;
+  if (opcoes.tipo === "documento" && opcoes.arquivoNome) {
+    corpo.docName = opcoes.arquivoNome;
+  }
+
+  const res = await fetch(`${baseUrl}/send/media`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", token },
+    body: JSON.stringify(corpo),
+    cache: "no-store",
+    // 90s e não os 20s do texto: aqui sobe o arquivo inteiro em base64, e um
+    // PDF de 20 MB por um link ruim não fecha em 20 segundos. O teto continua
+    // existindo porque a uazapi é externa e pendurada segura o bloco até o
+    // timeout do motor.
+    signal: AbortSignal.timeout(90_000),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
     throw new Error(data?.error ?? `uazapi respondeu ${res.status}`);
   }
   return data as RetornoEnvio;

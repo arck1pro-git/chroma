@@ -45,7 +45,7 @@ import {
 } from "@/lib/automacoes/repositorio";
 import { sql } from "@/lib/db";
 import { credencialDoMotor } from "@/lib/automacoes/repositorio";
-import { instanciaPadrao, instanciasPorId } from "@/lib/uazapi";
+import { instanciasPorId } from "@/lib/uazapi";
 
 /**
  * As credenciais que os nós publicados usam DENTRO do n8n.
@@ -57,44 +57,27 @@ import { instanciaPadrao, instanciasPorId } from "@/lib/uazapi";
  */
 async function credenciaisDoMotor() {
   const banco = await credencialDoMotor("n8n", "banco");
-  const uazapi = await credencialDoMotor("n8n", "uazapi");
-  if (!banco || !uazapi) {
+  if (!banco) {
     throw new Error(
-      `Credencial do n8n não cadastrada (${!banco ? "banco" : "uazapi"}). Os nós publicados precisam dela para gravar no banco e falar com a uazapi.`,
+      "Credencial de banco do n8n não cadastrada. Os nós publicados precisam dela para ler a guarda e gravar o que saiu.",
     );
   }
-  // A PADRÃO PODE NÃO EXISTIR, e isso deixou de ser erro aqui: com duas
-  // instâncias cadastradas, `instanciaPadrao` recusa escolher por conta
-  // própria — e está certa. Só que agora cada mensagem pode ter a sua, e um
-  // fluxo em que TODAS escolheram não precisa de padrão nenhuma. Quem reclama,
-  // se faltar, é o adaptador, dizendo QUAL bloco ficou sem número.
-  const padrao = await instanciaPadrao().catch(() => null);
+  // SEM INSTÂNCIA PADRÃO. Cada mensagem carrega o número dela, e é só o mapa
+  // por instância que importa — a credencial de cada número vivo, criada e
+  // reusada por `credenciaisDaUazapi`.
+  //
+  // A linha `motor_credenciais` com chave 'uazapi' era a herança da época em
+  // que a instância vinha do .env: uma credencial só, com o token daquele
+  // momento. Ela deixou de ser lida. Instância apagada e recadastrada trocava o
+  // token e aquela linha continuava apontando para o morto — o `401 Invalid
+  // token` que derrubou a cadência.
   const porInstancia = await credenciaisDaUazapi();
-
-  // A CREDENCIAL PADRÃO SAI DA INSTÂNCIA PADRÃO DE HOJE, e não da linha
-  // `motor_credenciais` com chave 'uazapi'.
-  //
-  // Aquela linha é de quando havia uma instância só, e ela guarda o token da
-  // instância que existia NA ÉPOCA. Apagar a instância no CRM e cadastrar outra
-  // — o que passou a ser um clique, desde que a tela cria e apaga instância na
-  // uazapi — deixava a linha apontando para um token morto. O nó de envio de
-  // toda mensagem SEM número escolhido usava esse token e o motor respondia:
-  //
-  //   Authorization failed - please check your credentials
-  //
-  // Com a credencial derivada da instância padrão atual, o token velho deixa de
-  // ser alcançável: `credenciaisDaUazapi` cria (e reusa) uma credencial por
-  // instância viva, chaveada pelo id da linha do CRM.
-  const doPadrao = padrao?.id ? porInstancia.get(padrao.id) : undefined;
-
   const crm = await credencialDoCrm();
 
   const base = {
     banco: banco.id,
-    uazapi: doPadrao?.credencialId ?? uazapi.id,
     crmBaseUrl: crm?.baseUrl,
     crmCredencialId: crm?.credencialId,
-    uazapiBaseUrl: doPadrao?.baseUrl ?? (padrao ? padrao.baseUrl.replace(/\/+$/, "") : ""),
     porInstancia,
   };
 

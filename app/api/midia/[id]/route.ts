@@ -14,6 +14,7 @@
 import { NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { lerArquivo } from "@/lib/midia";
+import { comCaminho, lerArquivo as lerDocumento } from "@/lib/documentos";
 import { exigirModuloApi } from "@/lib/auth/dal";
 
 export const dynamic = "force-dynamic";
@@ -33,10 +34,46 @@ export async function GET(
   }
 
   const [msg] = await sql`
-    SELECT midia_caminho, midia_mime, midia_nome, midia_estado, midia_erro
+    SELECT midia_caminho, midia_mime, midia_nome, midia_estado, midia_erro,
+           documento_id
     FROM mensagens WHERE id = ${id}`;
 
   if (!msg) return new Response("não encontrado", { status: 404 });
+
+  // ANEXO QUE SAIU DA BIBLIOTECA (app/documentos). O arquivo não está na fila
+  // de mídia — ele nunca foi baixado de lugar nenhum, já era nosso —, então
+  // mora em `documentos` e é lido de lá.
+  //
+  // A ROTA CONTINUA SENDO ESTA, e é o ponto: o balão do chat pede
+  // /api/midia/<id da mensagem> para todo anexo, sem saber de onde ele veio. Uma
+  // segunda rota obrigaria a tela a decidir isso, e o componente que desenha o
+  // anexo teria dois caminhos para a mesma coisa.
+  if (msg.documento_id) {
+    const doc = await comCaminho(msg.documento_id as string);
+    if (!doc) {
+      // A FK é RESTRICT, então isto não deveria acontecer — a não ser com o
+      // banco mexido à mão. Vale log: é perda de dado, não erro de uso.
+      console.error(`[midia] mensagem ${id} aponta para documento inexistente`);
+      return new Response("arquivo indisponível", { status: 410 });
+    }
+
+    let doBanco: Buffer;
+    try {
+      doBanco = await lerDocumento(doc.caminho);
+    } catch (e) {
+      console.error(`[midia] documento ${doc.id} está no banco mas não abriu:`, e);
+      return new Response("arquivo indisponível", { status: 410 });
+    }
+
+    return new Response(new Uint8Array(doBanco), {
+      headers: {
+        "content-type": doc.mime || "application/octet-stream",
+        "content-length": String(doBanco.byteLength),
+        "content-disposition": `inline; filename="${doc.arquivoNome.replace(/["\\]/g, "")}"`,
+        "cache-control": "private, max-age=31536000, immutable",
+      },
+    });
+  }
 
   if (msg.midia_estado !== "salva" || !msg.midia_caminho) {
     // 409 e não 404: o arquivo EXISTE do lado do cliente, só não chegou aqui

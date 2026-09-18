@@ -146,8 +146,19 @@ export const usuarioAtual = cache(async (): Promise<UsuarioLogado | null> => {
  */
 export async function exigirLogin(): Promise<UsuarioLogado> {
   const usuario = await usuarioAtual();
-  if (!usuario) redirect("/login");
-  return usuario;
+  if (usuario) return usuario;
+
+  // DUAS FALTAS DIFERENTES, e mandá-las para o mesmo lugar criava um laço:
+  //
+  // · sem cookie (ou com cookie vencido) → /login, que é a tela de entrar;
+  // · com cookie ASSINADO E VÁLIDO, mas sem dono no banco (apagado, desativado)
+  //   → /sair, que rasga o cookie antes de mostrar o login.
+  //
+  // Sem essa distinção, o segundo caso quica para sempre: o proxy vê cookie
+  // bom e manda /login → /, esta função vê banco vazio e manda / → /login.
+  // Página não pode apagar cookie; por isso o desvio pelo Route Handler.
+  const sessao = await lerSessao();
+  redirect(sessao ? "/sair" : "/login");
 }
 
 /**

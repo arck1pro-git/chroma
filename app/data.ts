@@ -175,6 +175,11 @@ export type Mensagem = {
   // arquivo por /api/midia/<id da mensagem>, e onde ele está guardado é
   // assunto do servidor (ver app/api/midia/[id]/route.ts).
   tipo: TipoMensagem;
+  // Anexo que saiu da BIBLIOTECA (app/documentos), em vez de ter chegado pelo
+  // WhatsApp. Quando preenchido, o arquivo está em `documentos` e não na fila
+  // de mídia — quem concilia isso é /api/midia/[id], então a tela continua
+  // pedindo o anexo pelo id da mensagem e não precisa saber a diferença.
+  documento_id: string | null;
   midia_estado: EstadoMidia;
   midia_mime: string | null;
   midia_nome: string | null;

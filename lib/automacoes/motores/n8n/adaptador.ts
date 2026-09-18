@@ -211,10 +211,16 @@ function expr(valor: string) {
 export type CredenciaisMotor = {
   /** id da credencial Postgres no n8n (role chroma_n8n). */
   banco: string;
-  /** id da credencial Header Auth da instância PADRÃO da uazapi. */
-  uazapi: string;
-  /** base_url da instância padrão, ex.: https://arckwpp.uazapi.com */
-  uazapiBaseUrl: string;
+  // NÃO EXISTE MAIS "INSTÂNCIA PADRÃO" AQUI, e a ausência é o ponto.
+  //
+  // Havia `uazapi` (credencial) e `uazapiBaseUrl` (endereço), herdados de
+  // quando a instância vinha do .env e havia uma só. Viraram o fallback que
+  // fazia uma mensagem SEM número escolhido sair por um número qualquer — e,
+  // pior, continuar saindo por ele depois de a instância ter sido apagada e
+  // recadastrada, com o token velho no cofre do n8n (401 Invalid token).
+  //
+  // Hoje toda mensagem nomeia o número dela, e a compilação recusa quem não
+  // nomear. Sem campo para cair, não há como cair.
   /**
    * Uma credencial e uma base_url POR INSTÂNCIA de WhatsApp.
    *
@@ -531,6 +537,29 @@ export function paraWorkflow(
       //   motor não alcança o CRM.
       const pelosCrm = Boolean(cred.crmBaseUrl && cred.crmCredencialId);
 
+      // O ANEXO SÓ EXISTE PELO CAMINHO DO CRM, e isso precisa falhar aqui em
+      // vez de sumir no disparo.
+      //
+      // O arquivo está no disco do CRM, atrás de sessão. Mandá-lo direto da
+      // uazapi exigiria que o motor tivesse os bytes — ou seja, o arquivo
+      // inteiro em base64 DENTRO do workflow publicado, copiado a cada
+      // republicação e visível no n8n, que é compartilhado com o SprintHub
+      // (docs/automacoes-n8n.md §5.1). Não é aceitável para o acervo comercial.
+      //
+      // Então: sem endereço público do CRM, a mensagem com anexo não publica.
+      // O texto dela sairia normalmente e o PDF não — e "publicou, mas o anexo
+      // não vai" é exatamente o tipo de falha silenciosa que só aparece no
+      // primeiro lead da cadência.
+      const documentoId =
+        typeof passo.config.documento_id === "string"
+          ? passo.config.documento_id
+          : "";
+      if (documentoId && !pelosCrm) {
+        throw new Error(
+          `A mensagem "${passo.rotulo}" tem um documento anexado, e anexo exige que o motor alcance o CRM por um endereço público. Em localhost isso não acontece: publique a partir do CRM publicado, ou tire o anexo desta mensagem.`,
+        );
+      }
+
       nodes.push({
         id: passo.id,
         name: envio,
@@ -555,6 +584,11 @@ export function paraWorkflow(
                   numero_origem: numeroDeOrigem,
                   para: `{{ $('${NOME_LEAD}').first().json.numero }}`,
                   texto: textoParaExpressao(String(passo.config.texto ?? "")),
+                  // Só o id viaja. Os bytes ficam no CRM e são lidos no
+                  // instante do envio — é o que mantém o arquivo fora do
+                  // workflow (e fora do n8n compartilhado), e o que faz trocar
+                  // o documento não exigir republicar a cadência.
+                  ...(documentoId ? { documento_id: documentoId } : {}),
                 }),
               ),
             }

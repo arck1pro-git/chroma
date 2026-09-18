@@ -43,6 +43,9 @@ type LinhaAcao = {
   criar_oportunidade: boolean;
   funil_id: string | null;
   etapa_id: string | null;
+  /** Dono do lead; com `responsavel_alternado_id`, o primeiro do rodízio. */
+  responsavel_id: string | null;
+  responsavel_alternado_id: string | null;
 };
 
 // ── Conversão de valor ──────────────────────────────────────────────────────
@@ -340,7 +343,8 @@ export async function receberLead(
 
   const acoes = (await sql`
     SELECT id, tipo, ordem, fluxo_id, segmento_id, tag_id,
-           criar_oportunidade, funil_id, etapa_id
+           criar_oportunidade, funil_id, etapa_id,
+           responsavel_id, responsavel_alternado_id
     FROM webhook_acoes WHERE webhook_id = ${webhookId}
     ORDER BY ordem, data_criacao`) as unknown as LinhaAcao[];
 
@@ -372,14 +376,36 @@ export async function receberLead(
       // outro não vê linha nenhuma voltar — e cai no SELECT abaixo. O alvo
       // repete o predicado do índice parcial, senão o Postgres não infere qual
       // usar.
+      // DE QUEM É ESTE LEAD. Uma instrução só decide e registra: o CASE escolhe
+      // quem não recebeu o anterior e grava a escolha em `ultimo_responsavel_id`
+      // na mesma linha. Dois leads no mesmo instante não recebem o mesmo dono —
+      // o segundo UPDATE espera o primeiro e lê o valor já atualizado.
+      //
+      // Sem rodízio, o CASE devolve sempre o mesmo responsável, e a coluna de
+      // estado acompanha sem fazer diferença.
+      const [vez] = criarLead.responsavel_id
+        ? await sql`
+            UPDATE webhook_acoes
+               SET ultimo_responsavel_id = CASE
+                     WHEN responsavel_alternado_id IS NULL THEN responsavel_id
+                     WHEN ultimo_responsavel_id IS DISTINCT FROM responsavel_id
+                       THEN responsavel_id
+                     ELSE responsavel_alternado_id
+                   END
+             WHERE id = ${criarLead.id}
+             RETURNING ultimo_responsavel_id AS responsavel`
+        : [];
+      const responsavelId = (vez?.responsavel as string | null) ?? null;
+
       const [op] = await sql`
         INSERT INTO oportunidades
-          (nome, contato_id, valor, status, funil_id, etapa_id, campos)
+          (nome, contato_id, valor, status, funil_id, etapa_id, campos, responsavel_id)
         VALUES (
           ${dist.oportunidadeNome || dist.contato.nome || "Lead"},
           ${contatoId}, ${dist.oportunidadeValor}, 'aberta',
           ${criarLead.funil_id}, ${criarLead.etapa_id},
-          ${JSON.stringify(dist.oportunidadeCampos)}::jsonb)
+          ${JSON.stringify(dist.oportunidadeCampos)}::jsonb,
+          ${responsavelId})
         ON CONFLICT (contato_id, funil_id) WHERE status = 'aberta'
           DO NOTHING
         RETURNING id`;

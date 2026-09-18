@@ -66,6 +66,14 @@ export type Subetapa = {
   // no número do SDR e termina no do closer, e é onde o executor já lia o
   // valor (config.instancia_id do bloco).
   instanciaId: string | null;
+  // Documento da biblioteca que vai JUNTO com esta mensagem: id em
+  // `documentos`. null = mensagem de texto puro, que é a esmagadora maioria.
+  //
+  // É UM ANEXO, NÃO UMA SEGUNDA MENSAGEM: o texto da coluna vira a legenda do
+  // arquivo, e sai um envio só. Duas mensagens (o arquivo e depois o texto)
+  // chegariam como duas notificações no celular do lead e dobrariam o consumo
+  // da instância, que é compartilhada.
+  documentoId: string | null;
 };
 
 /**
@@ -195,6 +203,7 @@ export function lerCadencia(definicao: DefinicaoFluxo): Cadencia {
         // número aquela mensagem sai, e é exatamente o campo que o executor
         // lê na hora de resolver base_url/token (lib/uazapi.ts).
         instanciaId: texto(no.config.instancia_id) || null,
+        documentoId: texto(no.config.documento_id) || null,
       });
       pendentes = [];
     } else if ((blocoPorTipo(no.tipo)?.saidas.length ?? 0) <= 1) {
@@ -333,6 +342,12 @@ export function escreverCadencia(
     // diferentes, e o executor lê bloco a bloco de qualquer jeito.
     if (tipo === TIPO_POR_CANAL.whatsapp && s.instanciaId) {
       config.instancia_id = s.instanciaId;
+    }
+    // Só no WhatsApp, pelo mesmo motivo da instância: é o único canal que sabe
+    // mandar arquivo. Um anexo numa coluna de e-mail ou de aviso ficaria
+    // gravado no fluxo sem nada no caminho que o lesse — promessa muda.
+    if (tipo === TIPO_POR_CANAL.whatsapp && s.documentoId) {
+      config.documento_id = s.documentoId;
     }
 
     emendar(msgId, { tipo, config });

@@ -60,6 +60,8 @@ export type Alvos = {
   funis: { id: string; nome: string }[];
   etapas: { id: string; nome: string; funil_id: string }[];
   camposCrm: CampoDoCrm[];
+  /** Contas que podem receber o lead. O responsável é sempre uma delas. */
+  usuarios: { id: string; nome: string }[];
 };
 
 export async function listarWebhooks(): Promise<Webhook[]> {
@@ -100,13 +102,17 @@ export async function detalheDoWebhook(id: string): Promise<DetalheWebhook> {
       SELECT a.id, a.tipo, a.ordem, a.fluxo_id, a.segmento_id, a.tag_id,
              a.criar_oportunidade, a.funil_id, a.etapa_id,
              COALESCE(f.nome, s.nome, t.nome) AS alvo_nome,
-             fu.nome AS funil_nome, et.nome AS etapa_nome
+             fu.nome AS funil_nome, et.nome AS etapa_nome,
+             ur.nome  AS responsavel_nome,
+             ua.nome  AS responsavel_alternado_nome
       FROM webhook_acoes a
       LEFT JOIN fluxos    f  ON f.id  = a.fluxo_id
       LEFT JOIN segmentos s  ON s.id  = a.segmento_id
       LEFT JOIN tags      t  ON t.id  = a.tag_id
       LEFT JOIN funis     fu ON fu.id = a.funil_id
       LEFT JOIN etapas    et ON et.id = a.etapa_id
+      LEFT JOIN usuarios  ur ON ur.id = a.responsavel_id
+      LEFT JOIN usuarios  ua ON ua.id = a.responsavel_alternado_id
       WHERE a.webhook_id = ${id}
       ORDER BY a.ordem, a.data_criacao`,
     // 30 últimos: é log de depuração ("mandei e não chegou"), não relatório.
@@ -172,7 +178,8 @@ export async function detalheDoWebhook(id: string): Promise<DetalheWebhook> {
 }
 
 export async function carregarAlvos(): Promise<Alvos> {
-  const [tags, segmentos, fluxos, funis, etapas, camposCrm] = await Promise.all([
+  const [tags, segmentos, fluxos, funis, etapas, camposCrm, usuarios] =
+    await Promise.all([
     sql`SELECT id, nome FROM tags ORDER BY nome`,
     sql`SELECT id, nome FROM segmentos ORDER BY nome`,
     // Só fluxo PUBLICADO entra na lista: inscrever num rascunho não tem
@@ -191,6 +198,10 @@ export async function carregarAlvos(): Promise<Alvos> {
     sql`
       SELECT entidade, chave, rotulo FROM campos_personalizados
       ORDER BY entidade, ordem, rotulo`,
+    // Só quem tem conta de verdade: o responsável decide quem ENXERGA a
+    // oportunidade (escopo 'proprio' do Dashboard), e um id que não é de conta
+    // nenhuma esconderia o lead de todo mundo.
+    sql`SELECT id, nome FROM usuarios WHERE ativo ORDER BY nome`,
   ]);
 
   return {
@@ -200,5 +211,6 @@ export async function carregarAlvos(): Promise<Alvos> {
     funis: funis as unknown as Alvos["funis"],
     etapas: etapas as unknown as Alvos["etapas"],
     camposCrm: camposCrm as unknown as CampoDoCrm[],
+    usuarios: usuarios as unknown as Alvos["usuarios"],
   };
 }

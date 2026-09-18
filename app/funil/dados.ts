@@ -55,7 +55,28 @@ function agrupar<T extends { contato_id: string }>(linhas: T[]) {
   return mapa;
 }
 
-export async function carregarFunil(): Promise<DadosFunil> {
+/**
+ * @param soDoResponsavel id de quem pode ver — quando presente, o quadro traz
+ * SÓ as oportunidades dela. É o escopo 'proprio' do módulo Dashboard
+ * (lib/auth/modulos.ts), resolvido em app/page.tsx.
+ *
+ * O corte é na CONSULTA e não na tela: esconder no React mandaria as
+ * oportunidades dos colegas no HTML do navegador, e bastaria abrir o DevTools
+ * para ler os valores. Tudo que a tela mostra — quadro, totais, exportação —
+ * nasce desta consulta, então o filtro vale para os três de uma vez.
+ *
+ * Oportunidade SEM responsável não aparece para ninguém no escopo 'proprio'.
+ * É deliberado: ela é de quem a captação apontar, e enquanto não apontar
+ * ninguém, é um problema de quem administra — que vê tudo.
+ */
+export async function carregarFunil(
+  soDoResponsavel?: string | null,
+): Promise<DadosFunil> {
+  // Uma variável só, usada duas vezes na cláusula: uuid inválido não chega aqui
+  // (vem da sessão, não da URL), e o `::uuid` explícito é o que deixa o
+  // Postgres comparar sem inferir tipo de um parâmetro nulo.
+  const dono = soDoResponsavel ?? null;
+
   const [
     funis,
     etapas,
@@ -77,11 +98,16 @@ export async function carregarFunil(): Promise<DadosFunil> {
     sql`SELECT id, nome, funil_id, ordem FROM etapas ORDER BY funil_id, ordem`,
     // dias_na_etapa é aproximado por now()-data_criacao (não há registro de quando
     // entrou na etapa). Ver comentário no migration-front.sql.
+    // O filtro do escopo 'proprio' entra AQUI, na cláusula, e não numa segunda
+    // consulta: `${dono}` nulo desliga a comparação inteira, então a consulta é
+    // a mesma para quem vê tudo e para quem vê só o seu.
     sql`
       SELECT id, nome, contato_id, valor::float8 AS valor, responsavel_id, status, funil_id, etapa_id, campos,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao,
              (CURRENT_DATE - data_criacao::date) AS dias_na_etapa
-      FROM oportunidades ORDER BY data_criacao DESC`,
+      FROM oportunidades
+      WHERE ${dono}::uuid IS NULL OR responsavel_id = ${dono}::uuid
+      ORDER BY data_criacao DESC`,
     sql`
       SELECT id, nome, whatsapp, email, cidade, estado, pais,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao

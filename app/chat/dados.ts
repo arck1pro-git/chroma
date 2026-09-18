@@ -6,6 +6,7 @@
 // parseia. to_char em UTC devolve "2026-07-15T09:40:00Z", igual aos seeds.
 // O format é constante (não é input), então vai literal no SQL, sem parâmetro.
 import { sql } from "@/lib/db";
+import { documentosEscolhiveis, type Documento } from "@/lib/documentos";
 import type {
   Atendimento,
   Contato,
@@ -37,10 +38,13 @@ export type DadosChat = {
   // (por numero_instancia, não por id — é o que atendimentos.numero_instancia
   // guarda, ver migration-webhook-instancia.sql).
   instancias: InstanciaChat[];
+  // A biblioteca, para o botão de anexar do compositor. Só os não arquivados:
+  // a lista existe para escolher o que ainda vale mandar.
+  documentos: Documento[];
 };
 
 export async function carregarChat(): Promise<DadosChat> {
-  const [atendimentos, mensagens, usuarios, contatos, funis, etapas, oportunidades, instancias] =
+  const [atendimentos, mensagens, usuarios, contatos, funis, etapas, oportunidades, instancias, documentos] =
     await Promise.all([
     // nao_lidas é derivado (não é coluna): mensagens do contato mais novas que
     // o lido_em do atendimento. NULL em lido_em = nunca lido = tudo conta.
@@ -55,7 +59,7 @@ export async function carregarChat(): Promise<DadosChat> {
     sql`
       SELECT id, atendimento_id, origem, autor_id, texto, status, id_externo,
              tipo, midia_estado, midia_mime, midia_nome, midia_tamanho,
-             midia_duracao, midia_erro,
+             midia_duracao, midia_erro, documento_id,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
       FROM mensagens
       ORDER BY data_criacao`,
@@ -71,6 +75,10 @@ export async function carregarChat(): Promise<DadosChat> {
       SELECT id, nome, contato_id, valor::float8 AS valor, responsavel_id, status, funil_id, etapa_id
       FROM oportunidades ORDER BY data_criacao DESC`,
     sql`SELECT id, nome, numero FROM instancias_uazapi ORDER BY nome`,
+    // A tabela pode não existir ainda (migration-documentos.sql). O chat
+    // funciona inteiro sem anexo, então a falta vira lista vazia — o botão de
+    // anexar some e nada mais muda.
+    documentosEscolhiveis().catch(() => []),
   ]);
 
   const oportunidadesPorContato = new Map<string, Oportunidade[]>();
@@ -89,5 +97,6 @@ export async function carregarChat(): Promise<DadosChat> {
     etapas: etapas as Etapa[],
     oportunidadesPorContato,
     instancias: instancias as unknown as InstanciaChat[],
+    documentos,
   };
 }

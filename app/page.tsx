@@ -37,7 +37,12 @@ export default async function Home({
   // re-renderiza a cada navegação, então a checagem lá deixaria de rodar
   // justamente quando a pessoa troca de tela (guia de autenticação do Next,
   // "Layouts and auth checks"). Aqui ela roda antes de qualquer consulta.
-  const { usuario } = await exigirModulo("inicio");
+  const { usuario, escopo } = await exigirModulo("inicio");
+
+  // ESCOPO 'proprio' = a pessoa só enxerga as oportunidades em que ela é a
+  // responsável. Quem decide é o departamento dela, na tela de Acessos; o corte
+  // acontece na consulta (app/funil/dados.ts), não na interface.
+  const soMinhas = escopo === "proprio" ? usuario.id : null;
 
   // O painel de cadência mora na raiz, mas o que ele faz é AUTOMAÇÃO: cria,
   // publica e DISPARA fluxo de WhatsApp pela instância compartilhada. Por isso
@@ -54,7 +59,7 @@ export default async function Home({
   // Em paralelo: as cadências não dependem do funil, e encadear as duas
   // somaria o tempo das duas na primeira pintura.
   const [dados, cadencias, fluxos] = await Promise.all([
-    carregarFunil(),
+    carregarFunil(soMinhas),
     podeAutomacoes ? carregarCadencias() : CADENCIAS_VAZIAS,
     // As automações que a seleção do kanban pode disparar. Consulta pequena e
     // independente das outras duas — entra no mesmo Promise.all.

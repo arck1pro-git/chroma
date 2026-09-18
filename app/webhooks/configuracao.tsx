@@ -659,16 +659,34 @@ function CriarLead({
   const [ligado, setLigado] = useState(acao.criar_oportunidade);
   const [funilId, setFunilId] = useState(acao.funil_id ?? alvos.funis[0]?.id ?? "");
   const [etapaId, setEtapaId] = useState(acao.etapa_id ?? "");
+  // Quem recebe o lead. Com `alternado` preenchido, os dois se revezam.
+  const [responsavelId, setResponsavelId] = useState(acao.responsavel_id ?? "");
+  const [alternadoId, setAlternadoId] = useState(
+    acao.responsavel_alternado_id ?? "",
+  );
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
 
   const etapasDoFunil = alvos.etapas.filter((e) => e.funil_id === funilId);
 
-  function salvar(novoLigado: boolean, novoFunil: string, novaEtapa: string) {
+  function salvar(
+    novoLigado: boolean,
+    novoFunil: string,
+    novaEtapa: string,
+    dono = responsavelId,
+    alterna = alternadoId,
+  ) {
     setErro(null);
     iniciar(async () => {
       try {
-        await configurarCriarLead(webhookId, novoLigado, novoFunil, novaEtapa);
+        await configurarCriarLead(
+          webhookId,
+          novoLigado,
+          novoFunil,
+          novaEtapa,
+          dono,
+          alterna,
+        );
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao salvar");
       }
@@ -749,6 +767,71 @@ function CriarLead({
             </select>
           </label>
         </div>
+      )}
+
+      {/* QUEM RECEBE. Deixou de ser detalhe quando o Dashboard ganhou o escopo
+          'próprio': é o responsável que diz quem ENXERGA a oportunidade, então
+          lead sem dono é lead que o comercial não vê.
+
+          O segundo seletor é o rodízio: preenchido, cada lead vai para quem NÃO
+          recebeu o anterior. Vazio, todos vão para o primeiro. */}
+      {ligado && (
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+          <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span className={rotuloCampo}>Responsável</span>
+            <select
+              value={responsavelId}
+              onChange={(e) => {
+                const v = e.target.value;
+                setResponsavelId(v);
+                // Tirar o primeiro derruba o rodízio junto: alternar com
+                // ninguém não é estado que a tabela aceite (CHECK).
+                const alterna = v ? alternadoId : "";
+                if (!v) setAlternadoId("");
+                salvar(ligado, funilId, etapaId, v, alterna);
+              }}
+              disabled={salvando}
+              className={campoTexto}
+            >
+              <option value="">Ninguém (lead sem dono)</option>
+              {alvos.usuarios.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span className={rotuloCampo}>Alternar com</span>
+            <select
+              value={alternadoId}
+              onChange={(e) => {
+                const v = e.target.value;
+                setAlternadoId(v);
+                salvar(ligado, funilId, etapaId, responsavelId, v);
+              }}
+              disabled={!responsavelId || salvando}
+              className={campoTexto}
+            >
+              <option value="">Sem alternância</option>
+              {alvos.usuarios
+                .filter((u) => u.id !== responsavelId)
+                .map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+      )}
+
+      {ligado && responsavelId && alternadoId && (
+        <p className="mt-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+          Rodízio ligado: cada lead vai para quem não recebeu o anterior. Trocar
+          qualquer um dos dois reinicia a vez.
+        </p>
       )}
 
       {erro && <p className="mt-2 text-xs text-red-500">{erro}</p>}

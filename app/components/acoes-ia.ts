@@ -8,16 +8,20 @@ import { exigirLogin } from "@/lib/auth/dal";
 // `exigirLogin` e não `exigirModulo`: estas ações servem a lista de conversas da
 // barra lateral, que aparece em TODAS as telas e junta análises feitas em
 // módulos diferentes. Prender a um módulo esvaziaria a lista de quem está noutro.
-// A conversa em si já é do usuário — o escopo no WHERE de lib/ia/conversas.ts é
-// o que impede ler a de outra pessoa.
+//
+// O DONO VEM DAQUI, do retorno de `exigirLogin`, e NUNCA de um parâmetro. É a
+// única forma de o filtro valer alguma coisa: server action é POST alcançável
+// por quem souber o id da action, então um `usuarioId` vindo do cliente seria
+// "me diga de quem você quer ler as conversas". Quem põe o dono no WHERE é
+// lib/ia/conversas.ts, em toda consulta — ler, gravar e apagar, não só listar.
 
 // O painel de IA falando com o banco. É a única porta: o componente é de
 // cliente e não importa lib/db.ts.
 //
-// ⚠ SEM AUTENTICAÇÃO, como o resto do app (docs/automacoes-arquitetura.md
-// §3.1): toda server action é um POST público. Aqui isso significa que quem
-// souber a URL lê e apaga conversa — e é por isso que nada do que chega passa
-// direto ao banco sem peneira (`limparFalas`, os cortes de texto abaixo).
+// Toda server action continua sendo um POST alcançável por quem souber o id da
+// action — o que mudou é que agora ela exige sessão E dono. Nada do que chega
+// passa direto ao banco mesmo assim (`limparFalas`, os cortes de texto abaixo):
+// sessão diz QUEM é, não diz que o corpo do POST é confiável.
 //
 // Nenhuma destas ações chama revalidatePath: a lista vive no estado do painel,
 // que é client-side. Revalidar a raiz aqui recarregaria o funil inteiro a cada
@@ -62,9 +66,12 @@ export type Resposta<T> =
 export async function listarConversasIa(
   escopo: string,
 ): Promise<Resposta<ConversaResumo[]>> {
-  await exigirLogin();
+  const usuario = await exigirLogin();
   try {
-    return { ok: true, dados: await listarConversas(escopoDe(escopo)) };
+    return {
+      ok: true,
+      dados: await listarConversas(escopoDe(escopo), usuario.id),
+    };
   } catch (e) {
     if (semTabela(e)) return { ok: false, erro: SEM_TABELA };
     return { ok: false, erro: "Não consegui carregar as conversas salvas." };
@@ -75,9 +82,12 @@ export async function lerConversaIa(
   id: string,
   escopo: string,
 ): Promise<Resposta<ConversaCompleta | null>> {
-  await exigirLogin();
+  const usuario = await exigirLogin();
   try {
-    return { ok: true, dados: await lerConversa(texto(id, 64), escopoDe(escopo)) };
+    return {
+      ok: true,
+      dados: await lerConversa(texto(id, 64), escopoDe(escopo), usuario.id),
+    };
   } catch (e) {
     if (semTabela(e)) return { ok: false, erro: SEM_TABELA };
     return { ok: false, erro: "Não consegui abrir esta conversa." };
@@ -95,7 +105,7 @@ export async function criarConversaIa(
   titulo: string,
   falas: unknown,
 ): Promise<Resposta<ConversaResumo>> {
-  await exigirLogin();
+  const usuario = await exigirLogin();
   const limpas = limparFalas(falas);
   if (limpas.length === 0) {
     return { ok: false, erro: "Conversa sem nenhuma fala." };
@@ -105,6 +115,7 @@ export async function criarConversaIa(
       escopoDe(escopo),
       texto(titulo, 120) || "Conversa",
       limpas,
+      usuario.id,
     );
     return { ok: true, dados };
   } catch (e) {
@@ -120,12 +131,13 @@ export async function gravarConversaIa(
   escopo: string,
   falas: unknown,
 ): Promise<Resposta<{ em: string | null }>> {
-  await exigirLogin();
+  const usuario = await exigirLogin();
   try {
     const em = await gravarFalas(
       texto(id, 64),
       escopoDe(escopo),
       limparFalas(falas),
+      usuario.id,
     );
     return { ok: true, dados: { em } };
   } catch (e) {
@@ -138,9 +150,9 @@ export async function apagarConversaIa(
   id: string,
   escopo: string,
 ): Promise<Resposta<null>> {
-  await exigirLogin();
+  const usuario = await exigirLogin();
   try {
-    await apagarConversa(texto(id, 64), escopoDe(escopo));
+    await apagarConversa(texto(id, 64), escopoDe(escopo), usuario.id);
     return { ok: true, dados: null };
   } catch (e) {
     if (semTabela(e)) return { ok: false, erro: SEM_TABELA };
@@ -183,16 +195,17 @@ export async function contextosDisponiveis(): Promise<ContextoDisponivel[]> {
 
 
 /**
- * As conversas que a sidebar lista, de todos os painéis juntos.
+ * As conversas que a sidebar lista, de todos os painéis juntos — e SÓ as de
+ * quem está logado.
  *
  * Falha em silêncio (lista vazia) em vez de propagar: a sidebar aparece em
  * TODAS as telas, e um banco fora do ar não pode derrubar a navegação do app
  * inteiro por causa de uma lista acessória.
  */
 export async function conversasDaBarra(): Promise<ConversaNaBarra[]> {
-  await exigirLogin();
+  const usuario = await exigirLogin();
   try {
-    return await listarTodasConversas();
+    return await listarTodasConversas(usuario.id);
   } catch {
     return [];
   }

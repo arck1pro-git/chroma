@@ -21,8 +21,14 @@ import { NO_ENTRADA, type DefinicaoFluxo } from "../tipos";
  * de cada envio: fluxo publicado com 1.0.0 não tem esse nó, e nele desinscrever
  * não para a mensagem. Republicar é o que resolve — e é a tela que pede, porque
  * ninguém adivinha isso olhando o fluxo.
+ *
+ * 1.2.0: a mensagem passou a poder levar um documento anexado
+ * (`config.documento_id` → `documento_id` no corpo que vai ao CRM). Fluxo
+ * publicado com 1.1.0 ignora o anexo — o nó dele não manda o campo, então o
+ * lead recebe o texto sem o arquivo. Republicar resolve, e de novo é a tela que
+ * precisa pedir: um anexo que não sai não deixa rastro no n8n.
  */
-export const VERSAO_COMPILADOR = "1.1.0";
+export const VERSAO_COMPILADOR = "1.2.0";
 
 // Passo já resolvido: posição, tipo, config e para onde vai cada saída.
 export type PassoCompilado = {

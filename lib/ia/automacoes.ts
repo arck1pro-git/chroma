@@ -5,6 +5,7 @@ import { compilar, ErroCompilacao } from "@/lib/automacoes/compilador";
 import { dispor } from "@/lib/automacoes/layout";
 import { definicaoDoFluxo, salvarRascunho } from "@/lib/automacoes/repositorio";
 import { NO_ENTRADA, type DefinicaoFluxo } from "@/lib/automacoes/tipos";
+import { documentosEscolhiveis } from "@/lib/documentos";
 
 // Ferramentas que deixam a IA MONTAR um fluxo de automação.
 //
@@ -123,6 +124,31 @@ export function ferramentasDoFluxo(fluxoId: string) {
       };
       definicao.layout = dispor(definicao);
 
+      // ANEXO: o id tem que ser de um documento QUE EXISTE.
+      //
+      // O modelo escolhe de uma lista real (ela vai no system, ver
+      // `blocoDeDocumentos`), mas lista no prompt é orientação, não garantia —
+      // um uuid inventado é a falha mais provável aqui. E é uma falha CARA de
+      // descobrir tarde: a coluna mostra "documento removido" e o disparo só
+      // quebra no primeiro lead da cadência, dias depois.
+      //
+      // Recusar devolvendo o motivo (em vez de estourar) é o padrão desta
+      // ferramenta: o modelo lê e conserta sozinho, como já faz com os erros do
+      // compilador.
+      const anexados = Object.entries(mapa)
+        .map(([id, n]) => [id, n.config?.documento_id] as const)
+        .filter(([, doc]) => typeof doc === "string" && doc);
+
+      if (anexados.length > 0) {
+        const validos = new Set(
+          (await documentosEscolhiveis().catch(() => [])).map((d) => d.id),
+        );
+        const invalido = anexados.find(([, doc]) => !validos.has(doc as string));
+        if (invalido) {
+          return `RECUSADO, nada foi gravado: o bloco "${invalido[0]}" aponta para um documento que não está na biblioteca (documento_id "${invalido[1]}"). Use um dos ids da lista BIBLIOTECA DE DOCUMENTOS do sistema, exatamente como está escrito — não invente id. Se o documento que o usuário pediu não estiver na lista, monte a mensagem SEM anexo e diga a ele que precisa subir o arquivo em Documentos primeiro.`;
+        }
+      }
+
       try {
         // nome e webhook não participam da validação — o compilador só os
         // carrega para dentro do plano. Placeholders bastam aqui.
@@ -143,6 +169,31 @@ export function ferramentasDoFluxo(fluxoId: string) {
   });
 
   return { ferramentas: [ler, escrever], gravou: () => gravou };
+}
+
+/**
+ * A biblioteca, escrita para o system do modelo.
+ *
+ * Vai como bloco ANEXADO ao system e não dentro de SISTEMA_AUTOMACOES porque a
+ * lista muda a cada upload — uma constante de módulo congelaria o acervo no
+ * primeiro import do processo. É o mesmo padrão de app/api/ia/route.ts, que
+ * junta os contextos ao system na hora.
+ *
+ * Só id e nome. A descrição entra quando existir: é ela que ajuda o modelo a
+ * escolher entre "Tabela de preços" e "Tabela de preços — corporativo".
+ */
+export async function blocoDeDocumentos(): Promise<string> {
+  const lista = await documentosEscolhiveis().catch(() => []);
+  if (lista.length === 0) {
+    return `BIBLIOTECA DE DOCUMENTOS
+(vazia — não há nenhum arquivo para anexar. Se pedirem anexo, diga que é preciso subir o arquivo no módulo Documentos primeiro.)`;
+  }
+  const linhas = lista
+    .map((d) => `- ${d.id} — ${d.nome}${d.descricao ? `: ${d.descricao}` : ""} (${d.tipo})`)
+    .join("\n");
+  return `BIBLIOTECA DE DOCUMENTOS
+Arquivos que podem ir anexados numa mensagem de WhatsApp. Para anexar, ponha o id na config do bloco: { "documento_id": "<id>" }. Copie o id exatamente; id inventado faz a gravação ser recusada.
+${linhas}`;
 }
 
 export const SISTEMA_AUTOMACOES = `Você monta automações no Chroma, um CRM. Responde em português do Brasil.
@@ -172,6 +223,9 @@ CONFIGURAÇÃO DOS BLOCOS — leia com atenção, aqui é fácil prometer o que 
 - Blocos de mensagem: { "titulo": "...", "texto": "..." } — e "assunto" no e-mail. O "titulo" é curto (2 a 4 palavras) e é o NOME DA COLUNA no quadro de cadência; o "texto" é a mensagem que sai de verdade.
 - No texto, estas variáveis são substituídas no envio: {{nome}}, {{primeiro_nome}}, {{oportunidade}}, {{valor}}. Qualquer outra sai literal — não invente.
 - NÃO escreva "instancia_id": de qual número de WhatsApp a cadência sai é escolha da pessoa, no seletor da tela.
+- ANEXO, só em "enviar_whatsapp_web": { "documento_id": "<id da biblioteca>" }. Use SOMENTE um id da lista BIBLIOTECA DE DOCUMENTOS abaixo, copiado exatamente. Nunca invente id, e não escreva "documento_id" quando a lista estiver vazia ou quando o usuário não pedir anexo.
+- Mensagem com anexo sai como UM envio: o arquivo com o "texto" de legenda. Não monte um bloco para o arquivo e outro para o texto — chegariam duas notificações no celular do lead.
+- Com anexo, o "texto" pode ser curto ou vazio. Escreva a legenda pensando em quem recebe o arquivo, não repita o nome do documento.
 - Escreva as mensagens em português do Brasil, curtas e no tom de quem está vendendo por WhatsApp.
 
 O QUE O CRM EXECUTA DE VERDADE, HOJE

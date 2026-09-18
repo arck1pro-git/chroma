@@ -11,6 +11,7 @@ import {
   posicaoNaCadencia,
 } from "@/lib/automacoes/repositorio";
 import { sql } from "@/lib/db";
+import { documentosEscolhiveis, type Documento } from "@/lib/documentos";
 import type { AcaoCadencia, Subetapa } from "@/lib/automacoes/cadencia";
 
 // Instância de WhatsApp como a TELA a vê: sem token, sem base_url. O painel só
@@ -53,6 +54,9 @@ export type DadosCadencias = {
   instancias: InstanciaEscolhivel[];
   // ids de oportunidades dentro de alguma cadência agora
   emCadencia: Set<string>;
+  // A biblioteca, para o seletor de anexo da coluna. Só os não arquivados:
+  // a lista existe para escolher o que ainda vale mandar.
+  documentos: Documento[];
 };
 
 // Exportado desde os departamentos: a raiz usa este mesmo objeto quando quem
@@ -63,6 +67,7 @@ export const CADENCIAS_VAZIAS: DadosCadencias = {
   porEtapa: new Map(),
   instancias: [],
   emCadencia: new Set(),
+  documentos: [],
 };
 
 // 42703 = undefined_column. É o que o Postgres devolve enquanto o
@@ -81,15 +86,20 @@ function faltaMigration(e: unknown) {
 }
 
 export async function carregarCadencias(): Promise<DadosCadencias> {
-  let fluxos, posicoes, dentro, instancias;
+  let fluxos, posicoes, dentro, instancias, documentos;
   try {
-    [fluxos, posicoes, dentro, instancias] = await Promise.all([
+    [fluxos, posicoes, dentro, instancias, documentos] = await Promise.all([
       fluxosDeEtapas(),
       posicaoNaCadencia(),
       oportunidadesEmCadencia(),
       sql`
         SELECT id, nome, numero FROM instancias_uazapi
         ORDER BY data_criacao`,
+      // A biblioteca pode não existir ainda (migration-documentos.sql). Sem
+      // anexo a cadência funciona inteira, então uma tabela que falta vira
+      // lista vazia em vez de derrubar o quadro — mesma postura do catch
+      // de `faltaMigration` logo abaixo.
+      documentosEscolhiveis().catch(() => []),
     ]);
   } catch (e) {
     if (!faltaMigration(e)) throw e;
@@ -134,5 +144,6 @@ export async function carregarCadencias(): Promise<DadosCadencias> {
     porEtapa,
     instancias: instancias as unknown as InstanciaEscolhivel[],
     emCadencia: new Set(dentro.map((d) => d.entidade_id)),
+    documentos,
   };
 }

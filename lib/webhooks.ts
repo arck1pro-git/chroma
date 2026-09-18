@@ -57,10 +57,16 @@ export type WebhookAcao = {
   criar_oportunidade: boolean;
   funil_id: string | null;
   etapa_id: string | null;
+  /** Dono do lead. Com `responsavel_alternado_id`, é o primeiro do rodízio. */
+  responsavel_id: string | null;
+  /** Segundo do rodízio. Nulo = sem alternância. */
+  responsavel_alternado_id: string | null;
   // Resolvido no JOIN, só para a tela — a ação em si guarda o id.
   alvo_nome: string | null;
   funil_nome: string | null;
   etapa_nome: string | null;
+  responsavel_nome: string | null;
+  responsavel_alternado_nome: string | null;
 };
 
 export type Webhook = {

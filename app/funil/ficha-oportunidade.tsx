@@ -42,6 +42,7 @@ import {
   anexarAtendimento,
   automacoesDaOportunidade,
   excluirOportunidade,
+  moverParaResponsavel,
   mudarStatusOportunidade,
   pausarAutomacao,
   retomarAutomacao,
@@ -426,18 +427,11 @@ export default function FichaOportunidade({
             </Secao>
 
             <Secao Icone={User} titulo="Responsável">
-              {responsavel ? (
-                <div className="flex items-center gap-2.5">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                    {responsavel.iniciais}
-                  </span>
-                  <span className="text-[13px] text-zinc-700 dark:text-zinc-200">
-                    {responsavel.nome}
-                  </span>
-                </div>
-              ) : (
-                <Vazio>Sem responsável</Vazio>
-              )}
+              <CampoResponsavel
+                oportunidadeId={oportunidade.id}
+                responsavel={responsavel ?? null}
+                usuarios={[...usuarioPorId.values()]}
+              />
             </Secao>
 
             <Secao Icone={User} titulo="Cliente">
@@ -769,5 +763,64 @@ export default function FichaOportunidade({
         )}
       </aside>
     </>
+  );
+}
+
+/**
+ * Quem cuida desta oportunidade — e a troca, ali mesmo.
+ *
+ * O responsável SÓ PODE SER UMA CONTA DO SISTEMA: a lista sai de `usuarios`, a
+ * mesma que alimenta a barra de seleção do quadro. Não há campo livre, e a
+ * razão é que este campo decidiu virar permissão — com o módulo Dashboard no
+ * escopo "próprio", é ele que diz quem enxerga a oportunidade. Nome digitado à
+ * mão não dá acesso a ninguém e esconderia a oportunidade de todo mundo.
+ *
+ * Reusa `moverParaResponsavel`, a ação que o quadro já usava para o lote: a
+ * mesma escrita, o mesmo registro no histórico. Uma segunda ação para "uma só"
+ * divergiria na primeira mudança de regra.
+ */
+function CampoResponsavel({
+  oportunidadeId,
+  responsavel,
+  usuarios,
+}: {
+  oportunidadeId: string;
+  responsavel: Usuario | null;
+  usuarios: Usuario[];
+}) {
+  const [salvando, salvar] = useTransition();
+  const [erro, setErro] = useState<string | null>(null);
+
+  function trocar(id: string) {
+    setErro(null);
+    salvar(async () => {
+      const r = await moverParaResponsavel([oportunidadeId], id || null);
+      if (!r.ok) setErro(r.mensagem);
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+          {responsavel?.iniciais ?? "—"}
+        </span>
+        <select
+          value={responsavel?.id ?? ""}
+          onChange={(e) => trocar(e.target.value)}
+          disabled={salvando}
+          aria-label="Responsável pela oportunidade"
+          className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-transparent px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none transition focus:border-zinc-400 disabled:opacity-50 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
+        >
+          <option value="">Sem responsável</option>
+          {usuarios.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.nome}
+            </option>
+          ))}
+        </select>
+      </div>
+      {erro && <p className="text-[11px] text-red-500">{erro}</p>}
+    </div>
   );
 }

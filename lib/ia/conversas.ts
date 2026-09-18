@@ -1,8 +1,13 @@
 // As conversas com a IA, no banco. Só servidor — quem chama é acoes-ia.ts.
 //
 // Até aqui o histórico morava no localStorage do navegador; ver
-// migration-ia-conversas.sql para o porquê da tabela e do que ela não tem
-// (dono: o CRM não tem sessão ainda, então a lista é de todo mundo).
+// migration-ia-conversas.sql para o porquê da tabela.
+//
+// TODA CONSULTA AQUI FILTRA PELO DONO, e não é só a listagem: ler, gravar e
+// apagar levam `usuarioId` no WHERE. Filtrar apenas na lista deixaria a conversa
+// de outra pessoa acessível por id — o mesmo vazamento, com um passo a mais.
+// O id do dono vem SEMPRE da sessão (app/components/acoes-ia.ts), nunca do
+// navegador: se viesse do cliente, o filtro seria decorativo.
 //
 // A conversa é gravada INTEIRA a cada troca, porque é inteira que ela é lida:
 // o painel manda o histórico junto de cada pergunta. Uma tabela de falas só
@@ -48,10 +53,11 @@ const MAX_TEXTO = 8000;
 /**
  * Peneira das falas que chegam do navegador.
  *
- * A server action é um POST público (não há sessão), então nada entra no jsonb
- * sem passar por aqui: papel fora do par vira 'eu', texto é cortado, e o que
- * não for objeto some. Sem isto, um corpo forjado grava jsonb arbitrário na
- * linha que a próxima pergunta vai mandar de volta ao modelo.
+ * A ação exige sessão, mas sessão diz QUEM está falando — não que o corpo do
+ * POST seja confiável. Então nada entra no jsonb sem passar por aqui: papel fora
+ * do par vira 'eu', texto é cortado, e o que não for objeto some. Sem isto, um
+ * corpo forjado grava jsonb arbitrário na linha que a próxima pergunta vai
+ * mandar de volta ao modelo.
  */
 export function limparFalas(bruto: unknown): Fala[] {
   if (!Array.isArray(bruto)) return [];
@@ -63,29 +69,34 @@ export function limparFalas(bruto: unknown): Fala[] {
   });
 }
 
-export async function listarConversas(escopo: string): Promise<ConversaResumo[]> {
+export async function listarConversas(
+  escopo: string,
+  usuarioId: string,
+): Promise<ConversaResumo[]> {
   const linhas = await sql`
     SELECT id, titulo,
            to_char(data_atualizacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS em,
            jsonb_array_length(falas) AS falas
     FROM ia_conversas
-    WHERE escopo = ${escopo}
+    WHERE escopo = ${escopo} AND usuario_id = ${usuarioId}
     ORDER BY data_atualizacao DESC
     LIMIT 50`;
   return linhas as ConversaResumo[];
 }
 
-// A conversa aberta. O escopo entra no WHERE junto do id: sem ele, o painel da
-// cadência abriria, por um id chutado, uma conversa do funil.
+// A conversa aberta. Escopo E dono entram no WHERE junto do id: sem o escopo, o
+// painel da cadência abriria por um id chutado uma conversa do funil; sem o
+// dono, abriria a conversa de outra pessoa.
 export async function lerConversa(
   id: string,
   escopo: string,
+  usuarioId: string,
 ): Promise<ConversaCompleta | null> {
   const [linha] = await sql`
     SELECT id, titulo, falas,
            to_char(data_atualizacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS em
     FROM ia_conversas
-    WHERE id = ${id} AND escopo = ${escopo}`;
+    WHERE id = ${id} AND escopo = ${escopo} AND usuario_id = ${usuarioId}`;
   if (!linha) return null;
   return {
     id: linha.id as string,
@@ -99,10 +110,11 @@ export async function criarConversa(
   escopo: string,
   titulo: string,
   falas: Fala[],
+  usuarioId: string,
 ): Promise<ConversaResumo> {
   const [linha] = await sql`
-    INSERT INTO ia_conversas (escopo, titulo, falas)
-    VALUES (${escopo}, ${titulo}, ${sql.json(falas as never)})
+    INSERT INTO ia_conversas (escopo, titulo, falas, usuario_id)
+    VALUES (${escopo}, ${titulo}, ${sql.json(falas as never)}, ${usuarioId})
     RETURNING id, titulo,
               to_char(data_atualizacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS em,
               jsonb_array_length(falas) AS falas`;
@@ -113,24 +125,31 @@ export async function criarConversa(
  * Grava a conversa inteira. Devolve a data nova para a lista reordenar sem
  * precisar de outra consulta.
  *
- * O escopo no WHERE tem o mesmo papel do `lerConversa`: um id de outra lista
- * não é editável por aqui.
+ * Escopo e dono no WHERE têm o mesmo papel do `lerConversa`: um id de outra
+ * lista, ou de outra pessoa, não é editável por aqui.
  */
 export async function gravarFalas(
   id: string,
   escopo: string,
   falas: Fala[],
+  usuarioId: string,
 ): Promise<string | null> {
   const [linha] = await sql`
     UPDATE ia_conversas
     SET falas = ${sql.json(falas as never)}, data_atualizacao = now()
-    WHERE id = ${id} AND escopo = ${escopo}
+    WHERE id = ${id} AND escopo = ${escopo} AND usuario_id = ${usuarioId}
     RETURNING to_char(data_atualizacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS em`;
   return (linha?.em as string | null) ?? null;
 }
 
-export async function apagarConversa(id: string, escopo: string) {
-  await sql`DELETE FROM ia_conversas WHERE id = ${id} AND escopo = ${escopo}`;
+export async function apagarConversa(
+  id: string,
+  escopo: string,
+  usuarioId: string,
+) {
+  await sql`
+    DELETE FROM ia_conversas
+    WHERE id = ${id} AND escopo = ${escopo} AND usuario_id = ${usuarioId}`;
 }
 
 
@@ -139,6 +158,10 @@ export async function apagarConversa(id: string, escopo: string) {
 // É o que a sidebar lista (estilo ChatGPT). Diferente de `listarConversas`, que
 // é por escopo: aqui o escopo VEM JUNTO, porque é ele que diz para qual tela o
 // clique leva (lib/ia/navegacao.ts).
+//
+// SÓ AS DA PRÓPRIA PESSOA. A barra aparece em todas as telas e juntava as
+// conversas de todo mundo — com as perguntas carregando nome de oportunidade e
+// valor, era o funil de um departamento visível ao lado do de outro.
 export type ConversaNaBarra = {
   id: string;
   titulo: string;
@@ -147,12 +170,14 @@ export type ConversaNaBarra = {
 };
 
 export async function listarTodasConversas(
+  usuarioId: string,
   limite = 40,
 ): Promise<ConversaNaBarra[]> {
   const linhas = await sql`
     SELECT id, titulo, escopo,
            to_char(data_atualizacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS em
     FROM ia_conversas
+    WHERE usuario_id = ${usuarioId}
     ORDER BY data_atualizacao DESC
     LIMIT ${limite}`;
   return linhas as ConversaNaBarra[];

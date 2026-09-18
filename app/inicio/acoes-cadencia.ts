@@ -123,6 +123,15 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
       // ele também que recusa instância apagada em vez de cair no .env — que,
       // aqui, é o número compartilhado com o SprintHub.
       instanciaId: texto(s.instanciaId, 64) || null,
+      // Idem para o anexo: só o uuid atravessa. O arquivo, o mime e o nome que
+      // sai no WhatsApp são lidos de `documentos` no instante do envio
+      // (app/api/automacoes/enviar/route.ts) — aceitar isso do navegador
+      // deixaria um POST forjado escolher o que a instância manda para o lead.
+      // Formato conferido aqui porque um valor torto só apareceria como erro de
+      // sintaxe de uuid do Postgres, na hora do disparo.
+      documentoId: /^[0-9a-f-]{36}$/i.test(texto(s.documentoId, 36))
+        ? texto(s.documentoId, 36)
+        : null,
     };
   });
 }

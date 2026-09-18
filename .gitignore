@@ -46,3 +46,7 @@ next-env.d.ts
 # Anexos de atendimento baixados do WhatsApp (lib/midia.ts). Conversa de
 # cliente: não entra no repositório.
 /.midias
+
+# Biblioteca de documentos (lib/documentos.ts). Material comercial da empresa:
+# não entra no repositório.
+/.documentos

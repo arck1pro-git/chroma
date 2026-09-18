@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { autorizado, naoAutorizado } from "@/lib/automacoes/servico";
-import { enviarTexto, instanciaExataPorNumero } from "@/lib/uazapi";
+import { enviarMidia, enviarTexto, instanciaExataPorNumero } from "@/lib/uazapi";
+import { paraEnvio } from "@/lib/documentos";
 import { soDigitos } from "@/lib/telefone";
 
 // O CRM NA FRENTE DO ENVIO. O motor não fala mais com a uazapi: ele diz "manda
@@ -45,9 +46,16 @@ export async function POST(req: NextRequest) {
   const para = soDigitos(String(corpo.para ?? ""));
   const texto = String(corpo.texto ?? "").slice(0, MAX_TEXTO).trim();
   const numeroOrigem = soDigitos(String(corpo.numero_origem ?? ""));
+  // O anexo da mensagem, quando há. Só o id chega aqui — os bytes nunca saíram
+  // do CRM, e é por isso que trocar o arquivo não exige republicar a cadência.
+  const documentoId = String(corpo.documento_id ?? "").trim();
 
   if (!para) return Response.json({ erro: "destinatário sem número" }, { status: 400 });
-  if (!texto) return Response.json({ erro: "texto vazio" }, { status: 400 });
+  // Com anexo, texto vazio é legítimo: manda só o arquivo. Sem anexo continua
+  // sendo erro — uma mensagem sem texto e sem arquivo não é mensagem.
+  if (!texto && !documentoId) {
+    return Response.json({ erro: "texto vazio" }, { status: 400 });
+  }
 
   // SEM NÚMERO DE ORIGEM, NÃO ENVIA. Não existe "manda pela padrão" aqui.
   //
@@ -76,13 +84,46 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const r = await enviarTexto(para, texto, instancia);
+    let r;
+    if (documentoId) {
+      // O arquivo é lido AGORA, do disco, e vai em base64 na chamada à uazapi
+      // (ver `paraEnvio` em lib/documentos.ts). Documento apagado da biblioteca
+      // entre a publicação e o disparo cai aqui, e é 400: mandar só a legenda,
+      // sem o arquivo que ela descreve, é pior que não mandar — o lead receberia
+      // "segue em anexo a tabela" sem anexo nenhum.
+      const doc = await paraEnvio(documentoId);
+      if (!doc) {
+        return Response.json(
+          {
+            erro: `o documento anexado a esta mensagem não existe mais na biblioteca — nada foi enviado`,
+          },
+          { status: 400 },
+        );
+      }
+      r = await enviarMidia(
+        para,
+        doc.base64,
+        {
+          tipo: doc.tipo,
+          // O texto da coluna vira a LEGENDA do arquivo: um envio só, uma
+          // notificação só no celular do lead.
+          texto,
+          arquivoNome: doc.arquivoNome,
+          mime: doc.mime,
+        },
+        instancia,
+      );
+    } else {
+      r = await enviarTexto(para, texto, instancia);
+    }
+
     // `text` vai no retorno porque o nó que registra a mensagem no motor lê o
     // texto DAQUI, não do que ele mesmo mandou — é o que garante que o
     // histórico guarde exatamente o que saiu.
     return Response.json({
       ...r,
       text: texto,
+      documento_id: documentoId || null,
       numero_instancia: instancia.numero,
       instancia: instancia.nome,
     });

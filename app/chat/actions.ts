@@ -15,7 +15,8 @@ import { exigirModulo } from "@/lib/auth/dal";
 // quando entrar, valida sessão e que o autor é dono do atendimento.
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
-import { enviarTexto, instanciaPorNumero } from "@/lib/uazapi";
+import { enviarMidia, enviarTexto, instanciaPorNumero } from "@/lib/uazapi";
+import { comCaminho, lerArquivo } from "@/lib/documentos";
 import { soDigitos } from "@/lib/telefone";
 
 export async function enviarMensagem(
@@ -84,24 +85,146 @@ export async function enviarMensagem(
   revalidatePath("/chat");
 }
 
+/**
+ * Manda um documento da biblioteca para o contato desta conversa.
+ *
+ * MESMO CICLO DE `enviarMensagem` — grava 'pendente', dispara, casa o retorno —
+ * e por isso a mesma garantia: se a uazapi cair no meio, a linha fica em 'erro'
+ * com o motivo, em vez de o envio sumir.
+ *
+ * O ARQUIVO NÃO É COPIADO. A mensagem aponta para a linha em `documentos`
+ * (documento_id) e o balão pede o arquivo por /api/midia/<id da mensagem>, que
+ * sabe ler dos dois lugares. Mandar a mesma tabela de preços para 300 contatos
+ * guarda um arquivo, não 300 — e trocar o documento na biblioteca não reescreve
+ * o que já foi entregue, porque excluir é RESTRICT (migration-documentos.sql).
+ *
+ * `midia_estado = 'salva'`: do ponto de vista do chat o anexo JÁ está no
+ * sistema, que é o que aquele campo responde. A fila de download é para o que
+ * chega de fora (lib/midia.ts) — isto nunca passa por ela.
+ */
+export async function enviarDocumento(
+  atendimentoId: string,
+  autorId: string | null,
+  documentoId: string,
+  legenda: string,
+) {
+  await exigirModulo("chat");
+
+  const doc = await comCaminho(documentoId);
+  if (!doc) throw new Error("Documento não encontrado na biblioteca");
+
+  const texto = legenda.trim().slice(0, 4000);
+
+  // 1. Nasce 'pendente', antes de falar com a uazapi — igual ao texto.
+  const [msg] = await sql`
+    INSERT INTO mensagens
+      (atendimento_id, origem, autor_id, texto, status, enviada_por,
+       tipo, documento_id, midia_estado, midia_mime, midia_nome, midia_tamanho)
+    VALUES
+      (${atendimentoId}, 'agente', ${autorId}, ${texto}, 'pendente', 'crm',
+       ${doc.tipo}, ${doc.id}, 'salva', ${doc.mime}, ${doc.arquivoNome},
+       ${doc.tamanho})
+    RETURNING id`;
+
+  const [dest] = await sql`
+    SELECT c.whatsapp, a.numero_instancia
+    FROM atendimentos a
+    JOIN contatos c ON c.id = a.contato_id
+    WHERE a.id = ${atendimentoId}`;
+
+  if (!dest?.whatsapp) {
+    await sql`
+      UPDATE mensagens SET status = 'erro', erro = 'contato sem whatsapp'
+      WHERE id = ${msg.id}`;
+    revalidatePath("/chat");
+    throw new Error("Contato sem número de WhatsApp");
+  }
+
+  try {
+    const instancia = await instanciaPorNumero(dest.numero_instancia ?? null);
+    // Os bytes são lidos AQUI e vão em base64 (ver `paraEnvio` em
+    // lib/documentos.ts para o porquê de não ser URL).
+    const bytes = await lerArquivo(doc.caminho);
+    const r = await enviarMidia(
+      soDigitos(dest.whatsapp),
+      bytes.toString("base64"),
+      {
+        tipo: doc.tipo,
+        texto,
+        arquivoNome: doc.arquivoNome,
+        mime: doc.mime,
+      },
+      instancia,
+    );
+    await sql`
+      UPDATE mensagens
+      SET id_externo = ${r.messageid}, status = 'enviado'
+      WHERE id = ${msg.id}`;
+    await sql`
+      UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${atendimentoId}`;
+  } catch (e) {
+    const motivo = e instanceof Error ? e.message : String(e);
+    await sql`
+      UPDATE mensagens SET status = 'erro', erro = ${motivo}
+      WHERE id = ${msg.id}`;
+    revalidatePath("/chat");
+    throw e;
+  }
+
+  revalidatePath("/chat");
+}
+
 // ── Ciclo do atendimento ─────────────────────────────────────────────────────
 
-// Abre uma conversa com o contato: reusa a não-encerrada se houver (não
-// duplica), senão cria uma nova já como minha. Devolve o id pra tela selecionar.
+/**
+ * Abre a conversa com o contato — e conversa aqui é UMA por par de números
+ * (migration-atendimento-unico.sql). Reusa sempre que existir, inclusive a
+ * encerrada, que volta para a fila.
+ *
+ * O QUE MUDOU E POR QUÊ: esta função procurava por contato e IGNORAVA o número,
+ * e a linha que ela criava nascia sem `numero_instancia`. O resultado era duas
+ * conversas com a mesma pessoa — a que a tela abriu, sem número, e a que o
+ * WhatsApp criou, com número — cada uma com metade das mensagens.
+ *
+ * O número da conversa nova é o da instância cadastrada, quando há UMA. Com
+ * várias, fica nulo: adivinhar por qual dos nossos números essa conversa vai
+ * correr seria inventar. O primeiro evento que chegar do WhatsApp adota a linha
+ * e carimba o número certo (ver app/api/uazapi/webhook/route.ts).
+ */
 export async function iniciarAtendimento(
   contatoId: string,
   usuarioId: string | null,
 ): Promise<string> {
   await exigirModulo("chat");
+
   const [existente] = await sql`
-    SELECT id FROM atendimentos
-    WHERE contato_id = ${contatoId} AND status <> 'encerrado'
-    ORDER BY data_criacao DESC LIMIT 1`;
-  if (existente) return existente.id;
+    SELECT id, status FROM atendimentos
+    WHERE contato_id = ${contatoId}
+    ORDER BY (status <> 'encerrado') DESC, data_criacao DESC
+    LIMIT 1`;
+
+  if (existente) {
+    if (existente.status === "encerrado") {
+      await sql`
+        UPDATE atendimentos
+           SET status = 'aberto', responsavel_id = ${usuarioId},
+               data_atualizacao = now()
+         WHERE id = ${existente.id}`;
+      revalidatePath("/chat");
+    }
+    return existente.id as string;
+  }
+
+  const [instancia] = await sql`
+    SELECT numero FROM instancias_uazapi
+    WHERE numero IS NOT NULL
+    LIMIT 2`;
+  const [{ n }] = await sql`SELECT count(*)::int AS n FROM instancias_uazapi`;
+  const numero = n === 1 ? ((instancia?.numero as string | null) ?? null) : null;
 
   const [novo] = await sql`
-    INSERT INTO atendimentos (contato_id, responsavel_id, status, canal)
-    VALUES (${contatoId}, ${usuarioId}, 'aberto', 'whatsapp')
+    INSERT INTO atendimentos (contato_id, responsavel_id, status, canal, numero_instancia)
+    VALUES (${contatoId}, ${usuarioId}, 'aberto', 'whatsapp', ${numero})
     RETURNING id`;
   revalidatePath("/chat");
   return novo.id;

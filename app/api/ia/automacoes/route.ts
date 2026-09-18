@@ -1,5 +1,9 @@
 import { NextRequest } from "next/server";
-import { ferramentasDoFluxo, SISTEMA_AUTOMACOES } from "@/lib/ia/automacoes";
+import {
+  blocoDeDocumentos,
+  ferramentasDoFluxo,
+  SISTEMA_AUTOMACOES,
+} from "@/lib/ia/automacoes";
 import { conversar, historicoDe, texto } from "@/lib/ia/conversa";
 import { exigirModuloApi } from "@/lib/auth/dal";
 
@@ -39,8 +43,13 @@ export async function POST(req: NextRequest) {
 
   const { ferramentas, gravou } = ferramentasDoFluxo(fluxoId);
 
+  // A biblioteca vai JUNTO do system, montada agora: ela muda a cada upload, e
+  // o modelo só consegue anexar o que ele enxerga. Mesmo padrão dos contextos
+  // em app/api/ia/route.ts.
+  const documentos = await blocoDeDocumentos();
+
   return conversar({
-    sistema: SISTEMA_AUTOMACOES,
+    sistema: [SISTEMA_AUTOMACOES, documentos].join("\n\n"),
     ferramentas,
     pergunta,
     historico: historicoDe(corpo.historico),

@@ -16,6 +16,7 @@ import {
   Loader2,
   Mail,
   MessageSquareText,
+  Paperclip,
   Pause,
   Pencil,
   PhoneCall,
@@ -39,6 +40,7 @@ import {
 } from "@/lib/automacoes/cadencia";
 import { ICONE_PADRAO, ICONES } from "../automacoes/aparencia";
 import type { CadenciaDaEtapa, InstanciaEscolhivel } from "./cadencias";
+import type { Documento } from "@/lib/documentos";
 import { excluirFluxo } from "../automacoes/acoes";
 import {
   alternarCadencia,
@@ -96,7 +98,24 @@ type Rascunho = {
   mensagem: string;
   dia: number;
   instanciaId: string | null;
+  documentoId: string | null;
 };
+
+/**
+ * O anexo desta mensagem, dito na tela.
+ *
+ * "documento removido" não é enfeite: arquivar o documento na biblioteca não
+ * limpa o fluxo, e uma coluna que aponta para um arquivo que saiu de circulação
+ * precisa dizer isso ANTES de alguém apertar Disparar — no disparo, o envio
+ * falha e o ramo morre no motor.
+ */
+function nomeDoDocumento(
+  id: string | null,
+  documentos: Documento[],
+): string | null {
+  if (!id) return null;
+  return documentos.find((d) => d.id === id)?.nome ?? "documento removido";
+}
 
 // Nome curto da instância, para caber no cabeçalho da coluna. "Instância
 // apagada" não é enfeite: se ela sumiu de Configurações depois de publicada, o
@@ -134,6 +153,7 @@ function FormSubetapa({
   inicial,
   rotuloAcao,
   instancias,
+  documentos,
   aoConfirmar,
   aoCancelar,
 }: {
@@ -141,6 +161,7 @@ function FormSubetapa({
   inicial: Rascunho;
   rotuloAcao: string;
   instancias: InstanciaEscolhivel[];
+  documentos: Documento[];
   aoConfirmar: (dados: Rascunho) => void;
   aoCancelar: () => void;
 }) {
@@ -150,6 +171,9 @@ function FormSubetapa({
   const [dia, setDia] = useState(String(inicial.dia));
   const [instanciaId, setInstanciaId] = useState<string | null>(
     inicial.instanciaId,
+  );
+  const [documentoId, setDocumentoId] = useState<string | null>(
+    inicial.documentoId,
   );
   const nomeRef = useRef<HTMLInputElement | null>(null);
 
@@ -169,6 +193,10 @@ function FormSubetapa({
           mensagem: mensagem.trim(),
           dia: Math.max(0, Number(dia) || 0),
           instanciaId,
+          // Anexo só sobrevive no WhatsApp: é o único canal que manda arquivo.
+          // Trocar o canal depois de escolher o documento limpa a escolha em
+          // vez de guardar um anexo que nada leria.
+          documentoId: canal === "whatsapp" ? documentoId : null,
         });
       }}
       onKeyDown={(e) => {
@@ -252,6 +280,37 @@ function FormSubetapa({
         </label>
       )}
 
+      {/* O ANEXO. Só no WhatsApp, como a instância, e pelo mesmo motivo: é o
+          único canal que sabe mandar arquivo. O que a pessoa escolhe aqui é um
+          documento da biblioteca (/documentos) — não se sobe arquivo na
+          cadência, senão cada mensagem teria a sua cópia e ninguém saberia qual
+          é a tabela de preços vigente. */}
+      {canal === "whatsapp" && (
+        <label className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
+          <Paperclip className="size-3 shrink-0" aria-hidden="true" />
+          <span className="shrink-0">Anexo</span>
+          <select
+            value={documentoId ?? ""}
+            onChange={(e) => setDocumentoId(e.target.value || null)}
+            className={`${campoTexto} min-w-0 flex-1`}
+          >
+            <option value="">sem anexo</option>
+            {documentos.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.nome}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {canal === "whatsapp" && documentos.length === 0 && (
+        <p className="text-[10px] leading-snug text-zinc-400 dark:text-zinc-500">
+          A biblioteca está vazia. Suba os arquivos em Documentos para poder
+          anexá-los aqui.
+        </p>
+      )}
+
       <textarea
         value={mensagem}
         onChange={(e) => setMensagem(e.target.value)}
@@ -259,6 +318,15 @@ function FormSubetapa({
         placeholder="Mensagem enviada nesta subetapa"
         className={`${campoTexto} resize-none`}
       />
+
+      {/* Com anexo o texto muda de papel, e quem está escrevendo precisa saber
+          disso: sai UM envio, o arquivo com a legenda — não duas mensagens. */}
+      {canal === "whatsapp" && documentoId && (
+        <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
+          O texto acima vai como legenda do anexo, num envio só. Pode ficar
+          vazio: aí sai só o arquivo.
+        </p>
+      )}
 
       <p className="text-[10px] leading-snug text-zinc-400 dark:text-zinc-500">
         Variáveis: {"{{nome}}"}, {"{{primeiro_nome}}"}, {"{{oportunidade}}"},{" "}
@@ -420,6 +488,7 @@ function Coluna({
   indice,
   cor,
   instancias,
+  documentos,
   emCadencia,
   removendoId,
   contatoPorId,
@@ -435,6 +504,7 @@ function Coluna({
   // coluna no quadro de trás.
   cor: string;
   instancias: InstanciaEscolhivel[];
+  documentos: Documento[];
   // quem tem inscrição viva neste fluxo agora
   emCadencia: Set<string>;
   removendoId: string | null;
@@ -502,6 +572,18 @@ function Coluna({
             <Send className="size-2.5 shrink-0" aria-hidden="true" />
             <span className="truncate">
               {nomeDaInstancia(subetapa.instanciaId, instancias)}
+            </span>
+          </p>
+        )}
+
+        {/* O anexo no cabeçalho da coluna, pela mesma razão da instância: ler a
+            cadência de fora é a única forma de perceber que a 3ª mensagem leva
+            a proposta junto. */}
+        {subetapa.canal === "whatsapp" && subetapa.documentoId && (
+          <p className="mt-0.5 flex items-center gap-1 pl-7 text-[11px] text-zinc-500 dark:text-zinc-400">
+            <Paperclip className="size-2.5 shrink-0" aria-hidden="true" />
+            <span className="truncate">
+              {nomeDoDocumento(subetapa.documentoId, documentos)}
             </span>
           </p>
         )}
@@ -587,6 +669,7 @@ export default function PainelSubetapas({
   oportunidades,
   emCadencia,
   instancias,
+  documentos,
   contatoPorId,
   usuarioPorId,
   tagsDoContato,
@@ -599,6 +682,7 @@ export default function PainelSubetapas({
   // as oportunidades REAIS da etapa; a régua de dias corre sobre elas
   oportunidades: Oportunidade[];
   instancias: InstanciaEscolhivel[];
+  documentos: Documento[];
   // quem tem inscrição viva em alguma cadência agora — é quem pode sair dela
   emCadencia: Set<string>;
   contatoPorId: Map<string, Contato>;
@@ -1112,12 +1196,14 @@ export default function PainelSubetapas({
                       titulo={`Mensagem ${i + 1}`}
                       rotuloAcao="Salvar"
                       instancias={instancias}
+                      documentos={documentos}
                       inicial={{
                         nome: coluna.subetapa.nome,
                         canal: coluna.subetapa.canal,
                         mensagem: coluna.subetapa.mensagem,
                         dia: coluna.subetapa.dia,
                         instanciaId: coluna.subetapa.instanciaId,
+                        documentoId: coluna.subetapa.documentoId,
                       }}
                       aoConfirmar={(d) => editar(coluna.subetapa.id, d)}
                       aoCancelar={() => setEditando(null)}
@@ -1128,6 +1214,7 @@ export default function PainelSubetapas({
                       indice={i}
                       cor={cor}
                       instancias={instancias}
+                      documentos={documentos}
                       emCadencia={emCadencia}
                       removendoId={removendoId}
                       contatoPorId={contatoPorId}
@@ -1159,6 +1246,7 @@ export default function PainelSubetapas({
                     titulo={`Mensagem ${subetapas.length + 1}`}
                     rotuloAcao="Criar"
                     instancias={instancias}
+                    documentos={documentos}
                     inicial={{
                       nome: "",
                       canal: "whatsapp",
@@ -1173,6 +1261,12 @@ export default function PainelSubetapas({
                       instanciaId: subetapas.length
                         ? subetapas[subetapas.length - 1].instanciaId
                         : null,
+                      // Anexo NÃO é herdado da última: a instância se repete
+                      // pela cadência inteira, o documento quase nunca — cada
+                      // mensagem leva o seu, quando leva. Herdar faria a
+                      // proposta sair de novo na mensagem seguinte sem ninguém
+                      // pedir.
+                      documentoId: null,
                     }}
                     aoConfirmar={criar}
                     aoCancelar={() => setCriando(false)}
