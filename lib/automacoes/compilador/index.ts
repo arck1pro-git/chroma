@@ -27,8 +27,14 @@ import { NO_ENTRADA, type DefinicaoFluxo } from "../tipos";
  * publicado com 1.1.0 ignora o anexo — o nó dele não manda o campo, então o
  * lead recebe o texto sem o arquivo. Republicar resolve, e de novo é a tela que
  * precisa pedir: um anexo que não sai não deixa rastro no n8n.
+ *
+ * 1.3.0: o nó que registra a mensagem passou a gravar o ANEXO
+ * (documento_id, tipo e os campos de mídia). Em 1.2.0 o arquivo saía para o
+ * lead e não aparecia no histórico do /chat — a conversa guardava só a legenda,
+ * como se fosse texto puro. Republicar corrige daí pra frente; o que já foi
+ * registrado não volta atrás.
  */
-export const VERSAO_COMPILADOR = "1.2.0";
+export const VERSAO_COMPILADOR = "1.3.0";
 
 // Passo já resolvido: posição, tipo, config e para onde vai cada saída.
 export type PassoCompilado = {

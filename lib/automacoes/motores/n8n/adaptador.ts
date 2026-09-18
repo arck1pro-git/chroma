@@ -643,9 +643,25 @@ export function paraWorkflow(
             WITH msg AS (
               INSERT INTO mensagens
                 (atendimento_id, origem, autor_id, texto, status, id_externo,
-                 enviada_por)
-              SELECT a.id, 'agente', NULL, $2, 'enviado', $3, 'automacao'
+                 enviada_por,
+                 -- O ANEXO, quando a mensagem leva um. Sem estas colunas a
+                 -- conversa guardava a legenda e perdia o arquivo: o balão
+                 -- desenha anexo quando tipo <> 'texto', então ela aparecia
+                 -- como texto puro e o PDF que o lead recebeu não existia no
+                 -- histórico do CRM.
+                 documento_id, tipo, midia_estado,
+                 midia_mime, midia_nome, midia_tamanho)
+              SELECT a.id, 'agente', NULL, $2, 'enviado', $3, 'automacao',
+                     d.id,
+                     -- Sem documento o LEFT JOIN não casa e tudo cai no
+                     -- default de mensagem de texto, que é o caso comum.
+                     COALESCE(d.tipo, 'texto'),
+                     CASE WHEN d.id IS NULL THEN 'ausente' ELSE 'salva' END,
+                     d.mime, d.arquivo_nome, d.tamanho
               FROM atendimentos a
+              -- NULLIF porque o parâmetro chega '' quando o bloco não tem
+              -- anexo, e ''::uuid é erro de sintaxe no Postgres.
+              LEFT JOIN documentos d ON d.id = NULLIF($7, '')::uuid
               WHERE a.contato_id = $1::uuid AND a.status <> 'encerrado'
               ORDER BY a.data_criacao DESC
               LIMIT 1
@@ -669,6 +685,7 @@ export function paraWorkflow(
                 EXECUCAO_ID,
                 passo.id,
                 passo.tipo,
+                documentoId,
               ].join(","),
             ),
           },
