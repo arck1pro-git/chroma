@@ -187,7 +187,17 @@ async function resolverContato(
   const email = dados.email ?? "";
 
   const existente = await acharContato(whatsapp, email);
-  const json = JSON.stringify(camposJson);
+  // `sql.json` e NÃO `JSON.stringify(...)::jsonb`, e a diferença não é estilo:
+  // com `fetch_types:false` (exigido pelo pooler, ver lib/db.ts) o driver manda
+  // a string como TEXTO JSON, e `::jsonb` a lê como um jsonb do tipo `string` —
+  // não como objeto. O efeito só aparecia no segundo envio do mesmo contato:
+  //
+  //   jsonb_string || jsonb_string  ->  ["{\"a\":1}","{\"a\":2}"]
+  //
+  // ou seja, `campos` virava um ARRAY de strings em vez de mesclar, e a ficha
+  // do contato não achava chave nenhuma para mostrar. Com `sql.json` o valor
+  // chega como objeto e o `||` volta a ser merge.
+  const json = sql.json(camposJson as never);
 
   if (existente) {
     await sql`
@@ -198,7 +208,7 @@ async function resolverContato(
         cidade   = CASE WHEN coalesce(cidade, '')   = '' THEN ${dados.cidade || null} ELSE cidade END,
         estado   = CASE WHEN coalesce(estado, '')   = '' THEN ${dados.estado || null} ELSE estado END,
         pais     = CASE WHEN coalesce(pais, '')     = '' THEN ${dados.pais || null} ELSE pais END,
-        campos   = ${json}::jsonb || campos
+        campos   = ${json} || campos
       WHERE id = ${existente}`;
     return { id: existente, novo: false };
   }
@@ -212,7 +222,7 @@ async function resolverContato(
       ${nome || whatsapp || email || "Sem nome"},
       ${whatsapp || null}, ${email || null},
       ${dados.cidade || null}, ${dados.estado || null}, ${dados.pais || "Brasil"},
-      ${json}::jsonb)
+      ${json})
     RETURNING id`;
 
   // "pela captação" e não só "Contato criado": quem abrir a ficha depois quer
@@ -404,7 +414,7 @@ export async function receberLead(
           ${dist.oportunidadeNome || dist.contato.nome || "Lead"},
           ${contatoId}, ${dist.oportunidadeValor}, 'aberta',
           ${criarLead.funil_id}, ${criarLead.etapa_id},
-          ${JSON.stringify(dist.oportunidadeCampos)}::jsonb,
+          ${sql.json(dist.oportunidadeCampos as never)},
           ${responsavelId})
         ON CONFLICT (contato_id, funil_id) WHERE status = 'aberta'
           DO NOTHING
@@ -518,7 +528,7 @@ async function registrar(
     await sql`
       INSERT INTO webhook_recebimentos
         (webhook_id, payload, estado, erro, contato_id, oportunidade_id, resumo)
-      VALUES (${webhookId}, ${JSON.stringify(payload)}::jsonb, ${estado},
+      VALUES (${webhookId}, ${sql.json(payload as never)}, ${estado},
               ${erro}, ${contatoId}, ${oportunidadeId}, ${resumo})`;
   } catch (e) {
     console.error("[webhook] falhou ao gravar recebimento", e);
