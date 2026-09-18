@@ -23,6 +23,7 @@
   --conteudo: var(--background);
   --foreground: #171717;
   --scrollbar-thumb: #d4d4d8; /* zinc-300 */
+  --scrollbar-thumb-hover: #a1a1aa; /* zinc-400 */
 }
 
 @theme inline {
@@ -40,7 +41,8 @@
        Trocar só --background já leva as duas superfícies junto. */
     --foreground: #ededed;
     --scrollbar-thumb: #3f3f46; /* zinc-700 */
-  }
+    --scrollbar-thumb-hover: #52525b; /* zinc-600 */
+    }
 }
 
 /* Quem rola é a janela (o shell é min-h-screen, sem altura fixa). Sem reservar
@@ -63,9 +65,12 @@ body {
   color: var(--foreground);
 }
 
-/* Esconde a barra de rolagem sem tirar o rolar. As colunas do funil rolam pelo
-   mouse; a barra por dentro de cada etapa poluía e mudava de largura conforme a
-   quantidade de cards. */
+/* Esconde a barra de rolagem sem tirar o rolar.
+   
+   Usada nas colunas do funil, onde a barra é DESENHADA ao lado em vez de vir do
+   navegador (app/inicio/barra-rolagem.tsx) — o pedido é que ela apareça mesmo
+   sem transbordo, e polegar nativo não existe nesse caso. Aqui só some com a
+   nativa para não ficarem duas. */
 .rolagem-oculta {
   scrollbar-width: none; /* Firefox */
 }

@@ -41,7 +41,8 @@ import FichaOportunidade from "../funil/ficha-oportunidade";
 import FormOportunidade, { type DadosOportunidade } from "../funil/form-oportunidade";
 import { criarOportunidade, moverOportunidade } from "../funil/actions";
 import { SeletorMenu } from "../components/filtros-ui";
-import BarraFiltros from "../funil/barra-filtros";
+import PainelFiltros from "../funil/painel-filtros";
+import BarraRolagem from "./barra-rolagem";
 import {
   contarFiltrosAtivos,
   filtrosVazios,
@@ -252,6 +253,8 @@ function ColunaResumo({
   const total = oportunidades.reduce((soma, o) => soma + o.valor, 0);
   // a área de cards é o alvo de soltura — inclusive quando a etapa está vazia
   const { setNodeRef, isOver } = useDroppable({ id: etapa.id });
+  // O mesmo nó, guardado para a barra desenhada ler scrollTop/scrollHeight.
+  const areaRolagemRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <section
@@ -372,14 +375,27 @@ function ColunaResumo({
       </div>
 
       {/* a coluna vai até o pé da tela (max-h-full acima) e é AQUI que rola.
-          Sem altura fixa: quanto mais tela, mais card aparece. */}
+          Sem altura fixa: quanto mais tela, mais card aparece.
+
+          A barra de rolagem é DESENHADA ao lado (BarraRolagem), e a nativa fica
+          escondida (.rolagem-oculta): o pedido é que ela apareça mesmo quando
+          não há o que rolar, e navegador nenhum desenha polegar sem transbordo.
+          Ver app/inicio/barra-rolagem.tsx. */}
       <SortableContext
         items={oportunidades.map((o) => o.id)}
         strategy={verticalListSortingStrategy}
       >
+        <div className="flex min-h-0 flex-1 gap-0.5 pr-1">
         <div
-          ref={setNodeRef}
-          className={`rolagem-oculta flex min-h-0 flex-col gap-3 overflow-y-auto rounded-b-2xl p-3 transition ${
+          ref={(no) => {
+            // DOIS donos do mesmo nó: o dnd-kit precisa dele para marcar a
+            // coluna como área de solta, e a barra para ler scrollTop. Callback
+            // ref porque `setNodeRef` é função e não dá para juntar com um
+            // objeto ref de outro jeito.
+            setNodeRef(no);
+            areaRolagemRef.current = no;
+          }}
+          className={`rolagem-oculta flex min-h-0 flex-1 flex-col gap-3 overflow-y-scroll rounded-b-2xl p-3 transition ${
             isOver ? "bg-zinc-200/60 dark:bg-zinc-800/50" : ""
           }`}
         >
@@ -411,6 +427,12 @@ function ColunaResumo({
               );
             })
           )}
+        </div>
+
+        <BarraRolagem
+          alvoRef={areaRolagemRef}
+          dependencia={oportunidades.length}
+        />
         </div>
       </SortableContext>
     </section>
@@ -602,6 +624,10 @@ export default function Inicio({
   // oportunidades), só o `etapa_id`, e esse o arraste acerta sempre.
   const [filtros, setFiltros] = useState<Filtros>(filtrosVazios);
   const temFiltro = contarFiltrosAtivos(filtros) > 0;
+  // Aberto/fechado do painel de filtros, que sobe por cima do quadro. Mora
+  // junto de `filtros` porque os dois são o mesmo assunto, e porque deixa o
+  // painel ser fechado de fora quando fizer falta — hoje ninguém fecha.
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
 
   const quadroVisivel = useMemo(() => {
     if (!temFiltro) return quadro;
@@ -832,11 +858,14 @@ export default function Inicio({
                     página: o que eles recortam são as colunas logo abaixo, e é
                     ali que a pessoa olha ao mexer neles. Sem o seletor de funil
                     — esse já está no cabeçalho — e alinhados ao quadro, com
-                    folga só à esquerda. */}
-                <BarraFiltros
-                  mostrarFunil={false}
-                  moldura="surge mb-1 shrink-0 pr-6 xl:pr-16"
-                  linha="flex flex-wrap items-center gap-2"
+                    folga só à esquerda.
+
+                    Agora atrás de um botão: os controles abertos ocupavam duas
+                    ou três linhas em tela estreita e tiravam altura do quadro.
+                    Ver app/funil/painel-filtros.tsx. */}
+                <PainelFiltros
+                  aberto={filtrosAbertos}
+                  aoAlternar={setFiltrosAbertos}
                   funis={funis}
                   usuarios={usuarios}
                   segmentos={dados.segmentos}
