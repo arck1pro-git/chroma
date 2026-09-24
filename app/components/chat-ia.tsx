@@ -22,6 +22,7 @@ import {
   type ContextoDisponivel,
 } from "./acoes-ia";
 import TextoIa from "./texto-ia";
+import { tomEscuro } from "@/lib/cores-funil";
 
 // Botão flutuante de conversa com a IA. Canto inferior DIREITO. Quando uma
 // ficha ou a gaveta está aberta o véu delas (z-40/z-50) cobre o botão — o que
@@ -48,28 +49,58 @@ import TextoIa from "./texto-ia";
 
 type Fala = { papel: "eu" | "ia"; texto: string };
 
-/**
- * A estrela de quatro pontas que marca tudo que é IA nesta tela.
- *
- * SVG à mão e não um ícone do lucide: as estrelas de lá (Star, Sparkles) têm
- * ponta reta e miolo vazado. Esta é a faísca de pontas CÔNCAVAS — a forma que
- * virou convenção de "isto foi gerado" nas interfaces de IA. Uma curva por
- * ponta, e nada mais.
- */
+/** Símbolo monoline de IA: três eixos, sem a estrela decorativa tradicional. */
 function EstrelaIa({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      fill="currentColor"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
       className={className}
       aria-hidden="true"
     >
-      <path d="M12 1.5c.34 0 .63.23.72.55l1.06 3.9a6.6 6.6 0 0 0 4.62 4.62l3.9 1.06a.75.75 0 0 1 0 1.45l-3.9 1.06a6.6 6.6 0 0 0-4.62 4.62l-1.06 3.9a.75.75 0 0 1-1.45 0l-1.06-3.9a6.6 6.6 0 0 0-4.62-4.62l-3.9-1.06a.75.75 0 0 1 0-1.45l3.9-1.06a6.6 6.6 0 0 0 4.62-4.62l1.06-3.9A.75.75 0 0 1 12 1.5Z" />
+      <path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9" />
+      <circle cx="12" cy="12" r="2.25" fill="currentColor" stroke="none" />
     </svg>
   );
 }
+/**
+ * A marca da IA: a estrela BRANCA sobre o tom escuro do funil aberto.
+ *
+ * A cor vem de fora (`cor`, uma classe pronta tipo "bg-blue-950") porque ela é
+ * DADO do funil, e este componente não conhece o CRM — ver `corIcone`. Nas
+ * telas sem funil fica o tom padrão.
+ *
+ * `girando` anima só a estrela, não o quadrado: com a animação no recipiente,
+ * o bloco escuro rodava junto e a marca virava um losango piscando.
+ */
+function MarcaIa({ cor, girando = false }: { cor: string; girando?: boolean }) {
+  return (
+    <span
+      className={`flex size-6 shrink-0 items-center justify-center rounded-lg ${cor}`}
+      aria-hidden="true"
+    >
+      <EstrelaIa className={`size-3.5 text-white ${girando ? "estrela-pensando" : ""}`} />
+    </span>
+  );
+}
+
+
 // A conversa como a lista a mostra: título e tamanho, sem o texto.
 type Resumo = { id: string; titulo: string; em: string; falas: number };
+
+// A sombra dos balões: leve, e ao REDOR (sem deslocamento vertical). É ela
+// que separa o balão branco da página branca agora que o painel não tem
+// fundo — uma sombra caída para baixo deixaria a borda de cima sumir.
+const SOMBRA = "shadow-[0_0_10px_rgba(0,0,0,0.12)]";
+
+// A forma do balão da resposta. Constante, e não classe repetida nos dois
+// lugares: a fala PRONTA e a que ainda está chegando pelo stream têm de ter a
+// mesma caixa — se as medidas saírem de sincronia, o texto pula de lugar no
+// instante em que o stream termina.
+const BALAO_IA = `min-w-0 max-w-[90%] rounded-2xl rounded-tl-md bg-white px-3.5 py-2.5 ${SOMBRA} dark:bg-zinc-900`;
 
 const SUGESTOES_PADRAO = [
   "Onde este funil está vazando?",
@@ -126,6 +157,13 @@ export default function ChatIa({
   // (cadência, editor de fluxo) ele continua ligado: ali a sidebar está coberta
   // pelo véu, e sem o botão não haveria como abrir a IA.
   botaoFlutuante = true,
+  // Versão enxuta usada sobre construtores: só campo e balões, sem cartão,
+  // cabeçalho ou tela de boas-vindas envolvendo a conversa.
+  compacto = false,
+  // O tom escuro do funil aberto, para a marca da IA (ex.: "bg-blue-950").
+  // Entra por prop porque a cor é dado do funil e este painel também roda
+  // onde funil nenhum existe (editor de fluxo, webhooks) — lá fica o padrão.
+  corIcone = tomEscuro(null),
 }: {
   contexto: string;
   endpoint?: string;
@@ -142,6 +180,8 @@ export default function ChatIa({
   usaContextos?: boolean;
   conversaInicial?: string | null;
   botaoFlutuante?: boolean;
+  compacto?: boolean;
+  corIcone?: string;
 }) {
   // Já nasce aberto quando a URL trouxe uma conversa (?ia=): abrir num efeito
   // faria o painel piscar fechado antes de aparecer.
@@ -258,6 +298,7 @@ export default function ChatIa({
   // reclama). Aqui o valor só existe para o efeito não se repetir — ninguém
   // renderiza a partir dele.
   const atendidaRef = useRef<string | null>(null);
+  const abertoPelaSidebarRef = useRef(Boolean(conversaInicial));
 
   /* eslint-disable react-hooks/set-state-in-effect --
      Este efeito é o único do arquivo que sincroniza com um sistema EXTERNO: a
@@ -270,6 +311,7 @@ export default function ChatIa({
      refator e os disables pontuais viram diretiva morta. */
   useEffect(() => {
     if (!conversaInicial || atendidaRef.current === conversaInicial) return;
+    abertoPelaSidebarRef.current = true;
     atendidaRef.current = conversaInicial;
 
     // "nova" não é id de conversa: é o pedido do "+" da sidebar para abrir em
@@ -509,7 +551,10 @@ export default function ChatIa({
     }
   }
 
-  const lateral = modo === "lateral";
+  // Conversa aberta pela sidebar (?ia=...) usa sempre a apresentação enxuta:
+  // ela sobe sobre a página como os chats de campanha, sem montar um painel.
+  const compactoEfetivo = compacto || abertoPelaSidebarRef.current;
+  const lateral = modo === "lateral" && !compactoEfetivo;
 
   const acaoCabecalho =
     "shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50";
@@ -520,16 +565,20 @@ export default function ChatIa({
         <section
           className={
             lateral
-              ? // Coluna de verdade: altura cheia, sem cantos à direita e sem
-                // sombra — ela encosta na borda da janela, e sombra ali só
-                // sujaria a divisa com o quadro.
-                "surge flex h-full w-[26rem] max-w-[85vw] shrink-0 flex-col overflow-hidden border-l border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+              ? // Coluna de verdade: altura cheia e SEM SUPERFÍCIE PRÓPRIA —
+                // nem fundo nem divisa. O fundo daqui era #ffffff, o mesmo do
+                // <body> (globals.css), então o que ela marcava de fato era só
+                // a borda; sem as duas, sobram os balões, e a profundidade passa
+                // a vir da sombra deles.
+                "surge flex h-full w-[26rem] max-w-[85vw] shrink-0 flex-col overflow-hidden"
               : // acima do botão; a camada padrão fica sob os véus das fichas (z-40/50)
-                `surge fixed bottom-20 right-5 ${camada} flex max-h-[70vh] w-[26rem] max-w-[calc(100vw-6rem)] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950`
+                compactoEfetivo
+                  ? `fixed bottom-20 right-5 ${camada} flex max-h-[70vh] w-[26rem] max-w-[calc(100vw-6rem)] flex-col overflow-visible`
+                  : `surge fixed bottom-20 right-5 ${camada} flex max-h-[70vh] w-[26rem] max-w-[calc(100vw-6rem)] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950`
           }
           aria-label={rotulo}
         >
-          <header className="flex shrink-0 items-center gap-1 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
+          {!compactoEfetivo&&<header className="flex shrink-0 items-center gap-1 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
             {/* O ícone do histórico é o primeiro item do cabeçalho, como nos
                 chats de IA: é por ele que se volta para as conversas salvas. */}
             <button
@@ -570,7 +619,7 @@ export default function ChatIa({
             >
               <X className="size-4" aria-hidden="true" />
             </button>
-          </header>
+          </header>}
 
           {/* Uma linha, sempre visível enquanto durar: sem ela, "não ficou
               salva" só apareceria no dia em que a conversa não voltasse. */}
@@ -643,12 +692,12 @@ export default function ChatIa({
                 </p>
               )}
 
-              {!abrindo && falas.length === 0 && !parcial && (
+              {!compactoEfetivo && !abrindo && falas.length === 0 && !parcial && (
                 <div className="flex flex-col gap-2">
-                  {/* Abertura: a estrela grande dá cara de "converse comigo" em
-                      vez de formulário vazio. */}
+                  {/* Abertura: a marca ao lado do título dá cara de "converse
+                      comigo" em vez de formulário vazio. */}
                   <div className="surge mb-1 flex items-center gap-2">
-                    <EstrelaIa className="size-5 text-zinc-900 dark:text-zinc-50" />
+                    <MarcaIa cor={corIcone} />
                     <p className="text-[13px] font-medium text-zinc-900 dark:text-zinc-50">
                       {titulo}
                     </p>
@@ -676,21 +725,30 @@ export default function ChatIa({
               <div className="flex flex-col gap-4">
                 {falas.map((f, i) =>
                   f.papel === "eu" ? (
-                    // Minha fala: balão à direita. Cinza e não preto — com o
-                    // preto o olho ia para a PERGUNTA, e o que se lê é a
-                    // resposta.
+                    // Minha fala: balão PRETO à direita. Era cinza para não
+                    // roubar o olho da resposta; com o painel sem fundo, o par
+                    // preto/branco passou a ser o que separa pergunta de
+                    // resposta. No tema escuro os dois se invertem — a mesma
+                    // troca que o botão de enviar e as pílulas já fazem.
                     <div key={i} className="surge flex justify-end">
-                      <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-zinc-100 px-3.5 py-2 text-[14px] leading-[1.6] text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50">
+                      <p className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-zinc-900 px-3.5 py-2 text-[14px] leading-[1.6] text-white ${SOMBRA} dark:bg-zinc-50 dark:text-zinc-900`}>
                         {f.texto}
                       </p>
                     </div>
                   ) : (
-                    // Resposta: sem balão, largura inteira, estrela à esquerda.
-                    // Separa "o que eu disse" de "o que ele respondeu" sem
-                    // encaixotar texto longo.
+                    // Resposta: balão BRANCO, com a marca da IA fora dele. Ela
+                    // ganhou balão junto com o fundo transparente do painel —
+                    // sem fundo, texto solto não teria superfície nenhuma, e é a
+                    // sombra que o descola da página (branca também).
+                    //
+                    // Mais largo que a pergunta (90% contra 85%): aqui cabe
+                    // markdown com título e lista, e apertar isso só aumentaria
+                    // a rolagem.
                     <div key={i} className="surge flex gap-2.5">
-                      <EstrelaIa className="mt-1 size-4 shrink-0 text-zinc-400 dark:text-zinc-500" />
-                      <TextoIa texto={f.texto} />
+                      <MarcaIa cor={corIcone} />
+                      <div className={BALAO_IA}>
+                        <TextoIa texto={f.texto} />
+                      </div>
                     </div>
                   ),
                 )}
@@ -700,17 +758,19 @@ export default function ChatIa({
                     enquanto escreve; o cursor pisca no fim da linha. */}
                 {parcial && (
                   <div className="flex gap-2.5">
-                    <EstrelaIa className="estrela-pensando mt-1 size-4 shrink-0 text-zinc-900 dark:text-zinc-50" />
-                    {/* O cursor vai DENTRO do TextoIa, no último bloco: solto
-                        aqui embaixo ele pularia para uma linha própria a cada
-                        parágrafo novo que o stream abre. */}
-                    <TextoIa texto={parcial} cursor />
+                    <MarcaIa cor={corIcone} girando />
+                    <div className={BALAO_IA}>
+                      {/* O cursor vai DENTRO do TextoIa, no último bloco: solto
+                          aqui embaixo ele pularia para uma linha própria a cada
+                          parágrafo novo que o stream abre. */}
+                      <TextoIa texto={parcial} cursor />
+                    </div>
                   </div>
                 )}
 
                 {ocupado && !parcial && (
                   <div className="surge flex items-center gap-2.5">
-                    <EstrelaIa className="estrela-pensando size-4 shrink-0 text-zinc-900 dark:text-zinc-50" />
+                    <MarcaIa cor={corIcone} girando />
                     {/* O texto respira junto: só a estrela girando parecia
                         travada quando a ferramenta demora. */}
                     <span className="respira text-[12px] text-zinc-500 dark:text-zinc-400">
@@ -729,7 +789,7 @@ export default function ChatIa({
           {/* Contextos ligados nesta pergunta. Fica ACIMA do campo, à vista:
               um bloco de prompt esquecido ligado muda a resposta sem que
               ninguém entenda por quê. */}
-          {!vendoLista && contextos.length > 0 && (
+          {!compactoEfetivo && !vendoLista && contextos.length > 0 && (
             <div className="shrink-0 border-t border-zinc-200 px-2.5 pt-2 dark:border-zinc-800">
               <div className="flex flex-wrap gap-1">
                 {contextos.map((c) => {
@@ -761,7 +821,7 @@ export default function ChatIa({
                 e.preventDefault();
                 void perguntar(pergunta);
               }}
-              className="flex shrink-0 items-end gap-2 border-t border-zinc-200 p-2.5 dark:border-zinc-800"
+              className={`flex shrink-0 items-end ${compactoEfetivo?"relative pt-3":"gap-2 border-t border-zinc-200 p-2.5 dark:border-zinc-800"}`}
             >
               <textarea
                 ref={campoRef}
@@ -778,13 +838,13 @@ export default function ChatIa({
                 placeholder={campo}
                 aria-label="Sua pergunta"
                 autoFocus
-                className="max-h-24 min-h-9 flex-1 resize-none rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                className={`max-h-24 min-h-9 flex-1 resize-none rounded-xl border border-zinc-300 bg-white px-3 py-2 text-[13px] text-zinc-900 shadow-lg outline-none transition placeholder:text-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 ${compactoEfetivo?"rolagem-oculta min-h-11 rounded-2xl py-3 pr-12 focus:border-zinc-300 focus:ring-0 dark:focus:border-zinc-700":"focus-visible:ring-2 focus-visible:ring-zinc-900/10"}`}
               />
               <button
                 type="submit"
                 disabled={ocupado || !pergunta.trim()}
                 aria-label="Enviar pergunta"
-                className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-white transition hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className={`flex shrink-0 items-center justify-center bg-zinc-900 text-white transition hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 ${compactoEfetivo?"absolute bottom-1.5 right-1.5 size-8 rounded-full":"size-9 rounded-lg"}`}
               >
                 <ArrowUp className="size-4" aria-hidden="true" />
               </button>
@@ -795,7 +855,7 @@ export default function ChatIa({
 
       {/* Na lateral aberta o botão sumiria atrás da própria coluna, e ela já
           tem o X no cabeçalho — dois controles de fechar no mesmo canto é ruído. */}
-      {botaoFlutuante && !(lateral && aberto) && (
+      {botaoFlutuante && (
       <button
         type="button"
         onClick={() => (aberto ? fechar() : abrir())}
@@ -808,7 +868,7 @@ export default function ChatIa({
         // fica parado no canto. Agora ele tem o mesmo peso dos outros botões
         // primários e cresce um nada no hover, que é o que sinaliza que é
         // clicável sem precisar de cor.
-        className={`fixed bottom-5 right-5 ${camada} flex size-11 items-center justify-center rounded-full bg-zinc-900 text-white shadow-lg transition hover:scale-105 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-2 active:scale-95 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 dark:focus-visible:ring-zinc-100`}
+        className={`fixed bottom-5 right-5 ${camada} flex size-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-900 shadow-md transition hover:scale-105 hover:border-zinc-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900 focus-visible:ring-offset-2 active:scale-95 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:hover:border-zinc-500 dark:focus-visible:ring-zinc-100`}
       >
         {/* Respondendo: a MESMA estrela girando, não um spinner. Trocar o
             desenho no meio do trabalho faria o botão piscar de forma; girar a

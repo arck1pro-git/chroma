@@ -7,6 +7,7 @@
 
 export type Contato = {
   id: string;
+  origem_campos?: ValoresPersonalizados;
   nome: string;
   whatsapp: string;
   email: string;

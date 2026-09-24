@@ -110,6 +110,11 @@ export async function carregarFunil(
       ORDER BY data_criacao DESC`,
     sql`
       SELECT id, nome, whatsapp, email, cidade, estado, pais,
+             (SELECT COALESCE(jsonb_object_agg(k, v), '{}'::jsonb)
+                FROM jsonb_each(CASE WHEN jsonb_typeof(campos) = 'object' THEN campos ELSE '{}'::jsonb END) AS origem(k, v)
+               WHERE k IN ('campaign_id', 'campanha_id', 'utm_id', 'campaign_name', 'utm_campaign',
+                           'adset_id', 'conjunto_id', 'adset_name', 'utm_term',
+                           'ad_id', 'anuncio_id', 'ad_name', 'utm_content')) AS origem_campos,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
       FROM contatos ORDER BY nome`,
     sql`SELECT id, nome, iniciais FROM usuarios`,

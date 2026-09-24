@@ -37,11 +37,14 @@ import type { DadosFunil } from "../funil/dados";
 import { brl } from "../formato";
 import CartaoOportunidade from "../funil/cartao";
 import BarraSelecao, { type FluxoDisponivel } from "../funil/barra-selecao";
+import { tomEscuro } from "@/lib/cores-funil";
 import FichaOportunidade from "../funil/ficha-oportunidade";
 import FormOportunidade, { type DadosOportunidade } from "../funil/form-oportunidade";
 import { criarOportunidade, moverOportunidade } from "../funil/actions";
 import { SeletorMenu } from "../components/filtros-ui";
 import PainelFiltros from "../funil/painel-filtros";
+import DashboardMetaAds from "./dashboard-meta-ads";
+import { filtroCampanhasVazio, passaNoFiltroCampanhas, type FiltroCampanhas } from "./filtro-campanhas";
 import BarraRolagem from "./barra-rolagem";
 import {
   contarFiltrosAtivos,
@@ -204,7 +207,7 @@ function atrasoDaEtapa(i: number) {
 function PassoConversao({ conversao }: { conversao: Conversao }) {
   return (
     <span
-      className="absolute right-0 top-0 z-10 -translate-y-1/2 translate-x-1/2 whitespace-nowrap rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[13px] font-semibold tabular-nums text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+      className="absolute right-0 top-0 z-50 -translate-y-1/2 translate-x-1/2 whitespace-nowrap rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[13px] font-semibold tabular-nums text-zinc-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
       // dois canais: o title pro mouse, o aria-label pro leitor de tela
       title={`${conversao.seguiram} de ${conversao.entraram} seguiram de ${conversao.origem} para ${conversao.destino}`}
       aria-label={`Conversão de ${conversao.origem} para ${conversao.destino}: ${conversao.taxa}%`}
@@ -271,7 +274,10 @@ function ColunaResumo({
       // O fade da coluna INTEIRA, cards inclusive: escalonar também cada cartão
       // dentro dela somaria duas esperas na mesma tela e a última coluna só
       // assentaria depois de um segundo.
-      style={{ animationDelay: atrasoDaEtapa(ordem) }}
+      // A animação usa transform e cria um stacking context por coluna. A
+      // coluna anterior precisa ficar acima da próxima para a pílula, que
+      // atravessa metade do vão, nunca ser coberta pelo irmão seguinte.
+      style={{ animationDelay: atrasoDaEtapa(ordem), zIndex: 100 - ordem }}
       aria-label={etapa.nome}
     >
       {conversao && <PassoConversao conversao={conversao} />}
@@ -623,7 +629,8 @@ export default function Inicio({
   // real — a ordem dentro da etapa não é persistida (não há coluna `ordem` em
   // oportunidades), só o `etapa_id`, e esse o arraste acerta sempre.
   const [filtros, setFiltros] = useState<Filtros>(filtrosVazios);
-  const temFiltro = contarFiltrosAtivos(filtros) > 0;
+  const [filtroCampanhas, setFiltroCampanhas] = useState<FiltroCampanhas>(filtroCampanhasVazio);
+  const temFiltro = contarFiltrosAtivos(filtros) > 0 || filtroCampanhas.campanha !== null;
   // Aberto/fechado do painel de filtros, que sobe por cima do quadro. Mora
   // junto de `filtros` porque os dois são o mesmo assunto, e porque deixa o
   // painel ser fechado de fora quando fizer falta — hoje ninguém fecha.
@@ -634,7 +641,7 @@ export default function Inicio({
     const mapa: Quadro = {};
     for (const etapaId of Object.keys(quadro)) {
       mapa[etapaId] = quadro[etapaId].filter((o) =>
-        passaNoFiltro(
+        passaNoFiltroCampanhas(filtroCampanhas, o.campos, contatoPorId.get(o.contato_id)?.origem_campos) && passaNoFiltro(
           o,
           filtros,
           contatoPorId,
@@ -644,7 +651,7 @@ export default function Inicio({
       );
     }
     return mapa;
-  }, [quadro, temFiltro, filtros, contatoPorId, dados.segmentosDoContato, tagsDoContato]);
+  }, [quadro, temFiltro, filtros, filtroCampanhas, contatoPorId, dados.segmentosDoContato, tagsDoContato]);
 
   // As oportunidades que o quadro mostra AGORA. É delas que saem as métricas —
   // com um filtro ligado, um ticket médio calculado sobre as 173 enquanto a
@@ -854,6 +861,7 @@ export default function Inicio({
                 className="flex min-h-0 flex-1 flex-col"
                 aria-label={`Quadro · ${funil.nome}`}
               >
+                <DashboardMetaAds corSelecionada={tomEscuro(funil?.cor)} filtro={filtroCampanhas} aoFiltrar={(filtro) => { setFiltroCampanhas(filtro); limparSelecao(); }} />
                 {/* Filtros no topo do quadro, e não na barra do topo da
                     página: o que eles recortam são as colunas logo abaixo, e é
                     ali que a pessoa olha ao mexer neles. Sem o seletor de funil
@@ -985,15 +993,15 @@ export default function Inicio({
         aoLimpar={limparSelecao}
       />
 
-      {/* Irmã da coluna de conteúdo, não sobreposta a ela: é o `modo="lateral"`
-          que faz o painel ocupar espaço de verdade. A frase do contexto diz o
-          que está na tela agora — não vão dados aqui, quem lê o CRM são as
-          ferramentas do servidor. */}
+      {/* Chat flutuante enxuto: só campo e balões sobre o dashboard. */}
       <ChatIa
-        modo="lateral"
+        compacto
+        // A marca da IA sai na cor do funil ABERTO: o tom mais escuro dele,
+        // o mesmo da última etapa do quadro (lib/cores-funil.ts).
+        corIcone={tomEscuro(funil?.cor)}
         usaContextos
         // Quem abre a análise aqui é o "+" da sidebar, ao lado de "Análises".
-        botaoFlutuante={false}
+        botaoFlutuante
         // Com uma cadência aberta, o ?ia= é dela — passar aqui também abriria
         // dois painéis na mesma conversa, e o escopo do funil nem acharia a
         // linha (lerConversaIa filtra por escopo).

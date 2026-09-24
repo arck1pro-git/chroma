@@ -23,6 +23,17 @@ export type NovoContato = {
   pais: string;
 };
 
+/** Anotação é append-only nesta interface: cria, mas não oferece edição ou exclusão. */
+export async function adicionarAnotacao(contatoId: string, textoBruto: string) {
+  const { usuario } = await exigirModulo("inicio");
+  if (!/^[0-9a-f-]{36}$/i.test(contatoId)) throw new Error("Contato inválido.");
+  const texto = textoBruto.trim().slice(0, 4000);
+  if (!texto) throw new Error("Escreva uma anotação.");
+  await sql`INSERT INTO anotacoes (contato_id, texto, autor_id)
+            VALUES (${contatoId}::uuid, ${texto}, ${usuario.id}::uuid)`;
+  revalidatePath("/");
+}
+
 export async function criarContato(dados: NovoContato): Promise<string> {
   await exigirModulo("inicio");
   const nome = dados.nome.trim();

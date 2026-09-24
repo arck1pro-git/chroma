@@ -23,6 +23,7 @@ export type ChaveModulo =
   | "emails"
   | "automacoes"
   | "campanhas"
+  | "templates"
   | "blog"
   | "webhooks"
   | "documentos"
@@ -123,6 +124,14 @@ export const MODULOS: readonly Modulo[] = [
     escopavel: false,
     naBarra: true,
     descricao: "Campanhas de mídia.",
+  },
+  {
+    chave: "templates",
+    rotulo: "Templates",
+    href: "/templates",
+    escopavel: false,
+    naBarra: true,
+    descricao: "Templates oficiais do WhatsApp enviados para aprovação na Meta.",
   },
   {
     chave: "blog",

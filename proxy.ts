@@ -25,6 +25,7 @@ const PUBLICAS_EXATAS = new Set([
   // Entrada do WhatsApp. Confere UAZAPI_WEBHOOK_SECRET na querystring, dentro
   // do próprio handler — quem chama é a uazapi, que não tem como ter cookie.
   "/api/uazapi/webhook",
+  "/api/meta/whatsapp/webhook",
 ]);
 
 const PUBLICAS_PREFIXO = [
@@ -45,6 +46,7 @@ const SERVICO_EXATAS = new Set([
   "/api/blogs/rss/gerar",
   "/api/blogs/rss/pauta",
   "/api/midia/fila",
+  "/api/meta/whatsapp/processar",
   // O motor pedindo o envio de uma mensagem da cadência. Quem tem a credencial
   // da uazapi é o CRM, não o n8n — ver app/api/automacoes/enviar/route.ts.
   "/api/automacoes/enviar",

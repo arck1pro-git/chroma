@@ -1,0 +1,3 @@
+"use client";
+import ChatIa from "../components/chat-ia";
+export default function IaCampanhas({aoAplicar}:{aoAplicar:()=>void}){return <ChatIa endpoint="/api/ia/campanhas" escopo="campanhas" titulo="Montar com IA" rotulo="Montar campanha com IA" dica="Descreva público, template, prazo e o que fazer quando responder ou não responder." sugestoes={["Crie uma campanha para os leads do segmento Site e registre conversão quando responderem","Monte uma campanha que espere 3 dias e crie oportunidade para quem responder","Quero marcar quem não responder com uma tag"]} campo="Descreva a campanha…" contexto="construtor de campanhas oficiais do WhatsApp" aoAplicar={aoAplicar} compacto/>}

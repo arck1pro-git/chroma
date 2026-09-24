@@ -947,13 +947,13 @@ export default function PainelSubetapas({
           que sobra em volta. Escurecer aqui não separava nada que o próprio
           painel, opaco e ocupando quase toda a área, já não separe. */}
       <div
-        className="veu-surge absolute inset-0 z-[60] backdrop-blur-md"
+        className="veu-surge absolute inset-0 z-[200] backdrop-blur-md"
         onClick={aoFechar}
         aria-hidden="true"
       />
 
       <section
-        className="surge absolute inset-3 z-[61] flex flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl md:inset-6 dark:border-zinc-800 dark:bg-zinc-950"
+        className="surge absolute inset-3 z-[201] flex flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl md:inset-6 dark:border-zinc-800 dark:bg-zinc-950"
         role="dialog"
         aria-modal="true"
         aria-label={`Cadência de ${etapa.nome}`}
@@ -1340,7 +1340,8 @@ export default function PainelSubetapas({
           colunas novas. z-[70] para ficar acima do painel (z-61). */}
       {cadencia && (
         <ChatIa
-          camada="z-[70]"
+          camada="z-[210]"
+          compacto
           endpoint="/api/ia/automacoes"
           escopo={`cadencia:${cadencia.fluxoId}`}
           conversaInicial={conversaInicial}

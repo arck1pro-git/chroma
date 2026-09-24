@@ -81,3 +81,15 @@ export function corValida(cor: string | null | undefined): TomFunil {
 export function amostraDoTom(cor: string): string {
   return `bg-${corValida(cor)}-500`;
 }
+
+/**
+ * O tom mais ESCURO da cor do funil — o mesmo que a última etapa recebe, já que
+ * `tomDaEtapa` sempre fecha a rampa no fim.
+ *
+ * Existe separado porque quem quer "a cor escura deste funil" nem sempre tem
+ * índice e total de etapas para passar: a marca da IA no painel lateral
+ * (app/components/chat-ia.tsx) sabe do funil, não das etapas dele.
+ */
+export function tomEscuro(cor: string | null | undefined): string {
+  return `bg-${corValida(cor)}-${RAMPA[RAMPA.length - 1]}`;
+}

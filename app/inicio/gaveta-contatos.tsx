@@ -35,6 +35,7 @@ import {
 import { CamposDoContato } from "../components/campos-personalizados";
 import FormContato, { type DadosContato } from "../contatos/form-contato";
 import {
+  adicionarAnotacao,
   atualizarContato,
   criarContato,
   excluirContato,
@@ -159,6 +160,8 @@ export default function GavetaContatos({
 
   const [termo, setTermo] = useState("");
   const [abertoId, setAbertoId] = useState<string | null>(null);
+  const [anotando, setAnotando] = useState(false);
+  const [textoAnotacao, setTextoAnotacao] = useState("");
 
   // null = formulário fechado; "novo" = criar; objeto = editar aquele contato.
   const [form, setForm] = useState<"novo" | Contato | null>(null);
@@ -245,6 +248,17 @@ export default function GavetaContatos({
     });
   }, [abertoId, router]);
 
+  function salvarAnotacao() {
+    if (!abertoId || !textoAnotacao.trim()) return;
+    const texto = textoAnotacao;
+    iniciarGravacao(async () => {
+      await adicionarAnotacao(abertoId, texto);
+      setTextoAnotacao("");
+      setAnotando(false);
+      router.refresh();
+    });
+  }
+
   // Esc desce um nível por vez: dos dados volta pra lista, da lista fecha a
   // gaveta. Fechar direto perderia a busca digitada sem o usuário ter pedido.
   useEffect(() => {
@@ -264,20 +278,20 @@ export default function GavetaContatos({
     <>
       {/* mesmo véu da ficha de contatos: escurece o resto e fecha ao clicar */}
       <div
-        className="veu-surge fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
+        className="veu-surge fixed inset-0 z-[90] bg-transparent"
         onClick={aoFechar}
         aria-hidden="true"
       />
 
       <aside
-        className="ficha-entra fixed bottom-4 right-4 top-4 z-50 flex w-[25rem] max-w-[92vw] flex-col overflow-hidden rounded-4xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+        className="ficha-entra fixed bottom-4 right-4 top-4 z-[100] flex w-[25rem] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
         aria-label={aberto ? `Dados de ${aberto.nome}` : "Contatos"}
       >
         {aberto ? (
           <header className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
             <button
               type="button"
-              onClick={() => setAbertoId(null)}
+              onClick={() => {setAbertoId(null);setAnotando(false);setTextoAnotacao("")}}
               aria-label="Voltar para a lista de contatos"
               className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
             >
@@ -369,6 +383,27 @@ export default function GavetaContatos({
                 tags={tagsDoContato.get(aberto.id) ?? semTags}
               />
               <CamposDoContato contatoId={aberto.id} definicoes={camposContato} />
+              <div className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+                {anotando ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={textoAnotacao}
+                      onChange={(e)=>setTextoAnotacao(e.target.value)}
+                      maxLength={4000}
+                      rows={3}
+                      autoFocus
+                      placeholder="Escreva uma anotação sobre este lead…"
+                      className="w-full resize-none rounded-lg border border-zinc-300 bg-white px-3 py-2 text-[12px] leading-relaxed text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button type="button" onClick={()=>{setAnotando(false);setTextoAnotacao("")}} className="rounded-lg px-3 py-1.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900">Cancelar</button>
+                      <button type="button" disabled={gravando||!textoAnotacao.trim()} onClick={salvarAnotacao} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[11px] font-medium text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900">Salvar anotação</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={()=>setAnotando(true)} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-[11px] font-medium text-zinc-600 transition hover:border-zinc-400 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-500 dark:hover:text-zinc-50"><Plus className="size-3.5"/>Adicionar anotação</button>
+                )}
+              </div>
               <SecoesContato
                 oportunidades={oportunidadesDoContato.get(aberto.id) ?? []}
                 anotacoes={anotacoesDoContato.get(aberto.id) ?? []}
