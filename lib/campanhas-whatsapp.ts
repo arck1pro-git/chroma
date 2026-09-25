@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { enviarTemplateMeta } from "@/lib/meta";
+import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 
 export type AcaoCampanha =
   | { tipo: "adicionar_tag"; tagId: string }
@@ -61,8 +62,11 @@ export async function executarAcoes(execucao: Execucao, ramo: "respondeu" | "exp
         await sql`INSERT INTO contato_segmentos (contato_id, segmento_id) VALUES (${execucao.contato_id}::uuid, ${acao.segmentoId}::uuid) ON CONFLICT DO NOTHING`;
       } else if (acao.tipo === "criar_oportunidade") {
         const nome = acao.nome.replaceAll("{{nome}}", execucao.contato_nome);
-        await sql`INSERT INTO oportunidades (nome, contato_id, valor, status, funil_id, etapa_id)
-                  VALUES (${nome}, ${execucao.contato_id}::uuid, 0, 'aberta', ${acao.funilId}::uuid, ${acao.etapaId}::uuid)`;
+        const [op] = await sql`INSERT INTO oportunidades (nome, contato_id, valor, status, funil_id, etapa_id)
+                  VALUES (${nome}, ${execucao.contato_id}::uuid, 0, 'aberta', ${acao.funilId}::uuid, ${acao.etapaId}::uuid)
+                  RETURNING id`;
+        // Nasceu dentro da etapa: evento da Meta dela, se configurado.
+        eventoAoEntrarNaEtapa(op.id, acao.etapaId);
       } else if (acao.tipo === "registrar_lead") {
         await sql`UPDATE campanha_whatsapp_execucoes SET conversao = true WHERE id = ${execucao.id}::uuid`;
       }

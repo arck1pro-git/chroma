@@ -22,7 +22,7 @@ import type {
   Tag,
   Usuario,
 } from "../data";
-import { brl, dataCurta, dataHora } from "../formato";
+import { brl, dataCurta, dataHora, localizacao } from "../formato";
 
 // Partes SÓ DE LEITURA da ficha do contato, separadas para a gaveta da tela
 // inicial mostrar os mesmos dados sem herdar o resto da ficha (edição, véu,
@@ -85,9 +85,7 @@ export function CamposContato({ contato }: { contato: Contato }) {
     <div className="flex flex-col gap-2 px-5 py-4">
       <Campo Icone={Phone}>{contato.whatsapp || "—"}</Campo>
       <Campo Icone={AtSign}>{contato.email || "—"}</Campo>
-      <Campo Icone={MapPin}>
-        {contato.cidade}/{contato.estado} · {contato.pais}
-      </Campo>
+      <Campo Icone={MapPin}>{localizacao(contato, true) || "—"}</Campo>
       <Campo Icone={CalendarDays}>
         Criado em {dataCurta(contato.data_criacao)}
       </Campo>

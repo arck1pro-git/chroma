@@ -184,22 +184,30 @@ export default function Chat({
     };
   }, [router]);
 
-  // Assim que o servidor confirma o envio, a mensagem real entra em dados; limpo
+  // Assim que o servidor confirma o envio, a mensagem real entra em dados; tiro
   // os otimistas cujo texto+atendimento já apareceu na lista real.
-  useEffect(() => {
-    if (otimistas.length === 0) return;
-    setOtimistas((atuais) =>
-      atuais.filter(
-        (o) =>
-          !dados.mensagens.some(
-            (m) =>
-              m.atendimento_id === o.atendimento_id &&
-              m.origem === "agente" &&
-              m.texto === o.texto,
-          ),
-      ),
-    );
-  }, [dados.mensagens]); // eslint-disable-line react-hooks/exhaustive-deps
+  //
+  // DURANTE o render, quando dados.mensagens troca — o padrão do React para
+  // estado que depende de prop. Num efeito (como era), a limpeza só rodava
+  // depois da pintura: por um quadro a mensagem aparecia duas vezes, a real e a
+  // otimista juntas.
+  const [mensagensVistas, setMensagensVistas] = useState(dados.mensagens);
+  if (mensagensVistas !== dados.mensagens) {
+    setMensagensVistas(dados.mensagens);
+    if (otimistas.length > 0) {
+      setOtimistas((atuais) =>
+        atuais.filter(
+          (o) =>
+            !dados.mensagens.some(
+              (m) =>
+                m.atendimento_id === o.atendimento_id &&
+                m.origem === "agente" &&
+                m.texto === o.texto,
+            ),
+        ),
+      );
+    }
+  }
 
   // Última mensagem de cada conversa, para a prévia e a ordenação da lista.
   const ultimaPorId = useMemo(() => {
@@ -1376,10 +1384,16 @@ function NovoAtendimento({
   const filtrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     if (!termo) return contatos;
+    // email e whatsapp podem vir nulos do banco (o tipo Contato diz string):
+    // contato do WhatsApp quase nunca tem email, e `c.email.toLowerCase()`
+    // derrubava a busca no primeiro que não casasse pelo nome. O telefone entra
+    // na busca porque é o que identifica quem chegou pelo chat.
+    const digitos = termo.replace(/\D/g, "");
     return contatos.filter(
       (c) =>
         c.nome.toLowerCase().includes(termo) ||
-        c.email.toLowerCase().includes(termo),
+        (c.email ?? "").toLowerCase().includes(termo) ||
+        (digitos.length >= 3 && (c.whatsapp ?? "").replace(/\D/g, "").includes(digitos)),
     );
   }, [busca, contatos]);
 

@@ -27,6 +27,11 @@ import { midiaDoEvento, baixarPendentesEmSegundoPlano } from "@/lib/midia";
 
 // ── Extração tolerante ──────────────────────────────────────────────────────
 // Aceita o evento solto ou dentro de { message } / { data }.
+//
+// `any` de propósito neste bloco: o payload da uazapi não tem contrato — o
+// mesmo campo muda de lugar e de nome entre versões — e estas funções existem
+// justamente para ler qualquer forma sem quebrar.
+/* eslint-disable @typescript-eslint/no-explicit-any */
 function corpoDoEvento(payload: any): any {
   return payload?.message ?? payload?.data ?? payload;
 }
@@ -44,6 +49,7 @@ function statusRecibo(ev: any): "entregue" | "lido" | null {
   if (/deliver|entreg|receiv|2/.test(s)) return "entregue";
   return null;
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export async function POST(req: NextRequest) {
   // 1. Segredo.

@@ -204,10 +204,14 @@ function atrasoDaEtapa(i: number) {
   return `${ATRASO_ETAPAS + i * PASSO_ETAPA}ms`;
 }
 
+// z-10, e não mais: basta para a pílula passar por cima da coluna vizinha (que
+// é `relative` sem z). Era z-50 quando cada coluna prendia o z-index numa camada
+// própria (.surge com `both`, ver app/globals.css); solta, z-50 furava o painel
+// de filtros e o véu dele (z-40/50), que vêm antes das colunas no DOM.
 function PassoConversao({ conversao }: { conversao: Conversao }) {
   return (
     <span
-      className="absolute right-0 top-0 z-50 -translate-y-1/2 translate-x-1/2 whitespace-nowrap rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[13px] font-semibold tabular-nums text-zinc-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+      className="absolute right-0 top-0 z-10 -translate-y-1/2 translate-x-1/2 whitespace-nowrap rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[13px] font-semibold tabular-nums text-zinc-900 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
       // dois canais: o title pro mouse, o aria-label pro leitor de tela
       title={`${conversao.seguiram} de ${conversao.entraram} seguiram de ${conversao.origem} para ${conversao.destino}`}
       aria-label={`Conversão de ${conversao.origem} para ${conversao.destino}: ${conversao.taxa}%`}
@@ -501,7 +505,7 @@ export default function Inicio({
 
   // O quadro nasce do banco e vive em estado: mover um card reordena aqui na
   // hora (palpite otimista, as métricas recalculam junto) e o aoSoltar grava
-  // de verdade via moverOportunidade. O efeito logo abaixo resincroniza sempre
+  // de verdade via moverOportunidade. O bloco logo abaixo resincroniza sempre
   // que `dados` mudar (revalidatePath de uma action, inclusive a nossa) — sem
   // ele, um card corrigido no banco depois de uma falha de rede não voltaria a
   // aparecer na coluna certa sem F5.
@@ -511,9 +515,14 @@ export default function Inicio({
     quadroDe(oportunidades, etapas),
   );
 
-  useEffect(() => {
+  // Resincronia DURANTE o render, quando as props trocam — o padrão do React
+  // para estado derivado de prop. Num efeito (como era), a tela pintava um
+  // quadro com as colunas velhas antes de corrigir.
+  const [origemQuadro, setOrigemQuadro] = useState({ oportunidades, etapas });
+  if (origemQuadro.oportunidades !== oportunidades || origemQuadro.etapas !== etapas) {
+    setOrigemQuadro({ oportunidades, etapas });
     setQuadro(quadroDe(oportunidades, etapas));
-  }, [oportunidades, etapas]);
+  }
 
   const oportunidadesAtuais = useMemo(
     () => Object.values(quadro).flat(),

@@ -79,21 +79,27 @@ export function CamposDoContato({
   contatoId: string;
   definicoes: CampoPersonalizado[];
 }) {
-  const [valores, setValores] = useState<ValoresPersonalizados | null>(null);
+  // Os valores guardam DE QUEM são. Trocar de contato não precisa zerar nada no
+  // efeito: o que ficou é de outro contatoId e simplesmente deixa de valer —
+  // sem o reset síncrono, que pintava um quadro a mais antes da busca.
+  const [carregado, setCarregado] = useState<{
+    contatoId: string;
+    valores: ValoresPersonalizados;
+  } | null>(null);
 
   useEffect(() => {
     let vivo = true;
-    setValores(null);
     camposDoContato(contatoId)
-      .then((v) => vivo && setValores(v))
+      .then((v) => vivo && setCarregado({ contatoId, valores: v }))
       // Falhou? Trata como "sem campos" — a ficha inteira não pode quebrar por
       // causa de um bloco complementar.
-      .catch(() => vivo && setValores({}));
+      .catch(() => vivo && setCarregado({ contatoId, valores: {} }));
     return () => {
       vivo = false;
     };
   }, [contatoId]);
 
+  const valores = carregado?.contatoId === contatoId ? carregado.valores : null;
   if (valores === null) return null;
   return <ListaCampos definicoes={definicoes} valores={valores} />;
 }

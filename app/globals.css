@@ -112,10 +112,19 @@ body {
   }
 }
 
-/* Fade padrão da interface: opacidade + 4px de subida. `both` segura o estado
-   inicial durante o atraso do escalonamento — sem ele o item pisca visível
-   antes da animação começar. Só opacity/transform: as duas propriedades que o
-   compositor anima sem recalcular layout. */
+/* Fade padrão da interface: opacidade + 4px de subida. Só opacity/transform: as
+   duas propriedades que o compositor anima sem recalcular layout.
+
+   `backwards`, e NUNCA `both` (vale para as três classes abaixo): `backwards`
+   segura o estado INICIAL durante o atraso do escalonamento, que é o que evita o
+   item piscar visível antes da animação começar. O `both` fazia isso e mais uma
+   coisa, que era o problema: prendia o estado FINAL para sempre. Um
+   `transform: translateY(0)` retido transforma o elemento numa camada isolada
+   (z-index de dentro não sai dela) e em referência para `position: fixed` (modal
+   dentro dele se posiciona em relação a ele, não à tela). Era isso que misturava
+   as gavetas com os cartões, escondia metade da pílula de conversão sob a coluna
+   vizinha e deixava a sidebar por cima de todo modal de página. O estado final é
+   igual ao natural, então soltar ele não muda nada na tela. */
 @keyframes surge {
   from {
     opacity: 0;
@@ -127,13 +136,13 @@ body {
   }
 }
 .surge {
-  animation: surge 0.18s ease-out both;
+  animation: surge 0.18s ease-out backwards;
 }
 
 /* Só opacidade, para <tr>: transform em table-row é inconsistente entre
    navegadores e desalinha a célula do cabeçalho sticky. */
 .surge-suave {
-  animation: veu-surge 0.16s ease-out both;
+  animation: veu-surge 0.16s ease-out backwards;
 }
 
 /* Fade ao trocar de módulo na sidebar. Quem dispara é app/template.tsx: o
@@ -148,10 +157,12 @@ body {
 
    Só opacity, sem translate: este elemento embrulha a página inteira, e empurrar
    tudo alguns pixels faria as rotas que rolam a janela piscarem barra de
-   rolagem. `both` evita o quadro em que o conteúdo aparece opaco antes de a
-   animação assumir. */
+   rolagem. `backwards` evita o quadro em que o conteúdo aparece opaco antes de
+   a animação assumir — e, ao contrário do `both` de antes, não deixa a página
+   inteira presa numa camada abaixo da sidebar depois que o fade termina (o
+   mesmo motivo de .surge, logo acima). */
 .pagina-surge {
-  animation: veu-surge 0.13s ease-out both;
+  animation: veu-surge 0.13s ease-out backwards;
 }
 
 /* Cores de série dos gráficos das Automações.

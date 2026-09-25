@@ -366,13 +366,16 @@ export function MenuLocalizacao({
       (!valor.pais || c.pais === valor.pais) &&
       (!valor.estado || c.estado === valor.estado),
   );
-  const paises = [...new Set(contatos.map((c) => c.pais))].sort();
-  const estados = [
-    ...new Set(
-      contatos.filter((c) => !valor.pais || c.pais === valor.pais).map((c) => c.estado),
-    ),
-  ].sort();
-  const cidades = [...new Set(daRegiao.map((c) => c.cidade))].sort();
+  // `filter(Boolean)`: país, estado e cidade vêm nulos do banco em contato que
+  // chegou pelo chat ou pelo webhook. Sem o filtro, o nulo virava uma opção em
+  // branco com value="" — a mesma do "Qualquer…" — e uma key nula no React.
+  const unicos = (valores: (string | null | undefined)[]) =>
+    [...new Set(valores.filter((v): v is string => Boolean(v)))].sort();
+  const paises = unicos(contatos.map((c) => c.pais));
+  const estados = unicos(
+    contatos.filter((c) => !valor.pais || c.pais === valor.pais).map((c) => c.estado),
+  );
+  const cidades = unicos(daRegiao.map((c) => c.cidade));
 
   const ativos =
     (valor.pais ? 1 : 0) + (valor.estado ? 1 : 0) + (valor.cidade ? 1 : 0);

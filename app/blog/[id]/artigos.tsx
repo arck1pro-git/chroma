@@ -186,7 +186,7 @@ export default function BlogArtigos({
                 icone={Link2}
                 rotulo="Conexão"
                 aberto={folha === "conexao"}
-                aoAbrir={() => setFolha("conexao")}
+                aoAbrir={() => setFolha((f) => (f === "conexao" ? null : "conexao"))}
               />
               {folha === "conexao" && blog && (
                 <PainelConexao
@@ -204,7 +204,7 @@ export default function BlogArtigos({
                 icone={Rss}
                 rotulo="RSS"
                 aberto={folha === "rss"}
-                aoAbrir={() => setFolha("rss")}
+                aoAbrir={() => setFolha((f) => (f === "rss" ? null : "rss"))}
               />
               {folha === "rss" && (
                 <PainelRss blogId={blogId} aoFechar={() => setFolha(null)} />
@@ -343,8 +343,9 @@ function BotaoFolha({
       onClick={aoAbrir}
       aria-expanded={aberto}
       // Aberto, o botão fica marcado: a folha sai dele, e sem isso não se sabe
-      // de qual dos dois. O véu do balão cobre o botão, então clicar nele de
-      // novo fecha pelo clique-fora — não precisa de alternância aqui.
+      // de qual dos dois. Quem chama passa um aoAbrir que ALTERNA: o balão não
+      // tem mais véu cobrindo o botão (ver Balao em ../pecas.tsx), então clicar
+      // nele de novo é o que fecha.
       className={`flex items-center gap-1.5 rounded-2xl border px-4 py-2.5 text-[12px] font-medium transition ${
         aberto
           ? "border-zinc-300 bg-zinc-50 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-50"

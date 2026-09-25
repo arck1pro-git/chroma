@@ -38,6 +38,10 @@ export type Etapa = {
   // posição, total de etapas) em carregarFunil. A coluna `etapas.cor` ainda
   // existe no banco e não é mais lida.
   cor: string;
+  // Evento da Meta enviado quando uma oportunidade ENTRA na etapa (NULL = não
+  // envia). Opcional no tipo porque só Configurações → Funis o carrega; o
+  // quadro e as outras telas não precisam dele.
+  meta_evento?: string | null;
 };
 
 export type Oportunidade = {

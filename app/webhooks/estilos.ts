@@ -46,8 +46,8 @@ export const SELO_RECEBIMENTO = {
   erro: "bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400",
 } as const;
 
-// A tabela de "quem passou": as mesmas classes da lista de Contatos
-// (app/contatos/lista.tsx), inclusive o border-separate — com collapse o
+// A tabela de "quem passou": as classes que vieram da antiga lista de Contatos
+// (removida com a rota /contatos), inclusive o border-separate — com collapse o
 // navegador descarta as bordas e as linhas somem ao rolar.
 export const cabecalhoTabela =
   "border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:border-zinc-800 dark:bg-black dark:text-zinc-500";

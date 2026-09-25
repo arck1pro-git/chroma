@@ -82,9 +82,12 @@ export default function FormContato({
     });
   }
 
+  // z-[320]: abre de dentro da gaveta de contatos, que está no <body> em
+  // z-[310] (app/components/camada-topo.tsx). Abaixo disso o formulário
+  // nasceria atrás da própria gaveta que o chamou.
   return (
     <div
-      className="veu-surge fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]"
+      className="veu-surge fixed inset-0 z-[320] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]"
       onClick={aoFechar}
       role="dialog"
       aria-modal="true"

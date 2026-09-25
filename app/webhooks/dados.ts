@@ -146,9 +146,11 @@ export async function detalheDoWebhook(id: string): Promise<DetalheWebhook> {
       SELECT to_char(d.dia, 'YYYY-MM-DD') AS dia,
              COALESCE(SUM((r.estado = 'ok')::int), 0)::int  AS ok,
              COALESCE(SUM((r.estado <> 'ok')::int), 0)::int AS falha
+      -- Dia de BRASÍLIA, não UTC: em UTC o lead que chega às 22h caía na barra
+      -- do dia seguinte, e "hoje" virava à meia-noite de Greenwich (21h aqui).
       FROM generate_series(
-             (now() AT TIME ZONE 'UTC')::date - 13,
-             (now() AT TIME ZONE 'UTC')::date,
+             (now() AT TIME ZONE 'America/Sao_Paulo')::date - 13,
+             (now() AT TIME ZONE 'America/Sao_Paulo')::date,
              '1 day') AS d(dia)
       LEFT JOIN webhook_recebimentos r
         ON r.webhook_id = ${id}
@@ -158,8 +160,8 @@ export async function detalheDoWebhook(id: string): Promise<DetalheWebhook> {
        -- comparação por ::date obrigaria a ler todos os recebimentos da
        -- webhook para responder sobre 14 dias — numa tabela que, por decisão
        -- registrada em migration-webhooks.sql, cresce para sempre.
-       AND r.data_criacao >= (((now() AT TIME ZONE 'UTC')::date - 13)::timestamp AT TIME ZONE 'UTC')
-       AND (r.data_criacao AT TIME ZONE 'UTC')::date = d.dia
+       AND r.data_criacao >= (((now() AT TIME ZONE 'America/Sao_Paulo')::date - 13)::timestamp AT TIME ZONE 'America/Sao_Paulo')
+       AND (r.data_criacao AT TIME ZONE 'America/Sao_Paulo')::date = d.dia
       GROUP BY d.dia ORDER BY d.dia`,
     sql`
       SELECT count(*)::int AS total,

@@ -44,7 +44,7 @@ export type DadosFunis = {
 export async function carregarFunis(): Promise<DadosFunis> {
   const [funis, etapas] = await Promise.all([
     sql`SELECT id, nome, descricao, cor FROM funis ORDER BY data_criacao`,
-    sql`SELECT id, nome, funil_id, ordem, cor FROM etapas ORDER BY funil_id, ordem`,
+    sql`SELECT id, nome, funil_id, ordem, cor, meta_evento FROM etapas ORDER BY funil_id, ordem`,
   ]);
 
   const etapasPorFunil = new Map<string, Etapa[]>();

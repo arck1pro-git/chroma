@@ -1,13 +1,13 @@
 import { Clock, User } from "lucide-react";
 import type { Contato, Oportunidade, Tag, Usuario } from "../data";
-import { brl } from "../formato";
+import { brl, localizacao } from "../formato";
 
-// Cartão de oportunidade do kanban. Fica fora de funil.tsx porque a tela
-// inicial monta o mesmo quadro em modo leitura — os dois lugares têm que
-// mostrar o card idêntico, senão a home vira um segundo desenho pra manter.
+// Cartão de oportunidade do kanban. Arquivo próprio porque dois lugares montam
+// o mesmo cartão — o quadro da tela inicial e as colunas do painel de
+// subetapas —, e eles têm que mostrar o card idêntico.
 //
 // Recebe contato/responsável/tags já resolvidos em vez dos Maps: quem sabe de
-// onde vêm é o quadro (contexto no funil, props na home).
+// onde vêm é quem monta o quadro.
 export default function CartaoOportunidade({
   oportunidade,
   contato,
@@ -37,10 +37,10 @@ export default function CartaoOportunidade({
         <User className="size-3.5 shrink-0" aria-hidden="true" />
         <span className="truncate">
           {contato?.nome}
-          {contato && (
+          {localizacao(contato) && (
             <span className="text-zinc-400 dark:text-zinc-500">
               {" · "}
-              {contato.cidade}/{contato.estado}
+              {localizacao(contato)}
             </span>
           )}
         </span>

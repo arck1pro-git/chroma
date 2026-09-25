@@ -27,6 +27,7 @@ import {
 } from "@/lib/historico";
 import { abertaNoFunil } from "@/lib/oportunidades";
 import { inscreverNaCadenciaDaEtapa } from "@/lib/automacoes/repositorio";
+import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 
 export type ResultadoRecepcao = {
   status: number;
@@ -427,6 +428,9 @@ export async function receberLead(
         // aconteceu.
         await registrarOportunidadeCriada(oportunidadeId);
         resumo.push("oportunidade criada");
+        // Evento da Meta da etapa de entrada, se configurado. Roda depois da
+        // resposta (after): o formulário do site não espera a Meta.
+        eventoAoEntrarNaEtapa(oportunidadeId, criarLead.etapa_id);
 
         // O lead nasceu DENTRO de uma etapa: se ela tem cadência rodando, ele
         // entra nela agora. Falhar aqui não derruba a captação — o lead já está

@@ -47,9 +47,11 @@ export type IndiceBusca = Map<string, string>;
 export function indexarContatos(contatos: Contato[]): IndiceBusca {
   const indice: IndiceBusca = new Map();
   for (const c of contatos) {
+    // Só os campos presentes: com template direto, campo nulo virava a palavra
+    // "null" no texto buscável, e buscar "null" trazia todo contato sem email.
     indice.set(
       c.id,
-      normalizar(`${c.nome} ${c.email} ${c.whatsapp} ${c.cidade}`),
+      normalizar([c.nome, c.email, c.whatsapp, c.cidade].filter(Boolean).join(" ")),
     );
   }
   return indice;

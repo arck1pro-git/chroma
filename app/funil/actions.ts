@@ -30,6 +30,7 @@ import {
   registrarSegmento,
   registrarStatus,
 } from "@/lib/historico";
+import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 import { STATUS_OPORTUNIDADE, type StatusOportunidade } from "./status";
 
 // Mover card entre etapas persiste etapa_id + funil_id juntos. A FK composta
@@ -45,11 +46,13 @@ export async function moverOportunidade(
   funilId: string,
 ) {
   await exigirModulo("inicio");
-  await moverEtapaRegistrando(id, etapaId, funilId);
+  const mudou = await moverEtapaRegistrando(id, etapaId, funilId);
   // Entrar na etapa é entrar na cadência dela, se houver uma rodando. É o que
   // faz a cadência valer para "as próximas que entrarem" sem ninguém clicar em
   // nada — ver inscreverNaCadenciaDaEtapa.
   await entrarNaCadencia(id, etapaId);
+  // Só quando a etapa mudou: reordenar dentro da coluna não é entrar nela.
+  if (mudou) eventoAoEntrarNaEtapa(id, etapaId);
   revalidatePath("/");
 }
 
@@ -373,6 +376,7 @@ export async function criarOportunidade(
   await registrarOportunidadeCriada(nova.id);
   // Card criado JÁ DENTRO da etapa também é "entrou na etapa".
   await entrarNaCadencia(nova.id, etapaId);
+  eventoAoEntrarNaEtapa(nova.id, etapaId);
   revalidatePath("/");
   return nova.id;
 }
@@ -603,7 +607,9 @@ export async function exportarOportunidades(
            f.nome AS funil, e.nome AS etapa,
            c.nome AS contato, c.whatsapp, c.email, c.cidade, c.estado,
            u.nome AS responsavel,
-           to_char(o.data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS criada_em
+           -- dia de Brasília: em UTC, a oportunidade criada às 22h saía com a
+           -- data do dia seguinte na planilha
+           to_char(o.data_criacao AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS criada_em
     FROM oportunidades o
     JOIN funis  f ON f.id = o.funil_id
     JOIN etapas e ON e.id = o.etapa_id

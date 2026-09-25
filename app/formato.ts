@@ -1,3 +1,20 @@
+/**
+ * "Porto Belo/SC", "Porto Belo", "SC" — ou "" quando não há nada.
+ *
+ * O tipo Contato diz `string`, mas cidade, estado e país são nullable no banco:
+ * quem entra pelo chat ou pelo webhook costuma chegar só com nome e telefone.
+ * Montar `${cidade}/${estado}` direto escrevia "null/null" no cartão do quadro,
+ * na gaveta e na ficha. Quem chama decide o que mostrar no lugar do vazio.
+ */
+export function localizacao(
+  c: { cidade?: string | null; estado?: string | null; pais?: string | null } | null | undefined,
+  comPais = false,
+): string {
+  if (!c) return "";
+  const lugar = [c.cidade, c.estado].map((v) => v?.trim()).filter(Boolean).join("/");
+  return [lugar, comPais ? c.pais?.trim() : ""].filter(Boolean).join(" · ");
+}
+
 export function brl(valor: number) {
   return "R$ " + valor.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }

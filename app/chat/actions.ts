@@ -18,6 +18,7 @@ import { sql } from "@/lib/db";
 import { enviarMidia, enviarTexto, instanciaPorNumero } from "@/lib/uazapi";
 import { comCaminho, lerArquivo } from "@/lib/documentos";
 import { soDigitos } from "@/lib/telefone";
+import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 
 export async function enviarMensagem(
   atendimentoId: string,
@@ -285,6 +286,8 @@ export async function criarOportunidade(
       (${n}, ${contatoId}, ${valor}, ${responsavelId || null}, 'aberta', ${funilId}, ${etapaId})
     RETURNING id`;
 
+  // Nasceu dentro da etapa: conta como entrada (evento da Meta, se configurado).
+  eventoAoEntrarNaEtapa(op.id, etapaId);
   revalidatePath("/chat");
   revalidatePath("/");
   return op.id;

@@ -24,7 +24,7 @@ import type {
   Tag,
   Usuario,
 } from "../data";
-import { iniciais } from "../formato";
+import { iniciais, localizacao } from "../formato";
 import { normalizar } from "../filtros-comuns";
 import { indexarContatos } from "../contatos/filtros";
 import {
@@ -33,6 +33,7 @@ import {
   SecoesContato,
 } from "../contatos/detalhes";
 import { CamposDoContato } from "../components/campos-personalizados";
+import CamadaTopo from "../components/camada-topo";
 import FormContato, { type DadosContato } from "../contatos/form-contato";
 import {
   adicionarAnotacao,
@@ -274,17 +275,21 @@ export default function GavetaContatos({
     return () => document.removeEventListener("keydown", aoTeclar);
   }, [abertoId, aoFechar, form]);
 
+  // No <body>, pela CamadaTopo: dentro da página a gaveta dividia camada com os
+  // cartões do quadro (ver app/components/camada-topo.tsx).
   return (
-    <>
-      {/* mesmo véu da ficha de contatos: escurece o resto e fecha ao clicar */}
+    <CamadaTopo>
+      {/* mesmo véu da ficha da oportunidade: escurece o resto e fecha ao
+          clicar. Era transparente — e no escuro a gaveta tem a MESMA cor da
+          página, então nada a separava dos cartões de fundo. */}
       <div
-        className="veu-surge fixed inset-0 z-[90] bg-transparent"
+        className="veu-surge fixed inset-0 z-[300] bg-black/40 backdrop-blur-[1px]"
         onClick={aoFechar}
         aria-hidden="true"
       />
 
       <aside
-        className="ficha-entra fixed bottom-4 right-4 top-4 z-[100] flex w-[25rem] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+        className="ficha-entra fixed bottom-4 right-4 top-4 z-[310] flex w-[25rem] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
         aria-label={aberto ? `Dados de ${aberto.nome}` : "Contatos"}
       >
         {aberto ? (
@@ -303,7 +308,7 @@ export default function GavetaContatos({
                 {aberto.nome}
               </h2>
               <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                {aberto.cidade}/{aberto.estado}
+                {localizacao(aberto) || "Sem localização"}
               </p>
             </div>
             {/* Editar fica no cabeçalho porque é a ação frequente. Excluir
@@ -468,7 +473,7 @@ export default function GavetaContatos({
                           {c.nome}
                         </span>
                         <span className="block truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                          {c.whatsapp || c.email || `${c.cidade}/${c.estado}`}
+                          {c.whatsapp || c.email || localizacao(c) || "Sem contato cadastrado"}
                           {tags.length > 0 && ` · ${tags[0].nome}`}
                           {tags.length > 1 && ` +${tags.length - 1}`}
                         </span>
@@ -517,6 +522,6 @@ export default function GavetaContatos({
           aoFechar={() => setForm(null)}
         />
       )}
-    </>
+    </CamadaTopo>
   );
 }

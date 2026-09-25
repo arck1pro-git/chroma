@@ -15,10 +15,14 @@ type Cliente = ReturnType<typeof postgres>;
 // Tipo permissivo do `sql` exportado: como tagged-template resolve pra any[]
 // (igual o driver anterior fazia), então os `as Tipo[]` nos dados.ts seguem
 // válidos. Os utilitários (unsafe/end/array…) ficam disponíveis pelo index.
+// O `any` é o ponto do tipo: trocar por `unknown` quebraria cada acesso a
+// coluna (`linha.id`) do projeto, que hoje confia no retorno solto.
+/* eslint-disable @typescript-eslint/no-explicit-any */
 type SqlPermissivo = ((
   strings: TemplateStringsArray,
   ...values: unknown[]
 ) => Promise<any[]>) & { [k: string]: any };
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 let cliente: Cliente | null = null;
 

@@ -69,13 +69,17 @@ export async function registrarOportunidadeCriada(oportunidadeId: string) {
  * Arraste que solta o card na mesma etapa não vira linha: o `IS DISTINCT FROM`
  * embaixo descarta, senão o histórico encheria de "movida de Proposta para
  * Proposta" a cada reordenação.
+ *
+ * Devolve se a etapa MUDOU — é a mesma condição da linha de histórico, então
+ * sai do RETURNING dela. Quem dispara efeito de "entrou na etapa" (o evento da
+ * Meta) precisa disso: reordenar dentro da coluna não é entrar.
  */
 export async function moverEtapaRegistrando(
   oportunidadeId: string,
   etapaId: string,
   funilId: string,
-) {
-  await sql`
+): Promise<boolean> {
+  const registradas = await sql`
     WITH antes AS (
       SELECT id, contato_id, etapa_id FROM oportunidades WHERE id = ${oportunidadeId}
     ),
@@ -92,7 +96,9 @@ export async function moverEtapaRegistrando(
     FROM antes a
     LEFT JOIN etapas de   ON de.id = a.etapa_id
     LEFT JOIN etapas para ON para.id = ${etapaId}
-    WHERE a.etapa_id IS DISTINCT FROM ${etapaId}::uuid`;
+    WHERE a.etapa_id IS DISTINCT FROM ${etapaId}::uuid
+    RETURNING oportunidade_id`;
+  return registradas.length > 0;
 }
 
 // ── Fluxo ───────────────────────────────────────────────────────────────────

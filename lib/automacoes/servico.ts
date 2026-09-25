@@ -8,7 +8,6 @@
 // ANTES do primeiro disparo real (§7, item 7) — é isto aqui.
 
 import { timingSafeEqual } from "node:crypto";
-import { sql } from "@/lib/db";
 
 // ── Token de serviço ────────────────────────────────────────────────────────
 

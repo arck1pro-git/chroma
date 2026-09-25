@@ -16,6 +16,7 @@ import { headers } from "next/headers";
 import { sql } from "@/lib/db";
 import { corValida } from "@/lib/cores-funil";
 import { enderecoDoCrm } from "@/lib/endereco";
+import { NOME_EVENTO_META } from "@/lib/meta-eventos-nomes";
 
 export async function criarFunil(
   nome: string,
@@ -113,6 +114,28 @@ export async function editarEtapa(id: string, nome: string): Promise<void> {
   await sql`UPDATE etapas SET nome = ${n} WHERE id = ${id}`;
   revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
+}
+
+/**
+ * Qual evento da Meta a etapa envia quando uma oportunidade entra nela.
+ * `null` desliga. O envio em si mora em lib/meta-eventos.ts.
+ *
+ * Mudar o evento não reenvia nada para quem já está na etapa: o gatilho é a
+ * ENTRADA, e quem já entrou entrou antes de a etapa mandar alguma coisa.
+ */
+export async function definirEventoMetaDaEtapa(
+  id: string,
+  evento: string | null,
+): Promise<void> {
+  await exigirModulo("configuracoes");
+  const e = evento?.trim() || null;
+  if (e && !NOME_EVENTO_META.test(e)) {
+    throw new Error(
+      "Nome de evento inválido: comece com letra e use só letras, números e _ (até 50).",
+    );
+  }
+  await sql`UPDATE etapas SET meta_evento = ${e} WHERE id = ${id}`;
+  revalidatePath("/configuracoes", "layout");
 }
 
 // Recebe os ids na ordem final (é o que o drag-and-drop já resolveu na tela)

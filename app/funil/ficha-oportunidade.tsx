@@ -37,7 +37,7 @@ import type {
   Tag,
   Usuario,
 } from "../data";
-import { brl, dataCurta, dataHora } from "../formato";
+import { brl, dataCurta, dataHora, localizacao } from "../formato";
 import {
   anexarAtendimento,
   automacoesDaOportunidade,
@@ -48,6 +48,7 @@ import {
   retomarAutomacao,
 } from "./actions";
 import { STATUS_OPORTUNIDADE, type StatusOportunidade } from "./status";
+import CamadaTopo from "../components/camada-topo";
 import type { AutomacaoDaEntidade } from "@/lib/automacoes/repositorio";
 import { CamposDoContato, ListaCampos } from "../components/campos-personalizados";
 
@@ -300,19 +301,24 @@ export default function FichaOportunidade({
 
   const noCliente = aba === "cliente" && contato;
 
+  // No <body>, pela CamadaTopo: dentro da página a ficha dividia camada com os
+  // cartões do quadro (ver app/components/camada-topo.tsx).
   return (
-    <>
+    <CamadaTopo>
       <div
-        className="veu-surge fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
+        className="veu-surge fixed inset-0 z-[300] bg-black/40 backdrop-blur-[1px]"
         onClick={aoFechar}
         aria-hidden="true"
       />
 
       <aside
-        className="ficha-entra fixed bottom-4 right-4 top-4 z-50 flex w-[26rem] max-w-[92vw] flex-col overflow-y-auto rounded-4xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
+        className="ficha-entra fixed bottom-4 right-4 top-4 z-[310] flex w-[26rem] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
         aria-label={`Oportunidade ${oportunidade.nome}`}
       >
-        <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-950">
+        {/* Mesma casca da gaveta de contatos: caixa que não rola, cabeçalho fixo e
+            só o miolo rolando. Antes a caixa inteira rolava dentro de um canto
+            de 32px, e a barra de rolagem era cortada nas curvas. */}
+        <header className="shrink-0 border-b border-zinc-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex items-start gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
               {noCliente ? (
@@ -329,8 +335,8 @@ export default function FichaOportunidade({
               </h2>
               <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
                 {noCliente
-                  ? `${contato?.cidade}/${contato?.estado}`
-                  : `${funil?.nome} · ${etapa?.nome}`}
+                  ? localizacao(contato) || "Sem localização"
+                  : [funil?.nome, etapa?.nome].filter(Boolean).join(" · ")}
               </p>
             </div>
             <button
@@ -366,6 +372,8 @@ export default function FichaOportunidade({
             })}
           </div>
         </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
 
         {aba === "oportunidade" && (
           <>
@@ -449,7 +457,7 @@ export default function FichaOportunidade({
                       {contato.nome}
                     </span>
                     <span className="block truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                      {contato.cidade}/{contato.estado} · ver dados do cliente
+                      {[localizacao(contato), "ver dados do cliente"].filter(Boolean).join(" · ")}
                     </span>
                   </span>
                   <ChevronRight
@@ -495,11 +503,11 @@ export default function FichaOportunidade({
         {noCliente && (
           <>
             <div className="flex flex-col gap-2 px-5 py-4">
-              <Campo Icone={Phone}>{contato.whatsapp}</Campo>
-              <Campo Icone={AtSign}>{contato.email}</Campo>
-              <Campo Icone={MapPin}>
-                {contato.cidade}/{contato.estado} · {contato.pais}
-              </Campo>
+              {/* Mesmo "—" da ficha do contato (contatos/detalhes.tsx): campo
+                  vazio sem traço vira um ícone solto do lado de nada. */}
+              <Campo Icone={Phone}>{contato.whatsapp || "—"}</Campo>
+              <Campo Icone={AtSign}>{contato.email || "—"}</Campo>
+              <Campo Icone={MapPin}>{localizacao(contato, true) || "—"}</Campo>
               <Campo Icone={CalendarDays}>
                 Criado em {dataCurta(contato.data_criacao)}
               </Campo>
@@ -761,8 +769,9 @@ export default function FichaOportunidade({
             </Secao>
           </>
         )}
+        </div>
       </aside>
-    </>
+    </CamadaTopo>
   );
 }
 

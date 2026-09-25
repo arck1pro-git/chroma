@@ -7,7 +7,7 @@
 // porque as faixas (o que é "curto demais" num título SEO) não podem divergir
 // entre o painel do artigo e a prévia do modal: é a mesma régua do checklist em
 // lib/artigo.ts.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Trash2 } from "lucide-react";
 import { ARTIGO_STATUS_LABEL, type ArtigoStatus } from "@/lib/artigo";
 
@@ -236,35 +236,42 @@ export function Balao({
   medida?: string;
   children: React.ReactNode;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Clique fora fecha — e o clique SEGUE fazendo o que ia fazer. Antes era um
+  // apanhador invisível cobrindo a tela, que engolia o clique: com o balão
+  // aberto, o primeiro clique na sidebar ou na caixa de notícias só fechava a
+  // folha, e era preciso clicar de novo. Não sendo modal (a folha é consulta
+  // rápida), não há por que roubar o clique.
+  //
+  // A área que NÃO conta como "fora" é o pai inteiro — o botão que abriu e o
+  // balão —, porque o botão alterna sozinho: se o pointerdown nele fechasse,
+  // o click logo depois reabriria.
   useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => {
       if (e.key === "Escape") aoFechar();
     };
+    const aoApontar = (e: PointerEvent) => {
+      const area = ref.current?.parentElement;
+      if (area && !area.contains(e.target as Node)) aoFechar();
+    };
     window.addEventListener("keydown", aoTeclar);
-    return () => window.removeEventListener("keydown", aoTeclar);
+    document.addEventListener("pointerdown", aoApontar);
+    return () => {
+      window.removeEventListener("keydown", aoTeclar);
+      document.removeEventListener("pointerdown", aoApontar);
+    };
   }, [aoFechar]);
 
   return (
-    <>
-      {/* Apanhador de clique, SEM COR: a folha é pequena e sai de um botão da
-          coluna — escurecer a tela atrás dela trataria uma consulta rápida
-          como se fosse um passo modal, e esconderia justamente a lista que
-          diz de onde ela saiu. Invisível, ele só existe para o clique fora
-          fechar. */}
-      <div
-        className="fixed inset-0 z-40"
-        onClick={aoFechar}
-        aria-hidden="true"
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={rotulo}
-        className={`surge absolute left-0 top-full z-50 mt-2 flex max-h-[70vh] max-w-[calc(100vw-3rem)] origin-top-left flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-conteudo shadow-xl dark:border-zinc-800 ${medida}`}
-      >
-        {children}
-      </div>
-    </>
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label={rotulo}
+      className={`surge absolute left-0 top-full z-50 mt-2 flex max-h-[70vh] max-w-[calc(100vw-3rem)] origin-top-left flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-conteudo shadow-xl dark:border-zinc-800 ${medida}`}
+    >
+      {children}
+    </div>
   );
 }
 

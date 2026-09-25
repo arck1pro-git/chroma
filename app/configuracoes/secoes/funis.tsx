@@ -5,7 +5,7 @@
 // A cor é do FUNIL: as etapas recebem tons dela, da mais clara na primeira à
 // mais escura na última (lib/cores-funil.ts). Trocar a cor aqui repinta o
 // quadro inteiro; `etapas.cor` continua na tabela sem ninguém ler.
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   closestCenter,
   DndContext,
@@ -23,12 +23,14 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Check, FolderPlus, GripVertical, Layers, Pencil, Plus, X } from "lucide-react";
+import { Check, ChevronDown, FolderPlus, GripVertical, Layers, Megaphone, Pencil, Plus, X } from "lucide-react";
 import type { Etapa, Funil } from "../../data";
 import { amostraDoTom, TOM_PADRAO, TONS_FUNIL } from "@/lib/cores-funil";
+import { EVENTOS_META_PADRAO, ehEventoPadrao, NOME_EVENTO_META } from "@/lib/meta-eventos-nomes";
 import {
   criarEtapa,
   criarFunil,
+  definirEventoMetaDaEtapa,
   editarCorDoFunil,
   editarEtapa,
   editarFunil,
@@ -50,7 +52,8 @@ export function SecaoFunis({
           Funis
         </h2>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Crie um funil e defina as etapas do quadro (kanban).
+          Crie um funil e defina as etapas do quadro (kanban). Cada etapa pode
+          enviar um evento à Meta quando uma oportunidade entra nela.
         </p>
       </div>
 
@@ -385,7 +388,13 @@ function EtapasDoFunil({ etapas }: { etapas: Etapa[] }) {
   const [, startTransition] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
 
-  useEffect(() => setOrdem(etapas), [etapas]);
+  // Resincroniza durante o render quando `etapas` troca (revalidate): o padrão
+  // do React para estado que depende de prop, sem o quadro extra de um efeito.
+  const [etapasVistas, setEtapasVistas] = useState(etapas);
+  if (etapasVistas !== etapas) {
+    setEtapasVistas(etapas);
+    setOrdem(etapas);
+  }
 
   const sensores = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -522,6 +531,9 @@ function EtapaLinha({ etapa }: { etapa: Etapa }) {
           <span className="min-w-0 flex-1 truncate text-[13px] text-zinc-900 dark:text-zinc-50">
             {etapa.nome}
           </span>
+          {/* key pelo valor gravado: se ele mudar por fora (revalidate), o
+              seletor remonta com o valor novo em vez de guardar o antigo */}
+          <EventoMetaDaEtapa key={etapa.meta_evento ?? ""} etapa={etapa} />
           <button
             type="button"
             onClick={() => setEditando(true)}
@@ -534,6 +546,143 @@ function EtapaLinha({ etapa }: { etapa: Etapa }) {
       )}
       {erro && <p className="text-xs text-red-500">{erro}</p>}
     </li>
+  );
+}
+
+const PERSONALIZADO = "__personalizado__";
+
+/**
+ * Qual evento da Meta sai quando uma oportunidade ENTRA nesta etapa.
+ *
+ * Os padrões gravam no ato da escolha. "Personalizado…" abre um campo e só
+ * grava no ✓: gravar a cada tecla mandaria nome pela metade para o banco — e,
+ * com o pixel ligado, um card que entrasse no meio da digitação levaria
+ * "Agend" para a Meta.
+ */
+function EventoMetaDaEtapa({ etapa }: { etapa: Etapa }) {
+  const gravado = etapa.meta_evento ?? null;
+  // Um personalizado gravado ganha opção PRÓPRIA no seletor. Se ele ficasse
+  // dentro de "Personalizado…", não daria para editá-lo: escolher de novo a
+  // opção já selecionada não dispara onChange.
+  const personalizadoGravado = gravado !== null && !ehEventoPadrao(gravado) ? gravado : null;
+  const [escolha, setEscolha] = useState(gravado ?? "");
+  const [nome, setNome] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, iniciar] = useTransition();
+
+  function gravar(valor: string | null) {
+    setErro(null);
+    iniciar(async () => {
+      try {
+        await definirEventoMetaDaEtapa(etapa.id, valor);
+        setEscolha(valor ?? "");
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Falha ao salvar");
+      }
+    });
+  }
+
+  function aoEscolher(valor: string) {
+    setEscolha(valor);
+    setErro(null);
+    if (valor === PERSONALIZADO) {
+      setNome(personalizadoGravado ?? ""); // parte do atual, para corrigir
+      return; // espera o ✓
+    }
+    gravar(valor || null);
+  }
+
+  function salvarPersonalizado() {
+    const n = nome.trim();
+    if (!NOME_EVENTO_META.test(n)) {
+      setErro("Comece com letra; só letras, números e _ (até 50).");
+      return;
+    }
+    gravar(n);
+  }
+
+  function desistir() {
+    setEscolha(gravado ?? "");
+    setErro(null);
+  }
+
+  const ativo = escolha !== "";
+
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <div className="relative">
+        <Megaphone
+          className={`pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 ${
+            ativo ? "text-zinc-600 dark:text-zinc-300" : "text-zinc-300 dark:text-zinc-600"
+          }`}
+          aria-hidden="true"
+        />
+        <select
+          value={escolha}
+          onChange={(ev) => aoEscolher(ev.target.value)}
+          disabled={salvando}
+          aria-label={`Evento da Meta quando uma oportunidade entra em ${etapa.nome}`}
+          title="Evento enviado à Meta quando uma oportunidade entra nesta etapa"
+          className={`max-w-56 appearance-none rounded-md border py-1 pl-6 pr-6 text-[12px] outline-none transition focus-visible:ring-2 focus-visible:ring-zinc-900/10 disabled:opacity-50 dark:bg-zinc-950 dark:focus-visible:ring-zinc-100/10 ${
+            ativo
+              ? "border-zinc-300 bg-white text-zinc-900 dark:border-zinc-700 dark:text-zinc-50"
+              : "border-transparent bg-transparent text-zinc-400 hover:border-zinc-200 dark:hover:border-zinc-800"
+          }`}
+        >
+          <option value="">Sem evento Meta</option>
+          {EVENTOS_META_PADRAO.map((e) => (
+            <option key={e.nome} value={e.nome}>
+              {e.rotulo}
+            </option>
+          ))}
+          {personalizadoGravado && (
+            <option value={personalizadoGravado}>{personalizadoGravado} · personalizado</option>
+          )}
+          <option value={PERSONALIZADO}>
+            {personalizadoGravado ? "Editar personalizado…" : "Personalizado…"}
+          </option>
+        </select>
+        <ChevronDown
+          className="pointer-events-none absolute right-1.5 top-1/2 size-3 -translate-y-1/2 text-zinc-400"
+          aria-hidden="true"
+        />
+      </div>
+
+      {escolha === PERSONALIZADO && (
+        <>
+          <input
+            value={nome}
+            onChange={(ev) => setNome(ev.target.value)}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter") salvarPersonalizado();
+              if (ev.key === "Escape") desistir();
+            }}
+            autoFocus
+            placeholder="NomeDoEvento"
+            aria-label="Nome do evento personalizado"
+            className={`${campoTexto} w-36 py-1 text-[12px]`}
+          />
+          <button
+            type="button"
+            onClick={salvarPersonalizado}
+            disabled={salvando || !nome.trim()}
+            aria-label="Salvar evento"
+            className="text-zinc-400 transition hover:text-emerald-600 disabled:opacity-40"
+          >
+            <Check className="size-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={desistir}
+            aria-label="Cancelar"
+            className="text-zinc-400 transition hover:text-zinc-900 dark:hover:text-zinc-50"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        </>
+      )}
+      {erro && <p className="max-w-48 text-[11px] leading-tight text-red-500">{erro}</p>}
+    </div>
   );
 }
 
