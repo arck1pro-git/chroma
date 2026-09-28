@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { User, Users, X } from "lucide-react";
 import { SeletorMenu } from "../components/filtros-ui";
+import CamadaTopo from "../components/camada-topo";
 import type { Contato, Usuario } from "../data";
 
 // Estilo dos campos de texto — mesmo dos selects/filtros, só sem a seta.
@@ -71,10 +72,15 @@ export default function FormOportunidade({
   }
 
   return (
-    // O container é o próprio véu: clicar em volta do card fecha; o card para a
-    // propagação para o clique dentro não fechar.
+    // No <body>, pela CamadaTopo, e na camada das gavetas (z-[310]): dentro do
+    // quadro o `fixed` ficava preso a um ancestral com transform (a animação
+    // de entrada) e as colunas das etapas passavam POR CIMA do formulário.
+    // Ver app/components/camada-topo.tsx.
+    <CamadaTopo>
+    {/* O container é o próprio véu: clicar em volta do card fecha; o card para
+        a propagação para o clique dentro não fechar. */}
     <div
-      className="veu-surge fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]"
+      className="veu-surge fixed inset-0 z-[310] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[1px]"
       onClick={aoFechar}
       role="dialog"
       aria-modal="true"
@@ -179,5 +185,6 @@ export default function FormOportunidade({
         </form>
       </div>
     </div>
+    </CamadaTopo>
   );
 }

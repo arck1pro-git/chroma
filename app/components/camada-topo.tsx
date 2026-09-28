@@ -19,7 +19,10 @@ import { createPortal } from "react-dom";
 // Escala das camadas no <body> (acima de tudo que existe nas telas, cujo teto
 // é o z-[210] do chat da cadência):
 //   z-[300]  véu das gavetas
-//   z-[310]  gaveta
+//   z-[310]  gaveta — e, na mesma camada, o que abre do quadro por cima de
+//            tudo: nova oportunidade (app/funil/form-oportunidade.tsx), painel
+//            de filtros (app/funil/painel-filtros.tsx) e a confirmação de
+//            ligar a IA da etapa (app/inicio/interruptor-ia.tsx)
 //   z-[320]  modal aberto DE DENTRO de uma gaveta (FormContato)
 //
 // Sem `document` no servidor: o snapshot do servidor é false e o portal só

@@ -142,6 +142,13 @@ export async function instanciaPorNumero(
   return linha ? daLinha(linha) : instanciaPadrao();
 }
 
+/** De onde a mensagem saiu: é o que o webhook lê no eco para achar a linha. */
+export const ORIGEM_RASTREIO = "chroma";
+
+function camposDeRastreio(rastreio?: string) {
+  return rastreio ? { track_source: ORIGEM_RASTREIO, track_id: rastreio } : {};
+}
+
 export async function enviarTexto(
   number: string,
   text: string,
@@ -150,13 +157,17 @@ export async function enviarTexto(
   // responde pelo número que recebeu a conversa, a automação usa o número
   // escolhido na mensagem.
   instancia: Instancia,
+  // O id da NOSSA linha em mensagens. Vai como track_id e volta no eco do
+  // webhook (fromMe), que assim casa com a linha certa em vez de virar uma
+  // segunda mensagem "do celular" — ver app/api/uazapi/webhook.
+  rastreio?: string,
 ): Promise<RetornoEnvio> {
   const { baseUrl, token } = instancia;
 
   const res = await fetch(`${baseUrl}/send/text`, {
     method: "POST",
     headers: { "Content-Type": "application/json", token },
-    body: JSON.stringify({ number, text }),
+    body: JSON.stringify({ number, text, ...camposDeRastreio(rastreio) }),
     // Sem cache: é mutação, cada chamada tem que ir na rede.
     cache: "no-store",
     // A uazapi é externa e o envio roda dentro de um request do motor: sem teto,
@@ -216,6 +227,7 @@ export async function enviarMidia(
     mime?: string;
   },
   instancia: Instancia,
+  rastreio?: string,
 ): Promise<RetornoEnvio> {
   const { baseUrl, token } = instancia;
 
@@ -223,6 +235,7 @@ export async function enviarMidia(
     number,
     type: TIPO_UAZAPI[opcoes.tipo] ?? "document",
     file: arquivo,
+    ...camposDeRastreio(rastreio),
   };
   if (opcoes.texto) corpo.text = opcoes.texto;
   if (opcoes.mime) corpo.mimetype = opcoes.mime;

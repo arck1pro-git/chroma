@@ -25,6 +25,8 @@
 import fs from "fs/promises";
 import path from "path";
 import { sql } from "@/lib/db";
+import { BUCKET_DOCUMENTOS, baixar, subir } from "@/lib/armazenamento";
+import { baixarMidiaMeta } from "@/lib/meta";
 
 export type TipoMensagem =
   | "texto"
@@ -141,18 +143,19 @@ export function midiaDoEvento(ev: Record<string, unknown>): MidiaDoEvento | null
 
 // ── Armazenamento ───────────────────────────────────────────────────────────
 //
-// Disco local, sob MIDIA_DIR. É a escolha que funciona HOJE, sem credencial
-// nova: o projeto não tem chave de service role do Supabase Storage nem bucket
-// S3 configurado, e inventar um segredo que ninguém cadastrou só adiaria o
-// problema.
+// Supabase Storage, no bucket do CRM (lib/armazenamento.ts), sob `midias/`.
 //
-// O QUE ISSO CUSTA, e é bom estar escrito: em serverless o disco é efêmero e
-// isto NÃO sobrevive a um deploy. Enquanto o app roda em `next dev`/servidor
-// próprio, sobrevive. `midia_caminho` guarda um caminho relativo justamente
-// para a troca ser de adaptador, não de schema — trocar por bucket é mudar
-// `salvarArquivo`/`lerArquivo` e nada mais.
+// ERA DISCO LOCAL (MIDIA_DIR), e na Vercel isso não funciona: o sistema de
+// arquivos é somente-leitura fora de /tmp e cada invocação pode cair numa
+// máquina diferente — o mesmo bug que a biblioteca de documentos já tinha
+// sofrido. A troca foi a prevista quando o disco foi escolhido: só
+// `salvarArquivo`/`lerArquivo` mudaram, o schema não.
+//
+// Caminho novo começa com `midias/`; o antigo ("2026/09/<id>.ogg") continua
+// sendo lido do disco, para as linhas que já existiam em ambiente local.
 
 const RAIZ = process.env.MIDIA_DIR ?? ".midias";
+const PREFIXO_STORAGE = "midias/";
 
 // Teto por arquivo. O WhatsApp já limita, mas quem responde aqui é uma URL de
 // terceiro — sem teto, um arquivo gigante enche o disco do servidor.
@@ -184,17 +187,13 @@ async function salvarArquivo(
   nome: string | null,
 ): Promise<string> {
   const agora = new Date();
-  const pasta = path.join(
+  const caminho = [
+    "midias",
     String(agora.getUTCFullYear()),
     String(agora.getUTCMonth() + 1).padStart(2, "0"),
-  );
-  const relativo = path.join(pasta, `${id}${extensaoDe(mime, nome)}`);
-  const destino = path.join(RAIZ, relativo);
-
-  await fs.mkdir(path.dirname(destino), { recursive: true });
-  await fs.writeFile(destino, bytes);
-  // Sempre com "/": o caminho vai para o banco e é lido em qualquer SO.
-  return relativo.split(path.sep).join("/");
+    `${id}${extensaoDe(mime, nome)}`,
+  ].join("/");
+  return subir(BUCKET_DOCUMENTOS, caminho, bytes, mime ?? "application/octet-stream");
 }
 
 /**
@@ -203,6 +202,13 @@ async function salvarArquivo(
  * passar um parâmetro de rota direto aqui, `../../.env` não sai do lugar.
  */
 export async function lerArquivo(caminho: string): Promise<Buffer> {
+  if (caminho.startsWith(PREFIXO_STORAGE)) {
+    const limpo = caminho
+      .split("/")
+      .filter((p) => p && p !== "." && p !== "..")
+      .join("/");
+    return baixar(BUCKET_DOCUMENTOS, limpo);
+  }
   const seguro = path
     .normalize(caminho)
     .replace(/^(\.\.(\/|\\|$))+/, "")
@@ -213,6 +219,31 @@ export async function lerArquivo(caminho: string): Promise<Buffer> {
 }
 
 // ── A fila ──────────────────────────────────────────────────────────────────
+
+/**
+ * Traz os bytes da origem. Duas formas de `midia_url_origem`:
+ *   · https://…   → URL da uazapi, baixada direto (expira em horas).
+ *   · meta:<id>   → mídia da API oficial. A Meta não manda URL no webhook, só
+ *                   o id; a URL sai de outra chamada, vale minutos e pede token
+ *                   (ver baixarMidiaMeta em lib/meta.ts).
+ */
+async function baixarOrigem(origem: string): Promise<{ bytes: Uint8Array; mime: string | null }> {
+  if (origem.startsWith("meta:")) return baixarMidiaMeta(origem.slice(5));
+
+  const res = await fetch(origem, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`origem respondeu ${res.status}`);
+
+  // Confere o tamanho ANTES de puxar tudo para a memória quando o servidor
+  // informa; o teto depois do arrayBuffer não protegeria de nada.
+  const declarado = Number(res.headers.get("content-length") ?? 0);
+  if (declarado > TETO_BYTES) {
+    throw new Error(`arquivo de ${Math.round(declarado / 1024 / 1024)}MB acima do teto`);
+  }
+  return { bytes: new Uint8Array(await res.arrayBuffer()), mime: res.headers.get("content-type") };
+}
 
 type Pendente = {
   id: string;
@@ -250,23 +281,10 @@ export async function baixarPendentes(limite = 20): Promise<{
 
   for (const linha of fila) {
     try {
-      const res = await fetch(linha.midia_url_origem!, {
-        cache: "no-store",
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!res.ok) throw new Error(`origem respondeu ${res.status}`);
-
-      // Confere o tamanho ANTES de puxar tudo para a memória quando o servidor
-      // informa; o teto depois do arrayBuffer não protegeria de nada.
-      const declarado = Number(res.headers.get("content-length") ?? 0);
-      if (declarado > TETO_BYTES) {
-        throw new Error(`arquivo de ${Math.round(declarado / 1024 / 1024)}MB acima do teto`);
-      }
-
-      const bytes = new Uint8Array(await res.arrayBuffer());
+      const { bytes, mime: mimeOrigem } = await baixarOrigem(linha.midia_url_origem!);
       if (bytes.byteLength > TETO_BYTES) throw new Error("arquivo acima do teto");
 
-      const mime = linha.midia_mime ?? res.headers.get("content-type");
+      const mime = linha.midia_mime ?? mimeOrigem;
       const caminho = await salvarArquivo(linha.id, bytes, mime, linha.midia_nome);
 
       await sql`

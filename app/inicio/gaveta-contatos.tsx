@@ -35,6 +35,7 @@ import {
 import { CamposDoContato } from "../components/campos-personalizados";
 import CamadaTopo from "../components/camada-topo";
 import FormContato, { type DadosContato } from "../contatos/form-contato";
+import IaDoContato from "./ia-contato";
 import {
   adicionarAnotacao,
   atualizarContato,
@@ -383,6 +384,14 @@ export default function GavetaContatos({
           {aberto ? (
             <>
               <CamposContato contato={aberto} />
+              <IaDoContato
+                // Remonta por contato: o valor otimista é do contato aberto.
+                key={aberto.id}
+                contato={aberto}
+                oportunidades={oportunidadesDoContato.get(aberto.id) ?? []}
+                etapaPorId={etapaPorId}
+                funilPorId={funilPorId}
+              />
               <ChipsContato
                 segmentos={segmentosDoContato.get(aberto.id) ?? []}
                 tags={tagsDoContato.get(aberto.id) ?? semTags}

@@ -20,6 +20,7 @@
 import { useEffect, useRef } from "react";
 import { SlidersHorizontal, X } from "lucide-react";
 import BarraFiltros from "./barra-filtros";
+import CamadaTopo from "../components/camada-topo";
 import { contarFiltrosAtivos, filtrosVazios, type Filtros } from "./filtros";
 import type { Contato, Funil, Segmento, Tag, Usuario } from "../data";
 
@@ -114,13 +115,17 @@ export default function PainelFiltros({
         )}
       </div>
 
+      {/* No <body>, pela CamadaTopo, na camada das gavetas. Aqui dentro do
+          cabeçalho o painel herdava o transform da animação de entrada: o
+          `fixed` virava relativo ao cabeçalho, o véu não cobria a tela e as
+          colunas das etapas desenhavam POR CIMA do painel. */}
       {aberto && (
-        <>
+        <CamadaTopo>
           {/* O véu. Clicar fora fecha — é o gesto que todo mundo tenta antes de
               procurar o X. */}
           <div
             onClick={() => aoAlternar(false)}
-            className="fixed inset-0 z-40 bg-zinc-900/20 backdrop-blur-[2px] dark:bg-zinc-950/40"
+            className="veu-surge fixed inset-0 z-[300] bg-zinc-900/20 backdrop-blur-[2px] dark:bg-zinc-950/40"
             aria-hidden="true"
           />
 
@@ -134,7 +139,7 @@ export default function PainelFiltros({
             // localização abrem dropdown posicionado em absolute (ver Menu, em
             // app/components/filtros-ui.tsx). Com overflow no painel, a lista
             // deles seria cortada na borda — e a de localização é a mais alta.
-            className="surge fixed left-1/2 top-24 z-50 w-[min(52rem,calc(100vw-2rem))] -translate-x-1/2 overflow-visible rounded-2xl border border-zinc-200 bg-white shadow-xl outline-none dark:border-zinc-800 dark:bg-zinc-900"
+            className="surge fixed left-1/2 top-24 z-[310] w-[min(52rem,calc(100vw-2rem))] -translate-x-1/2 overflow-visible rounded-2xl border border-zinc-200 bg-white shadow-xl outline-none dark:border-zinc-800 dark:bg-zinc-900"
           >
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
               <h2 className="flex items-center gap-2 text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">
@@ -174,7 +179,7 @@ export default function PainelFiltros({
               total={total}
             />
           </div>
-        </>
+        </CamadaTopo>
       )}
     </>
   );

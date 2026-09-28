@@ -215,6 +215,115 @@ export async function enviarTemplateMeta(telefoneId: string, entrada: {
   });
 }
 
+// ── Conversa pela API oficial (o /chat) ─────────────────────────────────────
+//
+// Texto livre só vale DENTRO da janela de 24h aberta pela última mensagem do
+// contato; fora dela a Meta recusa com 131047 e o único caminho é template.
+// Quem confere a janela antes de chamar é app/chat/actions.ts — aqui é só o
+// transporte.
+
+export async function enviarTextoMeta(telefoneId: string, para: string, corpo: string) {
+  return requisicao<{ messages?: Array<{ id: string }> }>(`${telefoneId}/messages`, {
+    method: "POST",
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: para.replace(/\D/g, ""),
+      type: "text",
+      text: { body: corpo, preview_url: true },
+    },
+  });
+}
+
+export type TipoMidiaMeta = "image" | "video" | "audio" | "document";
+
+/**
+ * Sobe o arquivo para a Meta e devolve o id da mídia. É por id, e não por link,
+ * que o anexo da biblioteca sai: o link exigiria deixar o documento público
+ * para a Meta baixar, e a biblioteca é acervo atrás de login.
+ */
+export async function subirMidiaMeta(
+  telefoneId: string,
+  bytes: Uint8Array,
+  mime: string,
+  arquivoNome: string,
+): Promise<string> {
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", mime);
+  form.append("file", new Blob([new Uint8Array(bytes)] as BlobPart[], { type: mime }), arquivoNome);
+  const resposta = await fetch(`${GRAPH}/${telefoneId}/media`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token()}` },
+    body: form,
+    cache: "no-store",
+    signal: AbortSignal.timeout(120_000),
+  });
+  const json = (await resposta.json().catch(() => ({}))) as {
+    id?: string;
+    error?: { message?: string; code?: number; error_user_msg?: string };
+  };
+  if (!resposta.ok || json.error || !json.id) {
+    throw new ErroMeta(
+      json.error?.error_user_msg || json.error?.message || `Upload na Meta respondeu ${resposta.status}.`,
+      json.error?.code,
+    );
+  }
+  return json.id;
+}
+
+export async function enviarMidiaMeta(
+  telefoneId: string,
+  para: string,
+  tipo: TipoMidiaMeta,
+  midiaId: string,
+  opcoes: { legenda?: string; arquivoNome?: string } = {},
+) {
+  const midia: Record<string, string> = { id: midiaId };
+  // Áudio não aceita legenda na Cloud API — mandar derruba o envio inteiro.
+  if (opcoes.legenda && tipo !== "audio") midia.caption = opcoes.legenda;
+  if (tipo === "document" && opcoes.arquivoNome) midia.filename = opcoes.arquivoNome;
+  return requisicao<{ messages?: Array<{ id: string }> }>(`${telefoneId}/messages`, {
+    method: "POST",
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: para.replace(/\D/g, ""),
+      type: tipo,
+      [tipo]: midia,
+    },
+  });
+}
+
+/**
+ * Bytes de uma mídia RECEBIDA. O webhook traz só o id; a URL sai de GET /{id},
+ * vale poucos minutos e também exige o token — não dá para guardar a URL e
+ * baixar depois, como se faz com a da uazapi.
+ */
+export async function baixarMidiaMeta(midiaId: string): Promise<{ bytes: Uint8Array; mime: string | null }> {
+  const info = await requisicao<{ url?: string; mime_type?: string }>(midiaId);
+  if (!info.url) throw new ErroMeta("A Meta não devolveu a URL da mídia.");
+  const resposta = await fetch(info.url, {
+    headers: { Authorization: `Bearer ${token()}` },
+    cache: "no-store",
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!resposta.ok) throw new ErroMeta(`O download da mídia na Meta respondeu ${resposta.status}.`);
+  return {
+    bytes: new Uint8Array(await resposta.arrayBuffer()),
+    mime: info.mime_type ?? resposta.headers.get("content-type"),
+  };
+}
+
+/** A foto de perfil do número (a que o cliente vê). URL assinada: expira. */
+export async function fotoDoTelefoneMeta(telefoneId: string): Promise<string | null> {
+  const r = await requisicao<{ data?: Array<{ profile_picture_url?: string }> }>(
+    `${telefoneId}/whatsapp_business_profile`,
+    { params: { fields: "profile_picture_url" } },
+  );
+  return r.data?.[0]?.profile_picture_url || null;
+}
+
 export function respostaErroMeta(e: unknown): Response {
   const erro = e instanceof ErroMeta ? e : new ErroMeta(e instanceof Error ? e.message : "Falha ao falar com a Meta.");
   return Response.json({ erro: erro.message, codigo: erro.codigo }, { status: erro.status });

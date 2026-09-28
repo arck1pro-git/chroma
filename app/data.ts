@@ -15,6 +15,9 @@ export type Contato = {
   estado: string;
   pais: string;
   data_criacao: string;
+  // Atendimento por IA (migration-ia-atendimento.sql): null segue a etapa,
+  // true = vinculado, false = removido. Opcional: só o quadro carrega.
+  ia?: boolean | null;
 };
 
 export type Funil = {
@@ -42,6 +45,11 @@ export type Etapa = {
   // envia). Opcional no tipo porque só Configurações → Funis o carrega; o
   // quadro e as outras telas não precisam dele.
   meta_evento?: string | null;
+  // Quem tem oportunidade aberta aqui é respondido pela IA no WhatsApp.
+  ia_atende?: boolean;
+  // A cor do FUNIL (o nome do tom, 'blue'), para o robô dos cards sair nela.
+  // Derivada no carregamento, como `cor`.
+  tom_funil?: string;
 };
 
 export type Oportunidade = {

@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
-import { enviarTemplateMeta } from "@/lib/meta";
+import { enviarTemplateMeta, templatesMeta } from "@/lib/meta";
+import { registrarEnvioOficial, textoDoTemplate } from "@/lib/whatsapp-oficial";
 import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 
 export type AcaoCampanha =
@@ -77,23 +78,52 @@ export async function executarAcoes(execucao: Execucao, ramo: "respondeu" | "exp
   }
 }
 
+// O texto do template, para a mensagem aparecer na conversa do /chat como o
+// contato a leu. Um GET por WABA por lote; falhou, fica o nome do template.
+async function textoDosTemplates(wabaIds: string[]) {
+  const mapa = new Map<string, string>();
+  for (const waba of new Set(wabaIds)) {
+    try {
+      for (const t of await templatesMeta(waba)) {
+        mapa.set(`${waba}|${t.name}|${t.language}`, textoDoTemplate(t.components));
+      }
+    } catch (e) {
+      console.error("[campanhas] não li os templates da WABA", waba, e);
+    }
+  }
+  return mapa;
+}
+
 export async function processarFila(limite = 50, campanhaId?: string) {
   const linhas = await sql`
     SELECT e.id, e.campanha_id, e.contato_id, c.nome AS contato_nome, c.whatsapp,
-           cw.telefone_id, cw.template_nome, cw.template_idioma, cw.definicao
+           cw.telefone_id, cw.telefone_exibicao, cw.waba_id,
+           cw.template_nome, cw.template_idioma, cw.definicao
       FROM campanha_whatsapp_execucoes e
       JOIN campanhas_whatsapp cw ON cw.id = e.campanha_id
       JOIN contatos c ON c.id = e.contato_id
      WHERE e.estado = 'na_fila' AND cw.status = 'ativa'
        AND (${campanhaId ?? null}::uuid IS NULL OR cw.id = ${campanhaId ?? null}::uuid)
      ORDER BY e.data_criacao
-     LIMIT ${limite}` as unknown as Array<Execucao & { telefone_id:string; template_nome:string; template_idioma:string }>;
+     LIMIT ${limite}` as unknown as Array<Execucao & { telefone_id:string; telefone_exibicao:string; waba_id:string; template_nome:string; template_idioma:string }>;
+  const textos = linhas.length ? await textoDosTemplates(linhas.map((l) => l.waba_id)) : new Map<string, string>();
   let enviados = 0;
   for (const e of linhas) {
     await sql`UPDATE campanha_whatsapp_execucoes SET estado='enviando' WHERE id=${e.id}::uuid AND estado='na_fila'`;
     try {
       const definicao = lerDefinicao(e.definicao);
-      const r = await enviarTemplateMeta(e.telefone_id, { to: e.whatsapp, name: definicao.template_nome || e.template_nome, language: definicao.template_idioma || e.template_idioma });
+      const nome = definicao.template_nome || e.template_nome;
+      const idioma = definicao.template_idioma || e.template_idioma;
+      const r = await enviarTemplateMeta(e.telefone_id, { to: e.whatsapp, name: nome, language: idioma });
+      // A mensagem entra na conversa do contato no canal oficial — sem isto o
+      // /chat mostraria só a resposta, sem o que a campanha mandou.
+      await registrarEnvioOficial({
+        contatoId: e.contato_id,
+        numeroCanal: e.telefone_exibicao,
+        texto: textos.get(`${e.waba_id}|${nome}|${idioma}`) || `Template "${nome}"`,
+        wamid: r.messages?.[0]?.id ?? null,
+        enviadaPor: "automacao",
+      });
       const espera = definicao.espera_minutos;
       await sql`UPDATE campanha_whatsapp_execucoes
                    SET estado='aguardando_resposta', mensagem_id_meta=${r.messages?.[0]?.id ?? null},

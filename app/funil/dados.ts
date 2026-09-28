@@ -95,7 +95,7 @@ export async function carregarFunil(
     sql`SELECT id, nome, descricao, cor FROM funis ORDER BY data_criacao`,
     // Sem `cor`: ela é derivada abaixo, a partir da cor do FUNIL e da posição
     // da etapa. Ver lib/cores-funil.ts.
-    sql`SELECT id, nome, funil_id, ordem FROM etapas ORDER BY funil_id, ordem`,
+    sql`SELECT id, nome, funil_id, ordem, ia_atende FROM etapas ORDER BY funil_id, ordem`,
     // dias_na_etapa é aproximado por now()-data_criacao (não há registro de quando
     // entrou na etapa). Ver comentário no migration-front.sql.
     // O filtro do escopo 'proprio' entra AQUI, na cláusula, e não numa segunda
@@ -109,7 +109,7 @@ export async function carregarFunil(
       WHERE ${dono}::uuid IS NULL OR responsavel_id = ${dono}::uuid
       ORDER BY data_criacao DESC`,
     sql`
-      SELECT id, nome, whatsapp, email, cidade, estado, pais,
+      SELECT id, nome, whatsapp, email, cidade, estado, pais, ia,
              (SELECT COALESCE(jsonb_object_agg(k, v), '{}'::jsonb)
                 FROM jsonb_each(CASE WHEN jsonb_typeof(campos) = 'object' THEN campos ELSE '{}'::jsonb END) AS origem(k, v)
                WHERE k IN ('campaign_id', 'campanha_id', 'utm_id', 'campaign_name', 'utm_campaign',
@@ -172,6 +172,7 @@ export async function carregarFunil(
         i,
         totalPorFunil.get(e.funil_id) ?? 1,
       ),
+      tom_funil: corPorFunil.get(e.funil_id) ?? "",
     };
   });
 

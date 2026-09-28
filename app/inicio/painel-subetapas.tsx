@@ -33,6 +33,10 @@ import {
 import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
 import { brl } from "../formato";
 import CartaoOportunidade from "../funil/cartao";
+import { corDoRobo } from "../funil/ia";
+
+/** A cor do robô da IA no card deste contato NESTA etapa (null = sem IA). */
+type Robo = (contato: Contato | undefined) => string | null;
 import ChatIa from "../components/chat-ia";
 import {
   proximoIdDeMensagem,
@@ -404,6 +408,7 @@ function CartaoNaCadencia({
   contato,
   responsavel,
   tags,
+  ia,
   noFluxo,
   removendo,
   aoRemover,
@@ -412,6 +417,7 @@ function CartaoNaCadencia({
   contato: Contato | undefined;
   responsavel: Usuario | undefined;
   tags: Tag[];
+  ia: string | null;
   noFluxo: boolean;
   removendo: boolean;
   aoRemover: () => void;
@@ -423,6 +429,7 @@ function CartaoNaCadencia({
         contato={contato}
         responsavel={responsavel}
         tags={tags}
+        ia={ia}
       />
 
       {noFluxo && (
@@ -471,7 +478,9 @@ function Acoes({
   contatoPorId,
   usuarioPorId,
   tagsDoContato,
+  robo,
 }: {
+  robo: Robo;
   acoes: AcaoCadencia[];
   porAcao: Map<string, Oportunidade[]>;
   contatoPorId: Map<string, Contato>;
@@ -513,6 +522,7 @@ function Acoes({
                   o.responsavel_id ? usuarioPorId.get(o.responsavel_id) : undefined
                 }
                 tags={tagsDoContato.get(o.contato_id) ?? []}
+                ia={robo(contatoPorId.get(o.contato_id))}
               />
               </div>
             ))}
@@ -537,7 +547,9 @@ function Coluna({
   aoEditar,
   aoExcluir,
   aoRemover,
+  robo,
 }: {
+  robo: Robo;
   coluna: ColunaSubetapa;
   indice: number;
   // A classe de cor da etapa ("bg-sky-500"), a mesma que pinta a faixa da
@@ -682,6 +694,7 @@ function Coluna({
                   o.responsavel_id ? usuarioPorId.get(o.responsavel_id) : undefined
                 }
                 tags={contato ? (tagsDoContato.get(contato.id) ?? []) : []}
+                ia={robo(contato)}
                 noFluxo={emCadencia.has(o.id)}
                 removendo={removendoId === o.id}
                 aoRemover={() => aoRemover(o)}
@@ -743,6 +756,8 @@ export default function PainelSubetapas({
   // ela cruzasse a meia-noite, no meio de uma rolagem.
   const hoje = useMemo(() => new Date(), []);
   const cor = etapa.cor;
+  // O painel é de UMA etapa: o robô de cada card depende só do contato.
+  const robo: Robo = (contato) => corDoRobo(contato, etapa);
 
   // Edição local. O que está aqui é o rascunho da tela; só vai ao banco no
   // Salvar. `chave` reseta o estado quando o servidor devolve outra versão —
@@ -1231,6 +1246,7 @@ export default function PainelSubetapas({
                       contatoPorId={contatoPorId}
                       usuarioPorId={usuarioPorId}
                       tagsDoContato={tagsDoContato}
+                      robo={robo}
                     />
 
                     {editando === coluna.subetapa.id ? (
@@ -1267,6 +1283,7 @@ export default function PainelSubetapas({
                       aoEditar={() => setEditando(coluna.subetapa.id)}
                       aoExcluir={() => excluir(coluna.subetapa.id)}
                       aoRemover={remover}
+                      robo={robo}
                     />
                     )}
                   </Fragment>
@@ -1280,6 +1297,7 @@ export default function PainelSubetapas({
                   contatoPorId={contatoPorId}
                   usuarioPorId={usuarioPorId}
                   tagsDoContato={tagsDoContato}
+                  robo={robo}
                 />
 
                 {/* A coluna nova nasce no FIM da fila, e não num botão do

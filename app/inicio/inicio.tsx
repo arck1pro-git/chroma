@@ -53,6 +53,8 @@ import {
   type Filtros,
 } from "../funil/filtros";
 import GavetaContatos from "./gaveta-contatos";
+import InterruptorIa from "./interruptor-ia";
+import { corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
 import { metricasDoFunil, type Conversao, type MetricaEtapa } from "./metricas";
 import PainelSubetapas from "./painel-subetapas";
@@ -102,6 +104,7 @@ function CartaoArrastavel({
   contato,
   responsavel,
   tags,
+  ia,
   aoAbrir,
   selecionado,
   aoSelecionar,
@@ -112,6 +115,7 @@ function CartaoArrastavel({
   contato?: Contato;
   responsavel?: Usuario;
   tags: Tag[];
+  ia: string | null;
   aoAbrir: (id: string) => void;
   selecionado: boolean;
   aoSelecionar: (id: string, marcado: boolean) => void;
@@ -174,6 +178,7 @@ function CartaoArrastavel({
         contato={contato}
         responsavel={responsavel}
         tags={tags}
+        ia={ia}
       />
     </article>
   );
@@ -349,10 +354,14 @@ function ColunaResumo({
             automação por etapa, com as mensagens e os intervalos que aquela
             etapa pedir — e a etapa que não tiver uma abre o painel vazio, com
             o botão de criar. */}
+        {/* Cadência e IA lado a lado: as duas respondem "o que acontece
+            sozinho com quem está nesta etapa?" — a cadência manda mensagem,
+            a IA responde quem escreve. */}
+        <div className="flex items-stretch gap-1.5">
         <button
           type="button"
           onClick={() => aoAbrirSubetapas(etapa)}
-          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 py-1 text-[12px] font-medium text-zinc-600 transition hover:border-zinc-400 hover:bg-white hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+          className="mt-2 flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 py-1 text-[12px] font-medium text-zinc-600 transition hover:border-zinc-400 hover:bg-white hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
         >
           <ListTree className="size-3.5 shrink-0" aria-hidden="true" />
           {cadencia ? "Cadência" : "Criar cadência"}
@@ -382,6 +391,8 @@ function ColunaResumo({
             />
           )}
         </button>
+        <InterruptorIa etapa={etapa} quantidade={oportunidades.length} />
+        </div>
       </div>
 
       {/* a coluna vai até o pé da tela (max-h-full acima) e é AQUI que rola.
@@ -430,6 +441,7 @@ function ColunaResumo({
                       : undefined
                   }
                   tags={contato ? (tagsDoContato.get(contato.id) ?? []) : []}
+                  ia={corDoRobo(contato, etapa)}
                   aoAbrir={aoAbrir}
                   selecionado={selecionados.has(o.id)}
                   aoSelecionar={aoSelecionar}
@@ -981,6 +993,7 @@ export default function Inicio({
                                 ? (tagsDoContato.get(contatoEmArraste.id) ?? [])
                                 : []
                             }
+                            ia={corDoRobo(contatoEmArraste, dados.etapaPorId.get(emArraste.etapa_id))}
                             arrastando
                           />
                         </div>

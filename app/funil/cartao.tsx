@@ -1,4 +1,4 @@
-import { Clock, User } from "lucide-react";
+import { Bot, Clock, User } from "lucide-react";
 import type { Contato, Oportunidade, Tag, Usuario } from "../data";
 import { brl, localizacao } from "../formato";
 
@@ -14,12 +14,15 @@ export default function CartaoOportunidade({
   responsavel,
   tags,
   arrastando = false,
+  ia = null,
 }: {
   oportunidade: Oportunidade;
   contato?: Contato;
   responsavel?: Usuario;
   tags: Tag[];
   arrastando?: boolean;
+  /** A IA atende este lead: a classe de cor do robô (a do funil). null = não atende. Ver ./ia.ts. */
+  ia?: string | null;
 }) {
   return (
     <div
@@ -74,11 +77,20 @@ export default function CartaoOportunidade({
           {oportunidade.dias_na_etapa}{" "}
           {oportunidade.dias_na_etapa === 1 ? "dia" : "dias"} na etapa
         </span>
-        <span
-          className="flex size-6 items-center justify-center rounded-full bg-zinc-100 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
-          title={`Responsável: ${responsavel?.nome ?? "sem responsável"}`}
-        >
-          {responsavel?.iniciais ?? "—"}
+        <span className="flex items-center gap-1.5">
+          {/* O robô diz, de relance, que quem responde este lead no WhatsApp
+              é a IA — na cor do funil, para não competir com a lombada. */}
+          {ia && (
+            <span title="Atendido pela IA no WhatsApp" aria-label="Atendido pela IA" role="img">
+              <Bot className={`size-4 ${ia}`} aria-hidden="true" />
+            </span>
+          )}
+          <span
+            className="flex size-6 items-center justify-center rounded-full bg-zinc-100 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+            title={`Responsável: ${responsavel?.nome ?? "sem responsável"}`}
+          >
+            {responsavel?.iniciais ?? "—"}
+          </span>
         </span>
       </div>
     </div>

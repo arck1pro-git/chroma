@@ -1,0 +1,96 @@
+{
+  "_leia": "Dados FICTÍCIOS do /chat?demo=1 (só em desenvolvimento). Colunas espelham as tabelas; as datas são relativas a 'base' e o loader as desloca para terminar agora. responsavel_id 'EU' = quem está logado.",
+  "base": "2026-09-28T15:00:00Z",
+  "canais": [
+    { "chave": "554792399626", "tipo": "web", "nome": "Patricia", "perfil": "Patricia Nunes Pavesi", "estado": "conectado" },
+    { "chave": "554791458708", "tipo": "web", "nome": "Fernanda", "perfil": "Fernanda | Arck1Pro", "estado": "conectado" },
+    { "chave": "554788060306", "tipo": "web", "nome": "Marketing", "perfil": "Marketing Arck1Pro", "estado": "desconectado" },
+    { "chave": "554792679661", "tipo": "api", "nome": "Amaan Incorporadora", "perfil": "Amaan Incorporadora", "estado": "conectado" }
+  ],
+  "usuarios": [
+    { "id": "demo-u-patricia", "nome": "Patricia", "iniciais": "PA" },
+    { "id": "demo-u-fernanda", "nome": "Fernanda", "iniciais": "FE" }
+  ],
+  "contatos": [
+    { "id": "demo-c-01", "nome": "Carlos Mendes", "whatsapp": "5547991230011", "email": "carlos.mendes@email.com", "cidade": "Itapema", "estado": "SC", "pais": "Brasil" },
+    { "id": "demo-c-02", "nome": "Beatriz Lima", "whatsapp": "5547991230022", "email": null, "cidade": "Balneário Camboriú", "estado": "SC", "pais": "Brasil" },
+    { "id": "demo-c-03", "nome": "Rafael Duarte", "whatsapp": "5511981230033", "email": "rafael.duarte@empresa.com.br", "cidade": "São Paulo", "estado": "SP", "pais": "Brasil" },
+    { "id": "demo-c-04", "nome": "Juliana Rocha", "whatsapp": "5547991230044", "email": "juliana.rocha@email.com", "cidade": "Porto Belo", "estado": "SC", "pais": "Brasil" },
+    { "id": "demo-c-05", "nome": "Marcos Vieira", "whatsapp": "5541991230055", "email": null, "cidade": "Curitiba", "estado": "PR", "pais": "Brasil" },
+    { "id": "demo-c-06", "nome": "Ana Paula Souza", "whatsapp": "5547991230066", "email": "anapaula@email.com", "cidade": "Itajaí", "estado": "SC", "pais": "Brasil" },
+    { "id": "demo-c-07", "nome": "Thiago Costa", "whatsapp": "5548991230077", "email": null, "cidade": "Florianópolis", "estado": "SC", "pais": "Brasil" },
+    { "id": "demo-c-08", "nome": "Luana Ferreira", "whatsapp": "5547991230088", "email": "luana.f@email.com", "cidade": "Bombinhas", "estado": "SC", "pais": "Brasil" },
+    { "id": "demo-c-09", "nome": "Pedro Henrique", "whatsapp": "5551991230099", "email": null, "cidade": "Porto Alegre", "estado": "RS", "pais": "Brasil" },
+    { "id": "demo-c-10", "nome": "Camila Alves", "whatsapp": "5547991230100", "email": "camila.alves@email.com", "cidade": "Tijucas", "estado": "SC", "pais": "Brasil" },
+    { "id": "demo-c-11", "nome": "Roberto Nunes", "whatsapp": "5547991230111", "email": null, "cidade": "Navegantes", "estado": "SC", "pais": "Brasil" },
+    { "id": "demo-c-12", "nome": "5547991230122", "whatsapp": "5547991230122", "email": null, "cidade": null, "estado": null, "pais": null }
+  ],
+  "atendimentos": [
+    { "id": "demo-a-01", "contato_id": "demo-c-01", "responsavel_id": null, "status": "na_fila", "canal": "whatsapp_oficial", "numero_instancia": "554792679661", "lido_em": null, "data_criacao": "2026-09-27T13:00:00Z" },
+    { "id": "demo-a-02", "contato_id": "demo-c-02", "responsavel_id": null, "status": "aberto", "canal": "whatsapp_oficial", "numero_instancia": "554792679661", "lido_em": null, "data_criacao": "2026-09-25T13:00:00Z" },
+    { "id": "demo-a-03", "contato_id": "demo-c-03", "responsavel_id": "EU", "status": "aberto", "canal": "whatsapp_oficial", "numero_instancia": "554792679661", "lido_em": "2026-09-27T09:10:00Z", "data_criacao": "2026-09-26T10:00:00Z" },
+    { "id": "demo-a-04", "contato_id": "demo-c-04", "responsavel_id": "EU", "status": "aberto", "canal": "whatsapp", "numero_instancia": "554792399626", "lido_em": "2026-09-28T14:40:00Z", "data_criacao": "2026-09-26T18:00:00Z" },
+    { "id": "demo-a-05", "contato_id": "demo-c-05", "responsavel_id": null, "status": "na_fila", "canal": "whatsapp", "numero_instancia": "554792399626", "lido_em": null, "data_criacao": "2026-09-28T14:20:00Z" },
+    { "id": "demo-a-06", "contato_id": "demo-c-06", "responsavel_id": "EU", "status": "encerrado", "canal": "whatsapp", "numero_instancia": "554792399626", "lido_em": "2026-09-24T17:00:00Z", "data_criacao": "2026-09-22T12:00:00Z" },
+    { "id": "demo-a-07", "contato_id": "demo-c-07", "responsavel_id": "demo-u-patricia", "status": "aberto", "canal": "whatsapp", "numero_instancia": "554792399626", "lido_em": "2026-09-28T12:05:00Z", "data_criacao": "2026-09-27T20:00:00Z" },
+    { "id": "demo-a-08", "contato_id": "demo-c-08", "responsavel_id": "EU", "status": "aberto", "canal": "whatsapp", "numero_instancia": "554791458708", "lido_em": "2026-09-28T13:00:00Z", "data_criacao": "2026-09-27T15:00:00Z" },
+    { "id": "demo-a-09", "contato_id": "demo-c-09", "responsavel_id": null, "status": "na_fila", "canal": "whatsapp", "numero_instancia": "554791458708", "lido_em": null, "data_criacao": "2026-09-28T11:30:00Z" },
+    { "id": "demo-a-10", "contato_id": "demo-c-10", "responsavel_id": "demo-u-fernanda", "status": "encerrado", "canal": "whatsapp", "numero_instancia": "554788060306", "lido_em": "2026-09-27T19:00:00Z", "data_criacao": "2026-09-27T16:00:00Z" },
+    { "id": "demo-a-11", "contato_id": "demo-c-11", "responsavel_id": "EU", "status": "aberto", "canal": "whatsapp", "numero_instancia": "554788060306", "lido_em": "2026-09-28T10:00:00Z", "data_criacao": "2026-09-28T09:00:00Z" },
+    { "id": "demo-a-12", "contato_id": "demo-c-12", "responsavel_id": null, "status": "na_fila", "canal": "whatsapp_oficial", "numero_instancia": "554792679661", "lido_em": null, "data_criacao": "2026-09-28T14:55:00Z" },
+    { "id": "demo-a-13", "contato_id": "demo-c-04", "responsavel_id": null, "status": "encerrado", "canal": "whatsapp_oficial", "numero_instancia": "554792679661", "lido_em": "2026-09-20T12:00:00Z", "data_criacao": "2026-09-19T12:00:00Z" }
+  ],
+  "mensagens": [
+    { "id": "demo-m-0101", "atendimento_id": "demo-a-01", "origem": "agente", "autor_id": null, "enviada_por": "automacao", "texto": "*Turmalina Tower — nova tabela*\n\nOlá, Carlos! Abrimos a tabela de setembro do Turmalina Tower, em Porto Belo, com condição especial para os studios de 28 m². Quer receber a planta e a simulação de rentabilidade?\n\n_Amaan Incorporadora_", "status": "lido", "tipo": "texto", "data_criacao": "2026-09-27T13:00:00Z" },
+    { "id": "demo-m-0102", "atendimento_id": "demo-a-01", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Oi! Quero sim, tenho interesse no studio.", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T14:38:00Z" },
+    { "id": "demo-m-0103", "atendimento_id": "demo-a-01", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Ele já vem mobiliado? E como funciona o pool de locação?", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T14:39:00Z" },
+
+    { "id": "demo-m-0201", "atendimento_id": "demo-a-02", "origem": "agente", "autor_id": null, "enviada_por": "automacao", "texto": "*Convite — Open House*\n\nOlá, Beatriz! Neste sábado teremos Open House no decorado do Turmalina Tower, das 10h às 16h. Posso reservar um horário para você?\n\n_Amaan Incorporadora_", "status": "entregue", "tipo": "texto", "data_criacao": "2026-09-25T13:00:00Z" },
+
+    { "id": "demo-m-0301", "atendimento_id": "demo-a-03", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Bom dia! Vi o anúncio do Turmalina. Vocês aceitam permuta com terreno?", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-27T09:02:00Z" },
+    { "id": "demo-m-0302", "atendimento_id": "demo-a-03", "origem": "agente", "autor_id": "EU", "enviada_por": "crm", "texto": "Bom dia, Rafael! Avaliamos permuta sim, dependendo da localização. O terreno é em qual cidade?", "status": "lido", "tipo": "texto", "data_criacao": "2026-09-27T09:10:00Z" },
+    { "id": "demo-m-0303", "atendimento_id": "demo-a-03", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Fica em Itapema, 450 m². Te mando a matrícula depois.", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-27T09:15:00Z" },
+
+    { "id": "demo-m-0401", "atendimento_id": "demo-a-04", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Oi Patricia, tudo bem? Consegui falar com meu marido sobre o apartamento de 2 dormitórios.", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-27T18:12:00Z" },
+    { "id": "demo-m-0402", "atendimento_id": "demo-a-04", "origem": "agente", "autor_id": "EU", "enviada_por": "crm", "texto": "Oi Juliana! Que ótimo 😊 E o que vocês acharam?", "status": "lido", "tipo": "texto", "data_criacao": "2026-09-27T18:20:00Z" },
+    { "id": "demo-m-0403", "atendimento_id": "demo-a-04", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Gostamos muito da unidade 1204, a de frente pro mar. Dá pra parcelar a entrada em 12x?", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T13:55:00Z" },
+    { "id": "demo-m-0404", "atendimento_id": "demo-a-04", "origem": "agente", "autor_id": "EU", "enviada_por": "aparelho", "texto": "Dá sim! A entrada pode ser em até 12x sem juros durante a obra.", "status": "lido", "tipo": "texto", "data_criacao": "2026-09-28T14:05:00Z" },
+    { "id": "demo-m-0405", "atendimento_id": "demo-a-04", "origem": "agente", "autor_id": "EU", "enviada_por": "crm", "texto": "Vou montar a simulação com a 1204 e te mando ainda hoje.", "status": "entregue", "tipo": "texto", "data_criacao": "2026-09-28T14:06:00Z" },
+    { "id": "demo-m-0406", "atendimento_id": "demo-a-04", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Perfeito, obrigada!", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T14:31:00Z" },
+
+    { "id": "demo-m-0501", "atendimento_id": "demo-a-05", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Boa tarde, vocês têm unidade com 3 suítes?", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T14:20:00Z" },
+    { "id": "demo-m-0502", "atendimento_id": "demo-a-05", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Pode ser a partir de 120 m².", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T14:21:00Z" },
+
+    { "id": "demo-m-0601", "atendimento_id": "demo-a-06", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Assinei o contrato, obrigada por tudo!", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-24T16:50:00Z" },
+    { "id": "demo-m-0602", "atendimento_id": "demo-a-06", "origem": "agente", "autor_id": "EU", "enviada_por": "crm", "texto": "Parabéns, Ana Paula! Qualquer coisa estou por aqui. 🎉", "status": "lido", "tipo": "texto", "data_criacao": "2026-09-24T17:00:00Z" },
+
+    { "id": "demo-m-0701", "atendimento_id": "demo-a-07", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Consegue me mandar o memorial descritivo?", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T12:00:00Z" },
+    { "id": "demo-m-0702", "atendimento_id": "demo-a-07", "origem": "agente", "autor_id": "demo-u-patricia", "enviada_por": "crm", "texto": "Claro, Thiago! Segue em PDF logo abaixo.", "status": "lido", "tipo": "texto", "data_criacao": "2026-09-28T12:05:00Z" },
+
+    { "id": "demo-m-0801", "atendimento_id": "demo-a-08", "origem": "agente", "autor_id": "EU", "enviada_por": "crm", "texto": "Oi Luana! Conseguiu ver o vídeo do decorado?", "status": "lido", "tipo": "texto", "data_criacao": "2026-09-28T12:58:00Z" },
+    { "id": "demo-m-0802", "atendimento_id": "demo-a-08", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Vi sim! Achei lindo. Quando posso visitar?", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T14:47:00Z" },
+
+    { "id": "demo-m-0901", "atendimento_id": "demo-a-09", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Olá, vi o Turmalina no Instagram. Qual o valor do metro quadrado?", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T11:30:00Z" },
+
+    { "id": "demo-m-1001", "atendimento_id": "demo-a-10", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Obrigada, por enquanto vou aguardar.", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-27T18:40:00Z" },
+    { "id": "demo-m-1002", "atendimento_id": "demo-a-10", "origem": "agente", "autor_id": "demo-u-fernanda", "enviada_por": "crm", "texto": "Tudo bem, Camila! Te aviso quando abrir a próxima fase.", "status": "lido", "tipo": "texto", "data_criacao": "2026-09-27T19:00:00Z" },
+
+    { "id": "demo-m-1101", "atendimento_id": "demo-a-11", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Bom dia, recebi o folder. Tem garagem coberta?", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T09:00:00Z" },
+    { "id": "demo-m-1102", "atendimento_id": "demo-a-11", "origem": "agente", "autor_id": "EU", "enviada_por": "crm", "texto": "Bom dia, Roberto! Tem sim, uma vaga coberta por unidade.", "status": "erro", "erro": "Instância desconectada — pareie o número de novo em Configurações.", "tipo": "texto", "data_criacao": "2026-09-28T10:02:00Z" },
+
+    { "id": "demo-m-1201", "atendimento_id": "demo-a-12", "origem": "contato", "autor_id": null, "enviada_por": null, "texto": "Oi, é da Amaan? Quero saber do Turmalina.", "status": "recebido", "tipo": "texto", "data_criacao": "2026-09-28T14:55:00Z" },
+
+    { "id": "demo-m-1301", "atendimento_id": "demo-a-13", "origem": "agente", "autor_id": null, "enviada_por": "automacao", "texto": "Olá, Juliana! Obrigado pelo interesse no Turmalina Tower. Em breve um consultor fala com você.", "status": "lido", "tipo": "texto", "data_criacao": "2026-09-19T12:00:00Z" }
+  ],
+  "oportunidades": [
+    { "id": "demo-o-01", "nome": "Unidade 1204 — frente mar", "contato_id": "demo-c-04", "valor": 890000, "responsavel_id": "EU", "status": "aberta", "funil_id": "demo-f-01", "etapa_id": "demo-e-03" },
+    { "id": "demo-o-02", "nome": "Permuta — terreno Itapema", "contato_id": "demo-c-03", "valor": 650000, "responsavel_id": "EU", "status": "aberta", "funil_id": "demo-f-01", "etapa_id": "demo-e-02" }
+  ],
+  "funis": [ { "id": "demo-f-01", "nome": "Vendas Turmalina", "cor": "blue" } ],
+  "etapas": [
+    { "id": "demo-e-01", "nome": "Novo lead", "funil_id": "demo-f-01", "ordem": 0 },
+    { "id": "demo-e-02", "nome": "Qualificação", "funil_id": "demo-f-01", "ordem": 1 },
+    { "id": "demo-e-03", "nome": "Proposta", "funil_id": "demo-f-01", "ordem": 2 },
+    { "id": "demo-e-04", "nome": "Fechamento", "funil_id": "demo-f-01", "ordem": 3 }
+  ]
+}

@@ -20,10 +20,14 @@
 // confirmamos capturando um evento real. Por isso todo evento é logado cru e a
 // rota SEMPRE responde 200 — se o formato divergir, a gente vê no log e ajusta
 // sem a uazapi ficar reenviando em loop.
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 import { sql } from "@/lib/db";
 import { soDigitos, chaveTelefone } from "@/lib/telefone";
 import { midiaDoEvento, baixarPendentesEmSegundoPlano } from "@/lib/midia";
+import { ORIGEM_RASTREIO } from "@/lib/uazapi";
+import { responderComIa } from "@/lib/ia/atendente";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ── Extração tolerante ──────────────────────────────────────────────────────
 // Aceita o evento solto ou dentro de { message } / { data }.
@@ -88,10 +92,13 @@ export async function POST(req: NextRequest) {
         // Só "avança" o status — nunca regride de 'lido' pra 'entregue'.
         const anteriores =
           novo === "lido" ? ["enviado", "entregue"] : ["enviado"];
+        // A lista vai como UMA string: array cru nesta conexão chega ao
+        // Postgres como texto solto ("malformed array literal", ver
+        // lib/db.ts) — e era por isso que entregue/lido nunca atualizavam.
         await sql`
           UPDATE mensagens SET status = ${novo}
           WHERE id_externo = ${idExterno}
-            AND status = ANY(${anteriores})`;
+            AND status = ANY(string_to_array(${anteriores.join(",")}, ','))`;
       }
       return Response.json({ ok: true });
     }
@@ -107,6 +114,28 @@ export async function POST(req: NextRequest) {
     // pelo próprio Chroma já é gravado na hora do envio (app/chat/actions.ts),
     // então o buraco real é só o que o SprintHub dispara por API.
     const fromMe: boolean = ev?.fromMe === true;
+
+    // ── Eco do que saiu por API ─────────────────────────────────────────────
+    // A instância criada pelo CRM não exclui nada do webhook, então o que NÓS
+    // mandamos volta aqui como fromMe. Antes isso virava uma segunda linha
+    // "pelo celular" ('aparelho') — e para a IA e a cadência, 'aparelho' é
+    // gente da equipe assumindo a conversa.
+    //   · com track_id nosso: é a linha que o chat/IA gravou; só confirma.
+    //   · sem: saiu por outra via de API (a cadência do n8n), que registra a
+    //     própria linha. Nada a gravar aqui.
+    if (fromMe && (ev?.wasSentByApi === true || ev?.track_source === ORIGEM_RASTREIO)) {
+      const idEco: string | null = ev?.messageid ?? ev?.id ?? null;
+      const nossa = typeof ev?.track_id === "string" ? ev.track_id : "";
+      if (ev?.track_source === ORIGEM_RASTREIO && UUID.test(nossa)) {
+        await sql`
+          UPDATE mensagens
+             SET id_externo = COALESCE(id_externo, ${idEco}),
+                 status = CASE WHEN status = 'pendente' THEN 'enviado' ELSE status END
+           WHERE id = ${nossa}
+             AND NOT EXISTS (SELECT 1 FROM mensagens x WHERE x.id_externo = ${idEco} AND x.id <> ${nossa})`;
+      }
+      return Response.json({ ok: true });
+    }
 
     const texto: string | undefined =
       ev?.text ?? ev?.message ?? ev?.body ?? ev?.content?.text;
@@ -252,6 +281,15 @@ export async function POST(req: NextRequest) {
       // demorarmos, e a URL dela expira se esperarmos um cron. Ver
       // baixarPendentesEmSegundoPlano em lib/midia.ts.
       if (estadoMidia === "pendente") baixarPendentesEmSegundoPlano();
+
+      // Mensagem DO CONTATO: a IA responde se ele estiver com IA (etapa ou
+      // vínculo) e ninguém da equipe estiver na conversa — quem decide é
+      // lib/ia/atendente.ts. Depois da resposta ao webhook: a geração leva
+      // segundos e a uazapi reenviaria se esperássemos.
+      if (!fromMe) {
+        const mensagemId = inseridas[0].id as string;
+        after(() => responderComIa(atendimentoId, mensagemId));
+      }
     }
 
     return Response.json({ ok: true });
