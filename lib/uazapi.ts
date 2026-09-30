@@ -15,6 +15,7 @@
 // continua fazendo.
 import { sql } from "@/lib/db";
 import { soDigitos } from "@/lib/telefone";
+import { conferirDestino } from "@/lib/destino-permitido";
 
 export type Instancia = {
   // null = a do .env, que não está na tabela.
@@ -163,6 +164,8 @@ export async function enviarTexto(
   rastreio?: string,
 ): Promise<RetornoEnvio> {
   const { baseUrl, token } = instancia;
+  // No dev, só para os números liberados (lib/destino-permitido.ts).
+  conferirDestino(number);
 
   const res = await fetch(`${baseUrl}/send/text`, {
     method: "POST",
@@ -206,6 +209,9 @@ const TIPO_UAZAPI: Record<string, string> = {
   video: "video",
   audio: "audio",
   documento: "document",
+  // Mensagem de voz (a do microfone), e não arquivo de áudio: é como a
+  // resposta falada da IA tem que chegar. "ptt" na doc do uazapiGO.
+  voz: "ptt",
 };
 
 /**
@@ -215,11 +221,52 @@ const TIPO_UAZAPI: Record<string, string> = {
  * documents"). Em imagem e vídeo o nome não aparece para quem recebe — o que
  * aparece é a legenda, e é ela que `texto` carrega.
  */
+// ── Mídia RECEBIDA ─────────────────────────────────────────────────────────
+//
+// O webhook não traz arquivo que se abra: `content.URL` é o .enc da CDN do
+// WhatsApp, criptografado com a mediaKey do aparelho. Quem decifra é a própria
+// instância (confirmado na doc do uazapiGO, 2026-09-29):
+//   POST {BASE}/message/download   header token
+//   body  { id, generate_mp3 }      → { fileURL (vale 2 dias), mimetype }
+// generate_mp3: áudio sai em MP3, que toca em qualquer navegador (o OGG/Opus
+// do WhatsApp não toca no Safari).
+
+/**
+ * Link público do arquivo de uma mensagem que chegou na instância `numero`.
+ * `idMensagem` é o id completo do evento ("<dono>:<messageid>"); se a uazapi
+ * não achar por ele, tenta só o messageid.
+ */
+export async function linkDaMidiaRecebida(
+  numero: string,
+  idMensagem: string,
+): Promise<{ url: string; mime: string | null }> {
+  const instancia = await instanciaExataPorNumero(numero);
+  if (!instancia) throw new Error(`nenhuma instância cadastrada com o número ${numero}`);
+
+  const curto = idMensagem.includes(":") ? idMensagem.slice(idMensagem.indexOf(":") + 1) : idMensagem;
+  let ultimoErro = "";
+  for (const id of [...new Set([idMensagem, curto])]) {
+    const res = await fetch(`${instancia.baseUrl}/message/download`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", token: instancia.token },
+      body: JSON.stringify({ id, generate_mp3: true }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(60_000),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && typeof data?.fileURL === "string" && data.fileURL) {
+      return { url: data.fileURL, mime: typeof data.mimetype === "string" ? data.mimetype : null };
+    }
+    ultimoErro = data?.error ?? `uazapi respondeu ${res.status} ao baixar a mídia`;
+  }
+  throw new Error(ultimoErro);
+}
+
 export async function enviarMidia(
   number: string,
   arquivo: string,
   opcoes: {
-    tipo: "imagem" | "video" | "audio" | "documento";
+    tipo: "imagem" | "video" | "audio" | "documento" | "voz";
     /** Legenda. Vazia é legítimo: manda só o arquivo. */
     texto?: string;
     /** Nome que o lead vê no anexo. Só usado quando tipo = documento. */
@@ -230,6 +277,8 @@ export async function enviarMidia(
   rastreio?: string,
 ): Promise<RetornoEnvio> {
   const { baseUrl, token } = instancia;
+  // No dev, só para os números liberados (lib/destino-permitido.ts).
+  conferirDestino(number);
 
   const corpo: Record<string, unknown> = {
     number,

@@ -2,6 +2,7 @@
 // daqui, então nada de import de servidor (banco, uazapi, Meta).
 import type { Atendimento, Contato, Etapa, Funil, Mensagem, Oportunidade, Usuario } from "../data";
 import type { Documento } from "@/lib/documentos";
+import type { EstadoIaContato, IaResumo } from "@/lib/ia/catalogo";
 
 export type TipoCanal = "web" | "api";
 export type EstadoCanal = "conectado" | "conectando" | "desconectado" | "desconhecido";
@@ -66,6 +67,8 @@ export type ConversaAberta = {
   contato: Contato;
   mensagens: MensagemChat[];
   oportunidades: Oportunidade[];
+  /** Quem atende o contato: o ajuste dele (contatos.ia/ia_id) e o que a etapa diria. */
+  ia: EstadoIaContato;
   /** O mesmo contato falando com OUTROS números nossos. */
   outras: Array<{ id: string; numero_instancia: string | null; canal: Atendimento["canal"]; status: Atendimento["status"] }>;
 };
@@ -80,6 +83,8 @@ export type DadosChat = {
   funis: Funil[];
   etapas: Etapa[];
   documentos: Documento[];
+  /** As IAs de atendimento, para o "ligada à mão" do interruptor do contato. */
+  ias: IaResumo[];
   /** Dados fictícios (só em desenvolvimento, ?demo=1): nada é gravado nem enviado. */
   demo: boolean;
 };

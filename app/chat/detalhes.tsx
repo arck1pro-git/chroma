@@ -11,6 +11,8 @@ import Link from "next/link";
 import { Check, Copy, Mail, MapPin, Phone, Plus, Wallet, X } from "lucide-react";
 import type { Etapa, Funil } from "../data";
 import { brl, localizacao } from "../formato";
+import { InterruptorIaContato } from "../components/interruptor-ia-contato";
+import type { IaResumo } from "@/lib/ia/catalogo";
 import type { CanalChat, ConversaAberta } from "./tipos";
 import { Avatar, PAPEL, canalDaConversa, formatarTelefone, fotoDoContato, tipoDaConversa } from "./ui";
 
@@ -23,7 +25,11 @@ export function PainelDetalhes({
   aoFechar,
   aoIrPara,
   aoNovaOportunidade,
+  ias,
+  aoDefinirIa,
 }: {
+  ias: IaResumo[];
+  aoDefinirIa: (valor: boolean | null, iaId: string | null) => Promise<{ erro?: string }>;
   aberta: ConversaAberta;
   canais: CanalChat[];
   funis: Funil[];
@@ -91,6 +97,16 @@ export function PainelDetalhes({
             <CanalLinha canal={canalDaConversa(canais, resumo)} tipo={tipoDaConversa(resumo)} />
           </Linha>
         </dl>
+
+        <section className="border-b border-zinc-100 px-5 py-4 dark:border-zinc-900">
+          <h3 className="mb-2 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">Atendimento por IA</h3>
+          <InterruptorIaContato
+            estado={aberta.ia}
+            ias={ias}
+            aoDefinir={aoDefinirIa}
+            desabilitado={demo}
+          />
+        </section>
 
         {outras.length > 0 && (
           <section className="border-b border-zinc-100 px-5 py-4 dark:border-zinc-900">

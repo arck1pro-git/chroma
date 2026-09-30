@@ -11,7 +11,6 @@ import { listaUuid, sql } from "@/lib/db";
 import {
   automacoesDaEntidade,
   dadosDeDisparo,
-  inscreverNaCadenciaDaEtapa,
   inscreverOportunidades,
   pausarExecucao,
   retomarExecucao,
@@ -23,8 +22,8 @@ import {
   ehDuplicadaNoFunil,
   jaTemAberta,
 } from "@/lib/oportunidades";
+import { entrarNaCadencia, moverOportunidadeDeEtapa } from "@/lib/mover-etapa";
 import {
-  moverEtapaRegistrando,
   registrarOportunidadeCriada,
   registrarResponsavel,
   registrarSegmento,
@@ -46,30 +45,10 @@ export async function moverOportunidade(
   funilId: string,
 ) {
   await exigirModulo("inicio");
-  const mudou = await moverEtapaRegistrando(id, etapaId, funilId);
-  // Entrar na etapa é entrar na cadência dela, se houver uma rodando. É o que
-  // faz a cadência valer para "as próximas que entrarem" sem ninguém clicar em
-  // nada — ver inscreverNaCadenciaDaEtapa.
-  await entrarNaCadencia(id, etapaId);
-  // Só quando a etapa mudou: reordenar dentro da coluna não é entrar nela.
-  if (mudou) eventoAoEntrarNaEtapa(id, etapaId);
+  // Histórico, cadência da etapa e evento da Meta: o mesmo caminho da IA que
+  // move oportunidade pelo WhatsApp (lib/mover-etapa.ts).
+  await moverOportunidadeDeEtapa(id, etapaId, funilId);
   revalidatePath("/");
-}
-
-/**
- * Põe a oportunidade na cadência da etapa e manda o motor começar.
- *
- * NÃO DERRUBA QUEM CHAMOU: mover o card é a ação; a cadência é consequência.
- * Se o n8n estiver fora do ar, o card fica na etapa nova do mesmo jeito e a
- * inscrição já está gravada — o próximo Publicar a leva ao motor.
- */
-async function entrarNaCadencia(oportunidadeId: string, etapaId: string) {
-  try {
-    const r = await inscreverNaCadenciaDaEtapa(oportunidadeId, etapaId);
-    if (r) await dispararInscritos(r.fluxo, "oportunidade", r.inscritos);
-  } catch (e) {
-    console.error("[cadencia] falhou ao inscrever na entrada da etapa:", e);
-  }
 }
 
 // ── Status da oportunidade ──────────────────────────────────────────────────

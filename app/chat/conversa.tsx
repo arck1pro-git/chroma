@@ -41,6 +41,8 @@ import {
   tipoDaConversa,
 } from "./ui";
 import { horaCurta } from "../formato";
+import { InterruptorIaCompacto } from "../components/interruptor-ia-contato";
+import type { IaResumo } from "@/lib/ia/catalogo";
 
 // ── Cabeçalho ───────────────────────────────────────────────────────────────
 
@@ -62,7 +64,13 @@ export function CabecalhoConversa({
   aoReabrir,
   aoOportunidade,
   aoDetalhes,
+  ias,
+  aoDefinirIa,
+  aoEscolherIa,
 }: {
+  ias: IaResumo[];
+  aoDefinirIa: (valor: boolean | null, iaId: string | null) => Promise<{ erro?: string }>;
+  aoEscolherIa: () => void;
   aberta: ConversaAberta;
   canal: CanalChat | undefined;
   usuarios: Usuario[];
@@ -128,6 +136,15 @@ export function CabecalhoConversa({
           )}
         </span>
 
+        {/* O interruptor de IA do CONTATO, onde se responde: ligar aqui é o
+            mesmo que ligar na gaveta do dashboard (contatos.ia). */}
+        <InterruptorIaCompacto
+          estado={aberta.ia}
+          ias={ias}
+          aoDefinir={aoDefinirIa}
+          aoEscolher={aoEscolherIa}
+          desabilitado={demo}
+        />
         {semDono && (
           <button type="button" onClick={aoAssumir} disabled={demo} className={botaoPrimario}>
             <Hand className="size-3.5" />
@@ -361,6 +378,10 @@ function Balao({
         {m.tipo !== "texto" && <Anexo mensagem={m} nosso={nosso && !automacao} />}
         {m.texto ? (
           <p className="whitespace-pre-wrap break-words">
+            {/* Em áudio, o texto é a transcrição (lib/transcricao.ts), não algo que alguém digitou. */}
+            {m.tipo === "audio" && (
+              <span className={`block text-[10.5px] font-medium uppercase tracking-wide ${apagado}`}>Transcrição</span>
+            )}
             <TextoWhatsApp texto={m.texto} link={link} />
             {/* Reserva o canto da última linha para a hora, como no WhatsApp. */}
             <span className={`inline-block ${nosso ? "w-[58px]" : "w-10"}`} aria-hidden="true" />

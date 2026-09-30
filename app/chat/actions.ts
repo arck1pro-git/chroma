@@ -42,6 +42,7 @@ import {
   motivo,
   telefoneOficial,
 } from "@/lib/conversa-envio";
+import { gravarIaDoContato } from "@/lib/ia/contato-ia";
 import type { TemplateChat } from "./tipos";
 
 /** `registrada`: a mensagem chegou a ser gravada (e está na conversa com o erro). */
@@ -405,6 +406,26 @@ export async function reabrirAtendimento(id: string): Promise<void> {
        SET status = 'aberto', responsavel_id = ${usuario.id}
      WHERE id = ${id}`;
   revalidatePath("/chat");
+}
+
+/**
+ * O interruptor de IA do contato, direto da conversa. `null` volta a seguir a
+ * etapa; `true` pede qual IA (`iaId`). Mesma gravação da gaveta do dashboard
+ * (lib/ia/contato-ia.ts).
+ */
+export async function definirIaDoContatoNoChat(
+  contatoId: string,
+  valor: boolean | null,
+  iaId: string | null,
+): Promise<Resultado> {
+  const { usuario } = await exigirModulo("chat");
+  if (!UUID.test(contatoId)) return { erro: "Contato inválido." };
+  if (iaId !== null && !UUID.test(iaId)) return { erro: "IA inválida." };
+  const r = await gravarIaDoContato(contatoId, valor, iaId, usuario.id);
+  if (r.erro) return r;
+  revalidatePath("/chat");
+  revalidatePath("/");
+  return {};
 }
 
 /** Abriu = leu. É o que zera as não lidas na lista e no canal. */

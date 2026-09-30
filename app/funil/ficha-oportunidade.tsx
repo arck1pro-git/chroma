@@ -12,7 +12,6 @@ import {
   Mail,
   MapPin,
   MessageCircle,
-  MessageSquare,
   Pause,
   Paperclip,
   Play,
@@ -51,6 +50,7 @@ import { STATUS_OPORTUNIDADE, type StatusOportunidade } from "./status";
 import CamadaTopo from "../components/camada-topo";
 import type { AutomacaoDaEntidade } from "@/lib/automacoes/repositorio";
 import { CamposDoContato, ListaCampos } from "../components/campos-personalizados";
+import { AnotacoesContato } from "../components/anotacoes-contato";
 
 // Mesmo mapa do /chat (app/chat/chat.tsx) — duplicado de propósito: são só 3
 // linhas e os dois lados vivem em módulos diferentes o bastante pra uma
@@ -709,29 +709,12 @@ export default function FichaOportunidade({
               )}
             </Secao>
 
-            <Secao Icone={MessageSquare} titulo="Anotações" contagem={anotacoes.length}>
-              {anotacoes.length === 0 ? (
-                <Vazio>Nada anotado sobre este contato</Vazio>
-              ) : (
-                <ul className="flex flex-col gap-2.5">
-                  {anotacoes.map((a) => (
-                    <li
-                      key={a.id}
-                      className="rounded-xl bg-amber-50/60 p-3 ring-1 ring-inset ring-amber-100 dark:bg-amber-500/5 dark:ring-amber-500/15"
-                    >
-                      <p className="text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-200">
-                        {a.texto}
-                      </p>
-                      <p className="mt-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">
-                        {usuarioPorId.get(a.autor_id)?.nome ?? "Autor desconhecido"} ·{" "}
-                        {dataHora(a.data_criacao)}
-                        {a.data_atualizacao && " · editada"}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Secao>
+            <AnotacoesContato
+              key={contato.id}
+              contatoId={contato.id}
+              anotacoes={anotacoes}
+              usuarioPorId={usuarioPorId}
+            />
 
             <Secao Icone={Clock} titulo="Histórico" contagem={historico.length}>
               {historico.length === 0 ? (

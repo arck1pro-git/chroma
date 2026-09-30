@@ -1,50 +1,110 @@
 "use server";
 
-// Ligar a IA numa etapa e mexer na exceção do contato — as duas pontas do
-// "quem a IA atende" (ver app/funil/ia.ts e lib/ia/atendente.ts).
+// As IAs de atendimento (criar, editar, excluir) e as duas pontas do "quem a
+// IA atende": a IA da etapa e o interruptor do contato (ver app/funil/ia.ts e
+// lib/ia/atendente.ts).
 //
-// Módulo "inicio": é onde o quadro e a gaveta de contatos moram, e as outras
-// ações da gaveta (app/contatos/actions.ts) pedem o mesmo.
+// Módulo "inicio": é onde o quadro, a gaveta de contatos e a de IAs moram, e
+// as outras ações da gaveta (app/contatos/actions.ts) pedem o mesmo. O chat tem
+// a sua própria entrada para o interruptor do contato (app/chat/actions.ts).
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { exigirModulo } from "@/lib/auth/dal";
+import { gravarIaDoContato } from "@/lib/ia/contato-ia";
+import { CHAVES_ACOES, LIMITE_NOME_IA, LIMITE_PROMPT_IA } from "@/lib/ia/catalogo";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function definirIaDaEtapa(etapaId: string, ligada: boolean): Promise<{ erro?: string }> {
+export type DadosIa = { nome: string; prompt: string; acoes: string[] };
+
+/** Limpa e confere o que veio do formulário; string = o erro para a tela. */
+function validar(d: DadosIa): DadosIa | string {
+  const nome = (d.nome ?? "").trim();
+  const prompt = (d.prompt ?? "").trim();
+  if (!nome) return "Dê um nome para a IA.";
+  if (nome.length > LIMITE_NOME_IA) return `Nome com no máximo ${LIMITE_NOME_IA} caracteres.`;
+  if (!prompt) return "Escreva o prompt da IA.";
+  if (prompt.length > LIMITE_PROMPT_IA) return `Prompt com no máximo ${LIMITE_PROMPT_IA.toLocaleString("pt-BR")} caracteres.`;
+  // Chave desconhecida é descartada, não recusada: o catálogo é a lista válida.
+  // (As chaves não têm vírgula — é o que deixa gravar com string_to_array, já
+  // que array como parâmetro não passa nesta conexão; ver listaUuid em lib/db.)
+  const acoes = [...new Set((d.acoes ?? []).filter((a) => CHAVES_ACOES.includes(a)))];
+  return { nome, prompt, acoes };
+}
+
+export async function criarIa(d: DadosIa): Promise<{ id?: string; erro?: string }> {
+  await exigirModulo("inicio");
+  const v = validar(d);
+  if (typeof v === "string") return { erro: v };
+  const [nova] = await sql`
+    INSERT INTO ias (nome, prompt, acoes)
+    VALUES (${v.nome}, ${v.prompt}, string_to_array(${v.acoes.join(",")}, ','))
+    RETURNING id`;
+  revalidatePath("/");
+  return { id: nova.id as string };
+}
+
+export async function atualizarIa(id: string, d: DadosIa): Promise<{ erro?: string }> {
+  await exigirModulo("inicio");
+  if (!UUID.test(id)) return { erro: "IA inválida." };
+  const v = validar(d);
+  if (typeof v === "string") return { erro: v };
+  const [linha] = await sql`
+    UPDATE ias SET nome = ${v.nome}, prompt = ${v.prompt}, acoes = string_to_array(${v.acoes.join(",")}, ',')
+     WHERE id = ${id}
+    RETURNING id`;
+  if (!linha) return { erro: "Essa IA não existe mais." };
+  revalidatePath("/");
+  revalidatePath("/chat");
+  return {};
+}
+
+/**
+ * Exclui a IA. As etapas e os contatos que a usavam ficam SEM IA (a FK é
+ * ON DELETE SET NULL) — a tela avisa quantos antes de confirmar. O contato
+ * ligado à mão nela volta a seguir a etapa, e não a ficar "ligado sem IA".
+ */
+export async function excluirIa(id: string): Promise<{ erro?: string }> {
+  const { usuario } = await exigirModulo("inicio");
+  if (!UUID.test(id)) return { erro: "IA inválida." };
+  const contatos = await sql`SELECT id FROM contatos WHERE ia_id = ${id}`;
+  for (const c of contatos) await gravarIaDoContato(c.id as string, null, null, usuario.id);
+  await sql`DELETE FROM ias WHERE id = ${id}`;
+  revalidatePath("/");
+  revalidatePath("/chat");
+  return {};
+}
+
+/** A IA que atende quem está na etapa; `null` desliga. */
+export async function definirIaDaEtapa(etapaId: string, iaId: string | null): Promise<{ erro?: string }> {
   await exigirModulo("inicio");
   if (!UUID.test(etapaId)) return { erro: "Etapa inválida." };
-  await sql`UPDATE etapas SET ia_atende = ${ligada} WHERE id = ${etapaId}`;
+  if (iaId !== null && !UUID.test(iaId)) return { erro: "IA inválida." };
+  try {
+    await sql`UPDATE etapas SET ia_id = ${iaId}::uuid WHERE id = ${etapaId}`;
+  } catch {
+    // FK: a IA foi excluída por outra pessoa enquanto o diálogo estava aberto.
+    return { erro: "Essa IA não existe mais. Recarregue a página." };
+  }
   revalidatePath("/");
   return {};
 }
 
-const FRASE: Record<string, string> = {
-  true: "Contato vinculado à IA: ela responde no WhatsApp em qualquer etapa.",
-  false: "Contato removido da IA: ela não responde mais no WhatsApp.",
-  null: "Atendimento por IA do contato voltou a seguir a etapa.",
-};
-
 /**
- * A exceção do contato: `true` vinculado, `false` removido, `null` segue a
- * etapa. Fica no histórico com quem mexeu — é a primeira pergunta quando a IA
- * "parou de responder" alguém.
+ * `true` ligada à mão (com a IA `iaId`), `false` desligada à mão, `null` volta
+ * a seguir a etapa.
  */
 export async function definirIaDoContato(
   contatoId: string,
   valor: boolean | null,
+  iaId: string | null,
 ): Promise<{ erro?: string }> {
   const { usuario } = await exigirModulo("inicio");
   if (!UUID.test(contatoId)) return { erro: "Contato inválido." };
-  const [linha] = await sql`
-    UPDATE contatos SET ia = ${valor}
-     WHERE id = ${contatoId} AND ia IS DISTINCT FROM ${valor}
-    RETURNING id`;
-  if (linha) {
-    await sql`
-      INSERT INTO historico (contato_id, descricao, autor_id)
-      VALUES (${contatoId}, ${FRASE[String(valor)]}, ${usuario.id})`;
-  }
+  if (iaId !== null && !UUID.test(iaId)) return { erro: "IA inválida." };
+  const r = await gravarIaDoContato(contatoId, valor, iaId, usuario.id);
+  if (r.erro) return r;
   revalidatePath("/");
+  revalidatePath("/chat");
   return {};
 }

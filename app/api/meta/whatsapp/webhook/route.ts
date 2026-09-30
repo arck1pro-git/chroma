@@ -79,16 +79,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // A URL da mídia da Meta vale minutos: o download começa já, mas depois da
-  // resposta — a Meta espera um 200 rápido.
-  if (comMidia > 0) {
-    after(() => baixarPendentes().then(() => undefined));
-  }
-
-  // A IA responde (se o contato estiver com IA e ninguém da equipe na
-  // conversa) — decidido e feito em lib/ia/atendente.ts, depois do 200.
-  for (const n of novas) {
-    after(() => responderComIa(n.atendimentoId, n.mensagemId));
+  // Depois do 200 (a Meta espera resposta rápida), nesta ordem:
+  //   1. A mídia: a URL da Meta vale minutos, então o download começa já, e o
+  //      áudio sai transcrito (lib/midia.ts).
+  //   2. A IA (se o contato estiver com IA e ninguém da equipe na conversa,
+  //      decidido em lib/ia/atendente.ts). Depois da mídia porque responder um
+  //      áudio antes da transcrição seria responder sem saber o que ele disse.
+  if (comMidia > 0 || novas.length > 0) {
+    after(async () => {
+      if (comMidia > 0) await baixarPendentes();
+      await Promise.all(novas.map((n) => responderComIa(n.atendimentoId, n.mensagemId)));
+    });
   }
 
   return Response.json({ ok: true, recebidas, respostas });

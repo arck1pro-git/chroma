@@ -1,6 +1,6 @@
 // Retentativa manual da fila de mídia.
 //
-// A baixa normal sai sozinha do webhook (baixarPendentesEmSegundoPlano). Esta
+// A baixa normal sai sozinha dos webhooks (baixarPendentes no `after`). Esta
 // rota existe para os dois casos em que aquilo não bastou:
 //   · o processo caiu no meio, e sobraram linhas 'pendente'
 //   · a origem falhou e a linha virou 'erro' — retentar é decisão de gente,

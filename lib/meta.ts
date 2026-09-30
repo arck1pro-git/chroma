@@ -1,4 +1,5 @@
 import "server-only";
+import { conferirDestino } from "@/lib/destino-permitido";
 
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION?.trim() || "v26.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
@@ -199,6 +200,8 @@ export async function enviarTemplateMeta(telefoneId: string, entrada: {
   to: string; name: string; language: string;
   components?: Array<Record<string, unknown>>;
 }) {
+  // No dev, só para os números liberados (lib/destino-permitido.ts).
+  conferirDestino(entrada.to);
   return requisicao<{ messages?: Array<{ id: string }> }>(`${telefoneId}/messages`, {
     method: "POST",
     body: {
@@ -223,6 +226,7 @@ export async function enviarTemplateMeta(telefoneId: string, entrada: {
 // transporte.
 
 export async function enviarTextoMeta(telefoneId: string, para: string, corpo: string) {
+  conferirDestino(para);
   return requisicao<{ messages?: Array<{ id: string }> }>(`${telefoneId}/messages`, {
     method: "POST",
     body: {
@@ -279,6 +283,7 @@ export async function enviarMidiaMeta(
   midiaId: string,
   opcoes: { legenda?: string; arquivoNome?: string } = {},
 ) {
+  conferirDestino(para);
   const midia: Record<string, string> = { id: midiaId };
   // Áudio não aceita legenda na Cloud API — mandar derruba o envio inteiro.
   if (opcoes.legenda && tipo !== "audio") midia.caption = opcoes.legenda;

@@ -95,7 +95,17 @@ async function carregarAberta(id: string): Promise<ConversaAberta | null> {
   const [contatos, mensagens, oportunidades, outras] = await Promise.all([
     sql`
       SELECT id, nome, whatsapp, email, cidade, estado, pais,
-             to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
+             to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao,
+             ia AS ia_valor, ia_id AS ia_ia_id,
+             (SELECT string_agg(DISTINCT e.nome, ', ')
+                FROM oportunidades o JOIN etapas e ON e.id = o.etapa_id
+               WHERE o.contato_id = contatos.id AND o.status = 'aberta' AND e.ia_id IS NOT NULL) AS ia_etapas,
+             -- A IA dessas etapas: a da oportunidade mais nova, mesma preferência
+             -- de lib/ia/atendente.ts (sem o desempate pela anexada à conversa).
+             (SELECT i.nome
+                FROM oportunidades o JOIN etapas e ON e.id = o.etapa_id JOIN ias i ON i.id = e.ia_id
+               WHERE o.contato_id = contatos.id AND o.status = 'aberta'
+               ORDER BY o.data_criacao DESC LIMIT 1) AS ia_da_etapa
       FROM contatos WHERE id = ${resumo.contato_id}`,
     sql`
       SELECT id, atendimento_id, origem, autor_id, texto, status, erro, enviada_por, id_externo,
@@ -120,6 +130,12 @@ async function carregarAberta(id: string): Promise<ConversaAberta | null> {
     id,
     resumo,
     contato: contatos[0] as unknown as Contato,
+    ia: {
+      valor: (contatos[0]?.ia_valor as boolean | null) ?? null,
+      iaId: (contatos[0]?.ia_ia_id as string | null) ?? null,
+      etapas: (contatos[0]?.ia_etapas as string | null) ?? null,
+      iaDaEtapa: (contatos[0]?.ia_da_etapa as string | null) ?? null,
+    },
     // Vieram do mais novo para o mais antigo (para o LIMIT pegar as recentes);
     // a conversa se lê de cima para baixo.
     mensagens: (mensagens as unknown as MensagemChat[]).reverse(),
@@ -139,7 +155,7 @@ export async function carregarChat({
   const alvo = canal ? fim8(canal) : null;
   const idAberta = atendimentoId && UUID.test(atendimentoId) ? atendimentoId : null;
 
-  const [canais, contagens, conversas, aberta, usuarios, funis, etapas, documentos] =
+  const [canais, contagens, conversas, aberta, usuarios, funis, etapas, documentos, ias] =
     await Promise.all([
       listarCanais(),
       // Por canal: quantas conversas na fila e quantas com algo não lido.
@@ -166,6 +182,7 @@ export async function carregarChat({
       // A biblioteca pode não existir ainda (migration-documentos.sql): sem ela
       // o botão de anexar some e nada mais muda.
       documentosEscolhiveis().catch(() => []),
+      sql`SELECT id, nome FROM ias ORDER BY data_criacao`,
     ]);
 
   const porCanal = new Map(
@@ -209,6 +226,7 @@ export async function carregarChat({
     funis: funis as unknown as Funil[],
     etapas: etapasComCor,
     documentos,
+    ias: ias as unknown as DadosChat["ias"],
     demo: false,
   };
 }

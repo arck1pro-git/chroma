@@ -110,6 +110,7 @@ export function carregarChatDemo({
     ? {
         id: resumoAberto.id,
         resumo: resumoAberto,
+        ia: { valor: null, iaId: null, etapas: null, iaDaEtapa: null },
         contato: contatoPorId.get(resumoAberto.contato_id) as unknown as Contato,
         mensagens: mensagens.filter((m) => m.atendimento_id === resumoAberto.id),
         oportunidades: dadosMock.oportunidades
@@ -142,6 +143,7 @@ export function carregarChatDemo({
     funis: dadosMock.funis.map((f) => ({ ...f, data_criacao: dadosMock.base, descricao: "" })),
     etapas,
     documentos: [],
+    ias: [],
     demo: true,
   };
 }

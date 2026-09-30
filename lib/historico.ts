@@ -73,11 +73,15 @@ export async function registrarOportunidadeCriada(oportunidadeId: string) {
  * Devolve se a etapa MUDOU — é a mesma condição da linha de histórico, então
  * sai do RETURNING dela. Quem dispara efeito de "entrou na etapa" (o evento da
  * Meta) precisa disso: reordenar dentro da coluna não é entrar.
+ *
+ * `complemento` vai no fim da frase — é por onde a IA diz que foi ela e por
+ * quê (" pela IA X: cliente pediu visita").
  */
 export async function moverEtapaRegistrando(
   oportunidadeId: string,
   etapaId: string,
   funilId: string,
+  complemento = "",
 ): Promise<boolean> {
   const registradas = await sql`
     WITH antes AS (
@@ -92,7 +96,8 @@ export async function moverEtapaRegistrando(
     INSERT INTO historico (contato_id, oportunidade_id, descricao)
     SELECT a.contato_id, a.id,
            'Movida de ' || coalesce(de.nome, 'etapa desconhecida') ||
-           ' para ' || coalesce(para.nome, 'etapa desconhecida')
+           ' para ' || coalesce(para.nome, 'etapa desconhecida') ||
+           ${complemento.slice(0, 500)}::text
     FROM antes a
     LEFT JOIN etapas de   ON de.id = a.etapa_id
     LEFT JOIN etapas para ON para.id = ${etapaId}

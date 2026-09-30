@@ -31,9 +31,10 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Check, Funnel, Layers, ListTree, Plus, Users } from "lucide-react";
+import { Bot, Check, Funnel, Layers, ListTree, Plus, Users } from "lucide-react";
 import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
 import type { DadosFunil } from "../funil/dados";
+import type { Ia } from "@/lib/ia/catalogo";
 import { brl } from "../formato";
 import CartaoOportunidade from "../funil/cartao";
 import BarraSelecao, { type FluxoDisponivel } from "../funil/barra-selecao";
@@ -53,6 +54,7 @@ import {
   type Filtros,
 } from "../funil/filtros";
 import GavetaContatos from "./gaveta-contatos";
+import GavetaIas from "./gaveta-ias";
 import InterruptorIa from "./interruptor-ia";
 import { corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
@@ -242,6 +244,8 @@ function ColunaResumo({
   aoAbrirSubetapas,
   selecionados,
   aoSelecionar,
+  ias,
+  aoGerenciarIas,
 }: {
   // posição da coluna no quadro; serve só ao escalonamento da entrada
   ordem: number;
@@ -261,6 +265,9 @@ function ColunaResumo({
   aoAbrirSubetapas: (etapa: Etapa) => void;
   selecionados: Set<string>;
   aoSelecionar: (id: string, marcado: boolean) => void;
+  // as IAs para o seletor da etapa, e o atalho para a gaveta delas
+  ias: Ia[];
+  aoGerenciarIas: () => void;
 }) {
   const total = oportunidades.reduce((soma, o) => soma + o.valor, 0);
   // a área de cards é o alvo de soltura — inclusive quando a etapa está vazia
@@ -391,7 +398,12 @@ function ColunaResumo({
             />
           )}
         </button>
-        <InterruptorIa etapa={etapa} quantidade={oportunidades.length} />
+        <InterruptorIa
+          etapa={etapa}
+          quantidade={oportunidades.length}
+          ias={ias}
+          aoGerenciarIas={aoGerenciarIas}
+        />
         </div>
       </div>
 
@@ -555,6 +567,9 @@ export default function Inicio({
       "",
   );
   const [gavetaAberta, setGavetaAberta] = useState(false);
+  // A gaveta das IAs (botão IA do topo). Uma gaveta por vez: as duas moram no
+  // mesmo canto e abrir uma fecha a outra.
+  const [gavetaIasAberta, setGavetaIasAberta] = useState(false);
   const [opAbertaId, setOpAbertaId] = useState<string | null>(opInicial);
   const [destacadoId, setDestacadoId] = useState<string | null>(opInicial);
   // etapa onde o botão "+" foi clicado; não-nulo abre o formulário.
@@ -623,6 +638,11 @@ export default function Inicio({
     const tempo = setTimeout(() => setDestacadoId(null), 2600);
     return () => clearTimeout(tempo);
   }, [destacadoId]);
+
+  function abrirGavetaIas() {
+    setGavetaAberta(false);
+    setGavetaIasAberta(true);
+  }
 
   // A oportunidade pode ser de outro funil (veio da gaveta de um contato):
   // troca o quadro junto, senão o destaque aponta pra um card fora da tela.
@@ -837,15 +857,33 @@ export default function Inicio({
               botao="w-56"
             />
 
+            {/* As IAs de atendimento, ao lado dos contatos: a mesma gaveta da
+                direita, com as IAs criadas e o botão de criar. Fica À ESQUERDA
+                do de contatos para o de contatos continuar no canto. */}
+            <button
+              type="button"
+              onClick={abrirGavetaIas}
+              aria-expanded={gavetaIasAberta}
+              aria-label={`IAs de atendimento (${dados.ias.length})`}
+              title="IAs de atendimento"
+              className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+            >
+              <Bot className="size-4" aria-hidden="true" />
+              <span className="tabular-nums">{dados.ias.length}</span>
+            </button>
+
             {/* Canto superior direito: abre a gaveta de contatos. aria-expanded
                 porque o botão é o controle de um painel que já está na página. */}
             <button
               type="button"
-              onClick={() => setGavetaAberta(true)}
+              onClick={() => {
+                setGavetaIasAberta(false);
+                setGavetaAberta(true);
+              }}
               aria-expanded={gavetaAberta}
               aria-label={`Contatos (${contatos.length})`}
               title="Contatos"
-              className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
             >
               <Users className="size-4" aria-hidden="true" />
               <span className="tabular-nums">{contatos.length}</span>
@@ -972,6 +1010,8 @@ export default function Inicio({
                           aoAbrirSubetapas={setEtapaSubetapas}
                           selecionados={selecionados}
                           aoSelecionar={aoSelecionar}
+                          ias={dados.ias}
+                          aoGerenciarIas={abrirGavetaIas}
                         />
                       ))}
                     </div>
@@ -1035,6 +1075,7 @@ export default function Inicio({
                 ? `; ficha aberta: "${oportunidadeAberta.nome}"`
                 : "") +
               (gavetaAberta ? "; gaveta de contatos aberta" : "") +
+              (gavetaIasAberta ? "; gaveta de IAs de atendimento aberta" : "") +
               (etapaSubetapas
                 ? `; subetapas da etapa "${etapaSubetapas.nome}" abertas`
                 : "")
@@ -1080,8 +1121,19 @@ export default function Inicio({
           funilPorId={dados.funilPorId}
           usuarioPorId={usuarioPorId}
           camposContato={dados.camposContato}
+          ias={dados.ias}
           aoAbrirOportunidade={abrirOportunidade}
           aoFechar={() => setGavetaAberta(false)}
+        />
+      )}
+
+      {gavetaIasAberta && (
+        <GavetaIas
+          ias={dados.ias}
+          etapas={etapas}
+          contatos={contatos}
+          funilPorId={dados.funilPorId}
+          aoFechar={() => setGavetaIasAberta(false)}
         />
       )}
 

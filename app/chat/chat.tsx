@@ -19,6 +19,7 @@ import { FlaskConical, Loader2 } from "lucide-react";
 import type { DadosChat, MensagemChat } from "./tipos";
 import {
   assumirAtendimento,
+  definirIaDoContatoNoChat,
   encerrarAtendimento,
   enviarDocumento,
   enviarMensagem,
@@ -253,6 +254,10 @@ export default function Chat({ dados, usuarioId }: { dados: DadosChat; usuarioId
                 aoReabrir={() => iniciar(() => reabrirAtendimento(aberta.id))}
                 aoOportunidade={() => setOportunidade(true)}
                 aoDetalhes={() => setDetalhes((v) => !v)}
+                ias={dados.ias}
+                aoDefinirIa={(v, iaId) => definirIaDoContatoNoChat(aberta.contato.id, v, iaId)}
+                // Ligar sem IA na etapa pede a escolha: o painel do contato tem o seletor.
+                aoEscolherIa={() => setDetalhes(true)}
               />
               <Mensagens mensagens={mensagens} usuarios={dados.usuarios} conversaId={aberta.id} carregando={false} />
               <Compositor
@@ -279,6 +284,8 @@ export default function Chat({ dados, usuarioId }: { dados: DadosChat; usuarioId
                     irPara(chave && chave === canalAtual ? canalAtual : "", id);
                   }}
                   aoNovaOportunidade={() => setOportunidade(true)}
+                  ias={dados.ias}
+                  aoDefinirIa={(v, iaId) => definirIaDoContatoNoChat(aberta.contato.id, v, iaId)}
                 />
               )}
             </>

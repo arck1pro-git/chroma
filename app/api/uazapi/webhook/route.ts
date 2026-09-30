@@ -23,7 +23,7 @@
 import { NextRequest, after } from "next/server";
 import { sql } from "@/lib/db";
 import { soDigitos, chaveTelefone } from "@/lib/telefone";
-import { midiaDoEvento, baixarPendentesEmSegundoPlano } from "@/lib/midia";
+import { midiaDoEvento, baixarPendentes, temArquivo } from "@/lib/midia";
 import { ORIGEM_RASTREIO } from "@/lib/uazapi";
 import { responderComIa } from "@/lib/ia/atendente";
 
@@ -240,10 +240,22 @@ export async function POST(req: NextRequest) {
     // reenvio do n8n) e a linha já pode existir se foi o Chroma que enviou. O
     // índice é PARCIAL (id_externo IS NOT NULL), então o predicado tem que
     // aparecer aqui pro Postgres inferir qual índice usar.
+    // De onde buscar o arquivo. O uazapiGO não manda URL que se abra (só o .enc
+    // criptografado), então a origem vira "peça à instância esta mensagem":
+    // uazapi:<id do evento>, que já é "<número da instância>:<messageid>".
     // midia_estado: 'pendente' só quando há arquivo para buscar. Localização e
     // contato têm tipo próprio mas nada para baixar, e ficariam presos numa
-    // fila que nunca sai — daí o teste ser pela URL, não pelo tipo.
-    const estadoMidia = midia?.url ? "pendente" : "ausente";
+    // fila que nunca sai.
+    const donoDoEvento = numeroInstancia ?? (soDigitos(String(ev?.owner ?? "")) || null);
+    const idDoEvento: string | null =
+      typeof ev?.id === "string" && ev.id.includes(":")
+        ? ev.id
+        : donoDoEvento && ev?.messageid
+          ? `${donoDoEvento}:${ev.messageid}`
+          : null;
+    const origemMidia =
+      midia?.url ?? (midia && temArquivo(midia.tipo) && idDoEvento ? `uazapi:${idDoEvento}` : null);
+    const estadoMidia = origemMidia ? "pendente" : "ausente";
 
     const inseridas = await sql`
       INSERT INTO mensagens (
@@ -262,7 +274,7 @@ export async function POST(req: NextRequest) {
         ${fromMe ? "enviado" : "recebido"},
         ${idExterno ?? null},
         ${midia?.tipo ?? "texto"},
-        ${midia?.url ?? null},
+        ${origemMidia},
         ${midia?.mime ?? null},
         ${midia?.nome ?? null},
         ${midia?.tamanho ?? null},
@@ -277,19 +289,19 @@ export async function POST(req: NextRequest) {
       await sql`
         UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${atendimentoId}`;
 
-      // Solta a baixa do arquivo sem segurar a resposta: a uazapi reenvia se
-      // demorarmos, e a URL dela expira se esperarmos um cron. Ver
-      // baixarPendentesEmSegundoPlano em lib/midia.ts.
-      if (estadoMidia === "pendente") baixarPendentesEmSegundoPlano();
-
-      // Mensagem DO CONTATO: a IA responde se ele estiver com IA (etapa ou
-      // vínculo) e ninguém da equipe estiver na conversa — quem decide é
-      // lib/ia/atendente.ts. Depois da resposta ao webhook: a geração leva
-      // segundos e a uazapi reenviaria se esperássemos.
-      if (!fromMe) {
-        const mensagemId = inseridas[0].id as string;
-        after(() => responderComIa(atendimentoId, mensagemId));
-      }
+      // Tudo depois da resposta: a uazapi reenvia se demorarmos. `after` e não
+      // uma promessa solta: na Vercel a função congela quando a resposta sai.
+      //   1. Baixa o arquivo (o link da uazapi expira se esperarmos um cron) e
+      //      transcreve o áudio — lib/midia.ts.
+      //   2. Só então a IA, se a mensagem é DO CONTATO: responder um áudio
+      //      antes da transcrição seria responder sem saber o que ele disse.
+      //      Se ele estiver com IA e ninguém da equipe na conversa — quem
+      //      decide é lib/ia/atendente.ts.
+      const mensagemId = inseridas[0].id as string;
+      after(async () => {
+        if (estadoMidia === "pendente") await baixarPendentes();
+        if (!fromMe) await responderComIa(atendimentoId, mensagemId);
+      });
     }
 
     return Response.json({ ok: true });

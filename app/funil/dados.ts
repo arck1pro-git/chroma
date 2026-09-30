@@ -3,6 +3,7 @@
 // praticamente tudo — funis/etapas/oportunidades + os agregados por contato.
 import { sql } from "@/lib/db";
 import { tomDaEtapa } from "@/lib/cores-funil";
+import type { Ia } from "@/lib/ia/catalogo";
 import type {
   Anotacao,
   Atendimento,
@@ -43,6 +44,8 @@ export type DadosFunil = {
   // (camposDoContato, em ./actions.ts).
   camposContato: CampoPersonalizado[];
   camposOportunidade: CampoPersonalizado[];
+  // As IAs de atendimento (migration-ias.sql), na ordem em que foram criadas.
+  ias: Ia[];
 };
 
 function agrupar<T extends { contato_id: string }>(linhas: T[]) {
@@ -91,11 +94,12 @@ export async function carregarFunil(
     anotacoes,
     atendimentos,
     definicoesCampos,
+    ias,
   ] = await Promise.all([
     sql`SELECT id, nome, descricao, cor FROM funis ORDER BY data_criacao`,
     // Sem `cor`: ela é derivada abaixo, a partir da cor do FUNIL e da posição
     // da etapa. Ver lib/cores-funil.ts.
-    sql`SELECT id, nome, funil_id, ordem, ia_atende FROM etapas ORDER BY funil_id, ordem`,
+    sql`SELECT id, nome, funil_id, ordem, ia_id FROM etapas ORDER BY funil_id, ordem`,
     // dias_na_etapa é aproximado por now()-data_criacao (não há registro de quando
     // entrou na etapa). Ver comentário no migration-front.sql.
     // O filtro do escopo 'proprio' entra AQUI, na cláusula, e não numa segunda
@@ -109,7 +113,7 @@ export async function carregarFunil(
       WHERE ${dono}::uuid IS NULL OR responsavel_id = ${dono}::uuid
       ORDER BY data_criacao DESC`,
     sql`
-      SELECT id, nome, whatsapp, email, cidade, estado, pais, ia,
+      SELECT id, nome, whatsapp, email, cidade, estado, pais, ia, ia_id,
              (SELECT COALESCE(jsonb_object_agg(k, v), '{}'::jsonb)
                 FROM jsonb_each(CASE WHEN jsonb_typeof(campos) = 'object' THEN campos ELSE '{}'::jsonb END) AS origem(k, v)
                WHERE k IN ('campaign_id', 'campanha_id', 'utm_id', 'campaign_name', 'utm_campaign',
@@ -141,6 +145,15 @@ export async function carregarFunil(
       SELECT id, entidade, chave, rotulo, tipo, ordem,
              COALESCE(to_jsonb(opcoes), '[]'::jsonb) AS opcoes
       FROM campos_personalizados ORDER BY entidade, ordem, rotulo`,
+    // As IAs de atendimento: a gaveta do botão IA, o seletor da etapa e o
+    // interruptor do contato leem daqui. São poucas linhas.
+    sql`
+      SELECT id, nome, prompt,
+             -- jsonb e não text[]: sem fetch_types o driver entrega array
+             -- como o texto '{a,b}' (mesmo caso de campos_personalizados.opcoes).
+             to_jsonb(acoes) AS acoes,
+             to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
+      FROM ias ORDER BY data_criacao`,
   ]);
 
   const defs = definicoesCampos as unknown as CampoPersonalizado[];
@@ -200,5 +213,6 @@ export async function carregarFunil(
     atendimentosDoContato: agrupar(atendimentos as unknown as Atendimento[]),
     camposContato: defs.filter((d) => d.entidade === "contato"),
     camposOportunidade: defs.filter((d) => d.entidade === "oportunidade"),
+    ias: ias as unknown as Ia[],
   };
 }

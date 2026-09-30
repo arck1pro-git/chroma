@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Clock,
   MapPin,
-  MessageSquare,
   Phone,
   Wallet,
   type LucideIcon,
@@ -23,11 +22,12 @@ import type {
   Usuario,
 } from "../data";
 import { brl, dataCurta, dataHora, localizacao } from "../formato";
+import { AnotacoesContato } from "../components/anotacoes-contato";
 
-// Partes SÓ DE LEITURA da ficha do contato, separadas para a gaveta da tela
-// inicial mostrar os mesmos dados sem herdar o resto da ficha (edição, véu,
-// painel flutuante, atalho de Esc). Quem edita continua sendo ficha.tsx —
-// aqui não há nenhuma server action.
+// Partes da ficha do contato, separadas para a gaveta da tela inicial mostrar
+// os mesmos dados sem herdar o resto da ficha (edição, véu, painel flutuante,
+// atalho de Esc). Tudo aqui é leitura, menos anotar — que mora em
+// AnotacoesContato, junto da lista de anotações.
 
 function Secao({
   Icone,
@@ -133,6 +133,7 @@ export function ChipsContato({
 // texto. Antes era um link pra /funil?op=, rota que não existe mais — tudo
 // mora na raiz agora.
 export function SecoesContato({
+  contatoId,
   oportunidades,
   anotacoes,
   historico,
@@ -141,6 +142,7 @@ export function SecoesContato({
   usuarioPorId,
   aoAbrirOportunidade,
 }: {
+  contatoId: string;
   oportunidades: Oportunidade[];
   anotacoes: Anotacao[];
   historico: Historico[];
@@ -212,31 +214,12 @@ export function SecoesContato({
         )}
       </Secao>
 
-      <Secao Icone={MessageSquare} titulo="Anotações" contagem={anotacoes.length}>
-        {anotacoes.length === 0 ? (
-          <Vazio>Nada anotado sobre este contato</Vazio>
-        ) : (
-          <ul className="flex flex-col gap-2.5">
-            {anotacoes.map((a) => (
-              <li
-                key={a.id}
-                className="rounded-xl bg-amber-50/60 p-3 ring-1 ring-inset ring-amber-100 dark:bg-amber-500/5 dark:ring-amber-500/15"
-              >
-                <p className="text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-200">
-                  {a.texto}
-                </p>
-                <p className="mt-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">
-                  {usuarioPorId.get(a.autor_id)?.nome ?? "Autor desconhecido"} ·{" "}
-                  {dataHora(a.data_criacao)}
-                  {/* anotação se edita (o histórico não) — marcar isso evita
-                      discussão sobre "eu não escrevi assim" */}
-                  {a.data_atualizacao && " · editada"}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Secao>
+      <AnotacoesContato
+        key={contatoId}
+        contatoId={contatoId}
+        anotacoes={anotacoes}
+        usuarioPorId={usuarioPorId}
+      />
 
       <Secao Icone={Clock} titulo="Histórico" contagem={historico.length}>
         {historico.length === 0 ? (

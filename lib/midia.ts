@@ -8,7 +8,8 @@
 //
 // TRÊS ETAPAS, SEPARADAS DE PROPÓSITO:
 //   1. `midiaDoEvento`  — lê o payload da uazapi e diz o que veio (puro, testável)
-//   2. `baixarPendentes`— pega o que está na fila e traz o arquivo pra cá
+//   2. `baixarPendentes`— pega o que está na fila e traz o arquivo pra cá (e
+//                         transcreve o áudio, lib/transcricao.ts)
 //   3. `lerArquivo`     — devolve os bytes pra rota que exibe
 //
 // Elas não são um passo só porque a URL da uazapi EXPIRA. Se o download fosse
@@ -27,6 +28,8 @@ import path from "path";
 import { sql } from "@/lib/db";
 import { BUCKET_DOCUMENTOS, baixar, subir } from "@/lib/armazenamento";
 import { baixarMidiaMeta } from "@/lib/meta";
+import { linkDaMidiaRecebida } from "@/lib/uazapi";
+import { transcreverAudio } from "@/lib/transcricao";
 
 export type TipoMensagem =
   | "texto"
@@ -92,12 +95,23 @@ function textoOuNulo(v: unknown): string | null {
 export function midiaDoEvento(ev: Record<string, unknown>): MidiaDoEvento | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const e = ev as any;
+  // No uazapiGO os dados do anexo vêm dentro de `content` (visto num evento
+  // real, 2026-09-29): mimetype, fileLength, seconds, caption, fileName. Em
+  // mensagem de texto `content` é string, e aí não há nada a ler.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const c: any = e?.content && typeof e.content === "object" ? e.content : {};
 
   const mime =
-    textoOuNulo(e?.mimetype) ?? textoOuNulo(e?.mimeType) ?? textoOuNulo(e?.mime);
+    textoOuNulo(e?.mimetype) ??
+    textoOuNulo(e?.mimeType) ??
+    textoOuNulo(e?.mime) ??
+    textoOuNulo(c.mimetype);
 
   // A URL do arquivo. A uazapi já mandou isso com vários nomes conforme a
   // versão; tentamos os conhecidos e paramos no primeiro que parecer URL.
+  // `content.URL` fica de fora de propósito: é o .enc criptografado da CDN do
+  // WhatsApp. Sem URL aqui, quem chama pede o arquivo à instância
+  // (linkDaMidiaRecebida em lib/uazapi.ts).
   const url =
     [e?.file, e?.fileURL, e?.url, e?.mediaUrl, e?.media?.url, e?.downloadUrl]
       .map(textoOuNulo)
@@ -116,7 +130,7 @@ export function midiaDoEvento(ev: Record<string, unknown>): MidiaDoEvento | null
       nome: null,
       tamanho: null,
       duracao: null,
-      legenda: textoOuNulo(e?.caption) ?? textoOuNulo(e?.text) ?? "",
+      legenda: textoOuNulo(e?.caption) ?? textoOuNulo(c.caption) ?? textoOuNulo(e?.text) ?? "",
     };
   }
 
@@ -134,11 +148,17 @@ export function midiaDoEvento(ev: Record<string, unknown>): MidiaDoEvento | null
       textoOuNulo(e?.fileName) ??
       textoOuNulo(e?.filename) ??
       textoOuNulo(e?.documentFileName) ??
+      textoOuNulo(c.fileName) ??
       null,
-    tamanho: numeroOuNulo(e?.fileLength ?? e?.size ?? e?.fileSize),
-    duracao: numeroOuNulo(e?.seconds ?? e?.duration ?? e?.audioDuration),
-    legenda: textoOuNulo(e?.caption) ?? textoOuNulo(e?.text) ?? "",
+    tamanho: numeroOuNulo(e?.fileLength ?? e?.size ?? e?.fileSize ?? c.fileLength),
+    duracao: numeroOuNulo(e?.seconds ?? e?.duration ?? e?.audioDuration ?? c.seconds),
+    legenda: textoOuNulo(e?.caption) ?? textoOuNulo(c.caption) ?? textoOuNulo(e?.text) ?? "",
   };
+}
+
+/** Tipos que têm arquivo para buscar. Localização e contato não têm. */
+export function temArquivo(tipo: TipoMensagem): boolean {
+  return tipo !== "texto" && tipo !== "localizacao" && tipo !== "contato";
 }
 
 // ── Armazenamento ───────────────────────────────────────────────────────────
@@ -197,6 +217,19 @@ async function salvarArquivo(
 }
 
 /**
+ * Guarda um arquivo que NÓS geramos (a voz da IA) no mesmo lugar da mídia
+ * recebida, e devolve o caminho que vai em midia_caminho.
+ */
+export function guardarMidia(
+  id: string,
+  bytes: Uint8Array,
+  mime: string | null,
+  nome: string | null,
+): Promise<string> {
+  return salvarArquivo(id, bytes, mime, nome);
+}
+
+/**
  * Bytes de uma mídia já salva. `caminho` vem do banco, NUNCA do usuário — mas
  * a normalização abaixo existe mesmo assim: é uma linha, e o dia em que alguém
  * passar um parâmetro de rota direto aqui, `../../.env` não sai do lugar.
@@ -221,15 +254,30 @@ export async function lerArquivo(caminho: string): Promise<Buffer> {
 // ── A fila ──────────────────────────────────────────────────────────────────
 
 /**
- * Traz os bytes da origem. Duas formas de `midia_url_origem`:
- *   · https://…   → URL da uazapi, baixada direto (expira em horas).
- *   · meta:<id>   → mídia da API oficial. A Meta não manda URL no webhook, só
- *                   o id; a URL sai de outra chamada, vale minutos e pede token
- *                   (ver baixarMidiaMeta em lib/meta.ts).
+ * Traz os bytes da origem. Três formas de `midia_url_origem`:
+ *   · https://…              → URL direta, baixada como veio.
+ *   · uazapi:<numero>:<id>   → mídia recebida pela uazapi. O webhook só traz o
+ *                              .enc criptografado; a instância do <numero>
+ *                              decifra e devolve um link que vale 2 dias
+ *                              (linkDaMidiaRecebida em lib/uazapi.ts).
+ *   · meta:<id>              → mídia da API oficial. A Meta não manda URL no
+ *                              webhook, só o id; a URL sai de outra chamada,
+ *                              vale minutos e pede token (baixarMidiaMeta em
+ *                              lib/meta.ts).
  */
 async function baixarOrigem(origem: string): Promise<{ bytes: Uint8Array; mime: string | null }> {
   if (origem.startsWith("meta:")) return baixarMidiaMeta(origem.slice(5));
+  if (origem.startsWith("uazapi:")) {
+    const idCompleto = origem.slice("uazapi:".length);
+    const numero = idCompleto.split(":")[0];
+    const { url, mime } = await linkDaMidiaRecebida(numero, idCompleto);
+    const baixado = await baixarUrl(url);
+    return { bytes: baixado.bytes, mime: mime ?? baixado.mime };
+  }
+  return baixarUrl(origem);
+}
 
+async function baixarUrl(origem: string): Promise<{ bytes: Uint8Array; mime: string | null }> {
   const res = await fetch(origem, {
     cache: "no-store",
     signal: AbortSignal.timeout(30_000),
@@ -247,10 +295,29 @@ async function baixarOrigem(origem: string): Promise<{ bytes: Uint8Array; mime: 
 
 type Pendente = {
   id: string;
+  tipo: TipoMensagem;
+  texto: string;
   midia_url_origem: string | null;
   midia_mime: string | null;
   midia_nome: string | null;
 };
+
+/**
+ * Áudio salvo sem texto: transcreve e grava em `texto`. Falhar aqui não mexe no
+ * estado da mídia — o arquivo está salvo e toca no chat; só a IA fica sem
+ * saber o que ele diz, e o motivo vai para o log.
+ */
+async function transcreverSeForAudio(linha: Pendente, bytes: Uint8Array, mime: string | null) {
+  if (linha.tipo !== "audio" || linha.texto.trim()) return;
+  try {
+    const texto = await transcreverAudio(bytes, mime);
+    if (!texto) return;
+    // `texto = ''` na condição: se alguém já escreveu ali, não sobrescreve.
+    await sql`UPDATE mensagens SET texto = ${texto} WHERE id = ${linha.id} AND texto = ''`;
+  } catch (e) {
+    console.error(`[midia] não consegui transcrever ${linha.id}:`, e instanceof Error ? e.message : e);
+  }
+}
 
 /**
  * Baixa o que está em `midia_estado = 'pendente'` e grava no storage.
@@ -269,7 +336,7 @@ export async function baixarPendentes(limite = 20): Promise<{
   let fila: Pendente[];
   try {
     fila = (await sql`
-      SELECT id, midia_url_origem, midia_mime, midia_nome
+      SELECT id, tipo, texto, midia_url_origem, midia_mime, midia_nome
       FROM mensagens
       WHERE midia_estado = 'pendente' AND midia_url_origem IS NOT NULL
       ORDER BY data_criacao
@@ -284,18 +351,25 @@ export async function baixarPendentes(limite = 20): Promise<{
       const { bytes, mime: mimeOrigem } = await baixarOrigem(linha.midia_url_origem!);
       if (bytes.byteLength > TETO_BYTES) throw new Error("arquivo acima do teto");
 
-      const mime = linha.midia_mime ?? mimeOrigem;
+      // O tipo de quem entregou os bytes vale mais que o do evento: o áudio
+      // chega como OGG no evento e a uazapi entrega MP3 (generate_mp3). Com o
+      // do evento, o arquivo seria salvo .ogg com bytes de MP3. Genérico
+      // (octet-stream) não diz nada, e aí fica o do evento.
+      const doArquivo = mimeOrigem && !/octet-stream/i.test(mimeOrigem) ? mimeOrigem : null;
+      const mime = doArquivo ?? linha.midia_mime;
       const caminho = await salvarArquivo(linha.id, bytes, mime, linha.midia_nome);
 
       await sql`
         UPDATE mensagens SET
           midia_caminho = ${caminho},
-          midia_mime    = COALESCE(midia_mime, ${mime}),
+          midia_mime    = ${mime},
           midia_tamanho = ${bytes.byteLength},
           midia_estado  = 'salva',
           midia_erro    = NULL
         WHERE id = ${linha.id}`;
       salvas++;
+
+      await transcreverSeForAudio(linha, bytes, mime);
     } catch (e) {
       erros++;
       const motivo = e instanceof Error ? e.message : String(e);
@@ -310,18 +384,4 @@ export async function baixarPendentes(limite = 20): Promise<{
   }
 
   return { salvas, erros };
-}
-
-/**
- * Dispara a fila sem segurar quem chamou.
- *
- * O webhook precisa responder 200 rápido (senão a uazapi reenvia), mas a URL da
- * uazapi expira — esperar um cron de minutos arrisca perder o arquivo. Então a
- * baixa começa aqui, solta, e o `catch` garante que uma falha dela nunca vire
- * exceção não tratada no processo.
- */
-export function baixarPendentesEmSegundoPlano(): void {
-  void baixarPendentes().catch((e) =>
-    console.error("[midia] fila em segundo plano falhou:", e),
-  );
 }
