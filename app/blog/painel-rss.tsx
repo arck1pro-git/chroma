@@ -112,6 +112,7 @@ export default function PainelRss({
                       )
                     }
                     placeholder={`https://site.com.br/feed  (${i + 1}º)`}
+                    aria-label={`Endereço do ${i + 1}º feed RSS`}
                     className="w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 font-mono text-[12px] text-zinc-900 outline-none transition placeholder:font-sans placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
                   />
                 ))}
@@ -125,6 +126,7 @@ export default function PainelRss({
                   type="button"
                   role="switch"
                   aria-checked={ativo}
+                  aria-label="Geração automática de artigos pelos feeds"
                   disabled={salvando}
                   onClick={() => {
                     const novo = !ativo;
@@ -149,7 +151,7 @@ export default function PainelRss({
                   type="button"
                   onClick={() => salvar()}
                   disabled={salvando}
-                  className="ml-auto rounded-full bg-zinc-900 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="ml-auto rounded-lg bg-zinc-900 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
                   {salvando ? "Salvando…" : salvo ? "Salvo!" : "Salvar feeds"}
                 </button>

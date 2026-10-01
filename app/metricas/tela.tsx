@@ -31,9 +31,11 @@ function Cartao({
   );
 }
 
-const celula = "px-3 py-2.5 text-[13px] tabular-nums text-zinc-700 dark:text-zinc-300";
-const cabecalho =
-  "px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500";
+// Números alinhados à direita: é assim que unidade embaixo de unidade permite
+// comparar as linhas de relance. Só a coluna do nome fica à esquerda.
+const celula = "px-3 py-2.5 text-right text-[13px] tabular-nums text-zinc-700 dark:text-zinc-300";
+const cabecalhoBase = "px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500";
+const cabecalho = `${cabecalhoBase} text-right`;
 
 function Linha({ pessoa }: { pessoa: MetricaPessoa }) {
   return (
@@ -174,14 +176,14 @@ export default function TelaMetricas({
                 <table className="w-full min-w-[720px] border-collapse">
                   <thead>
                     <tr>
-                      <th className={cabecalho}>Pessoa</th>
+                      <th className={`${cabecalhoBase} text-left`}>Pessoa</th>
                       <th className={cabecalho}>Carteira</th>
                       <th className={cabecalho}>Em aberto</th>
                       <th className={cabecalho}>Ticket</th>
-                      <th className={cabecalho}>Idade</th>
-                      <th className={cabecalho}>Novas</th>
-                      <th className={cabecalho}>Atend.</th>
-                      <th className={cabecalho}>Msgs</th>
+                      <th className={cabecalho} title="Idade média das oportunidades em aberto">Idade média</th>
+                      <th className={cabecalho} title="Oportunidades criadas no período">Novas</th>
+                      <th className={cabecalho} title="Atendimentos abertos / encerrados">Atendimentos</th>
+                      <th className={cabecalho} title="Mensagens enviadas no período">Mensagens</th>
                     </tr>
                   </thead>
                   <tbody>

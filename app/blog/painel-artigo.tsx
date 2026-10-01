@@ -251,6 +251,7 @@ export default function PainelArtigo({
                   </button>
                 </div>
                 <textarea
+                  aria-label="Conteúdo do artigo em markdown"
                   value={r.conteudo}
                   onChange={(e) => muda("conteudo")(e.target.value)}
                   rows={24}
@@ -427,7 +428,7 @@ export default function PainelArtigo({
                   key={chave}
                   type="button"
                   onClick={() => copiar(chave, gerar())}
-                  className="flex items-center gap-1.5 rounded-full border border-zinc-200 px-3 py-1.5 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-800"
                 >
                   <Copy className="size-3.5" aria-hidden="true" />
                   {copiado === chave ? "Copiado!" : rotulo}
@@ -502,9 +503,10 @@ export default function PainelArtigo({
         />
         <div className="flex items-center gap-2">
           <select
+            aria-label="Status do artigo"
             value={status}
             onChange={(e) => mudarStatus(e.target.value as ArtigoStatus)}
-            className="rounded-full border border-zinc-200 bg-transparent px-3 py-1.5 text-[12px] text-zinc-700 outline-none dark:border-zinc-800 dark:text-zinc-300"
+            className="rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-[12px] text-zinc-700 outline-none dark:border-zinc-800 dark:text-zinc-300"
           >
             {ARTIGO_STATUS.map((s) => (
               <option key={s} value={s}>

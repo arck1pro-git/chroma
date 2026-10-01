@@ -44,6 +44,7 @@ import {
   X,
 } from "lucide-react";
 import { whatsappNoSelo, type EstadoWpp, type WhatsAppNoSelo } from "./acoes-wpp";
+import { confirmar } from "./confirmar";
 import {
   consultarConexao,
   criarInstanciaNaUazapi,
@@ -352,6 +353,7 @@ function PainelNovaInstancia({
       {!instanciaId && (
         <div className="mt-3 flex flex-col gap-2">
           <input
+            aria-label="Nome da nova instância"
             autoFocus
             value={nome}
             onChange={(e) => setNome(e.target.value)}
@@ -480,11 +482,15 @@ function PainelInstancia({
     }
   }
 
-  function remover() {
+  async function remover() {
     if (
-      !window.confirm(
-        `Remover "${numero.nome}"? A instância é APAGADA na uazapi — o aparelho desconecta e o número some do servidor — e sai do CRM. Não tem volta. As automações publicadas que usam este número param de enviar.`,
-      )
+      !(await confirmar({
+        titulo: `Remover “${numero.nome}”?`,
+        mensagem:
+          "A instância é apagada na uazapi — o aparelho desconecta e o número some do servidor — e sai do CRM. As automações publicadas que usam este número param de enviar. Não tem volta.",
+        acao: "Remover número",
+        perigo: true,
+      }))
     )
       return;
 

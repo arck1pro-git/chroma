@@ -220,6 +220,7 @@ export default function BlogArtigos({
                     aria-hidden="true"
                   />
                   <input
+                    aria-label="Buscar artigo"
                     value={busca}
                     onChange={(e) => setBusca(e.target.value)}
                     placeholder="Buscar por título ou palavra-chave"

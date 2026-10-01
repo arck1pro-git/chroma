@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { dataHora } from "../formato";
+import { confirmar } from "../components/confirmar";
 import FluxoComMetricas from "./fluxo-metricas";
 import { ExecucoesPorDia } from "./graficos";
 import {
@@ -330,11 +331,15 @@ function Inscritos({
                   <button
                     type="button"
                     disabled={saindo}
-                    onClick={() => {
+                    onClick={async () => {
                       if (
-                        !window.confirm(
-                          `Tirar ${i.nome} desta automação? A inscrição é cancelada e as mensagens que faltavam não são enviadas. O que já saiu continua no histórico.`,
-                        )
+                        !(await confirmar({
+                          titulo: `Tirar ${i.nome} desta automação?`,
+                          mensagem:
+                            "A inscrição é cancelada e as mensagens que faltavam não são enviadas. O que já saiu continua no histórico.",
+                          acao: "Tirar da automação",
+                          perigo: true,
+                        }))
                       ) {
                         return;
                       }
@@ -682,11 +687,15 @@ export default function PainelLateral({
               ter o mesmo peso visual de Editar, que é a de todo dia. */}
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
               if (
-                !window.confirm(
-                  `Excluir "${fluxo.nome}"? As inscrições em andamento são canceladas e o workflow sai do n8n. O histórico do que já foi enviado permanece.`,
-                )
+                !(await confirmar({
+                  titulo: `Excluir “${fluxo.nome}”?`,
+                  mensagem:
+                    "As inscrições em andamento são canceladas e o workflow sai do n8n. O histórico do que já foi enviado permanece.",
+                  acao: "Excluir automação",
+                  perigo: true,
+                }))
               ) {
                 return;
               }

@@ -49,6 +49,7 @@ import {
   type EstadoConexao,
 } from "../actions";
 import { botao, campoTexto } from "./ui";
+import { confirmar } from "@/app/components/confirmar";
 
 // De quanto em quanto tempo a tela pergunta à uazapi se já escanearam. 3s é o
 // meio-termo: o QR expira em 2 minutos, então ~40 consultas por ciclo — e o
@@ -284,11 +285,15 @@ function InstanciaCard({
     setEditando(false);
   }
 
-  function remover() {
+  async function remover() {
     if (
-      !window.confirm(
-        `Remover "${instancia.nome}"? A instância é APAGADA na uazapi — o aparelho desconecta e o número some do servidor — e sai do CRM. Não tem volta. Os atendimentos já gravados continuam.`,
-      )
+      !(await confirmar({
+        titulo: `Remover “${instancia.nome}”?`,
+        mensagem:
+          "A instância é apagada na uazapi — o aparelho desconecta e o número some do servidor — e sai do CRM. Os atendimentos já gravados continuam. Não tem volta.",
+        acao: "Remover instância",
+        perigo: true,
+      }))
     )
       return;
     setErro(null);
@@ -541,11 +546,15 @@ function PainelConexao({
     }
   }
 
-  function desconectar() {
+  async function desconectar() {
     if (
-      !window.confirm(
-        `Desconectar o WhatsApp de "${nome}"? Isto acontece NA UAZAPI: o aparelho sai de "Aparelhos conectados" no celular e reconectar exige um QR Code novo. Se esta instância for compartilhada com outro sistema, o número cai lá também.`,
-      )
+      !(await confirmar({
+        titulo: `Desconectar o WhatsApp de “${nome}”?`,
+        mensagem:
+          "Isto acontece na uazapi: o aparelho sai de “Aparelhos conectados” no celular e reconectar exige um QR Code novo. Se esta instância for compartilhada com outro sistema, o número cai lá também.",
+        acao: "Desconectar",
+        perigo: true,
+      }))
     )
       return;
     void acao(() => desconectarDoWhatsApp(instanciaId));

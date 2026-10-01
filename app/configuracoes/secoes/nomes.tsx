@@ -29,6 +29,7 @@ import {
   editarTag,
 } from "../actions";
 import { botao, campoTexto } from "./ui";
+import { confirmar } from "@/app/components/confirmar";
 
 type Nomeado = { id: string; nome: string };
 
@@ -116,6 +117,7 @@ function SecaoNomes({
       <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
         <div className="flex gap-2">
           <input
+            aria-label={`Novo ${rotuloItem}`}
             type="text"
             value={nome}
             onChange={(e) => setNome(e.target.value)}
@@ -188,8 +190,16 @@ function LinhaNome({
     });
   }
 
-  function remover() {
-    if (!window.confirm(`Excluir "${item.nome}"? ${avisoExcluir}`)) return;
+  async function remover() {
+    if (
+      !(await confirmar({
+        titulo: `Excluir “${item.nome}”?`,
+        mensagem: avisoExcluir,
+        acao: "Excluir",
+        perigo: true,
+      }))
+    )
+      return;
     iniciar(() => {
       aoExcluir(item.id);
     });
@@ -199,6 +209,7 @@ function LinhaNome({
     return (
       <li className="inline-flex items-center gap-1 rounded-full border border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-900">
         <input
+          aria-label="null"
           value={nome}
           onChange={(e) => setNome(e.target.value)}
           onKeyDown={(e) => {

@@ -104,6 +104,7 @@ export default function ListaEmails() {
 
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-6 py-2.5 xl:px-16 dark:border-zinc-800">
         <input
+          aria-label="Buscar e-mail"
           type="search"
           value={busca}
           onChange={(e) => setBusca(e.target.value)}

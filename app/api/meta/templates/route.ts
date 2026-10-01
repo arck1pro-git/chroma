@@ -24,7 +24,12 @@ export async function POST(req: NextRequest) {
     const waba = typeof b.waba === "string" ? b.waba : "";
     if (!/^[a-z0-9_]{1,512}$/.test(nome)) return Response.json({ erro: "Use apenas letras minúsculas, números e _ no nome." }, { status: 400 });
     if (!corpo || corpo.length > 1024) return Response.json({ erro: "O corpo deve ter entre 1 e 1.024 caracteres." }, { status: 400 });
-    const components: Array<Record<string, unknown>> = [{ type: "BODY", text: corpo }];
+    // Variável no corpo ({{1}}, {{2}}…) exige um exemplo de cada na criação — é
+    // com ele que a Meta avalia o template. Sem isso ela recusa na hora.
+    const variaveis = [...new Set(corpo.match(/\{\{\d+\}\}/g) ?? [])];
+    const exemplos = (Array.isArray(b.exemplos) ? b.exemplos : []).map((x) => (typeof x === "string" ? x.trim() : "")).slice(0, variaveis.length);
+    if (variaveis.length && (exemplos.length < variaveis.length || exemplos.some((x) => !x))) return Response.json({ erro: "Preencha um exemplo para cada variável — a Meta exige para analisar o template." }, { status: 400 });
+    const components: Array<Record<string, unknown>> = [variaveis.length ? { type: "BODY", text: corpo, example: { body_text: [exemplos] } } : { type: "BODY", text: corpo }];
     if (typeof b.rodape === "string" && b.rodape.trim()) components.push({ type: "FOOTER", text: b.rodape.trim().slice(0, 60) });
     const resultado = await criarTemplateMeta(waba, { name: nome, language: idioma, category: categoria, components });
     return Response.json({ ok: true, resultado }, { status: 201 });

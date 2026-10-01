@@ -173,7 +173,7 @@ export function BotaoExcluir({
       disabled={ocupado}
       onBlur={() => setArmado(false)}
       onClick={() => (armado ? aoConfirmar() : setArmado(true))}
-      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition disabled:opacity-50 ${
+      className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition disabled:opacity-50 ${
         armado
           ? "bg-red-600 text-white hover:bg-red-700"
           : "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
@@ -202,7 +202,7 @@ export function BotaoSalvar({
       type="button"
       onClick={aoSalvar}
       disabled={salvando}
-      className="flex items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+      className="flex items-center gap-1.5 rounded-lg bg-zinc-900 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
     >
       {salvo && <Check className="size-3.5" aria-hidden="true" />}
       {salvando ? "Salvando…" : salvo ? "Salvo!" : rotulo}

@@ -990,7 +990,12 @@ export default function Inicio({
                       // escalonada rode de novo a cada funil escolhido, e não
                       // só na primeira vez que o Dashboard monta.
                       key={funil.id}
-                      className="flex min-h-0 flex-1 items-start gap-1 overflow-x-auto pb-2 pt-4"
+                      // `isolate`: as colunas levam z-index até 100 (ver
+                      // ColunaResumo) e, sem uma camada própria aqui, ele
+                      // competia com a página inteira — o chat da IA (z-40) e a
+                      // barra de seleção (z-30) abriam POR TRÁS das etapas.
+                      // Isoladas, a ordem entre colunas vale só aqui dentro.
+                      className="isolate flex min-h-0 flex-1 items-start gap-1 overflow-x-auto pb-2 pt-4"
                     >
                       {colunas.map(({ etapa, oportunidades: doEtapa, metrica, conversao }, i) => (
                         <ColunaResumo

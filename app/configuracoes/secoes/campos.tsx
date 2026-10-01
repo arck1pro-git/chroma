@@ -14,6 +14,7 @@ import {
   excluirCampoPersonalizado,
 } from "../actions";
 import { botao, campoTexto } from "./ui";
+import { confirmar } from "@/app/components/confirmar";
 
 const TIPOS_CAMPO = [
   { valor: "texto", rotulo: "Texto" },
@@ -190,11 +191,15 @@ function CampoRow({ campo }: { campo: CampoPersonalizado }) {
     setEditando(false);
   }
 
-  function remover() {
+  async function remover() {
     if (
-      !window.confirm(
-        `Excluir o campo "${campo.rotulo}"? Ele some das fichas, mas os valores já preenchidos continuam guardados — recriar um campo com o mesmo nome traz tudo de volta.`,
-      )
+      !(await confirmar({
+        titulo: `Excluir o campo “${campo.rotulo}”?`,
+        mensagem:
+          "Ele some das fichas, mas os valores já preenchidos continuam guardados — recriar um campo com o mesmo nome traz tudo de volta.",
+        acao: "Excluir campo",
+        perigo: true,
+      }))
     )
       return;
     iniciar(() => {

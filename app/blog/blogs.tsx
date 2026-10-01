@@ -137,16 +137,18 @@ export default function Blogs() {
             ) : (
               <div className="flex flex-wrap items-center gap-2">
                 <input
+                  aria-label="Nome do novo blog"
                   value={nomeNovo}
                   onChange={(e) => setNomeNovo(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && criar()}
                   placeholder="Nome do blog"
-                  className="min-w-0 flex-1 rounded-full border border-zinc-200 bg-transparent px-4 py-2 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
+                  className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
                 />
                 <select
+                  aria-label="Auditoria do novo blog"
                   value={auditoriaNova}
                   onChange={(e) => setAuditoriaNova(e.target.value)}
-                  className="rounded-full border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-700 outline-none dark:border-zinc-800 dark:text-zinc-300"
+                  className="rounded-lg border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-700 outline-none dark:border-zinc-800 dark:text-zinc-300"
                 >
                   {auditorias.map((a) => (
                     <option key={a.id} value={a.id}>
@@ -158,7 +160,7 @@ export default function Blogs() {
                   type="button"
                   onClick={criar}
                   disabled={criando || !nomeNovo.trim()}
-                  className="rounded-full bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="rounded-lg bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
                   {criando ? "Criando…" : "Criar blog"}
                 </button>
@@ -399,7 +401,7 @@ function ConfigBlog({
           <button
             type="button"
             onClick={aoFechar}
-            className="rounded-full px-3 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            className="rounded-lg px-3 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           >
             Fechar
           </button>

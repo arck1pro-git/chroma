@@ -169,6 +169,7 @@ export default function PainelDocumentos({
               aria-hidden="true"
             />
             <input
+              aria-label="Procurar documento"
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Procurar por nome ou arquivo"
@@ -309,6 +310,7 @@ function Linha({
           className="flex flex-col gap-2"
         >
           <input
+            aria-label="Nome do documento"
             autoFocus
             value={nome}
             onChange={(e) => setNome(e.target.value)}
@@ -316,6 +318,7 @@ function Linha({
             className={campoTexto}
           />
           <input
+            aria-label="Descrição do documento"
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
             placeholder="Descrição (opcional) — para que serve, quando usar"

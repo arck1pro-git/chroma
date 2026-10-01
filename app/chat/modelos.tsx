@@ -125,6 +125,7 @@ export function SeletorTemplates({
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
                 <input
+                  aria-label="Buscar template"
                   type="search"
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}

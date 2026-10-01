@@ -111,7 +111,7 @@ export default function PainelConexao({
             onClick={() =>
               copiar("prompt", promptDeImplementacao(blog, base))
             }
-            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-full bg-zinc-900 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-[12px] font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             {copiado === "prompt" ? (
               <Check className="size-3.5" aria-hidden="true" />
@@ -134,7 +134,7 @@ export default function PainelConexao({
             disabled={trocando}
             onBlur={() => setArmado(false)}
             onClick={() => (armado ? trocar() : setArmado(true))}
-            className={`mt-3 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition disabled:opacity-50 ${
+            className={`mt-3 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-medium transition disabled:opacity-50 ${
               armado
                 ? "bg-red-600 text-white hover:bg-red-700"
                 : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"

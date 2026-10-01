@@ -29,6 +29,7 @@ import {
 import type { DetalheWebhook } from "./dados";
 import { RecebimentosPorDia } from "./graficos";
 import { girarSegredo } from "./acoes";
+import { confirmar } from "../components/confirmar";
 import {
   botaoFraco,
   cabecalhoTabela,
@@ -241,11 +242,15 @@ function Endereco({
     }
   }
 
-  function girar() {
+  async function girar() {
     if (
-      !window.confirm(
-        "Gerar um segredo novo? A URL continua a mesma, mas quem já estiver enviando com o segredo atual passa a receber 401 até ser atualizado.",
-      )
+      !(await confirmar({
+        titulo: "Gerar um segredo novo?",
+        mensagem:
+          "A URL continua a mesma, mas quem já estiver enviando com o segredo atual passa a receber 401 até ser atualizado.",
+        acao: "Gerar segredo novo",
+        perigo: true,
+      }))
     )
       return;
     iniciar(() => void girarSegredo(webhook.id));

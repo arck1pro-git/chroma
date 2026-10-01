@@ -321,6 +321,7 @@ function NovaEtapa({ funilId }: { funilId: string }) {
     <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800/70">
       <div className="flex flex-wrap items-center gap-2">
         <input
+          aria-label="Nome da nova etapa"
           type="text"
           value={nome}
           onChange={(e) => setNome(e.target.value)}

@@ -108,7 +108,7 @@ export function RecebimentosPorDia({ dados }: { dados: RecebimentoNoDia[] }) {
                     onFocus={() => setAtivo(i)}
                     onBlur={() => setAtivo(null)}
                     aria-label={`${mesCurto(d.dia)}: ${d.ok} virou lead, ${d.falha} não entrou`}
-                    className={`flex h-full min-w-0 flex-1 cursor-default flex-col justify-end rounded-sm outline-none transition-colors ${
+                    className={`flex h-full min-w-0 flex-1 cursor-default flex-col justify-end rounded-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400/60 ${
                       ativo === i ? "bg-zinc-900/[0.04] dark:bg-zinc-100/[0.06]" : ""
                     }`}
                   >

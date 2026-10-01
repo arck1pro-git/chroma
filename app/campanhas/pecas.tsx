@@ -19,6 +19,14 @@ export const botaoAds =
 export const botaoPrincipalAds =
   "inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200";
 
+// Só ícone (atualizar, recolher). Classe própria, e não botaoAds + "px-0": duas
+// classes de padding na mesma tag não têm vencedor garantido no Tailwind.
+export const botaoIconeAds =
+  "inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-zinc-300 text-zinc-600 transition hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900";
+
+export const botaoIconePrincipalAds =
+  "inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200";
+
 // Aba, igual à do painel de artigo e à do configurador de webhooks.
 export const abaAds = "rounded-t-lg border-b-2 px-3 py-2 text-[12px] transition";
 export const abaAtivaAds = "border-zinc-900 font-medium text-zinc-900 dark:border-zinc-50 dark:text-zinc-50";

@@ -211,7 +211,7 @@ export default function ModalNovoBlog({
             type="button"
             onClick={aoFechar}
             disabled={criando}
-            className="rounded-full px-4 py-2 text-[13px] font-medium text-zinc-950 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-50 dark:hover:bg-zinc-800"
+            className="rounded-lg px-4 py-2 text-[13px] font-medium text-zinc-950 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-50 dark:hover:bg-zinc-800"
           >
             Cancelar
           </button>
@@ -219,7 +219,7 @@ export default function ModalNovoBlog({
             type="button"
             onClick={criar}
             disabled={!podeCriar}
-            className="rounded-full bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            className="rounded-lg bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             {criando ? "Criando…" : "Criar blog"}
           </button>

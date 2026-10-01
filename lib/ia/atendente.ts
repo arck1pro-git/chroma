@@ -575,7 +575,7 @@ async function gerarResposta(atendimentoId: string, s: Situacao, iaId: string): 
     // A resposta vai virar voz: texto de ler em voz alta, não de tela.
     ...(emAudio(s)
       ? [
-          "O cliente mandou áudio e a sua resposta vai por áudio. Escreva como se fala: frases curtas, sem listas, sem formatação e sem emojis.",
+          "O cliente mandou áudio e a sua resposta vai por áudio. Escreva como uma pessoa gravando um áudio de WhatsApp: tom leve e acolhedor, português do dia a dia (\"pra\", \"tá\", \"a gente\"), frases curtas ligadas por vírgula, no máximo umas quatro frases. Sem listas, formatação, emojis ou abreviações.",
         ]
       : []),
     "Responda à última mensagem do cliente.",

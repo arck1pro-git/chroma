@@ -340,7 +340,7 @@ export default function ModalArtigo({
                 type="button"
                 onClick={aoFechar}
                 disabled={etapa === "gerando"}
-                className="rounded-full px-3 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                className="rounded-lg px-3 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
                 Cancelar
               </button>
@@ -350,7 +350,7 @@ export default function ModalArtigo({
                 disabled={
                   etapa === "gerando" || !link.trim() || !alvo || semAuditoria
                 }
-                className="rounded-full bg-zinc-900 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="rounded-lg bg-zinc-900 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {etapa === "gerando"
                   ? "Lendo matéria e escrevendo…"
@@ -365,7 +365,7 @@ export default function ModalArtigo({
                 type="button"
                 onClick={() => setEtapa("form")}
                 disabled={etapa === "salvando"}
-                className="rounded-full px-3 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                className="rounded-lg px-3 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
                 Refazer
               </button>
@@ -373,7 +373,7 @@ export default function ModalArtigo({
                 type="button"
                 onClick={salvar}
                 disabled={etapa === "salvando"}
-                className="rounded-full bg-zinc-900 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="rounded-lg bg-zinc-900 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
                 {etapa === "salvando" ? "Salvando…" : "Salvar artigo"}
               </button>
@@ -385,14 +385,14 @@ export default function ModalArtigo({
               <button
                 type="button"
                 onClick={aoFechar}
-                className="rounded-full px-3 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                className="rounded-lg px-3 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
                 Fechar
               </button>
               {salvoEm && (
                 <Link
                   href={`/blog/${salvoEm.blogId}`}
-                  className="rounded-full bg-zinc-900 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="rounded-lg bg-zinc-900 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
                 >
                   Abrir o blog
                 </Link>

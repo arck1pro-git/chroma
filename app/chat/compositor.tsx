@@ -241,6 +241,7 @@ export function Compositor({
             <Paperclip className="size-[18px]" />
           </button>
           <textarea
+            aria-label="Mensagem"
             ref={campo}
             value={texto}
             onChange={(e) => setTexto(e.target.value)}

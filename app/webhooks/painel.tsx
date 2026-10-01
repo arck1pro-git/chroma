@@ -31,6 +31,7 @@ import Configuracao, {
 } from "./configuracao";
 import VisaoGeral from "./metricas";
 import { alternarAtivo, editarWebhook, excluirWebhook } from "./acoes";
+import { confirmar } from "../components/confirmar";
 import { botao, botaoFraco, botaoIcone } from "./estilos";
 import { NOME_PADRAO, type Webhook } from "@/lib/webhooks";
 
@@ -140,11 +141,15 @@ function Identificacao({
     });
   }
 
-  function remover() {
+  async function remover() {
     if (
-      !window.confirm(
-        `Excluir a webhook "${webhook.nome}"? A URL para de responder na hora e o histórico de recebimentos vai junto. Os contatos e cards já criados por ela FICAM — o lead é seu, não dela.`,
-      )
+      !(await confirmar({
+        titulo: `Excluir a webhook “${webhook.nome}”?`,
+        mensagem:
+          "A URL para de responder na hora e o histórico de recebimentos vai junto. Os contatos e cards já criados por ela ficam — o lead é seu, não dela.",
+        acao: "Excluir webhook",
+        perigo: true,
+      }))
     )
       return;
     iniciar(async () => {
