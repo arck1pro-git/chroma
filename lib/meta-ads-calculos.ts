@@ -36,6 +36,16 @@ export function resolverOrigem(origem: OrigemAds, objetos: ObjetoAds[], nivel: "
   return encontrados.length === 1 ? { id: encontrados[0].id, motivo: null }
     : { id: null, motivo: encontrados.length > 1 ? "ambiguas" as const : "semCorrespondencia" as const };
 }
+// O que perguntar à Meta para gravar o ID da campanha no lead, ou null quando
+// não há o que fazer: já tem ID (que prevalece sobre o nome) ou não tem origem.
+// Conjunto e anúncio só valem como número: a macro não substituída da URL
+// ("{{adset.id}}") chega como texto literal.
+export function pedidoDeCampanha(campos: OrigemAds) {
+  if (valor(campos, ["campaign_id", "campanha_id", "utm_id"])) return null;
+  const numero = (chaves: string[]) => { const v = valor(campos, chaves); return v && /^\d+$/.test(v) ? v : null; };
+  const pedido = { nome: valor(campos, ["campaign_name", "utm_campaign"]), anuncio: numero(["ad_id", "anuncio_id"]), conjunto: numero(["adset_id", "conjunto_id"]) };
+  return pedido.nome || pedido.anuncio || pedido.conjunto ? pedido : null;
+}
 export function resumoCrm(oportunidades: OportunidadeAds[], etapaAlvo?: { funil_id: string; ordem: number }): CrmAds {
   const etapas = new Map<string, CrmAds["etapas"][number]>();
   for (const o of oportunidades) {

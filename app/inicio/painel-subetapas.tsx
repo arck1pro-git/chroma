@@ -9,20 +9,20 @@ import {
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
+import { INSTANCIA_RESPONSAVEL } from "@/lib/automacoes/saida";
+import SeletorRemetente from "./seletor-remetente";
 import Link from "next/link";
 import {
   AlertTriangle,
   Check,
+  Clock,
   Loader2,
   Mail,
   MessageSquareText,
   Paperclip,
-  Pause,
   Pencil,
   PhoneCall,
-  Play,
   Plus,
-  Save,
   Send,
   Sparkles,
   Trash2,
@@ -34,9 +34,6 @@ import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
 import { brl } from "../formato";
 import CartaoOportunidade from "../funil/cartao";
 import { corDoRobo } from "../funil/ia";
-
-/** A cor do robô da IA no card deste contato NESTA etapa (null = sem IA). */
-type Robo = (contato: Contato | undefined) => string | null;
 import ChatIa from "../components/chat-ia";
 import {
   proximoIdDeMensagem,
@@ -63,28 +60,34 @@ import {
   type Subetapa,
 } from "./subetapas";
 
+/** A cor do robô da IA no card deste contato NESTA etapa (null = sem IA). */
+type Robo = (contato: Contato | undefined) => string | null;
+
 // Painel da cadência de UMA etapa, sobreposto ao quadro com o fundo desfocado.
 // Cada coluna é uma mensagem — e uma mensagem é um BLOCO de uma automação de
 // verdade (lib/automacoes/cadencia.ts), não um item de uma lista de tela.
 //
 // O ciclo tem dois botões, não quatro:
-//   escrever (à mão ou por prompt) → Salvar → [Rodando|Pausada]
-// Salvar grava a versão E leva ao n8n; o interruptor liga e desliga o workflow
-// lá. "Disparar" continua existindo para inscrever de uma vez as oportunidades
-// abertas da etapa — é a única ação em lote.
+//   escrever (à mão ou por prompt) → Publicar → [Rodando|Pausada]
+// Publicar grava a versão E leva ao n8n; o interruptor liga e desliga o
+// workflow lá.
 //
 // O quadro NÃO se arrasta. Chegou a arrastar — soltar um card em outra coluna
 // reinscrevia a oportunidade começando naquela mensagem —, e saiu: mover
 // promete uma precisão que a cadência não tem. A coluna é ONDE O MOTOR CHEGOU,
-// não um lugar em que se põe alguém; e "empurrar" um contato para a 4ª
-// mensagem significava mandar aquele texto na hora, fora de qualquer régua.
+// não um lugar em que se põe alguém. O que ficou é TIRAR a oportunidade da
+// cadência: o botão no card de quem está no fluxo cancela a inscrição.
 //
-// O que ficou é o que resolve na prática: TIRAR a oportunidade da cadência.
-// O botão aparece no card de quem está no fluxo, cancela a inscrição e a
-// espera pendurada nela, e a partir dali nada mais sai por aqui.
-//
-// Também não há checklist: marcar à mão o que "já saiu" competiria com o que o
-// motor de fato executou, que é o que a coluna mostra.
+// REVISÃO DE 2026-10-05 ("melhore 1000x"): a mesma lógica, outra leitura.
+//   · o DIA virou a primeira coisa da coluna — é a régua da cadência, e era a
+//     linha mais apagada dela;
+//   · o cabeçalho separa o que a cadência É (título, estado, números) do que
+//     se FAZ com ela (enviar por, publicar), e Publicar é a ação principal
+//     quando há alteração;
+//   · a mensagem mostra as variáveis como etiquetas, e o editor as insere no
+//     cursor em vez de pedir que se digite {{primeiro_nome}} de cabeça;
+//   · quem está parado numa espera aparece como nome, não como um cartão
+//     espremido em 144px.
 
 const CANAIS: Record<string, { Icone: LucideIcon; rotulo: string }> = {
   whatsapp: { Icone: MessageSquareText, rotulo: "WhatsApp" },
@@ -92,13 +95,28 @@ const CANAIS: Record<string, { Icone: LucideIcon; rotulo: string }> = {
   ligacao: { Icone: PhoneCall, rotulo: "Ligação" },
 };
 
-const campoTexto =
-  "w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus-visible:ring-zinc-100/10";
+// As variáveis que o motor troca no envio (textoParaExpressao, no adaptador do
+// n8n). A ordem é a de uso: quase toda mensagem começa pelo primeiro nome.
+const VARIAVEIS: { chave: string; rotulo: string }[] = [
+  { chave: "primeiro_nome", rotulo: "Primeiro nome" },
+  { chave: "nome", rotulo: "Nome" },
+  { chave: "oportunidade", rotulo: "Oportunidade" },
+  { chave: "valor", rotulo: "Valor" },
+];
+const ROTULO_DA_VARIAVEL = new Map(VARIAVEIS.map((v) => [v.chave, v.rotulo]));
+
+// Sem largura: quem usa diz a sua. Com `w-full` aqui, um `w-14` ao lado perdia
+// a disputa de classe e o campo do dia vazava do formulário.
+const campo =
+  "rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus-visible:ring-zinc-100/10";
+const campoTexto = `w-full ${campo}`;
 
 const botaoBase =
   "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition disabled:pointer-events-none disabled:opacity-40";
 const botaoClaro = `${botaoBase} border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900`;
 const botaoEscuro = `${botaoBase} bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white`;
+const botaoIcone =
+  "shrink-0 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-900 focus-visible:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-50";
 
 type Rascunho = {
   nome: string;
@@ -115,43 +133,58 @@ type Rascunho = {
  *
  * "documento removido" não é enfeite: arquivar o documento na biblioteca não
  * limpa o fluxo, e uma coluna que aponta para um arquivo que saiu de circulação
- * precisa dizer isso ANTES de alguém apertar Disparar — no disparo, o envio
- * falha e o ramo morre no motor.
+ * precisa dizer isso ANTES de alguém publicar — no disparo, o envio falha.
  */
-function nomeDoDocumento(
-  id: string | null,
-  documentos: Documento[],
-): string | null {
+function nomeDoDocumento(id: string | null, documentos: Documento[]): string | null {
   if (!id) return null;
   return documentos.find((d) => d.id === id)?.nome ?? "documento removido";
 }
 
-// Nome curto da instância, para caber no cabeçalho da coluna. "Instância
-// apagada" não é enfeite: se ela sumiu de Configurações depois de publicada, o
-// bloco FALHA no disparo em vez de cair no .env — e a coluna precisa dizer
-// isso antes de alguém apertar Disparar.
 /**
- * De qual número a mensagem sai, dito na tela.
+ * De qual número a mensagem sai, dito na tela, e se isso é um problema.
  *
- * Sem escolha, sai pela única cadastrada — e o nome dela é o que interessa
- * mostrar. O rótulo dizia "instância do .env", resquício de antes da tabela
- * `instancias_uazapi` existir: não há número nenhum no .env, e quem responde
- * é sempre o que está em Integrações.
+ * Sem escolha, sai pela única cadastrada. Com duas ou mais, escolher é
+ * obrigatório: a publicação recusa e diz qual mensagem ficou sem. Instância
+ * apagada depois de publicada FALHA no disparo — a coluna avisa antes.
  */
-function nomeDaInstancia(
+function remetenteDaMensagem(
   id: string | null,
   instancias: InstanciaEscolhivel[],
-): string {
+): { rotulo: string; problema: boolean } {
+  if (id === INSTANCIA_RESPONSAVEL) {
+    return { rotulo: "Responsável da oportunidade", problema: false };
+  }
   if (!id) {
-    if (instancias.length === 1) return `${instancias[0].nome} (padrão)`;
-    // Com duas ou mais, escolher é obrigatório: a publicação recusa e diz
-    // qual mensagem ficou sem.
-    return instancias.length === 0
-      ? "nenhuma instância cadastrada"
-      : "escolha o número";
+    if (instancias.length === 1) return { rotulo: instancias[0].nome, problema: false };
+    return {
+      rotulo: instancias.length === 0 ? "nenhum número cadastrado" : "escolha o número",
+      problema: true,
+    };
   }
   const i = instancias.find((x) => x.id === id);
-  return i ? i.nome : "instância apagada";
+  return i ? { rotulo: i.nome, problema: false } : { rotulo: "número apagado", problema: true };
+}
+
+/** O texto da mensagem com as variáveis como etiquetas, como o lead não vê. */
+function TextoComVariaveis({ texto }: { texto: string }) {
+  const partes = texto.split(/(\{\{\s*\w+\s*\}\})/g);
+  return (
+    <>
+      {partes.map((p, i) => {
+        const chave = /^\{\{\s*(\w+)\s*\}\}$/.exec(p)?.[1];
+        if (!chave) return <Fragment key={i}>{p}</Fragment>;
+        return (
+          <span
+            key={i}
+            className="inline-flex items-center rounded bg-sky-100 px-1 text-[11px] font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-200"
+            title={`Trocado no envio: {{${chave}}}`}
+          >
+            {ROTULO_DA_VARIAVEL.get(chave) ?? chave}
+          </span>
+        );
+      })}
+    </>
+  );
 }
 
 // ── Formulário de uma mensagem ──────────────────────────────────────────────
@@ -180,18 +213,29 @@ function FormSubetapa({
   const [canal, setCanal] = useState(inicial.canal);
   const [mensagem, setMensagem] = useState(inicial.mensagem);
   const [dia, setDia] = useState(String(inicial.dia));
-  const [instanciaId, setInstanciaId] = useState<string | null>(
-    inicial.instanciaId,
-  );
-  const [documentoId, setDocumentoId] = useState<string | null>(
-    inicial.documentoId,
-  );
+  const [instanciaId, setInstanciaId] = useState<string | null>(inicial.instanciaId);
+  const [documentoId, setDocumentoId] = useState<string | null>(inicial.documentoId);
   const [usuarioId, setUsuarioId] = useState<string | null>(inicial.usuarioId);
   const nomeRef = useRef<HTMLInputElement | null>(null);
+  const textoRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     nomeRef.current?.focus();
   }, []);
+
+  // Insere {{variavel}} onde está o cursor (ou no fim), e devolve o foco ao
+  // texto já depois dela: é o gesto de quem está no meio de uma frase.
+  function inserir(chave: string) {
+    const campo = textoRef.current;
+    const marca = `{{${chave}}}`;
+    const inicio = campo?.selectionStart ?? mensagem.length;
+    const fim = campo?.selectionEnd ?? mensagem.length;
+    setMensagem(mensagem.slice(0, inicio) + marca + mensagem.slice(fim));
+    requestAnimationFrame(() => {
+      campo?.focus();
+      campo?.setSelectionRange(inicio + marca.length, inicio + marca.length);
+    });
+  }
 
   return (
     <form
@@ -206,11 +250,8 @@ function FormSubetapa({
           dia: Math.max(0, Number(dia) || 0),
           instanciaId,
           // Anexo só sobrevive no WhatsApp: é o único canal que manda arquivo.
-          // Trocar o canal depois de escolher o documento limpa a escolha em
-          // vez de guardar um anexo que nada leria.
           documentoId: canal === "whatsapp" ? documentoId : null,
-          // Só a notificação tem alguém para avisar. Trocar o canal limpa a
-          // escolha em vez de guardar um destinatário que nada leria.
+          // Só a notificação tem alguém para avisar.
           usuarioId: canal === "ligacao" ? usuarioId : null,
         });
       }}
@@ -222,7 +263,7 @@ function FormSubetapa({
           aoCancelar();
         }
       }}
-      className="flex w-64 shrink-0 flex-col gap-2 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900"
+      className="flex w-[22rem] shrink-0 flex-col gap-3 rounded-xl border border-zinc-300 bg-white p-3.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
       aria-label={titulo}
     >
       <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
@@ -233,83 +274,71 @@ function FormSubetapa({
         ref={nomeRef}
         value={nome}
         onChange={(e) => setNome(e.target.value)}
-        placeholder="Nome da mensagem"
+        placeholder="Nome da mensagem (só a equipe vê)"
+        aria-label="Nome da mensagem"
         className={campoTexto}
       />
 
-      <div className="flex gap-1">
+      {/* Canal e dia, as duas escolhas que definem a coluna. Em linhas
+          separadas: lado a lado, "WhatsApp" não cabia e virava "WhatsA…". */}
+      <div className="flex rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800" role="radiogroup" aria-label="Canal">
         {Object.entries(CANAIS).map(([chave, { Icone, rotulo }]) => (
           <button
             key={chave}
             type="button"
+            role="radio"
+            aria-checked={canal === chave}
             onClick={() => setCanal(chave)}
-            aria-pressed={canal === chave}
-            title={rotulo}
-            className={`flex flex-1 items-center justify-center gap-1 rounded-lg border px-1.5 py-1 text-[11px] font-medium transition ${
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-medium transition ${
               canal === chave
-                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                : "border-zinc-300 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
+                : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
             }`}
           >
-            <Icone className="size-3 shrink-0" aria-hidden="true" />
-            <span className="truncate">{rotulo}</span>
+            <Icone className="size-3.5 shrink-0" aria-hidden="true" />
+            {rotulo}
           </button>
         ))}
       </div>
 
       {/* O DIA é o que vira bloco de espera no fluxo — é ele, e não a ordem da
-          coluna, que o motor obedece. Por isso está no formulário e não
-          escondido numa regra implícita de "uma por dia". */}
+          coluna, que o motor obedece. */}
       <label className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
-        <span className="shrink-0">Sai no dia</span>
+        <Clock className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+        <span className="w-14 shrink-0">Dia</span>
         <input
           type="number"
           min={0}
           value={dia}
           onChange={(e) => setDia(e.target.value)}
-          className={`${campoTexto} w-20 tabular-nums`}
+          aria-label="Dia em que sai, contado da entrada"
+          className={`${campo} w-16 px-2 text-center tabular-nums`}
         />
-        <span className="shrink-0 text-[11px] text-zinc-400">após entrar</span>
+        <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+          {Number(dia) > 0 ? "depois de entrar na cadência" : "no dia em que entra"}
+        </span>
       </label>
 
-      {/* A INSTÂNCIA é POR MENSAGEM: é ela que decide de qual número esta sai.
-          Só aparece no WhatsApp porque é o único canal que fala com a uazapi —
-          num bloco de e-mail ou de aviso ninguém a leria. */}
+      {/* DE ONDE SAI: a instância é POR MENSAGEM. WhatsApp e ligação (o aviso
+          à equipe também é um WhatsApp) saem por um número escolhido aqui. */}
       {(canal === "whatsapp" || canal === "ligacao") && (
-        <label className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
-          <Send className="size-3 shrink-0" aria-hidden="true" />
-          <span className="shrink-0">Enviar por</span>
-          <select
-            value={instanciaId ?? ""}
-            onChange={(e) => setInstanciaId(e.target.value || null)}
-            className={`${campoTexto} min-w-0 flex-1`}
-          >
-            <option value="">instância do .env</option>
-            {instancias.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.nome}
-                {i.numero ? ` · ${i.numero}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SeletorRemetente valor={instanciaId} instancias={instancias} aoMudar={setInstanciaId} />
       )}
 
-      {/* O ANEXO. Só no WhatsApp, como a instância, e pelo mesmo motivo: é o
-          único canal que sabe mandar arquivo. O que a pessoa escolhe aqui é um
-          documento da biblioteca (/documentos) — não se sobe arquivo na
-          cadência, senão cada mensagem teria a sua cópia e ninguém saberia qual
-          é a tabela de preços vigente. */}
+      {/* O ANEXO. Só no WhatsApp: é o único canal que sabe mandar arquivo. O
+          que se escolhe é um documento da biblioteca (/documentos), não um
+          upload — senão cada mensagem teria a sua cópia. */}
       {canal === "whatsapp" && (
         <label className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
-          <Paperclip className="size-3 shrink-0" aria-hidden="true" />
-          <span className="shrink-0">Anexo</span>
+          <Paperclip className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+          <span className="w-14 shrink-0">Anexo</span>
           <select
             value={documentoId ?? ""}
             onChange={(e) => setDocumentoId(e.target.value || null)}
-            className={`${campoTexto} min-w-0 flex-1`}
+            disabled={documentos.length === 0}
+            className={`${campoTexto} min-w-0 flex-1 disabled:opacity-60`}
           >
-            <option value="">sem anexo</option>
+            <option value="">{documentos.length === 0 ? "biblioteca vazia" : "sem anexo"}</option>
             {documentos.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.nome}
@@ -320,18 +349,17 @@ function FormSubetapa({
       )}
 
       {/* QUEM AVISAR. O aviso é um WhatsApp para o número da pessoa
-          (usuarios.whatsapp) — por isso só aparece quem tem número cadastrado:
-          oferecer os demais deixaria escolher um aviso que a publicação recusa. */}
+          (usuarios.whatsapp) — só aparece quem tem número cadastrado. */}
       {canal === "ligacao" && (
         <label className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
-          <PhoneCall className="size-3 shrink-0" aria-hidden="true" />
-          <span className="shrink-0">Avisar</span>
+          <PhoneCall className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+          <span className="w-14 shrink-0">Avisar</span>
           <select
             value={usuarioId ?? ""}
             onChange={(e) => setUsuarioId(e.target.value || null)}
             className={`${campoTexto} min-w-0 flex-1`}
           >
-            <option value="">escolha quem recebe</option>
+            <option value="">{avisaveis.length === 0 ? "ninguém com WhatsApp" : "escolha quem recebe"}</option>
             {avisaveis.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.nome}
@@ -341,49 +369,43 @@ function FormSubetapa({
         </label>
       )}
 
-      {canal === "ligacao" && avisaveis.length === 0 && (
-        <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-300">
-          Ninguém tem WhatsApp cadastrado. Preencha o número em Configurações →
-          Usuários para poder avisar alguém.
-        </p>
-      )}
+      <div className="flex flex-col gap-1.5">
+        <textarea
+          ref={textoRef}
+          value={mensagem}
+          onChange={(e) => setMensagem(e.target.value)}
+          rows={7}
+          placeholder={canal === "ligacao" ? "O que a pessoa avisada deve fazer" : "O que o lead recebe"}
+          aria-label="Texto da mensagem"
+          className={`${campoTexto} resize-y leading-relaxed`}
+        />
+        <div className="flex flex-wrap items-center gap-1">
+          {VARIAVEIS.map((v) => (
+            <button
+              key={v.chave}
+              type="button"
+              onClick={() => inserir(v.chave)}
+              title={`Insere {{${v.chave}}} no cursor`}
+              className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-medium text-sky-800 transition hover:bg-sky-200 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-500/25"
+            >
+              + {v.rotulo}
+            </button>
+          ))}
+          <span className="ml-auto text-[10px] tabular-nums text-zinc-400 dark:text-zinc-500">
+            {mensagem.length}
+          </span>
+        </div>
+      </div>
 
-      {canal === "whatsapp" && documentos.length === 0 && (
-        <p className="text-[10px] leading-snug text-zinc-400 dark:text-zinc-500">
-          A biblioteca está vazia. Suba os arquivos em Documentos para poder
-          anexá-los aqui.
-        </p>
-      )}
-
-      <textarea
-        value={mensagem}
-        onChange={(e) => setMensagem(e.target.value)}
-        rows={4}
-        placeholder="Mensagem enviada nesta subetapa"
-        className={`${campoTexto} resize-none`}
-      />
-
-      {/* Com anexo o texto muda de papel, e quem está escrevendo precisa saber
-          disso: sai UM envio, o arquivo com a legenda — não duas mensagens. */}
-      {canal === "whatsapp" && documentoId && (
-        <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400">
-          O texto acima vai como legenda do anexo, num envio só. Pode ficar
-          vazio: aí sai só o arquivo.
-        </p>
-      )}
-
-      <p className="text-[10px] leading-snug text-zinc-400 dark:text-zinc-500">
-        Variáveis: {"{{nome}}"}, {"{{primeiro_nome}}"}, {"{{oportunidade}}"},{" "}
-        {"{{valor}}"}.
-      </p>
-
-      {/* O que cada canal FAZ de verdade quando a automação dispara. Sem isto,
-          uma coluna de e-mail parece que envia e-mail — e não envia. */}
-      {canal !== "whatsapp" && (
-        <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-300">
+      {/* O que muda no envio. Com anexo, sai UM envio: o arquivo com o texto de
+          legenda. E-mail e ligação não fazem o que o nome sugere. */}
+      {(canal !== "whatsapp" || documentoId) && (
+        <p className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">
           {canal === "email"
             ? "E-mail ainda não sai: o motor pula este bloco e registra o motivo."
-            : "O motor não disca: ele manda um WhatsApp para a pessoa escolhida avisando que é hora de ligar."}
+            : canal === "ligacao"
+              ? "O motor não disca: manda um WhatsApp para quem você escolher avisando que é hora de ligar."
+              : "O texto vai como legenda do anexo, num envio só. Vazio, sai só o arquivo."}
         </p>
       )}
 
@@ -402,7 +424,7 @@ function FormSubetapa({
 // ── Um card do quadro ───────────────────────────────────────────────────────
 // O botão de sair só existe para quem está DENTRO do fluxo. Para quem nunca
 // entrou, a coluna é previsão (a régua de dias) e não há inscrição nenhuma
-// para cancelar — um botão ali prometeria desfazer algo que não aconteceu.
+// para cancelar.
 function CartaoNaCadencia({
   oportunidade,
   contato,
@@ -420,7 +442,7 @@ function CartaoNaCadencia({
   ia: string | null;
   noFluxo: boolean;
   removendo: boolean;
-  aoRemover: () => void;
+  aoRemover: (() => void) | null;
 }) {
   return (
     <div className="group/card relative">
@@ -432,16 +454,14 @@ function CartaoNaCadencia({
         ia={ia}
       />
 
-      {noFluxo && (
+      {noFluxo && aoRemover && (
         <button
           type="button"
           onClick={aoRemover}
           disabled={removendo}
           aria-label={`Remover ${oportunidade.nome} da cadência`}
-          title="Remover da cadência: cancela a inscrição e nada mais é enviado por este fluxo"
-          // Só no hover/foco do card, como o editar e o excluir da coluna: um
-          // ícone fixo por card competiria com o conteúdo em 18 colunas.
-          className="absolute right-1.5 top-1.5 rounded-lg bg-white/90 p-1 text-zinc-400 opacity-0 shadow-sm transition hover:text-red-700 focus-visible:opacity-100 group-hover/card:opacity-100 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-900/90 dark:text-zinc-500 dark:hover:text-red-400"
+          title="Tirar da cadência: cancela a inscrição e nada mais é enviado por este fluxo"
+          className="absolute right-2 top-2 rounded-lg bg-white/90 p-1 text-zinc-400 opacity-0 shadow-sm transition hover:text-red-700 focus-visible:opacity-100 group-hover/card:opacity-100 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-900/90 dark:text-zinc-500 dark:hover:text-red-400"
         >
           {removendo ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -454,84 +474,75 @@ function CartaoNaCadencia({
   );
 }
 
-// ── Uma coluna ──────────────────────────────────────────────────────────────
+// ── O intervalo entre duas mensagens ────────────────────────────────────────
 
 /**
  * O que o fluxo faz ENTRE duas mensagens: esperar, mudar tag, mudar segmento,
- * chamar um serviço. Uma pill por bloco, na ordem em que rodam.
+ * chamar um serviço. Uma etiqueta por bloco, na ordem em que rodam, sobre um
+ * traço que liga as duas colunas.
  *
- * DISCRETA DE PROPÓSITO, e estreita: a coluna é da mensagem, e a leitura da
- * cadência é a sequência de mensagens. O que acontece no intervalo importa,
- * mas não compete — quem varre o quadro está procurando em que mensagem cada
- * lead está, não quantas tags o fluxo mexe.
+ * Só leitura. Editar estes blocos é no builder; o que esta tela garante é que
+ * eles não somem ao salvar (ver `escreverCadencia`) e que quem olha a cadência
+ * sabe que existem.
  *
- * Só leitura. Editar estes blocos é no builder, com o painel de cada um; o que
- * esta tela garante é que eles não somem ao salvar (ver `escreverCadencia`) e
- * que quem olha a cadência sabe que existem.
- *
- * Quem está PARADO num deles aparece embaixo da pill. Na prática é sempre a
- * espera: os outros blocos o lead atravessa em milissegundos.
+ * Quem está PARADO num deles (na prática, numa espera) aparece pelo NOME, logo
+ * abaixo: era um cartão inteiro espremido em 144px, com "7 dias na etapa"
+ * quebrando em três linhas.
  */
-function Acoes({
+function Intervalo({
   acoes,
   porAcao,
   contatoPorId,
-  usuarioPorId,
-  tagsDoContato,
-  robo,
 }: {
-  robo: Robo;
   acoes: AcaoCadencia[];
   porAcao: Map<string, Oportunidade[]>;
   contatoPorId: Map<string, Contato>;
-  usuarioPorId: Map<string, Usuario>;
-  tagsDoContato: Map<string, Tag[]>;
 }) {
-  if (acoes.length === 0) return null;
+  if (acoes.length === 0) {
+    // Mensagens no mesmo dia: um traço curto, sem etiqueta, só para a
+    // sequência não parecer duas cadências.
+    return <div className="mt-[3.25rem] h-px w-4 shrink-0 bg-zinc-300 dark:bg-zinc-700" aria-hidden="true" />;
+  }
 
   return (
-    <div className="flex shrink-0 flex-col items-center gap-2 self-start pt-9">
+    <div className="flex w-32 shrink-0 flex-col items-stretch gap-2 pt-11">
       {acoes.map((a) => {
         const Icone = ICONES[a.tipo] ?? ICONE_PADRAO;
         const parados = porAcao.get(a.id) ?? [];
-        const rotulo = a.detalhe || a.rotulo;
-
         return (
-          <div key={a.id} className="flex flex-col gap-2">
-            <span
-              title={a.detalhe ? `${a.rotulo} · ${a.detalhe}` : a.rotulo}
-              className="inline-flex max-w-32 items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800/70 dark:text-zinc-400"
-            >
-              <Icone className="size-3 shrink-0" aria-hidden="true" />
-              <span className="truncate">{rotulo}</span>
-              {parados.length > 0 && (
-                <span className="shrink-0 font-semibold tabular-nums">
-                  · {parados.length}
-                </span>
-              )}
-            </span>
-
-            {/* O card tem largura propria: sem ela a faixa encolheria para o
-                tamanho da pill e o cartao ficaria espremido. */}
-            {parados.map((o) => (
-              <div key={o.id} className="w-36">
-              <CartaoOportunidade
-                oportunidade={o}
-                contato={contatoPorId.get(o.contato_id)}
-                responsavel={
-                  o.responsavel_id ? usuarioPorId.get(o.responsavel_id) : undefined
-                }
-                tags={tagsDoContato.get(o.contato_id) ?? []}
-                ia={robo(contatoPorId.get(o.contato_id))}
-              />
-              </div>
-            ))}
+          <div key={a.id} className="flex flex-col items-center gap-1.5">
+            <div className="relative flex w-full items-center justify-center">
+              <span className="absolute inset-x-0 top-1/2 h-px bg-zinc-300 dark:bg-zinc-700" aria-hidden="true" />
+              <span
+                title={a.detalhe ? `${a.rotulo} · ${a.detalhe}` : a.rotulo}
+                className="relative inline-flex max-w-full items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
+              >
+                <Icone className="size-3 shrink-0 text-zinc-400" aria-hidden="true" />
+                <span className="truncate">{a.detalhe || a.rotulo}</span>
+              </span>
+            </div>
+            {parados.length > 0 && (
+              <ul className="flex w-full flex-col gap-1" aria-label={`Esperando: ${parados.length}`}>
+                {parados.map((o) => (
+                  <li
+                    key={o.id}
+                    title={`${o.nome} · ${o.dias_na_etapa} ${o.dias_na_etapa === 1 ? "dia" : "dias"} na etapa`}
+                    className="flex items-center gap-1.5 truncate rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-900 dark:bg-amber-500/10 dark:text-amber-200"
+                  >
+                    <Clock className="size-3 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{contatoPorId.get(o.contato_id)?.nome ?? o.nome}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         );
       })}
     </div>
   );
 }
+
+// ── Uma coluna ──────────────────────────────────────────────────────────────
 
 function Coluna({
   coluna,
@@ -565,123 +576,110 @@ function Coluna({
   tagsDoContato: Map<string, Tag[]>;
   aoEditar: () => void;
   aoExcluir: () => void;
-  aoRemover: (oportunidade: Oportunidade) => void;
+  aoRemover: ((oportunidade: Oportunidade) => void) | null;
 }) {
   const { subetapa, oportunidades, alemDaUltima } = coluna;
   const canal = CANAIS[subetapa.canal] ?? CANAIS.whatsapp;
-  const total = oportunidades.reduce((soma, o) => soma + o.valor, 0);
+  const remetente = remetenteDaMensagem(subetapa.instanciaId, instancias);
+  const anexo = subetapa.canal === "whatsapp" ? nomeDoDocumento(subetapa.documentoId, documentos) : null;
 
   return (
     <section
       // A MESMA CASCA DA ETAPA DO FUNIL (app/inicio/inicio.tsx): mesma largura,
       // mesmo raio, mesmo fundo, mesma faixa de cor no topo. Uma mensagem da
-      // cadência é um passo da etapa, e ler as duas telas tem que ser a mesma
-      // leitura — antes a coluna daqui tinha fundo próprio, tingido conforme a
-      // posição na sequência, e parecia outro componente.
+      // cadência é um passo da etapa, e ler as duas telas é a mesma leitura.
       className="group/coluna relative flex max-h-full w-72 shrink-0 flex-col rounded-xl bg-zinc-100/70 dark:bg-zinc-900/50"
       aria-label={`Mensagem ${indice + 1} · ${subetapa.nome}`}
     >
-      <span
-        className={`h-1.5 shrink-0 rounded-t-xl ${cor}`}
-        aria-hidden="true"
-      />
+      <span className={`h-1.5 shrink-0 rounded-t-xl ${cor}`} aria-hidden="true" />
 
-      {/* Daqui pra baixo NÃO há cinza fixo: divisórias e rótulos são a própria
-          tinta com alfa (zinc-900/N no claro, zinc-50/N no escuro). Sobre uma
-          coluna que muda de tom a cada passo, um zinc-500 legível na 1ª coluna
-          fica abaixo de 4,5:1 na 18ª — o alfa acompanha o fundo, o cinza não. */}
-      <div className="shrink-0 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
+      <div className="shrink-0 px-3 pb-2.5 pt-2.5">
+        {/* A RÉGUA PRIMEIRO: o número da mensagem e o dia em que ela sai. */}
         <div className="flex items-center gap-2">
-          {/* o número da mensagem é o que identifica a coluna — vem antes do nome */}
-          <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-zinc-900 text-[11px] font-semibold tabular-nums text-white dark:bg-zinc-100 dark:text-zinc-900">
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-[10px] font-semibold tabular-nums text-white dark:bg-zinc-100 dark:text-zinc-900">
             {indice + 1}
           </span>
-          <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">
-            {subetapa.nome}
-          </h3>
-          {/* "no topo o número de oportunidades ali" */}
-          <span className="min-w-5 shrink-0 rounded-full bg-zinc-200 px-1.5 py-0.5 text-center text-[11px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+          <span className="text-[12px] font-semibold text-zinc-900 dark:text-zinc-50">
+            {subetapa.dia === 0 ? "Na entrada" : `Dia ${subetapa.dia}`}
+          </span>
+          <span className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+            {subetapa.dia === 0 ? "" : rotuloDoDia(subetapa.dia)}
+            {alemDaUltima > 0 ? " ou depois" : ""}
+          </span>
+          {/* Editar e excluir no hover/foco da coluna: com 18 delas, dois
+              ícones fixos em cada uma competiriam com o conteúdo. */}
+          <span className="ml-auto flex shrink-0 items-center opacity-0 transition group-focus-within/coluna:opacity-100 group-hover/coluna:opacity-100">
+            <button type="button" onClick={aoEditar} aria-label={`Editar mensagem ${indice + 1}`} className={botaoIcone}>
+              <Pencil className="size-3" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={aoExcluir}
+              aria-label={`Excluir mensagem ${indice + 1}`}
+              className={`${botaoIcone} hover:text-red-700 dark:hover:text-red-400`}
+            >
+              <Trash2 className="size-3" aria-hidden="true" />
+            </button>
+          </span>
+        </div>
+
+        <h3 className="mt-1.5 truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-50" title={subetapa.nome}>
+          {subetapa.nome}
+        </h3>
+
+        {/* Canal e de onde sai, numa linha só. O número fica à vista na
+            coluna, e não só no formulário: com uma instância por mensagem,
+            ler a cadência de fora é a única forma de ver que a 5ª sai por
+            outro. Em âmbar quando não vai sair. */}
+        <p className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+          <canal.Icone className="size-3 shrink-0" aria-hidden="true" />
+          <span className="shrink-0">{canal.rotulo}</span>
+          {(subetapa.canal === "whatsapp" || subetapa.canal === "ligacao") && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span
+                className={`truncate ${remetente.problema ? "font-medium text-amber-700 dark:text-amber-400" : ""}`}
+                title="Número de onde esta mensagem sai"
+              >
+                {remetente.rotulo}
+              </span>
+            </>
+          )}
+          <span className="ml-auto shrink-0 rounded-full bg-zinc-200 px-1.5 py-px text-[11px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300" title="Oportunidades nesta mensagem">
             {oportunidades.length}
           </span>
-        </div>
-
-        <div className="mt-1 flex items-center justify-between gap-2 pl-7">
-          <span className="inline-flex min-w-0 items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-            <canal.Icone className="size-3 shrink-0" aria-hidden="true" />
-            <span className="truncate">{canal.rotulo}</span>
-          </span>
-          <span className="shrink-0 text-[11px] font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
-            {brl(total)}
-          </span>
-        </div>
-
-        {/* De qual número ESTA mensagem sai. Fica no cabeçalho da coluna e não
-            só no formulário porque, com uma instância por mensagem, ler a
-            cadência de fora é a única forma de perceber que a 5ª sai por outro
-            número. */}
-        {subetapa.canal === "whatsapp" && (
-          <p className="mt-0.5 flex items-center gap-1 pl-7 text-[11px] text-zinc-500 dark:text-zinc-400">
-            <Send className="size-2.5 shrink-0" aria-hidden="true" />
-            <span className="truncate">
-              {nomeDaInstancia(subetapa.instanciaId, instancias)}
-            </span>
-          </p>
-        )}
-
-        {/* O anexo no cabeçalho da coluna, pela mesma razão da instância: ler a
-            cadência de fora é a única forma de perceber que a 3ª mensagem leva
-            a proposta junto. */}
-        {subetapa.canal === "whatsapp" && subetapa.documentoId && (
-          <p className="mt-0.5 flex items-center gap-1 pl-7 text-[11px] text-zinc-500 dark:text-zinc-400">
-            <Paperclip className="size-2.5 shrink-0" aria-hidden="true" />
-            <span className="truncate">
-              {nomeDoDocumento(subetapa.documentoId, documentos)}
-            </span>
-          </p>
-        )}
-
-        <div className="mt-0.5 flex items-center gap-1 pl-7">
-          <p className="min-w-0 flex-1 truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-            {rotuloDoDia(subetapa.dia)}
-            {alemDaUltima > 0 ? " ou depois" : ""}
-          </p>
-          {/* Editar e excluir só aparecem no hover/foco da coluna: com 18
-              delas, dois ícones fixos em cada uma competiriam com o conteúdo. */}
-          <button
-            type="button"
-            onClick={aoEditar}
-            aria-label={`Editar mensagem ${indice + 1}`}
-            className="shrink-0 rounded p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-zinc-900 focus-visible:opacity-100 group-hover/coluna:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-          >
-            <Pencil className="size-3" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={aoExcluir}
-            aria-label={`Excluir mensagem ${indice + 1}`}
-            className="shrink-0 rounded p-1 text-zinc-400 opacity-0 transition hover:bg-zinc-200 hover:text-red-700 focus-visible:opacity-100 group-hover/coluna:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-red-400"
-          >
-            <Trash2 className="size-3" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-
-      {/* a mensagem em si, em balão: é ela que dá nome à subetapa */}
-      <div className="shrink-0 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
-        <p className="rounded-xl rounded-tl-sm bg-white px-2.5 py-2 text-[12px] leading-snug text-zinc-600 shadow-sm dark:bg-zinc-950 dark:text-zinc-300">
-          {subetapa.mensagem || (
-            <span className="italic text-zinc-400 dark:text-zinc-500">
-              Sem mensagem escrita
-            </span>
-          )}
         </p>
+
+        {anexo && (
+          <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+            <Paperclip className="size-3 shrink-0" aria-hidden="true" />
+            <span className={`truncate ${anexo === "documento removido" ? "font-medium text-amber-700 dark:text-amber-400" : ""}`}>
+              {anexo}
+            </span>
+          </p>
+        )}
+
+        {/* A mensagem em balão, e o balão é o atalho para editar: é nela que
+            se clica quando se quer mudar o texto. */}
+        <button
+          type="button"
+          onClick={aoEditar}
+          title="Editar esta mensagem"
+          className="mt-2.5 block w-full rounded-xl rounded-tl-sm bg-white px-3 py-2 text-left text-[12px] leading-relaxed text-zinc-700 shadow-sm ring-1 ring-zinc-200/70 transition hover:ring-zinc-300 dark:bg-zinc-950 dark:text-zinc-300 dark:ring-zinc-800 dark:hover:ring-zinc-700"
+        >
+          {subetapa.mensagem ? (
+            <span className="line-clamp-[8] whitespace-pre-line">
+              <TextoComVariaveis texto={subetapa.mensagem} />
+            </span>
+          ) : (
+            <span className="italic text-zinc-400 dark:text-zinc-500">Sem texto. Clique para escrever.</span>
+          )}
+        </button>
       </div>
 
-      <div className="rolagem-oculta flex min-h-0 flex-col gap-2.5 overflow-y-auto rounded-b-xl p-2.5">
+      <div className="rolagem-oculta flex min-h-0 flex-col gap-2.5 overflow-y-auto rounded-b-xl border-t border-zinc-200 p-2.5 dark:border-zinc-800">
         {oportunidades.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-300 px-3 py-4 text-center text-[11px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-            Ninguém nesta mensagem
-          </p>
+          <p className="px-3 py-3 text-center text-[11px] text-zinc-400 dark:text-zinc-500">Ninguém nesta mensagem</p>
         ) : (
           oportunidades.map((o) => {
             const contato = contatoPorId.get(o.contato_id);
@@ -690,14 +688,12 @@ function Coluna({
                 key={o.id}
                 oportunidade={o}
                 contato={contato}
-                responsavel={
-                  o.responsavel_id ? usuarioPorId.get(o.responsavel_id) : undefined
-                }
+                responsavel={o.responsavel_id ? usuarioPorId.get(o.responsavel_id) : undefined}
                 tags={contato ? (tagsDoContato.get(contato.id) ?? []) : []}
                 ia={robo(contato)}
                 noFluxo={emCadencia.has(o.id)}
                 removendo={removendoId === o.id}
-                aoRemover={() => aoRemover(o)}
+                aoRemover={aoRemover ? () => aoRemover(o) : null}
               />
             );
           })
@@ -705,9 +701,8 @@ function Coluna({
       </div>
 
       {alemDaUltima > 0 && (
-        <p className="shrink-0 px-3 pb-2 pt-1 text-center text-[11px] tabular-nums text-zinc-900/70 dark:text-zinc-50/70">
-          {alemDaUltima} {alemDaUltima === 1 ? "já passou" : "já passaram"} da
-          última mensagem
+        <p className="shrink-0 px-3 pb-2 pt-1 text-center text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400">
+          {alemDaUltima} {alemDaUltima === 1 ? "já passou" : "já passaram"} da última mensagem
         </p>
       )}
     </section>
@@ -749,37 +744,38 @@ export default function PainelSubetapas({
 }) {
   const router = useRouter();
   const [pendente, comecar] = useTransition();
+  // Demonstração (?demo=cadencia): não há fluxo por trás, então nada chama o
+  // servidor — os botões que gravam ficam desligados e o topo avisa.
+  const demo = cadencia?.demonstracao === true;
 
   // "Hoje" congelado na abertura do painel. O painel só monta depois de um
   // clique, então isto nunca roda no servidor e não há risco de hidratação —
   // mas recalcular a cada render faria as colunas mudarem no meio da sessão se
-  // ela cruzasse a meia-noite, no meio de uma rolagem.
+  // ela cruzasse a meia-noite.
   const hoje = useMemo(() => new Date(), []);
   const cor = etapa.cor;
   // O painel é de UMA etapa: o robô de cada card depende só do contato.
   const robo: Robo = (contato) => corDoRobo(contato, etapa);
 
   // Edição local. O que está aqui é o rascunho da tela; só vai ao banco no
-  // Salvar. `chave` reseta o estado quando o servidor devolve outra versão —
+  // Publicar. `chave` reseta o estado quando o servidor devolve outra versão —
   // é o que faz o fluxo escrito por prompt aparecer sem F5.
   const chave = `${cadencia?.fluxoId ?? "nenhuma"}:${cadencia?.numeroVersao ?? 0}`;
-  const [subetapas, setSubetapas] = useState<Subetapa[]>(
-    cadencia?.subetapas ?? [],
-  );
+  const [subetapas, setSubetapas] = useState<Subetapa[]>(cadencia?.subetapas ?? []);
   const [chaveVista, setChaveVista] = useState(chave);
   const [sujo, setSujo] = useState(false);
-  // Quem o próximo Publicar pega. Mora aqui e vai junto no salvar: é decisão
-  // da publicação, e não faz sentido gravá-la sem publicar.
-  const [inscreverAtuais, setInscreverAtuais] = useState(
-    cadencia?.inscreverAtuais ?? true,
-  );
-  const [aviso, setAviso] = useState<{ tom: "ok" | "erro"; texto: string } | null>(
-    null,
-  );
+  // Quem o próximo Publicar pega. Vai junto no salvar: é decisão da
+  // publicação, e não faz sentido gravá-la sem publicar.
+  const [inscreverAtuais, setInscreverAtuais] = useState(cadencia?.inscreverAtuais ?? true);
+  const [aviso, setAviso] = useState<{ tom: "ok" | "erro"; texto: string } | null>(null);
 
-  // Oportunidade cujo botão de sair está em curso: é o que troca o ícone pelo
-  // giro naquele card e evita dois cliques na mesma remoção.
+  // Oportunidade cujo botão de sair está em curso.
   const [removendoId, setRemovendoId] = useState<string | null>(null);
+
+  const [editando, setEditando] = useState<string | null>(null);
+  // Cadência sem mensagem nenhuma já abre no formulário da primeira: é a única
+  // coisa a fazer ali, e um quadro vazio com um botão "+" era um clique a mais.
+  const [criando, setCriando] = useState(!cadencia || cadencia.subetapas.length === 0);
 
   if (chave !== chaveVista) {
     // Durante o render, de propósito: é o padrão do React para estado derivado
@@ -787,18 +783,14 @@ export default function PainelSubetapas({
     setChaveVista(chave);
     setSubetapas(cadencia?.subetapas ?? []);
     setSujo(false);
+    if (cadencia && cadencia.subetapas.length === 0) setCriando(true);
   }
 
-  const [editando, setEditando] = useState<string | null>(null);
-  const [criando, setCriando] = useState(false);
-
   // Onde cada oportunidade está: o último bloco que o motor executou para ela.
-  // Quem está no fluxo sem passo marcado começa na primeira; quem nunca entrou
-  // cai na régua de dias (ver `distribuir`).
   const posicao = cadencia?.posicao;
 
-  // Os blocos de acao do fluxo, pelo id: e o que diz a `distribuir` que aquela
-  // posicao nao e uma coluna, e sim uma espera (ou uma tag) entre duas.
+  // Os blocos de ação do fluxo, pelo id: é o que diz à `distribuir` que aquela
+  // posição não é uma coluna, e sim uma espera (ou uma tag) entre duas.
   const idsDeAcao = useMemo(() => {
     const ids = new Set<string>();
     for (const s of subetapas) for (const a of s.acoes) ids.add(a.id);
@@ -807,13 +799,13 @@ export default function PainelSubetapas({
   }, [subetapas, cadencia?.acoesFinais]);
 
   const { colunas, porAcao } = useMemo(
-    () =>
-      distribuir(subetapas, oportunidades, hoje, posicao, emCadencia, idsDeAcao),
+    () => distribuir(subetapas, oportunidades, hoje, posicao, emCadencia, idsDeAcao),
     [subetapas, oportunidades, hoje, posicao, emCadencia, idsDeAcao],
   );
 
   const quantidade = oportunidades.length;
   const total = oportunidades.reduce((s, o) => s + o.valor, 0);
+  const duracao = subetapas.length ? subetapas[subetapas.length - 1].dia : 0;
   const quadroRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -835,8 +827,7 @@ export default function PainelSubetapas({
         ordem: atuais.length + 1,
         ...dados,
         // Coluna nova não tem ação nenhuma antes dela, e o instante é o que o
-        // dia disser. Quem grava reescreve os dois a partir do fluxo no banco
-        // (ver salvarCadencia) — aqui é só para o objeto nascer completo.
+        // dia disser. Quem grava reescreve os dois a partir do fluxo no banco.
         minutos: dados.dia * 1440,
         acoes: [],
       };
@@ -844,19 +835,19 @@ export default function PainelSubetapas({
     });
     setSujo(true);
     setCriando(false);
-    // A coluna nova nasce fora da tela, no fim de outras 18. Sem isto o clique
-    // em "Criar" não teria efeito visível nenhum.
+    // A coluna nova nasce no fim da fila, fora da tela.
     requestAnimationFrame(() => {
-      quadroRef.current?.scrollTo({
-        left: quadroRef.current.scrollWidth,
-        behavior: "smooth",
-      });
+      quadroRef.current?.scrollTo({ left: quadroRef.current.scrollWidth, behavior: "smooth" });
     });
   }
 
   function editar(id: string, dados: Rascunho) {
     setSubetapas((atuais) =>
-      ordenar(atuais.map((s) => (s.id === id ? { ...s, ...dados } : s))),
+      ordenar(
+        atuais.map((s) =>
+          s.id === id ? { ...s, ...dados } : s,
+        ),
+      ),
     );
     setSujo(true);
     setEditando(null);
@@ -878,12 +869,17 @@ export default function PainelSubetapas({
   // ── Ações do servidor ──────────────────────────────────────────────────────
 
   function executar(
-    promessa: Promise<{ ok: boolean; mensagem?: string; erro?: string }>,
+    promessa: () => Promise<{ ok: boolean; mensagem?: string; erro?: string }>,
     opcoes?: { aoDarCerto?: () => void; aoFalhar?: () => void },
   ) {
+    if (demo) {
+      setAviso({ tom: "erro", texto: "Demonstração: nada aqui é gravado nem enviado." });
+      opcoes?.aoFalhar?.();
+      return;
+    }
     comecar(async () => {
       try {
-        const r = await promessa;
+        const r = await promessa();
         setAviso(
           r.ok
             ? { tom: "ok", texto: r.mensagem ?? "Pronto." }
@@ -898,204 +894,149 @@ export default function PainelSubetapas({
       } catch (e) {
         // Server action que ESTOURA (erro de banco, motor fora do ar) rejeita a
         // promessa em vez de devolver { ok: false }. Sem este catch vira uma
-        // "Uncaught PostgresError" no console e a tela não diz nada — que foi
-        // exatamente o que aconteceu com o motor NOT NULL em fluxo_execucoes.
-        setAviso({
-          tom: "erro",
-          texto: e instanceof Error ? e.message : "Falhou no servidor.",
-        });
+        // "Uncaught" no console e a tela não diz nada.
+        setAviso({ tom: "erro", texto: e instanceof Error ? e.message : "Falhou no servidor." });
         opcoes?.aoFalhar?.();
       }
     });
   }
 
+  // CRIAR É ABRIR. O painel só abre sem cadência pelo botão "Criar cadência"
+  // da coluna, então chegar aqui já é o pedido: cria na hora, em vez de
+  // mostrar um segundo "Criar cadência" (pedido dele, 2026-10-05). Criar só
+  // grava o rascunho — nada vai ao n8n antes do Publicar.
+  const [erroAoCriar, setErroAoCriar] = useState<string | null>(null);
+  const criouRef = useRef(false);
+
   function aoCriarCadencia() {
+    setErroAoCriar(null);
     comecar(async () => {
       try {
         await criarCadencia(etapa.id, etapa.nome);
-        setAviso({
-          tom: "ok",
-          texto:
-            "Cadência criada. Escreva as mensagens — ou peça à IA — e salve: é o Salvar que cria o workflow no n8n, pausado.",
-        });
         router.refresh();
       } catch (e) {
-        setAviso({
-          tom: "erro",
-          texto: e instanceof Error ? e.message : "Não consegui criar.",
-        });
+        setErroAoCriar(e instanceof Error ? e.message : "Não consegui criar a cadência.");
       }
     });
   }
 
+  useEffect(() => {
+    // O ref segura o StrictMode, que roda o efeito duas vezes em
+    // desenvolvimento: sem ele nasceriam duas cadências para a mesma etapa.
+    if (cadencia || criouRef.current) return;
+    criouRef.current = true;
+    aoCriarCadencia();
+    // Só na abertura: depois disso, quem cria de novo é o "Tentar de novo".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Tirar uma oportunidade da cadência ─────────────────────────────────────
-  //
-  // Cancela a inscrição dela e a espera pendurada nela: a partir daí nada mais
-  // é enviado por este fluxo para aquele contato. Sem confirmação de propósito
-  // — o custo de errar é baixo (o próximo Disparar reinscreve) e um diálogo a
-  // mais por card, num quadro com dezenas deles, cansa mais do que protege.
+  // Sem confirmação de propósito — o custo de errar é baixo (o próximo
+  // Publicar reinscreve) e um diálogo a mais por card cansa mais do que
+  // protege.
   function remover(o: Oportunidade) {
     if (!cadencia || removendoId) return;
     setRemovendoId(o.id);
-    executar(removerDaCadencia(cadencia.fluxoId, o.id), {
+    executar(() => removerDaCadencia(cadencia.fluxoId, o.id), {
       aoDarCerto: () => setRemovendoId(null),
       aoFalhar: () => setRemovendoId(null),
     });
   }
 
   const rodando = cadencia?.estado === "publicado";
-  const estadoRotulo: Record<string, string> = {
-    rascunho: "Não publicada",
-    publicado: "Rodando",
-    pausado: "Pausada",
-    arquivado: "Arquivada",
-  };
+  // Rodando e pausada quem diz é o interruptor, à direita; a etiqueta fica
+  // com a versão e com os estados que ele não tem como mostrar.
+  const estadoAtual = !cadencia
+    ? null
+    : cadencia.estado === "rascunho"
+      ? "Não publicada"
+      : cadencia.estado === "arquivado"
+        ? "Arquivada"
+        : null;
 
   return (
     <>
       {/* `absolute` e não `fixed`: o painel vive DENTRO da área de conteúdo
-          (a raiz de inicio.tsx é `relative`), não sobre a janela inteira. Sem
-          isso ele cobria a sidebar da esquerda — e a barra de navegação do app
-          não é fundo de modal, é por onde se sai daqui.
-
-          Sem escurecer: o véu só apanha o clique de fora e desfoca a moldura
-          que sobra em volta. Escurecer aqui não separava nada que o próprio
-          painel, opaco e ocupando quase toda a área, já não separe. */}
-      <div
-        className="veu-surge absolute inset-0 z-[200] backdrop-blur-md"
-        onClick={aoFechar}
-        aria-hidden="true"
-      />
+          (a raiz de inicio.tsx é `relative`), não sobre a janela inteira. A
+          barra de navegação do app não é fundo de modal, é por onde se sai. */}
+      <div className="veu-surge absolute inset-0 z-[200] backdrop-blur-md" onClick={aoFechar} aria-hidden="true" />
 
       <section
-        className="surge absolute inset-3 z-[201] flex flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl md:inset-6 dark:border-zinc-800 dark:bg-zinc-950"
+        className="surge absolute inset-3 z-[201] flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl md:inset-6 dark:border-zinc-800 dark:bg-zinc-950"
         role="dialog"
         aria-modal="true"
         aria-label={`Cadência de ${etapa.nome}`}
       >
-        <header className="flex shrink-0 flex-col gap-2 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-          <div className="flex items-start gap-3">
-            <span
-              className={`mt-1.5 size-2.5 shrink-0 rounded-full ${etapa.cor}`}
-              aria-hidden="true"
-            />
+        <header className="shrink-0 border-b border-zinc-200 dark:border-zinc-800">
+          {/* O QUE A CADÊNCIA É: nome, estado e os números dela. */}
+          <div className="flex flex-wrap items-start gap-3 px-5 pb-3 pt-4">
+            <span className={`mt-[7px] size-2.5 shrink-0 rounded-full ${etapa.cor}`} aria-hidden="true" />
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline gap-2">
-                <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                  Cadência · {etapa.nome}
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                <h2 className="text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+                  Cadência <span className="font-normal text-zinc-400 dark:text-zinc-500">·</span> {etapa.nome}
                 </h2>
-                {cadencia && (
-                  <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[11px] font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-                    {estadoRotulo[cadencia.estado] ?? cadencia.estado}
-                    {cadencia.numeroVersao ? ` · v${cadencia.numeroVersao}` : ""}
+                {(estadoAtual || cadencia?.numeroVersao) && (
+                  <span
+                    className="rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
+                    title={cadencia?.numeroVersao ? `Versão publicada: v${cadencia.numeroVersao}` : undefined}
+                  >
+                    {estadoAtual ?? `v${cadencia?.numeroVersao}`}
                   </span>
                 )}
-                <span className="text-xs font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
-                  {quantidade} {quantidade === 1 ? "oportunidade" : "oportunidades"} ·{" "}
-                  {brl(total)}
-                </span>
-                <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                  {subetapas.length}{" "}
-                  {subetapas.length === 1 ? "mensagem" : "mensagens"}
-                </span>
-                {cadencia && cadencia.noFluxo > 0 && (
-                  <span className="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-                    {cadencia.noFluxo} na automação
+                {sujo && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                    Alterações não publicadas
                   </span>
                 )}
               </div>
-            </div>
-            <button
-              type="button"
-              onClick={aoFechar}
-              aria-label="Fechar cadência"
-              className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
-            >
-              <X className="size-4" aria-hidden="true" />
-            </button>
-          </div>
-
-          {/* Barra de ações: DOIS controles, e não mais.
-              
-              À esquerda, o estado no n8n — rodando ou pausada —, que é o que
-              decide se qualquer coisa aqui tem efeito no mundo. À direita,
-              Publicar, que grava a versão, sobe pro motor, liga a cadência e
-              inscreve as oportunidades abertas desta etapa.
-
-              O que saiu: "Disparar" (Publicar já inscreve), o link do Builder e
-              "Excluir". A cadência é editada AQUI; quem quiser o grafo inteiro
-              ou apagar o fluxo tem /automacoes, onde ele também aparece. */}
-          {cadencia && (
-            <div className="flex flex-wrap items-center gap-2 pl-6">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={rodando}
-                onClick={() =>
-                  executar(alternarCadencia(cadencia.fluxoId, !rodando))
-                }
-                disabled={pendente || !cadencia.publicadoAlgumaVez}
-                title={
-                  cadencia.publicadoAlgumaVez
-                    ? rodando
-                      ? "Desativa o workflow no motor: nada entra nem anda"
-                      : "Ativa o workflow no motor"
-                    : "Salve a cadência primeiro — é o Salvar que cria o workflow no n8n"
-                }
-                className={`${botaoBase} border ${
-                  rodando
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200"
-                    : "border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                }`}
-              >
-                {rodando ? (
-                  <>
-                    <span
-                      className="size-1.5 shrink-0 rounded-full bg-emerald-500"
-                      aria-hidden="true"
-                    />
-                    Rodando
-                    <Pause className="size-3.5 opacity-60" aria-hidden="true" />
-                  </>
-                ) : (
-                  <>
-                    <span
-                      className="size-1.5 shrink-0 rounded-full bg-zinc-400"
-                      aria-hidden="true"
-                    />
-                    Pausada
-                    <Play className="size-3.5 opacity-60" aria-hidden="true" />
-                  </>
+              {cadencia && (
+              <p className="mt-1 text-[12px] tabular-nums text-zinc-500 dark:text-zinc-400">
+                {subetapas.length} {subetapas.length === 1 ? "mensagem" : "mensagens"}
+                {subetapas.length > 1 ? ` em ${duracao} ${duracao === 1 ? "dia" : "dias"}` : ""}
+                {" · "}
+                {quantidade} {quantidade === 1 ? "oportunidade" : "oportunidades"} ({brl(total)})
+                {cadencia && cadencia.noFluxo > 0 ? ` · ${cadencia.noFluxo} na automação` : ""}
+                {cadencia && cadencia.erros14d > 0 && (
+                  <span className="text-amber-700 dark:text-amber-400">
+                    {" · "}
+                    {cadencia.erros14d} {cadencia.erros14d === 1 ? "erro" : "erros"} em 14 dias
+                  </span>
                 )}
-              </button>
+              </p>
+              )}
+            </div>
 
-              {/* O campo fica COLADO no Publicar, e não no cabeçalho, porque é
-                  dele que ele fala: é o próximo Publicar que decide se as
-                  oportunidades que já estão na etapa entram. Quem chegar
-                  depois entra sozinho de qualquer jeito. */}
-              <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[12px] text-zinc-600 dark:text-zinc-300">
-                <input
-                  type="checkbox"
-                  checked={inscreverAtuais}
-                  onChange={(e) => setInscreverAtuais(e.target.checked)}
-                  disabled={pendente}
-                  className="size-3.5 accent-zinc-900 dark:accent-zinc-100"
-                />
-                Incluir as {quantidade} que já estão na etapa
-              </label>
+            {/* O QUE SE FAZ COM ELA, na mesma linha do que ela É: publicar
+                (com a escolha de quem entra) e remover. A segunda linha que
+                existia só para isto deixava meia barra vazia. */}
+            {cadencia && (
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+                {/* Colado no Publicar porque é dele que fala: é o próximo
+                    Publicar que decide se quem já está na etapa entra. Com a
+                    etapa vazia não há quem incluir, e a pergunta some. */}
+                {quantidade > 0 && (
+                <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-zinc-600 dark:text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={inscreverAtuais}
+                    onChange={(e) => {
+                      setInscreverAtuais(e.target.checked);
+                      setSujo(true);
+                    }}
+                    disabled={pendente}
+                    className="size-3.5 accent-zinc-900 dark:accent-zinc-100"
+                  />
+                  Incluir {quantidade === 1 ? "a que já está" : `as ${quantidade} que já estão`} na etapa
+                </label>
+                )}
 
-              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() =>
-                    executar(
-                      salvarCadencia(
-                        cadencia.fluxoId,
-                        subetapas,
-                        inscreverAtuais,
-                      ),
-                      { aoDarCerto: () => setSujo(false) },
-                    )
+                    executar(() => salvarCadencia(cadencia.fluxoId, subetapas, inscreverAtuais), {
+                      aoDarCerto: () => setSujo(false),
+                    })
                   }
                   disabled={pendente || subetapas.length === 0}
                   title={
@@ -1103,19 +1044,20 @@ export default function PainelSubetapas({
                       ? "Grava a versão, sobe pro n8n, liga a cadência e inscreve as oportunidades abertas desta etapa. As mensagens saem."
                       : "Grava a versão, sobe pro n8n e liga a cadência. Quem já está na etapa NÃO é inscrito — só quem entrar daqui pra frente."
                   }
-                  className={botaoClaro}
+                  // Principal quando há o que publicar; sem alteração, ainda
+                  // serve para reinscrever, mas não pede atenção.
+                  className={sujo || !cadencia.publicadoAlgumaVez ? botaoEscuro : botaoClaro}
                 >
                   {pendente ? (
                     <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                   ) : (
-                    <Save className="size-3.5" aria-hidden="true" />
+                    <Send className="size-3.5" aria-hidden="true" />
                   )}
-                  Publicar{sujo ? " •" : ""}
+                  {sujo ? "Publicar alterações" : "Publicar"}
                 </button>
 
-                {/* Remover fica por último e sem destaque: é a única ação
-                    irreversível da barra, e não deve competir por atenção com
-                    Publicar, que é a que se usa todo dia. */}
+                {/* Remover: só ícone e sem destaque — é a única ação
+                    irreversível da barra e não deve competir com Publicar. */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1126,76 +1068,113 @@ export default function PainelSubetapas({
                     ) {
                       return;
                     }
-                    executar(excluirFluxo(cadencia.fluxoId), {
-                      aoDarCerto: aoFechar,
-                    });
+                    executar(() => excluirFluxo(cadencia.fluxoId), { aoDarCerto: aoFechar });
                   }}
                   disabled={pendente}
+                  aria-label="Remover esta cadência"
                   title="Remover esta cadência"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-zinc-500 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                  className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-500/10 dark:hover:text-red-400"
                 >
-                  <Trash2 className="size-3.5" aria-hidden="true" />
-                  Remover cadência
+                  <Trash2 className="size-4" aria-hidden="true" />
                 </button>
-
               </div>
-            </div>
-          )}
+            )}
+            {cadencia && <span className="mt-1.5 h-5 w-px shrink-0 bg-zinc-200 dark:bg-zinc-800" aria-hidden="true" />}
 
-          {aviso && (
-            <p
-              role="status"
-              className={`ml-6 flex items-start gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] ${
-                aviso.tom === "ok"
-                  ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200"
-                  : "bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-200"
-              }`}
-            >
-              {aviso.tom === "ok" ? (
-                <Check className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-              ) : (
-                <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-              )}
-              <span className="min-w-0 flex-1">{aviso.texto}</span>
+            {/* O interruptor mora junto do estado, que é o que ele muda. */}
+            {cadencia && (
               <button
                 type="button"
-                onClick={() => setAviso(null)}
-                aria-label="Dispensar aviso"
-                className="shrink-0 opacity-60 transition hover:opacity-100"
+                role="switch"
+                aria-checked={rodando}
+                aria-label={rodando ? "Pausar a cadência" : "Ligar a cadência"}
+                onClick={() => executar(() => alternarCadencia(cadencia.fluxoId, !rodando))}
+                disabled={pendente || !cadencia.publicadoAlgumaVez}
+                title={
+                  cadencia.publicadoAlgumaVez
+                    ? rodando
+                      ? "Pausa o workflow no motor: nada entra nem anda"
+                      : "Liga o workflow no motor"
+                    : "Publique primeiro — é o Publicar que cria o workflow no n8n"
+                }
+                className="mt-0.5 flex shrink-0 items-center gap-2 rounded-lg px-2 py-1 text-[12px] text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-900"
               >
-                <X className="size-3.5" aria-hidden="true" />
-              </button>
-            </p>
-          )}
-
-          {/* Quem já está dentro do fluxo continua na versão que o inscreveu, e
-              o disparo usa a publicada. Este aviso é o caso em que o Salvar
-              gravou a versão mas ela não chegou ao motor. */}
-          {cadencia?.rascunhoPendente && !sujo && (
-            <p className="ml-6 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] text-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
-              <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                Há uma versão salva que não chegou ao n8n. Quem for disparado
-                agora recebe a versão que está lá, não esta — salve de novo.
-              </span>
-            </p>
-          )}
-
-          {cadencia && !cadencia.linear && (
-            <p className="ml-6 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] text-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
-              <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                Esta automação tem desvios ou blocos que não cabem em colunas —
-                o quadro mostra só o trecho em linha reta. Edite pelo{" "}
-                <Link
-                  href={`/automacoes/${cadencia.fluxoId}`}
-                  className="underline underline-offset-2"
+                <span
+                  className={`relative inline-flex h-4 w-7 shrink-0 rounded-full transition ${rodando ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-700"}`}
+                  aria-hidden="true"
                 >
-                  builder
-                </Link>{" "}
-                para não perder o resto ao salvar daqui.
-              </span>
-            </p>
+                  <span className={`absolute top-0.5 size-3 rounded-full bg-white shadow transition-all ${rodando ? "left-3.5" : "left-0.5"}`} />
+                </span>
+                {rodando ? "Rodando" : "Pausada"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={aoFechar}
+              aria-label="Fechar cadência"
+              className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+            >
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          {/* Os avisos, numa faixa só, logo abaixo do cabeçalho. */}
+          {(aviso || demo || (cadencia?.rascunhoPendente && !sujo) || (cadencia && !cadencia.linear)) && (
+            <div className="flex flex-col gap-1.5 px-5 pb-3 pl-[2.6rem]">
+
+              {demo && (
+                <p className="flex items-center gap-1.5 rounded-lg bg-sky-50 px-2.5 py-1.5 text-[12px] text-sky-900 dark:bg-sky-500/10 dark:text-sky-200">
+                  <Sparkles className="size-3.5 shrink-0" aria-hidden="true" />
+                  Demonstração com dados fictícios (app/mock/cadencia.json): nada aqui é gravado nem enviado.
+                </p>
+              )}
+
+              {aviso && (
+                <p
+                  role="status"
+                  className={`flex items-start gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] ${
+                    aviso.tom === "ok"
+                      ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200"
+                      : "bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-200"
+                  }`}
+                >
+                  {aviso.tom === "ok" ? (
+                    <Check className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+                  )}
+                  <span className="min-w-0 flex-1">{aviso.texto}</span>
+                  <button type="button" onClick={() => setAviso(null)} aria-label="Dispensar aviso" className="shrink-0 opacity-60 transition hover:opacity-100">
+                    <X className="size-3.5" aria-hidden="true" />
+                  </button>
+                </p>
+              )}
+
+              {/* A versão foi gravada mas não chegou ao motor. */}
+              {cadencia?.rascunhoPendente && !sujo && (
+                <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] text-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
+                  <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    Há uma versão salva que não chegou ao n8n. Quem entrar agora recebe a versão que está lá, não esta —
+                    publique de novo.
+                  </span>
+                </p>
+              )}
+
+              {cadencia && !cadencia.linear && (
+                <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] text-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
+                  <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    Esta automação tem desvios ou blocos que não cabem em colunas — o quadro mostra só o trecho em linha
+                    reta. Edite pelo{" "}
+                    <Link href={`/automacoes/${cadencia.fluxoId}`} className="underline underline-offset-2">
+                      builder
+                    </Link>{" "}
+                    para não perder o resto ao publicar daqui.
+                  </span>
+                </p>
+              )}
+            </div>
           )}
         </header>
 
@@ -1203,56 +1182,43 @@ export default function PainelSubetapas({
             de que existe mais coisa à direita seria esconder o quadro inteiro */}
         <div
           ref={quadroRef}
-          className="flex min-h-0 flex-1 items-start gap-3 overflow-x-auto px-5 pb-4 pt-4"
+          className="flex min-h-0 flex-1 items-start overflow-x-auto bg-zinc-50/60 px-5 pb-5 pt-5 dark:bg-zinc-950"
         >
           {!cadencia ? (
-            <div className="m-auto max-w-md text-center">
-              <Sparkles
-                className="mx-auto size-6 text-zinc-300 dark:text-zinc-600"
-                aria-hidden="true"
-              />
-              <h3 className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                Esta etapa ainda não tem cadência
-              </h3>
-              <p className="mt-1 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                A cadência é uma automação do n8n: cada coluna vira um bloco de
-                mensagem, o intervalo entre elas vira uma espera, e salvar leva
-                tudo isso ao motor — pausado, até você ligar. Crie e descreva o
-                que quer no botão de IA — ou escreva as colunas à mão.
-              </p>
-              <button
-                type="button"
-                onClick={aoCriarCadencia}
-                disabled={pendente}
-                className={`${botaoEscuro} mx-auto mt-3`}
-              >
-                {pendente ? (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Plus className="size-3.5" aria-hidden="true" />
-                )}
-                Criar cadência desta etapa
-              </button>
+            // Criando (o efeito acima) ou o motivo de não ter dado certo.
+            <div className="m-auto max-w-md text-center" role="status">
+              {erroAoCriar ? (
+                <>
+                  <AlertTriangle className="mx-auto size-5 text-amber-500" aria-hidden="true" />
+                  <p className="mt-2 text-[13px] font-medium text-zinc-900 dark:text-zinc-50">Não deu para criar a cadência</p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">{erroAoCriar}</p>
+                  <button type="button" onClick={aoCriarCadencia} disabled={pendente} className={`${botaoEscuro} mx-auto mt-4`}>
+                    {pendente ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Plus className="size-3.5" aria-hidden="true" />}
+                    Tentar de novo
+                  </button>
+                </>
+              ) : (
+                <p className="flex items-center gap-2 text-[13px] text-zinc-500 dark:text-zinc-400">
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  Criando a cadência de {etapa.nome}…
+                </p>
+              )}
             </div>
           ) : (
             <>
-                {colunas.map((coluna, i) => (
-                  <Fragment key={coluna.subetapa.id}>
-                    {/* O que o fluxo faz ANTES desta mensagem. Entre as
-                        colunas porque é onde acontece — no intervalo. */}
-                    <Acoes
-                      acoes={coluna.subetapa.acoes}
-                      porAcao={porAcao}
-                      contatoPorId={contatoPorId}
-                      usuarioPorId={usuarioPorId}
-                      tagsDoContato={tagsDoContato}
-                      robo={robo}
-                    />
+              {colunas.map((coluna, i) => (
+                <Fragment key={coluna.subetapa.id}>
+                  {/* O que o fluxo faz ANTES desta mensagem, no intervalo. A
+                      primeira coluna só tem intervalo se o fluxo esperar antes
+                      dela. */}
+                  {(i > 0 || coluna.subetapa.acoes.length > 0) && (
+                    <Intervalo acoes={coluna.subetapa.acoes} porAcao={porAcao} contatoPorId={contatoPorId} />
+                  )}
 
-                    {editando === coluna.subetapa.id ? (
+                  {editando === coluna.subetapa.id ? (
                     <FormSubetapa
                       titulo={`Mensagem ${i + 1}`}
-                      rotuloAcao="Salvar"
+                      rotuloAcao="Aplicar"
                       instancias={instancias}
                       documentos={documentos}
                       avisaveis={avisaveis}
@@ -1282,31 +1248,26 @@ export default function PainelSubetapas({
                       tagsDoContato={tagsDoContato}
                       aoEditar={() => setEditando(coluna.subetapa.id)}
                       aoExcluir={() => excluir(coluna.subetapa.id)}
-                      aoRemover={remover}
+                      aoRemover={demo ? null : remover}
                       robo={robo}
                     />
-                    )}
-                  </Fragment>
-                ))}
+                  )}
+                </Fragment>
+              ))}
 
-                {/* Depois da última mensagem o fluxo ainda pode fazer coisa —
-                    marcar uma tag no fim da sequência, por exemplo. */}
-                <Acoes
-                  acoes={cadencia.acoesFinais}
-                  porAcao={porAcao}
-                  contatoPorId={contatoPorId}
-                  usuarioPorId={usuarioPorId}
-                  tagsDoContato={tagsDoContato}
-                  robo={robo}
-                />
+              {/* Depois da última mensagem o fluxo ainda pode fazer coisa —
+                  marcar uma tag no fim da sequência, por exemplo. */}
+              {cadencia.acoesFinais.length > 0 && (
+                <Intervalo acoes={cadencia.acoesFinais} porAcao={porAcao} contatoPorId={contatoPorId} />
+              )}
 
-                {/* A coluna nova nasce no FIM da fila, e não num botão do
-                    cabeçalho: o lugar em que ela vai aparecer é o mesmo em que
-                    se clica pra criá-la. */}
+              {/* A coluna nova nasce no FIM da fila: o lugar em que ela vai
+                  aparecer é o mesmo em que se clica pra criá-la. */}
+              <div className={`shrink-0 ${colunas.length ? "pl-4" : ""}`}>
                 {criando ? (
                   <FormSubetapa
                     titulo={`Mensagem ${subetapas.length + 1}`}
-                    rotuloAcao="Criar"
+                    rotuloAcao="Adicionar"
                     instancias={instancias}
                     documentos={documentos}
                     avisaveis={avisaveis}
@@ -1314,24 +1275,14 @@ export default function PainelSubetapas({
                       nome: "",
                       canal: "whatsapp",
                       mensagem: "",
-                      // um dia depois da última: é a cadência diária de sempre,
-                      // e quem quiser outro intervalo troca o número no campo.
-                      dia: subetapas.length
-                        ? subetapas[subetapas.length - 1].dia + 1
-                        : 0,
+                      // um dia depois da última: é a cadência diária de sempre.
+                      dia: subetapas.length ? subetapas[subetapas.length - 1].dia + 1 : 0,
                       // e pelo mesmo número da última: trocar de instância no
-                      // meio da cadência é a exceção, não o padrão.
-                      instanciaId: subetapas.length
-                        ? subetapas[subetapas.length - 1].instanciaId
-                        : null,
-                      // Anexo NÃO é herdado da última: a instância se repete
-                      // pela cadência inteira, o documento quase nunca — cada
-                      // mensagem leva o seu, quando leva. Herdar faria a
-                      // proposta sair de novo na mensagem seguinte sem ninguém
-                      // pedir.
+                      // meio da cadência é a exceção.
+                      instanciaId: subetapas.length ? subetapas[subetapas.length - 1].instanciaId : null,
+                      // Anexo e destinatário do aviso são escolhas de UMA
+                      // mensagem, não da cadência: não são herdados.
                       documentoId: null,
-                      // Nem o anexo nem o destinatário do aviso são herdados:
-                      // são escolhas de UMA mensagem, não da cadência.
                       usuarioId: null,
                     }}
                     aoConfirmar={criar}
@@ -1341,12 +1292,18 @@ export default function PainelSubetapas({
                   <button
                     type="button"
                     onClick={() => setCriando(true)}
-                    className="flex h-32 w-56 shrink-0 flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-zinc-300 text-[12px] font-medium text-zinc-500 transition hover:border-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+                    className="flex h-40 w-56 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-300 text-[12px] font-medium text-zinc-500 transition hover:border-zinc-400 hover:bg-white hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
                   >
                     <Plus className="size-4" aria-hidden="true" />
-                    Nova mensagem
+                    {subetapas.length ? "Nova mensagem" : "Primeira mensagem"}
+                    {subetapas.length > 0 && (
+                      <span className="text-[11px] font-normal text-zinc-400 dark:text-zinc-500">
+                        no dia {subetapas[subetapas.length - 1].dia + 1}
+                      </span>
+                    )}
                   </button>
                 )}
+              </div>
             </>
           )}
         </div>
@@ -1354,9 +1311,8 @@ export default function PainelSubetapas({
 
       {/* O prompt que monta a cadência. É a MESMA conversa do editor de fluxo
           (/api/ia/automacoes), presa ao fluxo desta etapa — o que ela grava é
-          rascunho, e o `mudou` no fim do stream traz o canvas de volta com as
-          colunas novas. z-[70] para ficar acima do painel (z-61). */}
-      {cadencia && (
+          rascunho, e o `mudou` no fim do stream traz as colunas novas. */}
+      {cadencia && !demo && (
         <ChatIa
           camada="z-[210]"
           compacto
@@ -1366,7 +1322,7 @@ export default function PainelSubetapas({
           extra={{ fluxo_id: cadencia.fluxoId }}
           titulo="Montar esta cadência"
           rotulo="Montar a cadência com IA"
-          dica={`Descreva a cadência da etapa "${etapa.nome}". A IA escreve os blocos e as esperas; salvar e ligar continuam sendo seu clique.`}
+          dica={`Descreva a cadência da etapa "${etapa.nome}". A IA escreve os blocos e as esperas; publicar e ligar continuam sendo seu clique.`}
           campo="Ex.: 7 mensagens de WhatsApp em 10 dias…"
           sugestoes={[
             "Monte uma cadência de 5 mensagens de WhatsApp em 7 dias",

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Inicio from "./inicio/inicio";
 import { carregarFunil } from "./funil/dados";
 import { CADENCIAS_VAZIAS, carregarCadencias } from "./inicio/cadencias";
+import { carregarAtendimentosIa } from "./inicio/atendimentos-ia";
+import { comCadenciaDeDemonstracao, FLUXO_DEMO } from "./inicio/demo-cadencia";
 import { fluxosParaInscricao } from "@/lib/automacoes/repositorio";
 import { exigirModulo } from "@/lib/auth/dal";
 
@@ -24,6 +26,8 @@ export default async function Home({
   // ?ia=<id>        → abre o painel de IA naquela conversa (link da sidebar)
   // ?cadencia=<id>  → abre o painel de cadência daquele fluxo; quando vem
   //                   junto de ?ia=, é a conversa DELE que abre, não a do funil
+  // ?demo=cadencia  → só em desenvolvimento: abre a cadência fictícia de
+  //                   app/mock/cadencia.json na primeira etapa (nada é gravado)
   //
   // Resolvidos aqui, no servidor, e não num efeito do cliente: assim já vêm no
   // HTML em vez de aparecer depois da hidratação.
@@ -31,6 +35,7 @@ export default async function Home({
     op?: string | string[];
     ia?: string | string[];
     cadencia?: string | string[];
+    demo?: string | string[];
   }>;
 }) {
   // Checagem POR PÁGINA, e não no layout: com Partial Rendering o layout não
@@ -53,18 +58,23 @@ export default async function Home({
   // mandaria a cadência inteira no HTML de quem não pode vê-la.
   const podeAutomacoes = usuario.modulos.has("automacoes");
 
-  const { op, ia, cadencia } = await searchParams;
+  const { op, ia, cadencia, demo } = await searchParams;
   const um = (v: string | string[] | undefined) =>
     typeof v === "string" ? v : null;
   // Em paralelo: as cadências não dependem do funil, e encadear as duas
   // somaria o tempo das duas na primeira pintura.
-  const [dados, cadencias, fluxos] = await Promise.all([
+  const [dados, cadenciasDoBanco, fluxos, graficoIa] = await Promise.all([
     carregarFunil(soMinhas),
     podeAutomacoes ? carregarCadencias() : CADENCIAS_VAZIAS,
     // As automações que a seleção do kanban pode disparar. Consulta pequena e
     // independente das outras duas — entra no mesmo Promise.all.
     podeAutomacoes ? fluxosParaInscricao() : [],
+    // O gráfico de atendimentos de IA e reuniões, com o mesmo escopo do quadro.
+    carregarAtendimentosIa(soMinhas),
   ]);
+
+  const demonstracao = um(demo) === "cadencia" && process.env.NODE_ENV !== "production";
+  const cadencias = demonstracao ? comCadenciaDeDemonstracao(dados, cadenciasDoBanco) : cadenciasDoBanco;
 
   return (
     <Inicio
@@ -72,8 +82,9 @@ export default async function Home({
       cadencias={cadencias}
       opInicial={um(op)}
       conversaInicial={um(ia)}
-      cadenciaInicial={um(cadencia)}
+      cadenciaInicial={demonstracao ? FLUXO_DEMO : um(cadencia)}
       fluxosParaInscricao={fluxos}
+      graficoIa={graficoIa}
     />
   );
 }

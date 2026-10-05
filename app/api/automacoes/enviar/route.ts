@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { autorizado, naoAutorizado } from "@/lib/automacoes/servico";
-import { enviarMidia, enviarTexto, instanciaExataPorNumero } from "@/lib/uazapi";
+import { enviarMidia, enviarTexto, instanciaExataPorNumero, type Instancia } from "@/lib/uazapi";
 import { paraEnvio } from "@/lib/documentos";
 import { sql } from "@/lib/db";
 import { soDigitos } from "@/lib/telefone";
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
   const para = soDigitos(String(corpo.para ?? ""));
   const texto = String(corpo.texto ?? "").slice(0, MAX_TEXTO).trim();
   const numeroOrigem = soDigitos(String(corpo.numero_origem ?? ""));
+  const peloResponsavel = corpo.pelo_responsavel === true;
   // O anexo da mensagem, quando há. Só o id chega aqui — os bytes nunca saíram
   // do CRM, e é por isso que trocar o arquivo não exige republicar a cadência.
   const documentoId = String(corpo.documento_id ?? "").trim();
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
   // alguém escolheu para ela. Cair numa instância qualquer faz o lead receber
   // mensagem de um remetente que ele não conhece — e ninguém vai descobrir
   // isso olhando o CRM, só o cliente do outro lado, semanas depois.
-  if (!numeroOrigem) {
+  if (!numeroOrigem && !peloResponsavel) {
     return Response.json(
       { erro: "mensagem sem número de origem: escolha o número nesta mensagem da cadência" },
       { status: 400 },
@@ -111,7 +112,39 @@ export async function POST(req: NextRequest) {
   // Busca EXATA, pelos últimos 8 dígitos (lib/telefone.ts): o que a uazapi
   // devolve e o que gravamos nem sempre concordam sobre o nono dígito e o DDI.
   // Não casou = o número saiu do CRM depois de a cadência ser publicada.
-  const instancia = await instanciaExataPorNumero(numeroOrigem);
+  let instancia: Instancia | null;
+  if (peloResponsavel) {
+    const execucaoId = String(corpo.execucao_id ?? "");
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(execucaoId)) {
+      return Response.json({ erro: "execução inválida para envio pelo responsável" }, { status: 400 });
+    }
+    // A execução identifica UMA oportunidade. Não inferir pelo contato, que
+    // pode ter várias oportunidades com responsáveis diferentes.
+    const [linha] = await sql`
+      SELECT o.id AS oportunidade_id, u.id AS usuario_id, u.nome AS responsavel,
+             i.id, i.nome, i.base_url, i.token, i.numero
+      FROM fluxo_execucoes e
+      LEFT JOIN oportunidades o ON e.entidade_tipo = 'oportunidade' AND o.id = e.entidade_id
+      LEFT JOIN usuarios u ON u.id = o.responsavel_id
+      LEFT JOIN instancias_uazapi i ON i.id = u.instancia_id
+      WHERE e.id = ${execucaoId}`;
+    const erro = !linha?.oportunidade_id
+      ? "a execução não tem uma oportunidade válida"
+      : !linha.usuario_id
+        ? "a oportunidade está sem responsável"
+        : !linha.id
+          ? `${linha.responsavel} está sem instância de WhatsApp vinculada em Configurações → Usuários`
+          : !linha.numero
+            ? `o WhatsApp vinculado a ${linha.responsavel} ainda não foi pareado`
+            : null;
+    if (erro) return Response.json({ erro: `${erro} — nada foi enviado` }, { status: 400 });
+    instancia = {
+      id: linha.id, nome: linha.nome, baseUrl: linha.base_url,
+      token: linha.token, numero: linha.numero,
+    };
+  } else {
+    instancia = await instanciaExataPorNumero(numeroOrigem);
+  }
   if (!instancia) {
     return Response.json(
       {

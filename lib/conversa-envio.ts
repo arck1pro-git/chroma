@@ -104,6 +104,13 @@ export async function enviarTextoNaConversa(e: {
   texto: string;
   autorId: string | null;
   enviadaPor: "crm" | "ia";
+  /**
+   * Pausa antes de sair, como quem digita: a IA quebra a resposta em mensagens
+   * curtas. Pela uazapi o cliente vê "Digitando..."; pela Meta é só a pausa.
+   * A linha é gravada ANTES da pausa: mensagem do cliente que chegar durante
+   * ela fica mais nova que esta, e a IA a vê como ainda sem resposta.
+   */
+  digitandoMs?: number;
 }): Promise<ResultadoEnvio> {
   const corpo = e.texto.trim();
   if (!corpo) return { erro: "Mensagem vazia." };
@@ -127,13 +134,14 @@ export async function enviarTextoNaConversa(e: {
   try {
     let idExterno: string | null;
     if (ehOficial(d)) {
+      if (e.digitandoMs) await new Promise((r) => setTimeout(r, e.digitandoMs));
       const r = await enviarTextoMeta(await telefoneOficial(d), soDigitos(d.whatsapp), corpo);
       idExterno = r.messages?.[0]?.id ?? null;
     } else {
       // Pelo número que RECEBEU a conversa: pela instância errada a resposta
       // chega de um número que o cliente não conhece.
       const instancia = await instanciaPorNumero(d.numero_instancia ?? null);
-      idExterno = (await enviarTexto(soDigitos(d.whatsapp), corpo, instancia, mensagemId)).messageid;
+      idExterno = (await enviarTexto(soDigitos(d.whatsapp), corpo, instancia, mensagemId, e.digitandoMs)).messageid;
     }
     await confirmarEnvio(mensagemId, idExterno);
     await sql`UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${e.atendimentoId}`;

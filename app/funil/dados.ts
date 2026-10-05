@@ -151,7 +151,7 @@ export async function carregarFunil(
       SELECT id, nome, prompt,
              -- jsonb e não text[]: sem fetch_types o driver entrega array
              -- como o texto '{a,b}' (mesmo caso de campos_personalizados.opcoes).
-             to_jsonb(acoes) AS acoes,
+             to_jsonb(acoes) AS acoes, palavra_chave,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
       FROM ias ORDER BY data_criacao`,
   ]);

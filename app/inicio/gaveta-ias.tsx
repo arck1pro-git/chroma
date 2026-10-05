@@ -13,6 +13,7 @@ import { ArrowLeft, ArrowRightLeft, Bot, ChevronRight, Loader2, Plus, Trash2, X 
 import {
   ACOES_IA,
   LIMITE_NOME_IA,
+  LIMITE_PALAVRA_IA,
   LIMITE_PROMPT_IA,
   type Ia,
 } from "@/lib/ia/catalogo";
@@ -160,6 +161,11 @@ export default function GavetaIas({
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-2">
                             <span className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">{ia.nome}</span>
+                            {ia.palavra_chave && (
+                              <span className="shrink-0 rounded bg-zinc-100 px-1 font-mono text-[10.5px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                {ia.palavra_chave}
+                              </span>
+                            )}
                             {ia.acoes.includes("mover_etapa") && (
                               <ArrowRightLeft
                                 className="size-3 shrink-0 text-violet-500"
@@ -217,6 +223,7 @@ function FormIa({
   // IA nova já nasce podendo passar para uma pessoa: era o comportamento de
   // todas antes de virar ação.
   const [acoes, setAcoes] = useState<string[]>(ia?.acoes ?? ["passar_para_humano"]);
+  const [palavra, setPalavra] = useState(ia?.palavra_chave ?? "");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
   const [excluindo, iniciarExclusao] = useTransition();
@@ -227,7 +234,7 @@ function FormIa({
   function salvar() {
     if (!pronto || salvando) return;
     setErro(null);
-    const dados = { nome, prompt, acoes };
+    const dados = { nome, prompt, acoes, palavra };
     iniciar(async () => {
       const r = ia ? await atualizarIa(ia.id, dados) : await criarIa(dados);
       if (r.erro) setErro(r.erro);
@@ -324,6 +331,24 @@ function FormIa({
             <span className="mt-1.5 block text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
               Por cima do prompt valem sempre as regras fixas: escreve curto, como no WhatsApp; só afirma o que está em
               Contextos; pede à equipe o que não sabe; e passa para uma pessoa quando o cliente pede.
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-medium text-zinc-700 dark:text-zinc-300">
+              Palavra para ligar e desligar pelo celular
+            </span>
+            <input
+              value={palavra}
+              onChange={(e) => setPalavra(e.target.value)}
+              maxLength={LIMITE_PALAVRA_IA}
+              placeholder="Ex.: #ia"
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-[13px] text-zinc-900 outline-none placeholder:font-sans placeholder:text-zinc-400 focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            />
+            <span className="mt-1.5 block text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+              Quando o atendente manda do celular uma mensagem que é só esta palavra, a IA desliga para aquele contato se
+              estiver atendendo, ou liga se não estiver. O cliente também recebe a mensagem: use algo que ninguém
+              escreveria numa conversa, como #ia. Vazio = sem palavra.
             </span>
           </label>
 

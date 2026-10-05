@@ -19,6 +19,18 @@ export const ACOES_IA = [
     descricao:
       "Ela pode mudar a oportunidade do contato de etapa, dentro do mesmo funil, quando o prompt disser em que situação. Conta como arrastar o card: entra no histórico, na cadência e no pixel da etapa nova — e quem atende dali em diante é a IA dessa etapa.",
   },
+  {
+    chave: "registrar_objecao",
+    rotulo: "Registrar objeções no histórico",
+    descricao:
+      "Quando o cliente levanta uma objeção (taxa, garantia, prazo, material antes, decisor…), ela anota no histórico do contato a frase dele, a categoria, o que estava por trás e como respondeu. É o banco vivo de objeções para a equipe revisar; não muda nada na conversa.",
+  },
+  {
+    chave: "agendar_reuniao",
+    rotulo: "Agendar a reunião no Google Calendar",
+    descricao:
+      "Com a agenda conectada em Integrações, ela oferece os horários livres do especialista (seg a sex, 10h às 18h, reuniões de 1h, nos próximos 10 dias úteis) e marca a reunião com link do Meet quando o cliente escolhe. A reunião fica ligada à oportunidade, entra no histórico, e o contato com e-mail recebe o convite. Quem já tem reunião marcada não recebe outra.",
+  },
 ] as const;
 
 export type AcaoIa = (typeof ACOES_IA)[number]["chave"];
@@ -31,6 +43,8 @@ export type Ia = {
   nome: string;
   prompt: string;
   acoes: string[];
+  /** Mensagem do celular que liga/desliga esta IA no contato (lib/ia/contato-ia.ts). */
+  palavra_chave: string | null;
   data_criacao: string;
 };
 
@@ -54,3 +68,4 @@ export type EstadoIaContato = {
 
 export const LIMITE_NOME_IA = 80;
 export const LIMITE_PROMPT_IA = 20_000;
+export const LIMITE_PALAVRA_IA = 40;

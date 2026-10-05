@@ -35,7 +35,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import type { InstanciaUazapi } from "../dados";
+import type { InstanciaUazapi, UsuarioConfig } from "../dados";
 import {
   consultarConexao,
   criarInstanciaNaUazapi,
@@ -45,6 +45,7 @@ import {
   renomearInstancia,
   sincronizarWebhook,
   statusDasInstancias,
+  vincularUsuarioInstancia,
   type ConexaoUazapi,
   type EstadoConexao,
 } from "../actions";
@@ -77,7 +78,7 @@ const ESTADOS: Record<EstadoConexao, { rotulo: string; classe: string }> = {
   },
 };
 
-export function SecaoWhatsApp({ instancias }: { instancias: InstanciaUazapi[] }) {
+export function SecaoWhatsApp({ instancias, usuarios }: { instancias: InstanciaUazapi[]; usuarios: UsuarioConfig[] }) {
   // O estado de TODAS as instâncias numa chamada só (/instance/all com o admin
   // token). É o que permite pintar o ponto de cada linha assim que a tela abre:
   // uma consulta por instância deixaria a página fazendo N chamadas à uazapi, e
@@ -116,12 +117,12 @@ export function SecaoWhatsApp({ instancias }: { instancias: InstanciaUazapi[] })
           WhatsApp (uazapi)
         </h2>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Os números que o CRM usa para enviar e receber. Cadastre a instância
-          com a URL e o token da uazapi; depois pareie o celular pelo QR Code.
+          Os números que o CRM usa para enviar e receber. Vincule o WhatsApp a
+          um usuário do sistema e pareie o celular pelo QR Code.
         </p>
       </div>
 
-      <NovaInstancia aoCriar={setNovaId} />
+      <NovaInstancia aoCriar={setNovaId} usuarios={usuarios} />
 
       {instancias.length === 0 ? (
         <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center text-[13px] text-zinc-400 dark:border-zinc-700">
@@ -133,6 +134,7 @@ export function SecaoWhatsApp({ instancias }: { instancias: InstanciaUazapi[] })
             <InstanciaCard
               key={i.id}
               instancia={i}
+              usuarios={usuarios}
               estado={status[i.id] ?? null}
               aoMudarConexao={recarregarStatus}
               recemCriada={i.id === novaId}
@@ -157,7 +159,7 @@ export function SecaoWhatsApp({ instancias }: { instancias: InstanciaUazapi[] })
 }
 
 // ── Nova instância ──────────────────────────────────────────────────────────
-// UM formulário, e só o nome dentro dele. Eram dois — "criar na uazapi" e
+// Um formulário com nome e usuário. Eram dois — "criar na uazapi" e
 // "cadastrar com URL e token" —, e os dois lado a lado faziam a tela perguntar
 // algo que ela já sabe: a URL do servidor está no .env e o token quem devolve é
 // a própria uazapi, ao criar.
@@ -165,21 +167,23 @@ export function SecaoWhatsApp({ instancias }: { instancias: InstanciaUazapi[] })
 // O botão leva direto ao QR: criar a instância e parear o celular são o mesmo
 // pedido ("quero mais um número no CRM"), e separá-los em dois cliques deixava
 // a instância recém-criada parada na lista, sem WhatsApp nenhum.
-function NovaInstancia({ aoCriar }: { aoCriar: (id: string) => void }) {
+function NovaInstancia({ aoCriar, usuarios }: { aoCriar: (id: string) => void; usuarios: UsuarioConfig[] }) {
   const [nome, setNome] = useState("");
+  const [usuarioId, setUsuarioId] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [criando, iniciar] = useTransition();
 
   function criar() {
     const n = nome.trim();
-    if (!n) return;
+    if (!n || !usuarioId || criando) return;
     setErro(null);
     setAviso(null);
     iniciar(async () => {
       try {
-        const { id, aviso: pendencia } = await criarInstanciaNaUazapi(n);
+        const { id, aviso: pendencia } = await criarInstanciaNaUazapi(n, usuarioId);
         setNome("");
+        setUsuarioId("");
         setAviso(pendencia);
         // Abre o cartão da instância nova já pedindo o QR Code — é o passo
         // seguinte inevitável, e quem acabou de clicar não deveria ter que
@@ -207,10 +211,19 @@ function NovaInstancia({ aoCriar }: { aoCriar: (id: string) => void }) {
             className={campoTexto}
           />
         </label>
+        <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            Usuário responsável
+          </span>
+          <select value={usuarioId} onChange={(e) => setUsuarioId(e.target.value)} disabled={criando} className={campoTexto}>
+            <option value="">Selecione um usuário</option>
+            {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+          </select>
+        </label>
         <button
           type="button"
           onClick={criar}
-          disabled={!nome.trim() || criando}
+          disabled={!nome.trim() || !usuarioId || criando}
           className={botao}
         >
           {criando ? (
@@ -222,6 +235,10 @@ function NovaInstancia({ aoCriar }: { aoCriar: (id: string) => void }) {
         </button>
       </div>
 
+      {usuarios.length === 0 && <p className="mt-2 text-xs text-amber-600">Cadastre um usuário em Configurações → Usuários para vincular este WhatsApp.</p>}
+      {usuarios.find((u) => u.id === usuarioId)?.instancia_id && (
+        <p className="mt-2 text-xs text-amber-600">Este usuário já tem um WhatsApp vinculado. Ao criar, ele passará a enviar pela nova instância.</p>
+      )}
       {erro && <p className="mt-2 text-xs text-red-500">{erro}</p>}
       {aviso && (
         <p className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
@@ -242,6 +259,7 @@ function NovaInstancia({ aoCriar }: { aoCriar: (id: string) => void }) {
 // ── Uma instância ───────────────────────────────────────────────────────────
 function InstanciaCard({
   instancia,
+  usuarios,
   /** Estado vindo de /instance/all. `null` = ainda não sei. */
   estado,
   aoMudarConexao,
@@ -249,6 +267,7 @@ function InstanciaCard({
   recemCriada = false,
 }: {
   instancia: InstanciaUazapi;
+  usuarios: UsuarioConfig[];
   estado: EstadoConexao | null;
   aoMudarConexao: () => void;
   recemCriada?: boolean;
@@ -395,6 +414,35 @@ function InstanciaCard({
       </div>
 
       {erro && <p className="mt-2 text-xs text-red-500">{erro}</p>}
+
+      <div className="mt-3 flex flex-col gap-2 text-xs text-zinc-500">
+        <p>Usuários vinculados: {usuarios.filter((u) => u.instancia_id === instancia.id).map((u) => u.nome).join(", ") || "nenhum"}</p>
+        <label className="flex flex-col gap-1">
+          Vincular usuário a este WhatsApp
+          <select
+            value=""
+            disabled={salvando}
+            className={campoTexto}
+            onChange={(e) => {
+              const id = e.target.value;
+              if (!id) return;
+              setErro(null);
+              iniciar(async () => {
+                try {
+                  await vincularUsuarioInstancia(instancia.id, id);
+                } catch (e) {
+                  setErro(e instanceof Error ? e.message : "Falha ao vincular usuário");
+                }
+              });
+            }}
+          >
+            <option value="">Selecione um usuário</option>
+            {usuarios.filter((u) => u.instancia_id !== instancia.id).map((u) => (
+              <option key={u.id} value={u.id}>{u.nome}{u.instancia_id ? " (substitui o vínculo atual)" : ""}</option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       {aberto && (
         <PainelConexao

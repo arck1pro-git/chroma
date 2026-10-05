@@ -143,7 +143,12 @@ export function AnotacoesContato({
                 {a.texto}
               </p>
               <p className="mt-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">
-                {usuarioPorId.get(a.autor_id)?.nome ?? "Autor desconhecido"} ·{" "}
+                {/* A IA não é usuário: as anotações dela (o resumo do
+                    atendimento, lib/ia/atendente.ts) vêm sem autor e com 🤖
+                    no começo. */}
+                {usuarioPorId.get(a.autor_id)?.nome ??
+                  (!a.autor_id && a.texto.startsWith("🤖") ? "IA" : "Autor desconhecido")}{" "}
+                ·{" "}
                 {dataHora(a.data_criacao)}
                 {/* anotação se edita (o histórico não) — marcar isso evita
                     discussão sobre "eu não escrevi assim" */}

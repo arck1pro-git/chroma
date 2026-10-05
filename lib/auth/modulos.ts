@@ -90,7 +90,8 @@ export const MODULOS: readonly Modulo[] = [
     href: "/agenda",
     escopavel: false,
     naBarra: true,
-    descricao: "Compromissos do time. (Módulo novo, ainda sem conteúdo.)",
+    descricao:
+      "Compromissos da semana no Google Calendar da conta conectada em Integrações, com o lead de cada reunião marcada pelo CRM.",
   },
   {
     chave: "metricas",

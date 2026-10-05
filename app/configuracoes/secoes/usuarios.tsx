@@ -4,10 +4,15 @@
 // chat). As iniciais são sugeridas a partir do nome, mas continuam editáveis —
 // dois "Fabrício Almeida" na mesma tela precisam de um jeito de se distinguir.
 import { useState, useTransition } from "react";
-import { Check, Pencil, UserPlus, Users, X } from "lucide-react";
-import type { UsuarioConfig } from "../dados";
+import { Check, Pencil, Send, UserPlus, Users, X } from "lucide-react";
+import type { NumeroDeEnvio, UsuarioConfig } from "../dados";
 import { criarUsuario, editarUsuario } from "../actions";
 import { botao, campoTexto } from "./ui";
+
+// O campo da linha em edição, SEM o w-full do campoTexto: ao lado de uma
+// largura fixa (w-14, w-36) as duas classes disputavam, o w-full ganhava, e as
+// iniciais ocupavam a linha inteira empurrando o resto para fora do cartão.
+const campoLinha = campoTexto.replace("w-full ", "");
 
 // Deriva iniciais do nome (1ª letra das 2 primeiras palavras) — só pra sugerir.
 function iniciaisDe(nome: string) {
@@ -15,13 +20,52 @@ function iniciaisDe(nome: string) {
   return ((p[0]?.[0] ?? "") + (p[1]?.[0] ?? "")).toUpperCase();
 }
 
+// O número de WhatsApp DE ONDE a pessoa fala (usuarios.instancia_id), usado
+// pela cadência quando "Sai por" está no responsável da oportunidade.
+// Um <select> nativo: a lista é curta (os números de Integrações).
+function SeletorNumero({
+  valor,
+  numeros,
+  aoMudar,
+  className,
+}: {
+  valor: string;
+  numeros: NumeroDeEnvio[];
+  aoMudar: (v: string) => void;
+  className: string;
+}) {
+  return (
+    <select
+      value={valor}
+      onChange={(e) => aoMudar(e.target.value)}
+      aria-label="Número de envio"
+      className={className}
+    >
+      <option value="">não envia</option>
+      {numeros.map((n) => (
+        <option key={n.id} value={n.id}>
+          {n.nome}
+          {n.numero ? ` · ${n.numero}` : " · não pareado"}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 // ── Usuários ─────────────────────────────────────────────────────────────────
-export function UsuariosSection({ usuarios }: { usuarios: UsuarioConfig[] }) {
+export function UsuariosSection({
+  usuarios,
+  numeros,
+}: {
+  usuarios: UsuarioConfig[];
+  numeros: NumeroDeEnvio[];
+}) {
   const [nome, setNome] = useState("");
   const [iniciais, setIniciais] = useState("");
   // O número por onde a automação AVISA a pessoa (bloco "Enviar notificação").
   // Vazio é o normal: quem não recebe aviso não precisa dele.
   const [whatsapp, setWhatsapp] = useState("");
+  const [instanciaId, setInstanciaId] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
 
@@ -31,10 +75,11 @@ export function UsuariosSection({ usuarios }: { usuarios: UsuarioConfig[] }) {
     setErro(null);
     iniciar(async () => {
       try {
-        await criarUsuario(n, iniciais, whatsapp);
+        await criarUsuario(n, iniciais, whatsapp, instanciaId);
         setNome("");
         setIniciais("");
         setWhatsapp("");
+        setInstanciaId("");
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao criar usuário");
       }
@@ -51,7 +96,8 @@ export function UsuariosSection({ usuarios }: { usuarios: UsuarioConfig[] }) {
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           Quem aparece como responsável e autor. O WhatsApp é por onde a
           automação avisa a pessoa — vazio, ela não pode ser escolhida no bloco
-          de notificação.
+          de notificação. &ldquo;Envia por&rdquo; guarda o número de WhatsApp
+          de cada pessoa; por enquanto nenhuma automação usa.
         </p>
       </div>
 
@@ -96,6 +142,17 @@ export function UsuariosSection({ usuarios }: { usuarios: UsuarioConfig[] }) {
               className={`${campoTexto} tabular-nums`}
             />
           </label>
+          <label className="flex w-full flex-col gap-1.5 sm:w-44">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Envia por
+            </span>
+            <SeletorNumero
+              valor={instanciaId}
+              numeros={numeros}
+              aoMudar={setInstanciaId}
+              className={campoTexto}
+            />
+          </label>
           <button
             type="button"
             onClick={criar}
@@ -115,7 +172,7 @@ export function UsuariosSection({ usuarios }: { usuarios: UsuarioConfig[] }) {
         ) : (
           <ul className="mt-3 flex flex-col divide-y divide-zinc-100 dark:divide-zinc-800/70">
             {usuarios.map((u) => (
-              <UsuarioRow key={u.id} usuario={u} />
+              <UsuarioRow key={u.id} usuario={u} numeros={numeros} />
             ))}
           </ul>
         )}
@@ -124,11 +181,18 @@ export function UsuariosSection({ usuarios }: { usuarios: UsuarioConfig[] }) {
   );
 }
 
-function UsuarioRow({ usuario }: { usuario: UsuarioConfig }) {
+function UsuarioRow({
+  usuario,
+  numeros,
+}: {
+  usuario: UsuarioConfig;
+  numeros: NumeroDeEnvio[];
+}) {
   const [editando, setEditando] = useState(false);
   const [nome, setNome] = useState(usuario.nome);
   const [iniciais, setIniciais] = useState(usuario.iniciais);
   const [whatsapp, setWhatsapp] = useState(usuario.whatsapp ?? "");
+  const [instanciaId, setInstanciaId] = useState(usuario.instancia_id ?? "");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
 
@@ -138,7 +202,7 @@ function UsuarioRow({ usuario }: { usuario: UsuarioConfig }) {
     setErro(null);
     iniciar(async () => {
       try {
-        await editarUsuario(usuario.id, n, iniciais, whatsapp);
+        await editarUsuario(usuario.id, n, iniciais, whatsapp, instanciaId);
         setEditando(false);
       } catch (e) {
         // Mantém em edição E DIZ O MOTIVO: o número inválido é recusado pela
@@ -152,6 +216,7 @@ function UsuarioRow({ usuario }: { usuario: UsuarioConfig }) {
     setNome(usuario.nome);
     setIniciais(usuario.iniciais);
     setWhatsapp(usuario.whatsapp ?? "");
+    setInstanciaId(usuario.instancia_id ?? "");
     setErro(null);
     setEditando(false);
   }
@@ -164,7 +229,7 @@ function UsuarioRow({ usuario }: { usuario: UsuarioConfig }) {
           onChange={(e) => setIniciais(e.target.value.toUpperCase())}
           maxLength={4}
           aria-label="Iniciais"
-          className={`${campoTexto} w-14 shrink-0 text-center uppercase`}
+          className={`${campoLinha} w-14 shrink-0 text-center uppercase`}
         />
         <input
           value={nome}
@@ -175,7 +240,7 @@ function UsuarioRow({ usuario }: { usuario: UsuarioConfig }) {
           }}
           autoFocus
           aria-label="Nome"
-          className={`${campoTexto} min-w-0 flex-1`}
+          className={`${campoLinha} min-w-0 flex-1`}
         />
         <input
           value={whatsapp}
@@ -186,7 +251,13 @@ function UsuarioRow({ usuario }: { usuario: UsuarioConfig }) {
           }}
           placeholder="5547999999999"
           aria-label="WhatsApp"
-          className={`${campoTexto} w-40 shrink-0 tabular-nums`}
+          className={`${campoLinha} w-36 shrink-0 tabular-nums`}
+        />
+        <SeletorNumero
+          valor={instanciaId}
+          numeros={numeros}
+          aoMudar={setInstanciaId}
+          className={`${campoLinha} w-44 shrink-0`}
         />
         <button
           type="button"
@@ -222,6 +293,16 @@ function UsuarioRow({ usuario }: { usuario: UsuarioConfig }) {
           e isso precisa ser visível aqui, que é onde se resolve. */}
       <span className="shrink-0 text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500">
         {usuario.whatsapp ?? "sem WhatsApp"}
+      </span>
+      {/* O número de WhatsApp desta pessoa (usuarios.instancia_id). */}
+      <span
+        className="hidden w-40 shrink-0 items-center gap-1 truncate text-[11px] text-zinc-400 sm:inline-flex dark:text-zinc-500"
+        title="Número de WhatsApp desta pessoa (ainda sem uso nas automações)"
+      >
+        <Send className="size-3 shrink-0" aria-hidden="true" />
+        <span className="truncate">
+          {numeros.find((n) => n.id === usuario.instancia_id)?.nome ?? "não envia"}
+        </span>
       </span>
       <button
         type="button"

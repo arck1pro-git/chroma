@@ -45,6 +45,8 @@ import { criarOportunidade, moverOportunidade } from "../funil/actions";
 import { SeletorMenu } from "../components/filtros-ui";
 import PainelFiltros from "../funil/painel-filtros";
 import DashboardMetaAds from "./dashboard-meta-ads";
+import VisaoGeral from "./visao-geral";
+import type { DiaIa } from "./atendimentos-ia";
 import { filtroCampanhasVazio, passaNoFiltroCampanhas, type FiltroCampanhas } from "./filtro-campanhas";
 import BarraRolagem from "./barra-rolagem";
 import {
@@ -65,11 +67,11 @@ import type { CadenciaDaEtapa, DadosCadencias } from "./cadencias";
 // Tela inicial e ÚNICA tela do CRM. /dashboard, /funil e /contatos não existem
 // mais como rota: tudo acontece aqui, em painéis sobrepostos.
 //
-// Não há mais faixa de gráficos no topo. Os números que ela mostrava moram
-// AGORA DENTRO DO QUADRO, onde o dado já está: a conversão entre duas etapas
-// vive no espaço entre as duas colunas, e o tempo médio e o ticket médio da
-// etapa ficam à vista sob o nome dela. Menos altura gasta e nada que exija
-// casar o rótulo de um gráfico com a coluna correspondente.
+// Os números POR ETAPA moram dentro do quadro, onde o dado já está: a
+// conversão entre duas etapas vive no espaço entre as duas colunas, e o tempo
+// médio e o ticket médio da etapa ficam à vista sob o nome dela. Os do funil
+// INTEIRO e os da IA ficam numa faixa só acima dele (./visao-geral.tsx), e os
+// recortes (campanhas e filtros) logo abaixo dela.
 //
 // Clicar num card abre a ficha da oportunidade (a mesma do funil); arrastar
 // move entre etapas e persiste via moverOportunidade — ver o comentário do
@@ -204,6 +206,12 @@ function CartaoArrastavel({
 // etapas passa de 2,3s.
 //
 // Reduced-motion zera este atraso — ver .etapa-surge em app/globals.css.
+// Os botões do topo (IAs e Contatos): sem borda, só o fundo no hover. Com
+// borda, os dois competiam com o seletor de funil, que é o controle principal
+// da barra.
+const botaoTopo =
+  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50";
+
 const ATRASO_ETAPAS = 80;
 const PASSO_ETAPA = 200;
 
@@ -480,6 +488,7 @@ export default function Inicio({
   conversaInicial,
   cadenciaInicial,
   fluxosParaInscricao,
+  graficoIa,
 }: {
   dados: DadosFunil;
   // A cadência de cada etapa (a automação por trás das subetapas) e as
@@ -498,6 +507,9 @@ export default function Inicio({
   // em "Inscrever na automação". Vem do servidor porque a lista muda quando
   // alguém publica um fluxo, e a raiz já é force-dynamic.
   fluxosParaInscricao: FluxoDisponivel[];
+  // Atendimentos de IA e reuniões por dia (./atendimentos-ia.ts), já no
+  // escopo de quem está vendo.
+  graficoIa: DiaIa[];
 }) {
   const {
     funis,
@@ -843,7 +855,9 @@ export default function Inicio({
         {/* A barra abre a cascata: ela, os filtros e o título entram na frente
             das etapas, então quando a primeira coluna aparece a moldura da tela
             já está de pé. */}
-        <header className="surge shrink-0 border-b border-zinc-200 px-6 py-2 xl:pr-16 dark:border-zinc-800">
+        {/* z-[160]: o menu do seletor de funil abre por cima das colunas, que
+            têm z-index até 100 (ColunaResumo). */}
+        <header className="surge relative z-[160] shrink-0 border-b border-zinc-200 px-6 py-2 xl:pr-16 dark:border-zinc-800">
           <div className="flex max-w-[1600px] items-center gap-2">
             {/* Um controle só, não uma fileira de abas: a lista de funis cresce
                 com o uso e uma aba por funil empurraria o botão de contatos pra
@@ -866,10 +880,11 @@ export default function Inicio({
               aria-expanded={gavetaIasAberta}
               aria-label={`IAs de atendimento (${dados.ias.length})`}
               title="IAs de atendimento"
-              className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+              className={`ml-auto ${botaoTopo}`}
             >
               <Bot className="size-4" aria-hidden="true" />
-              <span className="tabular-nums">{dados.ias.length}</span>
+              <span className="hidden sm:inline">IAs</span>
+              <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{dados.ias.length}</span>
             </button>
 
             {/* Canto superior direito: abre a gaveta de contatos. aria-expanded
@@ -883,10 +898,11 @@ export default function Inicio({
               aria-expanded={gavetaAberta}
               aria-label={`Contatos (${contatos.length})`}
               title="Contatos"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+              className={botaoTopo}
             >
               <Users className="size-4" aria-hidden="true" />
-              <span className="tabular-nums">{contatos.length}</span>
+              <span className="hidden sm:inline">Contatos</span>
+              <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{contatos.length}</span>
             </button>
           </div>
 
@@ -920,16 +936,30 @@ export default function Inicio({
                 className="flex min-h-0 flex-1 flex-col"
                 aria-label={`Quadro · ${funil.nome}`}
               >
-                <DashboardMetaAds corSelecionada={tomEscuro(funil?.cor)} filtro={filtroCampanhas} aoFiltrar={(filtro) => { setFiltroCampanhas(filtro); limparSelecao(); }} />
-                {/* Filtros no topo do quadro, e não na barra do topo da
-                    página: o que eles recortam são as colunas logo abaixo, e é
-                    ali que a pessoa olha ao mexer neles. Sem o seletor de funil
-                    — esse já está no cabeçalho — e alinhados ao quadro, com
-                    folga só à esquerda.
+                {/* Os números do funil (sobre o que está na tela) e a IA. */}
+                <VisaoGeral
+                  metricas={metricas}
+                  totalDoFunil={totalDoFunil}
+                  filtrado={temFiltro}
+                  dias={graficoIa}
+                />
 
-                    Agora atrás de um botão: os controles abertos ocupavam duas
-                    ou três linhas em tela estreita e tiravam altura do quadro.
-                    Ver app/funil/painel-filtros.tsx. */}
+                {/* As campanhas da Meta em pílulas, como sempre foram (ele
+                    pediu de volta depois de vê-las em dropdown, 2026-10-05). */}
+                <DashboardMetaAds
+                  corSelecionada={tomEscuro(funil?.cor)}
+                  filtro={filtroCampanhas}
+                  aoFiltrar={(filtro) => {
+                    setFiltroCampanhas(filtro);
+                    limparSelecao();
+                  }}
+                />
+
+                {/* O botão de Filtros (o painel abre por cima, ver
+                    app/funil/painel-filtros.tsx) e, encostada à direita, a
+                    descrição do funil. O nome, a contagem e o total que moravam
+                    numa linha própria agora são o seletor do topo e a visão
+                    geral. */}
                 <PainelFiltros
                   aberto={filtrosAbertos}
                   aoAlternar={setFiltrosAbertos}
@@ -944,25 +974,14 @@ export default function Inicio({
                   aoMudarFiltros={setFiltros}
                   visiveis={visiveisDoFunil.length}
                   total={totalDoFunil}
+                  aDireita={
+                    funil.descricao ? (
+                      <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
+                        {funil.descricao}
+                      </span>
+                    ) : undefined
+                  }
                 />
-
-                <div
-                  className="surge mb-2 flex shrink-0 items-baseline gap-2 pr-6 xl:pr-16"
-                  style={{ animationDelay: "40ms" }}
-                >
-                  <h2 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                    {funil.nome}
-                  </h2>
-                  <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                    {quantidade}
-                  </span>
-                  <span className="text-xs font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
-                    {brl(total)}
-                  </span>
-                  <span className="ml-auto truncate text-[11px] text-zinc-400 dark:text-zinc-500">
-                    {funil.descricao}
-                  </span>
-                </div>
 
                 {colunas.length === 0 ? (
                   <p className="surge rounded-2xl border border-dashed border-zinc-200 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-700">

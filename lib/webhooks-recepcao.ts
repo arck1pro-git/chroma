@@ -28,6 +28,7 @@ import {
 import { abertaNoFunil } from "@/lib/oportunidades";
 import { inscreverNaCadenciaDaEtapa } from "@/lib/automacoes/repositorio";
 import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
+import { carimbarCampanhaDoLead } from "@/lib/campanha-do-lead";
 
 export type ResultadoRecepcao = {
   status: number;
@@ -457,6 +458,11 @@ export async function receberLead(
         );
       }
     }
+
+    // ID da campanha da Meta ao lado do utm_campaign, enquanto o nome ainda é
+    // o atual: renomear a campanha depois não tira o lead dela. Depois da
+    // resposta — ver lib/campanha-do-lead.ts.
+    carimbarCampanhaDoLead(contatoId, oportunidadeId);
 
     // Tag e segmento primeiro (locais e idempotentes), automação por último
     // (irreversível — manda WhatsApp). Ver o cabeçalho do arquivo.

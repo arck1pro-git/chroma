@@ -61,10 +61,8 @@ export type Subetapa = {
   // O que roda entre a mensagem ANTERIOR e esta: esperas, tags, requisições.
   // Vem inteiro do fluxo e volta inteiro no salvar — ver AcaoCadencia.
   acoes: AcaoCadencia[];
-  // De qual número esta mensagem sai: id em instancias_uazapi. null = a do
-  // .env. É POR MENSAGEM, não por cadência: é assim que uma sequência começa
-  // no número do SDR e termina no do closer, e é onde o executor já lia o
-  // valor (config.instancia_id do bloco).
+  // UUID em instancias_uazapi ou INSTANCIA_RESPONSAVEL (resolvido no envio).
+  // null = ainda sem escolha. Cada mensagem pode ter seu próprio remetente.
   instanciaId: string | null;
   // Documento da biblioteca que vai JUNTO com esta mensagem: id em
   // `documentos`. null = mensagem de texto puro, que é a esmagadora maioria.

@@ -55,6 +55,9 @@ export type CadenciaDaEtapa = {
   // executou para ela). Quem não aparece aqui nunca entrou no fluxo, e a
   // coluna dele sai da régua de dias — ver `distribuir` em ./subetapas.ts.
   posicao: Map<string, string>;
+  // A cadência de demonstração (?demo=cadencia, só em desenvolvimento): o
+  // painel mostra o aviso e não chama o servidor. Ver ./demo-cadencia.ts.
+  demonstracao?: boolean;
 };
 
 export type DadosCadencias = {

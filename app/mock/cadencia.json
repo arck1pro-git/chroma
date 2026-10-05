@@ -1,0 +1,46 @@
+{
+  "mensagens": [
+    {
+      "id": "msg1",
+      "nome": "Boas-vindas",
+      "canal": "whatsapp",
+      "dia": 0,
+      "mensagem": "Oi, {{primeiro_nome}}! Aqui é da AMAAN. Vi que você se interessou pelo investimento em SCP no Tourmaline Tower. Posso te contar em 2 minutos como funciona?"
+    },
+    {
+      "id": "msg2",
+      "nome": "Como funciona",
+      "canal": "whatsapp",
+      "dia": 1,
+      "mensagem": "Resumindo: você entra como sócio da incorporação, com taxa definida em contrato e garantia de 200% em apartamentos do próprio prédio. Faz sentido para o que você procura?"
+    },
+    {
+      "id": "msg3",
+      "nome": "Convite para a reunião",
+      "canal": "whatsapp",
+      "dia": 3,
+      "mensagem": "{{primeiro_nome}}, o Fabrício, nosso fundador, apresenta a operação completa em 1 hora. Tenho amanhã às 10h ou às 15h, qual fica melhor?"
+    },
+    {
+      "id": "msg4",
+      "nome": "Ligar para quem não respondeu",
+      "canal": "ligacao",
+      "dia": 5,
+      "mensagem": "Ligar para {{nome}} e confirmar se ainda tem interesse na {{oportunidade}}."
+    },
+    {
+      "id": "msg5",
+      "nome": "Prova social",
+      "canal": "whatsapp",
+      "dia": 7,
+      "mensagem": "Só para você ter a referência: a maior parte dos nossos sócios entrou com aportes entre R$ 100 e 200 mil, em 24 meses."
+    },
+    {
+      "id": "msg6",
+      "nome": "Última tentativa",
+      "canal": "whatsapp",
+      "dia": 10,
+      "mensagem": "Vou deixar seu contato com a equipe por aqui, {{primeiro_nome}}. Quando quiser retomar, é só me chamar."
+    }
+  ]
+}

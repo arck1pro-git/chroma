@@ -162,6 +162,9 @@ export async function enviarTexto(
   // webhook (fromMe), que assim casa com a linha certa em vez de virar uma
   // segunda mensagem "do celular" — ver app/api/uazapi/webhook.
   rastreio?: string,
+  // Quanto tempo o cliente vê "Digitando..." antes de a mensagem sair (campo
+  // `delay` do /send/text). A chamada só volta depois do envio.
+  digitandoMs?: number,
 ): Promise<RetornoEnvio> {
   const { baseUrl, token } = instancia;
   // No dev, só para os números liberados (lib/destino-permitido.ts).
@@ -170,7 +173,12 @@ export async function enviarTexto(
   const res = await fetch(`${baseUrl}/send/text`, {
     method: "POST",
     headers: { "Content-Type": "application/json", token },
-    body: JSON.stringify({ number, text, ...camposDeRastreio(rastreio) }),
+    body: JSON.stringify({
+      number,
+      text,
+      ...camposDeRastreio(rastreio),
+      ...(digitandoMs ? { delay: Math.round(digitandoMs) } : {}),
+    }),
     // Sem cache: é mutação, cada chamada tem que ir na rede.
     cache: "no-store",
     // A uazapi é externa e o envio roda dentro de um request do motor: sem teto,

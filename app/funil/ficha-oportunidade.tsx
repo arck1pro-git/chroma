@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   AtSign,
+  CalendarClock,
   CalendarDays,
   Camera,
   ChevronRight,
@@ -51,6 +52,7 @@ import CamadaTopo from "../components/camada-topo";
 import type { AutomacaoDaEntidade } from "@/lib/automacoes/repositorio";
 import { CamposDoContato, ListaCampos } from "../components/campos-personalizados";
 import { AnotacoesContato } from "../components/anotacoes-contato";
+import ReunioesDaOportunidade from "./reunioes-oportunidade";
 
 // Mesmo mapa do /chat (app/chat/chat.tsx) — duplicado de propósito: são só 3
 // linhas e os dois lados vivem em módulos diferentes o bastante pra uma
@@ -439,6 +441,13 @@ export default function FichaOportunidade({
                 oportunidadeId={oportunidade.id}
                 responsavel={responsavel ?? null}
                 usuarios={[...usuarioPorId.values()]}
+              />
+            </Secao>
+
+            <Secao Icone={CalendarClock} titulo="Reuniões">
+              <ReunioesDaOportunidade
+                oportunidadeId={oportunidade.id}
+                usuarioPorId={usuarioPorId}
               />
             </Secao>
 

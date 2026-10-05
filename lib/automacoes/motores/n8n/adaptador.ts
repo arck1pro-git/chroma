@@ -11,6 +11,7 @@
 // Ver docs/automacoes-n8n.md §5.1.
 
 import type { PlanoCompilado } from "../../compilador";
+import { INSTANCIA_RESPONSAVEL } from "../../saida";
 
 const BASE = process.env.N8N_BASE_URL;
 const CHAVE = process.env.N8N_API_KEY;
@@ -481,9 +482,7 @@ export function paraWorkflow(
         credentials: credPostgres(cred),
       });
 
-      // DE QUAL NÚMERO ESTA mensagem sai. O bloco carrega `instancia_id`; sem
-      // ele, a instância padrão. Antes esta linha não existia: toda mensagem
-      // saía pela padrão e o seletor da tela era decorativo.
+      // Instância fixa ou responsável atual da oportunidade, resolvido no CRM.
       const instanciaId =
         typeof passo.config.instancia_id === "string"
           ? passo.config.instancia_id
@@ -491,6 +490,7 @@ export function paraWorkflow(
       const daInstancia = instanciaId
         ? cred.porInstancia?.get(instanciaId)
         : undefined;
+      const peloResponsavel = instanciaId === INSTANCIA_RESPONSAVEL;
 
       // TODA MENSAGEM TEM QUE DIZER POR QUAL NÚMERO SAI. Não há "a padrão".
       //
@@ -506,22 +506,22 @@ export function paraWorkflow(
           `A mensagem "${passo.rotulo}" está sem número de WhatsApp. Escolha por qual número ela sai.`,
         );
       }
-      if (!daInstancia) {
+      if (!peloResponsavel && !daInstancia) {
         throw new Error(
           `A mensagem "${passo.rotulo}" está presa a um número de WhatsApp que não existe mais em Configurações. Escolha o número de novo nesta mensagem.`,
         );
       }
-      if (!daInstancia.numero) {
+      if (!peloResponsavel && !daInstancia?.numero) {
         throw new Error(
           `O número escolhido na mensagem "${passo.rotulo}" ainda não foi pareado. Conecte o WhatsApp dele em Configurações antes de publicar.`,
         );
       }
-      const baseUrl = daInstancia.baseUrl;
-      const credencialUazapi = daInstancia.credencialId;
+      const baseUrl = daInstancia?.baseUrl ?? "";
+      const credencialUazapi = daInstancia?.credencialId ?? "";
       // O que viaja no workflow publicado. Token muda, id de linha some — o
       // número, não: é ele que o CRM usa para achar a credencial na hora do
       // envio.
-      const numeroDeOrigem = daInstancia.numero;
+      const numeroDeOrigem = daInstancia?.numero;
 
       // DUAS FORMAS DO MESMO NÓ. A primeira é a que vale:
       //
@@ -536,6 +536,11 @@ export function paraWorkflow(
       //   depois de a instância ser recriada — fica só porque em localhost o
       //   motor não alcança o CRM.
       const pelosCrm = Boolean(cred.crmBaseUrl && cred.crmCredencialId);
+      if (peloResponsavel && !pelosCrm) {
+        throw new Error(
+          `A mensagem "${passo.rotulo}" sai pelo responsável e exige um endereço público do CRM para consultar a instância na hora do envio.`,
+        );
+      }
 
       // O ANEXO SÓ EXISTE PELO CAMINHO DO CRM, e isso precisa falhar aqui em
       // vez de sumir no disparo.
@@ -581,7 +586,9 @@ export function paraWorkflow(
                   // O número de origem, e não o id da instância: o id é da
                   // LINHA do CRM e morre quando alguém apaga e recadastra o
                   // número. O número sobrevive a isso.
-                  numero_origem: numeroDeOrigem,
+                  ...(peloResponsavel
+                    ? { pelo_responsavel: true }
+                    : { numero_origem: numeroDeOrigem }),
                   para: `{{ $('${NOME_LEAD}').first().json.numero }}`,
                   texto: textoParaExpressao(String(passo.config.texto ?? "")),
                   // Só o id viaja. Os bytes ficam no CRM e são lidos no
@@ -729,12 +736,13 @@ export function paraWorkflow(
       const daInstancia = instanciaId
         ? cred.porInstancia?.get(instanciaId)
         : undefined;
-      if (!instanciaId || !daInstancia) {
+      const peloResponsavel = instanciaId === INSTANCIA_RESPONSAVEL;
+      if (!peloResponsavel && (!instanciaId || !daInstancia)) {
         throw new Error(
           `O bloco "${passo.rotulo}" está sem número de WhatsApp de saída. Escolha por qual número o aviso sai.`,
         );
       }
-      if (!daInstancia.numero) {
+      if (!peloResponsavel && !daInstancia?.numero) {
         throw new Error(
           `O número escolhido no bloco "${passo.rotulo}" ainda não foi pareado. Conecte o WhatsApp dele em Configurações antes de publicar.`,
         );
@@ -767,7 +775,9 @@ export function paraWorkflow(
             JSON.stringify({
               execucao_id: EXECUCAO_ID,
               no_id: passo.id,
-              numero_origem: daInstancia.numero,
+              ...(peloResponsavel
+                ? { pelo_responsavel: true }
+                : { numero_origem: daInstancia!.numero }),
               // `usuario_id` no lugar de `para`: quem resolve o telefone é o
               // CRM, no instante do envio.
               usuario_id: usuarioId,

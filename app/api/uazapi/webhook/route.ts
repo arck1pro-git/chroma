@@ -25,7 +25,7 @@ import { sql } from "@/lib/db";
 import { soDigitos, chaveTelefone } from "@/lib/telefone";
 import { midiaDoEvento, baixarPendentes, temArquivo } from "@/lib/midia";
 import { ORIGEM_RASTREIO } from "@/lib/uazapi";
-import { responderComIa } from "@/lib/ia/atendente";
+import { alternarIaPelaPalavra, responderComIa } from "@/lib/ia/atendente";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -297,10 +297,14 @@ export async function POST(req: NextRequest) {
       //      antes da transcrição seria responder sem saber o que ele disse.
       //      Se ele estiver com IA e ninguém da equipe na conversa — quem
       //      decide é lib/ia/atendente.ts.
+      //   3. Do celular, a mensagem pode ser a palavra de uma IA: liga ou
+      //      desliga a IA do contato. Só aqui, dentro de "inseriu agora": o
+      //      mesmo evento reenviado alternaria de volta.
       const mensagemId = inseridas[0].id as string;
       after(async () => {
         if (estadoMidia === "pendente") await baixarPendentes();
         if (!fromMe) await responderComIa(atendimentoId, mensagemId);
+        else if (texto) await alternarIaPelaPalavra(atendimentoId, texto);
       });
     }
 

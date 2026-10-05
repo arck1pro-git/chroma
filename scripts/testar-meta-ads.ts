@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { dividir, metricasAds, origemDaOportunidade, resolverOrigem, resumoCrm, type OportunidadeAds } from "../lib/meta-ads-calculos";
+import { dividir, metricasAds, origemDaOportunidade, pedidoDeCampanha, resolverOrigem, resumoCrm, type OportunidadeAds } from "../lib/meta-ads-calculos";
 import { acaoAds, executarAcaoAds } from "../lib/meta-ads-gestao";
 import { carregarSerieCampanha, consultaAds, serieAds } from "../lib/meta-ads-relatorio";
 import { listarMeta } from "../lib/meta";
@@ -11,6 +11,10 @@ async function main() {
   assert.equal(resolverOrigem({ campaign_id: "100", utm_campaign: "Captação" }, catalogo, "campaign").id, "100");
   assert.equal(resolverOrigem({ campaign_id: "999", utm_campaign: "Captação" }, catalogo, "campaign").motivo, "semCorrespondencia");
   assert.equal(resolverOrigem(null, catalogo, "campaign").motivo, "semOrigem");
+  assert.equal(pedidoDeCampanha({ utm_id: "100", utm_campaign: "Captação" }), null);
+  assert.equal(pedidoDeCampanha({ utm_source: "facebook" }), null);
+  assert.deepEqual(pedidoDeCampanha({ utm_campaign: " Captação ", adset_id: "{{adset.id}}" }), { nome: "Captação", anuncio: null, conjunto: null });
+  assert.deepEqual(pedidoDeCampanha({ ad_id: "300" }), { nome: null, anuncio: "300", conjunto: null });
   const op: OportunidadeAds = { id: "o1", contato_id: "c1", status: "aberta", valor: 100, etapa_id: "e1", etapa_nome: "Entrada", etapa_ordem: 0, funil_id: "f1", funil_nome: "Vendas", primeira_ordem: 0, campos: { campaign_id: "100" }, contato_campos: { campaign_id: "101", adset_id: "20" } };
   assert.deepEqual(origemDaOportunidade(op), { campaign_id: "100" });
   assert.deepEqual(origemDaOportunidade({ ...op, campos: {} }), op.contato_campos);

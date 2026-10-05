@@ -49,6 +49,7 @@ import {
   criarInstanciaNaUazapi,
   gerarQrCode,
   removerInstancia,
+  usuariosParaVincularWhatsApp,
   type ConexaoUazapi,
 } from "@/app/configuracoes/actions";
 
@@ -238,7 +239,7 @@ function Selo({
 /**
  * O painel de criação, que sai da barra para a esquerda.
  *
- * Um campo e um botão, e o botão faz o caminho inteiro: cria a instância na
+ * Nome, usuário e um botão que faz o caminho inteiro: cria a instância na
  * uazapi, aponta o webhook para este CRM e já pede o QR Code, que aparece aqui
  * mesmo. Não há um segundo clique entre "quero um número novo" e a câmera do
  * celular — que era o que sobrava quando isso só existia em Configurações.
@@ -259,11 +260,23 @@ function PainelNovaInstancia({
   aoConectar: () => void;
 }) {
   const [nome, setNome] = useState("");
+  const [usuarioId, setUsuarioId] = useState("");
+  const [usuarios, setUsuarios] = useState<Awaited<ReturnType<typeof usuariosParaVincularWhatsApp>>>([]);
+  const [carregandoUsuarios, setCarregandoUsuarios] = useState(true);
   const [instanciaId, setInstanciaId] = useState<string | null>(null);
   const [conexao, setConexao] = useState<ConexaoUazapi | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    usuariosParaVincularWhatsApp()
+      .then((lista) => { if (vivo) setUsuarios(lista); })
+      .catch((e) => { if (vivo) setErro(e instanceof Error ? e.message : "Falha ao carregar usuários"); })
+      .finally(() => { if (vivo) setCarregandoUsuarios(false); });
+    return () => { vivo = false; };
+  }, []);
 
   // A instância já conectou nesta sessão do painel? Guarda para avisar a barra
   // uma vez só, em vez de a cada volta do laço.
@@ -271,13 +284,13 @@ function PainelNovaInstancia({
 
   async function criar() {
     const n = nome.trim();
-    if (!n || ocupado) return;
+    if (!n || !usuarioId || ocupado) return;
     setOcupado(true);
     setErro(null);
     setAviso(null);
 
     try {
-      const { id, aviso: pendencia } = await criarInstanciaNaUazapi(n);
+      const { id, aviso: pendencia } = await criarInstanciaNaUazapi(n, usuarioId);
       setInstanciaId(id);
       setAviso(pendencia);
       // O QR na sequência, sem passar pela lista: é o passo seguinte
@@ -333,7 +346,7 @@ function PainelNovaInstancia({
             Nova instância
           </h2>
           <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-            Nasce na uazapi com o webhook já apontado para este CRM.
+            Vincule a um usuário e conecte pelo QR Code.
           </p>
         </div>
         <button
@@ -346,7 +359,7 @@ function PainelNovaInstancia({
         </button>
       </div>
 
-      {/* Antes de existir instância: o nome e o botão. Depois, some — o nome já
+      {/* Antes de existir instância: nome, usuário e botão. Depois, some — o nome já
           foi usado, e repetir o campo sugeriria que dá para criar outra sem
           fechar. */}
       {!instanciaId && (
@@ -360,10 +373,28 @@ function PainelNovaInstancia({
             maxLength={60}
             className="w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
           />
+          <label className="flex flex-col gap-1 text-[11px] text-zinc-500">
+            Usuário responsável
+            <select
+              value={usuarioId}
+              onChange={(e) => setUsuarioId(e.target.value)}
+              disabled={ocupado || carregandoUsuarios}
+              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-[13px] text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50"
+            >
+              <option value="">{carregandoUsuarios ? "Carregando usuários…" : "Selecione um usuário"}</option>
+              {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+            </select>
+          </label>
+          {!carregandoUsuarios && usuarios.length === 0 && (
+            <p className="text-[11px] text-amber-600">Cadastre um usuário em Configurações → Usuários para vincular este WhatsApp.</p>
+          )}
+          {usuarios.find((u) => u.id === usuarioId)?.instancia_id && (
+            <p className="text-[11px] text-amber-600">O WhatsApp de envio deste usuário será substituído pela nova instância.</p>
+          )}
           <button
             type="button"
             onClick={() => void criar()}
-            disabled={!nome.trim() || ocupado}
+            disabled={!nome.trim() || !usuarioId || ocupado}
             className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-zinc-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             {ocupado ? (

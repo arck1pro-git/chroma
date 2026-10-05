@@ -75,12 +75,26 @@ export async function carregarSegmentos(): Promise<Segmento[]> {
  * colunas. Acrescentar o telefone lá obrigaria a tocar em todas — e mandaria o
  * número de todo mundo para o navegador de quem só quer ver um avatar.
  */
-export type UsuarioConfig = Usuario & { whatsapp: string | null };
+export type UsuarioConfig = Usuario & {
+  whatsapp: string | null;
+  // Instância usada pela cadência ao enviar pelo responsável da oportunidade.
+  instancia_id: string | null;
+};
+
+/** Um número cadastrado em Integrações, como o seletor de "Envia por" o vê. */
+export type NumeroDeEnvio = { id: string; nome: string; numero: string | null };
 
 export async function carregarUsuarios(): Promise<UsuarioConfig[]> {
   const usuarios = await sql`
-    SELECT id, nome, iniciais, whatsapp FROM usuarios ORDER BY nome`;
+    SELECT id, nome, iniciais, whatsapp, instancia_id FROM usuarios ORDER BY nome`;
   return usuarios as unknown as UsuarioConfig[];
+}
+
+/** Os números de WhatsApp que uma pessoa pode usar para enviar. Sem token. */
+export async function carregarNumerosDeEnvio(): Promise<NumeroDeEnvio[]> {
+  const numeros = await sql`
+    SELECT id, nome, numero FROM instancias_uazapi ORDER BY data_criacao`;
+  return numeros as unknown as NumeroDeEnvio[];
 }
 
 export async function carregarCampos(): Promise<CampoPersonalizado[]> {

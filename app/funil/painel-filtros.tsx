@@ -17,7 +17,7 @@
 // sendo BarraFiltros — aqui só entram o gatilho, o véu e a moldura. Era o
 // caminho com menos risco: os controles seguem um componente só, usado por
 // quem mais precisar, e mudar a apresentação não toca a regra de filtro.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { SlidersHorizontal, X } from "lucide-react";
 import BarraFiltros from "./barra-filtros";
 import CamadaTopo from "../components/camada-topo";
@@ -38,6 +38,7 @@ export default function PainelFiltros({
   aoMudarFiltros,
   visiveis,
   total,
+  aDireita,
 }: {
   aberto: boolean;
   aoAlternar: (aberto: boolean) => void;
@@ -52,6 +53,8 @@ export default function PainelFiltros({
   aoMudarFiltros: (f: Filtros) => void;
   visiveis: number;
   total: number;
+  // Encostado à direita da linha (a descrição do funil).
+  aDireita?: ReactNode;
 }) {
   const ativos = contarFiltrosAtivos(filtros);
   const painelRef = useRef<HTMLDivElement | null>(null);
@@ -113,6 +116,8 @@ export default function PainelFiltros({
             </button>
           </>
         )}
+
+        {aDireita && <div className="ml-auto min-w-0">{aDireita}</div>}
       </div>
 
       {/* No <body>, pela CamadaTopo, na camada das gavetas. Aqui dentro do

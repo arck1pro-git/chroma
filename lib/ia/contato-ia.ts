@@ -10,7 +10,8 @@
 // nunca dizer duas coisas ao mesmo tempo (migration-ias.sql).
 //
 // Fica no histórico com quem mexeu: é a primeira pergunta quando "a IA parou
-// de responder" alguém.
+// de responder" alguém. Pelo celular (a palavra da IA, lib/ia/atendente.ts) não
+// há usuário do CRM: autor vazio, e `como` diz por onde veio.
 import "server-only";
 import { sql } from "@/lib/db";
 
@@ -18,7 +19,8 @@ export async function gravarIaDoContato(
   contatoId: string,
   valor: boolean | null,
   iaId: string | null,
-  autorId: string,
+  autorId: string | null,
+  como?: string,
 ): Promise<{ erro?: string }> {
   let nomeIa: string | null = null;
   if (valor === true) {
@@ -35,12 +37,13 @@ export async function gravarIaDoContato(
        AND (ia, ia_id) IS DISTINCT FROM (${valor}::boolean, ${id}::uuid)
     RETURNING id`;
   if (linha) {
-    const frase =
+    const base =
       valor === true
         ? `IA "${nomeIa}" ligada para o contato: ela responde no WhatsApp em qualquer etapa.`
         : valor === false
           ? "IA desligada para o contato: ela não responde mais no WhatsApp."
           : "IA do contato voltou a seguir a etapa.";
+    const frase = como ? `${base.slice(0, -1)} — ${como}.` : base;
     await sql`
       INSERT INTO historico (contato_id, descricao, autor_id)
       VALUES (${contatoId}, ${frase}, ${autorId})`;

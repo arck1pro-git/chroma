@@ -1,4 +1,4 @@
-import { carregarUsuarios } from "../dados";
+import { carregarNumerosDeEnvio, carregarUsuarios } from "../dados";
 import { UsuariosSection } from "../secoes/usuarios";
 import { exigirModulo } from "@/lib/auth/dal";
 
@@ -8,6 +8,6 @@ export default async function UsuariosPage() {
   // justamente quando a pessoa troca de tela (guia de autenticação do Next,
   // "Layouts and auth checks"). Aqui ela roda antes de qualquer consulta.
   await exigirModulo("configuracoes");
-  const usuarios = await carregarUsuarios();
-  return <UsuariosSection usuarios={usuarios} />;
+  const [usuarios, numeros] = await Promise.all([carregarUsuarios(), carregarNumerosDeEnvio()]);
+  return <UsuariosSection usuarios={usuarios} numeros={numeros} />;
 }

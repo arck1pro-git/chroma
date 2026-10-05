@@ -273,18 +273,33 @@ function whatsappOuNulo(bruto: string): string | null {
   return so;
 }
 
+/**
+ * O número de envio escolhido na tela (usuarios.instancia_id). Só o id
+ * atravessa, e precisa existir em Integrações: um id torto viraria erro de uuid
+ * do Postgres, e um id de instância apagada, um "sem número" semanas depois.
+ */
+async function instanciaOuNula(bruto: string): Promise<string | null> {
+  const id = bruto.trim();
+  if (!id) return null;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Número de envio inválido");
+  const [i] = await sql`SELECT id FROM instancias_uazapi WHERE id = ${id}`;
+  if (!i) throw new Error("Esse número de envio não existe mais em Integrações");
+  return id;
+}
+
 export async function criarUsuario(
   nome: string,
   iniciais: string,
   whatsapp = "",
+  instanciaId = "",
 ): Promise<string> {
   await exigirModulo("configuracoes");
   const n = nome.trim();
   if (!n) throw new Error("Nome é obrigatório");
   const ini = (iniciais.trim() || iniciaisDe(n)).slice(0, 4).toUpperCase();
   const [u] = await sql`
-    INSERT INTO usuarios (nome, iniciais, whatsapp)
-    VALUES (${n}, ${ini}, ${whatsappOuNulo(whatsapp)}) RETURNING id`;
+    INSERT INTO usuarios (nome, iniciais, whatsapp, instancia_id)
+    VALUES (${n}, ${ini}, ${whatsappOuNulo(whatsapp)}, ${await instanciaOuNula(instanciaId)}) RETURNING id`;
   revalidarUsuarios();
   return u.id;
 }
@@ -294,6 +309,7 @@ export async function editarUsuario(
   nome: string,
   iniciais: string,
   whatsapp = "",
+  instanciaId = "",
 ): Promise<void> {
   await exigirModulo("configuracoes");
   const n = nome.trim();
@@ -301,7 +317,8 @@ export async function editarUsuario(
   const ini = (iniciais.trim() || iniciaisDe(n)).slice(0, 4).toUpperCase();
   await sql`
     UPDATE usuarios
-       SET nome = ${n}, iniciais = ${ini}, whatsapp = ${whatsappOuNulo(whatsapp)}
+       SET nome = ${n}, iniciais = ${ini}, whatsapp = ${whatsappOuNulo(whatsapp)},
+           instancia_id = ${await instanciaOuNula(instanciaId)}
      WHERE id = ${id}`;
   revalidarUsuarios();
 }
@@ -475,6 +492,31 @@ function revalidarInstancias() {
   // "layout": as Configurações viraram várias rotas (/configuracoes/funis,
   // /configuracoes/whatsapp, …) e o caminho literal só invalidaria uma delas.
   revalidatePath("/configuracoes", "layout");
+  revalidatePath("/");
+}
+
+async function usuarioDaInstancia(usuarioId: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(usuarioId)) {
+    throw new Error("Selecione o usuário responsável por este WhatsApp");
+  }
+  const [usuario] = await sql`SELECT id FROM usuarios WHERE id = ${usuarioId}`;
+  if (!usuario) throw new Error("Esse usuário não existe mais no sistema");
+}
+
+export async function usuariosParaVincularWhatsApp(): Promise<{ id: string; nome: string; instancia_id: string | null }[]> {
+  await exigirModulo("configuracoes");
+  return sql`SELECT id, nome, instancia_id FROM usuarios ORDER BY nome`;
+}
+
+export async function vincularUsuarioInstancia(instanciaId: string, usuarioId: string): Promise<void> {
+  await exigirModulo("configuracoes");
+  await usuarioDaInstancia(usuarioId);
+  const id = await instanciaOuNula(instanciaId);
+  if (!id) throw new Error("Selecione uma instância de WhatsApp");
+  const [usuario] = await sql`
+    UPDATE usuarios SET instancia_id = ${id} WHERE id = ${usuarioId} RETURNING id`;
+  if (!usuario) throw new Error("Esse usuário não existe mais no sistema");
+  revalidarInstancias();
 }
 
 /** Estados da uazapi. `hibernated` = sessão pausada, credencial preservada. */
@@ -606,6 +648,7 @@ export async function conectarInstancia(
   nome: string,
   baseUrl: string,
   token: string,
+  usuarioId: string,
 ): Promise<string> {
   await exigirModulo("configuracoes");
   const n = nome.trim();
@@ -614,16 +657,22 @@ export async function conectarInstancia(
   if (!n) throw new Error("Nome é obrigatório");
   if (!url) throw new Error("URL da instância é obrigatória");
   if (!tok) throw new Error("Token é obrigatório");
+  await usuarioDaInstancia(usuarioId);
 
   const { numero, instanciaId } = await statusDaInstancia(url, tok);
 
   try {
-    const [i] = await sql`
-      INSERT INTO instancias_uazapi (nome, base_url, token, numero, instancia_uazapi_id)
-      VALUES (${n}, ${url}, ${tok}, ${numero}, ${instanciaId})
-      RETURNING id`;
+    const id = await sql.begin(async (tx: typeof sql) => {
+      const [usuario] = await tx`SELECT id FROM usuarios WHERE id = ${usuarioId} FOR UPDATE`;
+      if (!usuario) throw new Error("Esse usuário não existe mais no sistema");
+      const [i] = await tx`
+        INSERT INTO instancias_uazapi (nome, base_url, token, numero, instancia_uazapi_id)
+        VALUES (${n}, ${url}, ${tok}, ${numero}, ${instanciaId}) RETURNING id`;
+      await tx`UPDATE usuarios SET instancia_id = ${i.id} WHERE id = ${usuarioId}`;
+      return i.id as string;
+    });
     revalidarInstancias();
-    return i.id;
+    return id;
   } catch (e) {
     if (ehDuplicado(e)) {
       throw new Error("Já existe uma instância com esse nome ou esse token");
@@ -821,10 +870,12 @@ async function gravarWebhook(baseUrl: string, token: string, url: string) {
  */
 export async function criarInstanciaNaUazapi(
   nome: string,
+  usuarioId: string,
 ): Promise<{ id: string; aviso: string | null }> {
   await exigirModulo("configuracoes");
   const n = nome.trim();
   if (!n) throw new Error("Dê um nome à instância");
+  await usuarioDaInstancia(usuarioId);
 
   const { base } = servidorUazapi();
   const data = (await chamarAdminUazapi("/instance/init", { name: n })) as {
@@ -840,11 +891,16 @@ export async function criarInstanciaNaUazapi(
 
   let id: string;
   try {
-    const [linha] = await sql`
-      INSERT INTO instancias_uazapi (nome, base_url, token, numero, instancia_uazapi_id)
-      VALUES (${n}, ${base}, ${token}, ${null}, ${instanciaId})
-      RETURNING id`;
-    id = linha.id as string;
+    id = await sql.begin(async (tx: typeof sql) => {
+      const [usuario] = await tx`SELECT id FROM usuarios WHERE id = ${usuarioId} FOR UPDATE`;
+      if (!usuario) throw new Error("Esse usuário não existe mais no sistema");
+      const [linha] = await tx`
+        INSERT INTO instancias_uazapi (nome, base_url, token, numero, instancia_uazapi_id)
+        VALUES (${n}, ${base}, ${token}, ${null}, ${instanciaId})
+        RETURNING id`;
+      await tx`UPDATE usuarios SET instancia_id = ${linha.id} WHERE id = ${usuarioId}`;
+      return linha.id as string;
+    });
   } catch (e) {
     if (ehDuplicado(e)) {
       throw new Error(

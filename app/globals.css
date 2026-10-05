@@ -174,10 +174,24 @@ body {
 .viz {
   --serie-ok: #2a78d6;
   --serie-erro: #d03b3b;
+  /* Segunda série que NÃO é erro (reuniões, no gráfico de IA do dashboard):
+     laranja, o slot 2 do categórico. Com o azul de --serie-ok passa em todos
+     os checks — ΔE 24.7 protan no claro, 26.8 no escuro. */
+  --serie-reuniao: #eb6834;
+  /* A moldura do gráfico (app/components/grafico-linhas.tsx): grade e eixo
+     recessivos, um degrau fora da superfície; o cursor um pouco mais forte
+     para a linha vertical do dia sob o mouse aparecer sobre a grade. */
+  --viz-grade: #e4e4e7;
+  --viz-eixo: #a1a1aa;
+  --viz-cursor: #a1a1aa;
 }
 @media (prefers-color-scheme: dark) {
   .viz {
     --serie-ok: #3987e5;
+    --serie-reuniao: #d95926;
+    --viz-grade: #27272a;
+    --viz-eixo: #71717a;
+    --viz-cursor: #52525b;
   }
 }
 

@@ -127,10 +127,22 @@ número do SDR e termina no do closer. O cabeçalho de cada coluna mostra o nome
 da instância: com uma por mensagem, ler a cadência de fora é a única forma de
 perceber que a 5ª sai por outro número.
 
-Sem escolha, cai na instância do `.env`. Se a instância escolhida for apagada em
-Configurações depois de publicada, o bloco **falha** em vez de cair no `.env`
-calado: cair no `.env` mandaria a mensagem pelo número compartilhado com o
-SprintHub.
+O campo **Sai por** também oferece **Responsável da oportunidade**
+(`instancia_id: "responsavel"`). Nesse modo, o motor envia `execucao_id` e
+`pelo_responsavel: true` ao CRM. A cada mensagem, o CRM consulta o responsável
+atual daquela oportunidade e a instância em `usuarios.instancia_id`. Trocar o
+responsável ou seu vínculo passa a valer no próximo envio, inclusive após esperas.
+Texto, anexos e avisos ao time usam a mesma resolução. É necessário que o motor
+alcance o CRM por um endereço público.
+
+O cadastro de WhatsApp, tanto na barra lateral quanto em Configurações, exige
+um usuário e grava o vínculo junto com a instância. Instâncias existentes podem
+ser vinculadas em Configurações → WhatsApp; o vínculo também é editável em
+Configurações → Usuários ("Envia por"). Cada usuário tem uma instância de envio;
+vários usuários podem compartilhar a mesma. Requer `migration-usuario-instancia.sql`.
+
+Sem responsável, vínculo ou número pareado, o envio **falha com o motivo**.
+Instância fixa apagada também falha. Nenhum desses casos envia por outra instância.
 
 ## Os canais, sem promessa a mais
 

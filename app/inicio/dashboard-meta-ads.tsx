@@ -18,6 +18,15 @@ export default function DashboardMetaAds({corSelecionada, filtro, aoFiltrar}:{co
   const conjuntoId=filtro.conjunto?.id;
   const anuncioId=filtro.anuncio?.id;
   const campanha=ads.dados?.campanhas.find(c=>c.id===campanhaId);
+  // Ativas primeiro e, quando há alguma ativa, as inativas atrás de "+N
+  // inativas" (2026-10-05): com todas abertas eram cinco fileiras de pílulas
+  // empurrando o quadro para baixo. A selecionada aparece sempre.
+  const [verInativas,setVerInativas]=useState(false);
+  const ativa=(c:Campanha)=>c.effective_status==="ACTIVE";
+  const todas=[...(ads.dados?.campanhas??[])].sort((a,b)=>Number(ativa(b))-Number(ativa(a)));
+  const inativas=todas.filter(c=>!ativa(c)).length;
+  const recolher=inativas<todas.length&&inativas>0;
+  const visiveis=recolher&&!verInativas?todas.filter(c=>ativa(c)||c.id===campanhaId):todas;
   const detalhes=useConsulta<{grupos:Conjunto[]}>(campanha?`/api/meta/ads?estrutura=${encodeURIComponent(campanha.id)}`:null);
   const conjuntos=detalhes.dados?.grupos??[];
   const conjunto=conjuntos.find(c=>c.id===conjuntoId);
@@ -25,7 +34,7 @@ export default function DashboardMetaAds({corSelecionada, filtro, aoFiltrar}:{co
   return <section className="surge mb-3 shrink-0 space-y-2 pr-6 xl:pr-16">
     {(status.dados?.contasAds.length??0)>1&&<Nivel titulo="Conta"><select aria-label="Conta de anúncios" value={conta} onChange={e=>{setConta(e.target.value);aoFiltrar(filtroCampanhasVazio)}} className="rounded-lg bg-transparent text-xs">{status.dados?.contasAds.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Nivel>}
     {erro&&<p role="alert" className="text-xs text-amber-600">{erro} <button onClick={()=>{void status.atualizar();void ads.atualizar();void disparos.atualizar();void detalhes.atualizar()}}>Tentar novamente</button></p>}
-    <Nivel titulo="Campanhas">{ads.dados?.campanhas.map(c=><Pill key={c.id} campanhaAtiva={c.effective_status==="ACTIVE"} ativo={c.id===campanhaId} corSelecionada={corSelecionada} onClick={()=>{aoFiltrar({campanha:campanhaId===c.id?null:{id:c.id,nome:c.name},conjunto:null,anuncio:null})}}>{c.name}</Pill>)}{(status.carregando||ads.carregando)?<span className="text-xs text-zinc-400">Carregando…</span>:!erro&&!ads.dados?.campanhas.length&&<span className="text-xs text-zinc-400">Nenhuma campanha.</span>}</Nivel>
+    <Nivel titulo="Campanhas">{visiveis.map(c=><Pill key={c.id} campanhaAtiva={c.effective_status==="ACTIVE"} ativo={c.id===campanhaId} corSelecionada={corSelecionada} onClick={()=>{aoFiltrar({campanha:campanhaId===c.id?null:{id:c.id,nome:c.name},conjunto:null,anuncio:null})}}>{c.name}</Pill>)}{recolher&&<button type="button" onClick={()=>setVerInativas(v=>!v)} className="rounded-full px-2.5 py-1 text-[10px] text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50">{verInativas?"Ocultar inativas":`+${inativas} inativa${inativas===1?"":"s"}`}</button>}{(status.carregando||ads.carregando)?<span className="text-xs text-zinc-400">Carregando…</span>:!erro&&!ads.dados?.campanhas.length&&<span className="text-xs text-zinc-400">Nenhuma campanha.</span>}</Nivel>
     {campanha&&<Nivel titulo="Conjuntos">{conjuntos.map(c=><Pill key={c.id} ativo={c.id===conjuntoId} corSelecionada={corSelecionada} onClick={()=>{aoFiltrar({...filtro,conjunto:conjuntoId===c.id?null:{id:c.id,nome:c.nome},anuncio:null})}}>{c.nome}</Pill>)}{detalhes.carregando&&<span className="text-xs text-zinc-400">Carregando…</span>}</Nivel>}
     {conjunto&&<Nivel titulo="Anúncios"><Pill ativo={!anuncioId} corSelecionada={corSelecionada} onClick={()=>aoFiltrar({...filtro,anuncio:null})}>Todos</Pill>{conjunto.anuncios.map(a=><Pill key={a.id} ativo={a.id===anuncioId} corSelecionada={corSelecionada} onClick={()=>aoFiltrar({...filtro,anuncio:anuncioId===a.id?null:{id:a.id,nome:a.nome}})}>{a.nome}</Pill>)}</Nivel>}
     <Nivel titulo="Disparos">{disparos.dados?.campanhas.map(d=><Pill key={d.id} ativo={d.id===disparoId} corSelecionada={corSelecionada} onClick={()=>setDisparo(atual=>atual===d.id?null:d.id)}>{d.nome}</Pill>)}{disparos.carregando?<span className="text-xs text-zinc-400">Carregando…</span>:!disparos.erro&&!disparos.dados?.campanhas.length&&<span className="text-xs text-zinc-400">Nenhum disparo.</span>}</Nivel>

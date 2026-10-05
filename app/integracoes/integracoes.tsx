@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, type ComponentType, type SVGProps } from "react";
+import { useEffect, useState, useTransition, type ComponentType, type SVGProps } from "react";
 import {
+  AlertCircle,
   Calendar,
   CheckCircle2,
   Circle,
@@ -13,6 +14,8 @@ import {
 import LogoGoogleCalendar from "../components/logo-google-calendar";
 import LogoMeta from "../components/logo-meta";
 import { SeletorMenu } from "../components/filtros-ui";
+import { desconectarGoogleCalendar } from "./acoes";
+import { dataHora } from "../formato";
 
 type IconeSvg = ComponentType<SVGProps<SVGSVGElement>>;
 type IntegracaoId = "meta" | "email" | "google-calendar";
@@ -54,30 +57,55 @@ const CATALOGO: Integracao[] = [
   },
 ];
 
-type Conexao = { conectado: boolean; conta?: string };
+type Conexao = { conectado: boolean; conta?: string; desde?: string };
 
-// ⚠ Mock de UI, não tabela do banco. Numa conexão real, isto vira uma linha por
-// integração com o token (criptografado em repouso), a conta e a validade — a
-// modelagem é sua. Aqui só guardo se está ligada e o rótulo da conta, que é o
-// necessário pra tela mostrar os dois estados.
-const CONEXAO_VAZIA: Record<IntegracaoId, Conexao> = {
+type IdMock = Exclude<IntegracaoId, "google-calendar">;
+
+// ⚠ Mock de UI, não tabela do banco — vale só para Meta e E-mail. O Google
+// Calendar já é real: vem do banco (google_conexao) pela prop `google`, e é
+// por isso que fica fora deste estado.
+const CONEXAO_VAZIA: Record<IdMock, Conexao> = {
   meta: { conectado: false },
   email: { conectado: false },
-  "google-calendar": { conectado: false },
 };
 
-export default function Integracoes() {
-  const [conexoes, setConexoes] =
-    useState<Record<IntegracaoId, Conexao>>(CONEXAO_VAZIA);
+export type AvisoIntegracao = { tipo: "ok" | "erro"; texto: string };
+
+export default function Integracoes({
+  google,
+  googleConfigurado,
+  aviso,
+}: {
+  google: { conta: string; conectadoEm: string } | null;
+  googleConfigurado: boolean;
+  aviso: AvisoIntegracao | null;
+}) {
+  const [mock, setMock] = useState<Record<IdMock, Conexao>>(CONEXAO_VAZIA);
   const [aberta, setAberta] = useState<IntegracaoId | null>(null);
+  const [avisoAtual, setAvisoAtual] = useState(aviso);
+
+  // O resultado da volta do Google vem na URL (?google=…). Lido uma vez, sai
+  // dela: recarregar a página não deve repetir "conectado" nem um erro velho.
+  useEffect(() => {
+    if (aviso) window.history.replaceState(null, "", "/integracoes");
+  }, [aviso]);
+
+  const conexoes: Record<IntegracaoId, Conexao> = {
+    ...mock,
+    "google-calendar": google
+      ? { conectado: true, conta: google.conta, desde: google.conectadoEm }
+      : { conectado: false },
+  };
 
   const integracaoAberta = CATALOGO.find((i) => i.id === aberta) ?? null;
 
   function conectar(id: IntegracaoId, conta: string) {
-    setConexoes((c) => ({ ...c, [id]: { conectado: true, conta } }));
+    if (id === "google-calendar") return;
+    setMock((c) => ({ ...c, [id]: { conectado: true, conta } }));
   }
   function desconectar(id: IntegracaoId) {
-    setConexoes((c) => ({ ...c, [id]: { conectado: false } }));
+    if (id === "google-calendar") return;
+    setMock((c) => ({ ...c, [id]: { conectado: false } }));
   }
 
   const totalConectadas = Object.values(conexoes).filter(
@@ -102,6 +130,31 @@ export default function Integracoes() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-6 py-6 xl:px-16">
+        {avisoAtual && (
+          <div
+            role={avisoAtual.tipo === "erro" ? "alert" : "status"}
+            className={`mx-auto mb-4 flex max-w-3xl items-start gap-2 rounded-xl border px-4 py-3 text-[13px] ${
+              avisoAtual.tipo === "ok"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+                : "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+            }`}
+          >
+            {avisoAtual.tipo === "ok" ? (
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            ) : (
+              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            )}
+            <p className="min-w-0 flex-1">{avisoAtual.texto}</p>
+            <button
+              type="button"
+              onClick={() => setAvisoAtual(null)}
+              aria-label="Fechar aviso"
+              className="-m-1 shrink-0 rounded p-1 opacity-60 transition hover:opacity-100"
+            >
+              <X className="size-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        )}
         <ul className="mx-auto flex max-w-3xl flex-col gap-3">
           {CATALOGO.map((integracao) => {
             const conexao = conexoes[integracao.id];
@@ -150,8 +203,10 @@ export default function Integracoes() {
         <PainelConexao
           integracao={integracaoAberta}
           conexao={conexoes[integracaoAberta.id]}
+          googleConfigurado={googleConfigurado}
           aoConectar={(conta) => conectar(integracaoAberta.id, conta)}
           aoDesconectar={() => desconectar(integracaoAberta.id)}
+          aoAvisar={setAvisoAtual}
           aoFechar={() => setAberta(null)}
         />
       )}
@@ -181,14 +236,18 @@ function StatusPill({ conectado }: { conectado: boolean }) {
 function PainelConexao({
   integracao,
   conexao,
+  googleConfigurado,
   aoConectar,
   aoDesconectar,
+  aoAvisar,
   aoFechar,
 }: {
   integracao: Integracao;
   conexao: Conexao;
+  googleConfigurado: boolean;
   aoConectar: (conta: string) => void;
   aoDesconectar: () => void;
+  aoAvisar: (aviso: AvisoIntegracao) => void;
   aoFechar: () => void;
 }) {
   useEffect(() => {
@@ -238,7 +297,18 @@ function PainelConexao({
         </header>
 
         <div className="px-5 py-4">
-          {conexao.conectado ? (
+          {integracao.id === "google-calendar" ? (
+            conexao.conectado ? (
+              <ResumoGoogle
+                conta={conexao.conta ?? ""}
+                desde={conexao.desde ?? null}
+                aoAvisar={aoAvisar}
+                aoFechar={aoFechar}
+              />
+            ) : (
+              <FormGoogleCalendar configurado={googleConfigurado} aoFechar={aoFechar} />
+            )
+          ) : conexao.conectado ? (
             <ResumoConexao
               conta={conexao.conta ?? ""}
               aoDesconectar={() => {
@@ -248,10 +318,8 @@ function PainelConexao({
             />
           ) : integracao.id === "meta" ? (
             <FormMeta aoConectar={aoConectar} aoFechar={aoFechar} />
-          ) : integracao.id === "email" ? (
-            <FormEmail aoConectar={aoConectar} aoFechar={aoFechar} />
           ) : (
-            <FormGoogleCalendar aoConectar={aoConectar} aoFechar={aoFechar} />
+            <FormEmail aoConectar={aoConectar} aoFechar={aoFechar} />
           )}
         </div>
 
@@ -446,32 +514,105 @@ function FormEmail({
   );
 }
 
+// De verdade: o botão é um LINK para /api/google/conectar, que manda para o
+// consentimento do Google e volta em /api/google/callback. Navegação inteira, e
+// não fetch — a tela do Google não abre dentro de uma requisição.
 function FormGoogleCalendar({
-  aoConectar,
+  configurado,
   aoFechar,
 }: {
-  aoConectar: (conta: string) => void;
+  configurado: boolean;
   aoFechar: () => void;
 }) {
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        // Igual à Meta: no real abre o consentimento do Google e volta com a
-        // conta autorizada. Mock entrega o resultado.
-        aoConectar("agenda@chroma.com.br");
-      }}
-      className="flex flex-col gap-4"
-    >
+    <div className="flex flex-col gap-4">
       <p className="text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-300">
-        Conecte uma conta Google para sincronizar compromissos do funil com a
-        agenda. O consentimento é feito na tela do Google.
+        Conecte a conta Google da agenda comercial. É nela que a Agenda lê os
+        compromissos e que as reuniões marcadas pela ficha e pela IA são criadas,
+        com link do Meet. Uma conta só para o CRM inteiro.
       </p>
-      <AcoesForm
-        rotulo="Conectar com o Google"
-        Icone={Calendar}
-        aoFechar={aoFechar}
-      />
-    </form>
+      {!configurado && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+          Faltam GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente. Sem elas o
+          Google não tem como reconhecer o Chroma.
+        </p>
+      )}
+      <div className="mt-1 flex items-center justify-end gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+        <button
+          type="button"
+          onClick={aoFechar}
+          className="rounded-lg border border-zinc-300 px-3 py-2 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+        >
+          Cancelar
+        </button>
+        {/* <a> e não <Link>: é rota de API que redireciona para fora, e o
+            prefetch do Link a chamaria sozinho. */}
+        <a
+          href={configurado ? "/api/google/conectar" : undefined}
+          aria-disabled={!configurado}
+          className={`inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200 ${
+            configurado ? "" : "pointer-events-none opacity-40"
+          }`}
+        >
+          <Calendar className="size-4" aria-hidden="true" />
+          Conectar com o Google
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function ResumoGoogle({
+  conta,
+  desde,
+  aoAvisar,
+  aoFechar,
+}: {
+  conta: string;
+  desde: string | null;
+  aoAvisar: (aviso: AvisoIntegracao) => void;
+  aoFechar: () => void;
+}) {
+  const [saindo, sair] = useTransition();
+
+  function desconectar() {
+    if (
+      !window.confirm(
+        `Desconectar ${conta}?\n\nA Agenda para de mostrar os compromissos, a ficha e a IA deixam de marcar reunião. O que já foi marcado continua no Google.`,
+      )
+    ) {
+      return;
+    }
+    sair(async () => {
+      const r = await desconectarGoogleCalendar();
+      aoAvisar({ tipo: r.ok ? "ok" : "erro", texto: r.mensagem });
+      if (r.ok) aoFechar();
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+        <CheckCircle2
+          className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+          aria-hidden="true"
+        />
+        <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-emerald-800 dark:text-emerald-300">
+          {conta}
+        </p>
+      </div>
+      <p className="text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+        Agenda principal da conta{desde ? `, conectada em ${dataHora(desde)}` : ""}.
+        Para trocar de conta, desconecte e conecte a outra.
+      </p>
+      <button
+        type="button"
+        onClick={desconectar}
+        disabled={saindo}
+        className="self-start rounded-lg border border-red-200 px-3 py-2 text-[13px] font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
+      >
+        {saindo ? "Desconectando…" : "Desconectar"}
+      </button>
+    </div>
   );
 }

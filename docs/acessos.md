@@ -164,7 +164,9 @@ ainda válido — é a DAL que pega.
 - **`nivel` não restringe nada.** Ordena a lista e documenta a hierarquia, e só.
   Não é ele que impede um departamento de mexer noutro — quem impede é
   `gerencia_acessos`, que só o TI tem.
-- **Agenda é um módulo vazio.** Rota e permissão de pé, tela por fazer.
+- **Agenda é o Google Calendar de uma conta só.** A conta é conectada em
+  Integrações e vale para o CRM inteiro: quem tem o módulo Agenda vê todos os
+  compromissos dela, e quem tem o Dashboard marca reunião pela ficha.
 - **Métricas não tem ganhas/perdidas.** `oportunidades.status` é `'aberta'` em
   toda linha da base — nada escreve outro valor — e não existe registro de
   mudança de etapa. Os números da tela são os que o banco responde de verdade.
