@@ -669,9 +669,19 @@ export function paraWorkflow(
               -- NULLIF porque o parâmetro chega '' quando o bloco não tem
               -- anexo, e ''::uuid é erro de sintaxe no Postgres.
               LEFT JOIN documentos d ON d.id = NULLIF($7, '')::uuid
-              WHERE a.contato_id = $1::uuid AND a.status <> 'encerrado'
-              ORDER BY a.data_criacao DESC
+              -- A CONVERSA que o CRM abriu no envio ($8, ver
+              -- lib/automacoes/conversa-da-cadencia.ts). Antes era "a mais
+              -- recente aberta do contato" — e lead novo não tinha nenhuma, então
+              -- nada era gravado: a mensagem saía e sumia do CRM. Sem $8 (envio
+              -- direto na uazapi, só no dev) fica a regra antiga.
+              WHERE a.contato_id = $1::uuid
+                AND (a.id::text = $8 OR ($8 = '' AND a.status <> 'encerrado'))
+              ORDER BY (a.id::text = $8) DESC, a.data_criacao DESC
               LIMIT 1
+              -- Reenvio do mesmo passo (retentativa do motor) não pode virar
+              -- erro: estourar aqui mataria a cadência depois de a mensagem já
+              -- ter saído.
+              ON CONFLICT (id_externo) WHERE id_externo IS NOT NULL DO NOTHING
               RETURNING id
             )
             INSERT INTO fluxo_execucao_passos
@@ -693,6 +703,7 @@ export function paraWorkflow(
                 passo.id,
                 passo.tipo,
                 documentoId,
+                `{{ $('${envio}').first().json.atendimento_id ?? '' }}`,
               ].join(","),
             ),
           },

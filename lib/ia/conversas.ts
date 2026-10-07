@@ -162,6 +162,31 @@ export async function apagarConversa(
 // SÓ AS DA PRÓPRIA PESSOA. A barra aparece em todas as telas e juntava as
 // conversas de todo mundo — com as perguntas carregando nome de oportunidade e
 // valor, era o funil de um departamento visível ao lado do de outro.
+/**
+ * A conversa pelo id, de QUALQUER escopo — mas só do dono. É a do painel fixo
+ * do TI (app/components/ia-global.tsx), que abre de qualquer tela a conversa
+ * que a barra lista. Devolve o escopo junto: quem continua a conversa grava
+ * nele, e a conversa segue sendo da tela onde nasceu.
+ */
+export async function lerConversaPorId(
+  id: string,
+  usuarioId: string,
+): Promise<(ConversaCompleta & { escopo: string }) | null> {
+  const [linha] = await sql`
+    SELECT id, titulo, falas, escopo,
+           to_char(data_atualizacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS em
+    FROM ia_conversas
+    WHERE id = ${id} AND usuario_id = ${usuarioId}`;
+  if (!linha) return null;
+  return {
+    id: linha.id as string,
+    titulo: linha.titulo as string,
+    em: linha.em as string,
+    escopo: linha.escopo as string,
+    falas: limparFalas(linha.falas),
+  };
+}
+
 export type ConversaNaBarra = {
   id: string;
   titulo: string;

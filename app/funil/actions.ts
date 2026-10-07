@@ -3,7 +3,7 @@
 // Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
 // O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
 // pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
-import { exigirModulo } from "@/lib/auth/dal";
+import { exigirAlgumModulo, exigirModulo } from "@/lib/auth/dal";
 
 // Mutações do Funil. Roda no servidor — entrada é não confiável.
 import { revalidatePath } from "next/cache";
@@ -279,36 +279,14 @@ export async function excluirOportunidades(
   };
 }
 
-// Anexa o atendimento à oportunidade em vista; chamar de novo com a mesma
-// oportunidade desanexa (toggle) — é o que o botão da ficha faz. Anexar
-// enquanto já preso a OUTRA oportunidade reatribui, sem confirmação: curadoria
-// leve, não um fluxo protegido.
-export async function anexarAtendimento(
-  atendimentoId: string,
-  oportunidadeId: string,
-) {
-  await exigirModulo("inicio");
-  // Cast explícito nos dois lados: dentro de um CASE o postgres.js não tem
-  // como inferir que o parâmetro é uuid (funciona sozinho num "SET col = $1"
-  // simples, porque aí o driver usa o tipo da coluna; aqui ele manda text e o
-  // Postgres recusa a atribuição).
-  await sql`
-    UPDATE atendimentos
-    SET oportunidade_id = CASE
-      WHEN oportunidade_id = ${oportunidadeId}::uuid THEN NULL
-      ELSE ${oportunidadeId}::uuid
-    END
-    WHERE id = ${atendimentoId}`;
-  revalidatePath("/");
-}
-
 // Os campos personalizados do contato NÃO viajam com a lista de contatos: são
 // 17,8 mil linhas numa tela que já carrega tudo. A ficha pede os de UM contato
 // quando abre — é leitura, mas mora aqui pra ser chamável do cliente.
 export async function camposDoContato(
   contatoId: string,
 ): Promise<Record<string, string>> {
-  await exigirModulo("inicio");
+  // Também o módulo Contatos, que mostra os mesmos campos (app/contatos).
+  await exigirAlgumModulo("inicio", "contatos");
   const [c] = await sql`SELECT campos FROM contatos WHERE id = ${contatoId}`;
   return (c?.campos ?? {}) as Record<string, string>;
 }

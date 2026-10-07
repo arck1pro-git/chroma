@@ -138,7 +138,7 @@ export async function carregarFunil(
     // Pra ficha da oportunidade listar canal/número; nao_lidas não entra aqui
     // (é o /chat que precisa dela, ver app/chat/dados.ts).
     sql`
-      SELECT id, contato_id, responsavel_id, status, canal, numero_instancia, oportunidade_id,
+      SELECT id, contato_id, responsavel_id, status, canal, numero_instancia,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
       FROM atendimentos ORDER BY data_criacao DESC`,
     sql`
@@ -152,6 +152,7 @@ export async function carregarFunil(
              -- jsonb e não text[]: sem fetch_types o driver entrega array
              -- como o texto '{a,b}' (mesmo caso de campos_personalizados.opcoes).
              to_jsonb(acoes) AS acoes, palavra_chave,
+             to_jsonb(retomar_apos) AS retomar_apos, retomar_das, retomar_ate,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
       FROM ias ORDER BY data_criacao`,
   ]);

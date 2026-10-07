@@ -45,6 +45,14 @@ export type Ia = {
   acoes: string[];
   /** Mensagem do celular que liga/desliga esta IA no contato (lib/ia/contato-ia.ts). */
   palavra_chave: string | null;
+  /**
+   * Minutos de silêncio antes de cada retomada, contados da mensagem anterior
+   * dela (lib/ia/retomada.ts). Vazio = não retoma.
+   */
+  retomar_apos: number[];
+  /** Janela da retomada, em horas cheias de Brasília: das `retomar_das` às `retomar_ate` (exclusiva). */
+  retomar_das: number;
+  retomar_ate: number;
   data_criacao: string;
 };
 
@@ -69,3 +77,8 @@ export type EstadoIaContato = {
 export const LIMITE_NOME_IA = 80;
 export const LIMITE_PROMPT_IA = 20_000;
 export const LIMITE_PALAVRA_IA = 40;
+
+/** Retomadas por silêncio: quantas no máximo e o menor e o maior tempo de cada uma, em minutos. */
+export const MAX_RETOMADAS = 5;
+export const RETOMADA_MIN_MINUTOS = 15;
+export const RETOMADA_MAX_MINUTOS = 30 * 24 * 60;

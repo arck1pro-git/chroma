@@ -102,6 +102,9 @@ const VARIAVEIS: { chave: string; rotulo: string }[] = [
   { chave: "nome", rotulo: "Nome" },
   { chave: "oportunidade", rotulo: "Oportunidade" },
   { chave: "valor", rotulo: "Valor" },
+  // Só dígitos — é o que vai no link de vídeo rastreável (/videos):
+  // …/v/<código>?w={{numero}}.
+  { chave: "numero", rotulo: "WhatsApp" },
 ];
 const ROTULO_DA_VARIAVEL = new Map(VARIAVEIS.map((v) => [v.chave, v.rotulo]));
 

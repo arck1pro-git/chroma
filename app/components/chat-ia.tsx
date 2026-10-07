@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -14,13 +14,17 @@ import {
 import { dataHora } from "../formato";
 import {
   apagarConversaIa,
+  conversasDaBarra,
   criarConversaIa,
   gravarConversaIa,
   lerConversaIa,
+  lerConversaIaPorId,
   listarConversasIa,
   contextosDisponiveis,
   type ContextoDisponivel,
 } from "./acoes-ia";
+import { EVENTO_NOVA_ANALISE, useIaFixa, type CanalIaFixa } from "./ia-global-contexto";
+import { lugarDoEscopo } from "@/lib/ia/navegacao";
 import TextoIa from "./texto-ia";
 import { tomEscuro } from "@/lib/cores-funil";
 
@@ -88,8 +92,10 @@ function MarcaIa({ cor, girando = false }: { cor: string; girando?: boolean }) {
 }
 
 
-// A conversa como a lista a mostra: título e tamanho, sem o texto.
-type Resumo = { id: string; titulo: string; em: string; falas: number };
+// A conversa como a lista a mostra: título e tamanho, sem o texto. No painel
+// fixo do TI a lista é a de TODAS as telas (a mesma da barra), que traz o
+// escopo no lugar do tamanho.
+type Resumo = { id: string; titulo: string; em: string; falas?: number; escopo?: string };
 
 // A sombra dos balões: leve, e ao REDOR (sem deslocamento vertical). É ela
 // que separa o balão branco da página branca agora que o painel não tem
@@ -113,7 +119,7 @@ function tituloDe(pergunta: string) {
   return limpo.length > 42 ? `${limpo.slice(0, 41)}…` : limpo;
 }
 
-export default function ChatIa({
+export function PainelIa({
   contexto,
   endpoint = "/api/ia",
   // Uma lista por escopo: as trocas sobre o funil e as do editor de fluxo não
@@ -164,6 +170,10 @@ export default function ChatIa({
   // Entra por prop porque a cor é dado do funil e este painel também roda
   // onde funil nenhum existe (editor de fluxo, webhooks) — lá fica o padrão.
   corIcone = tomEscuro(null),
+  // O PAINEL FIXO do TI (./ia-global.tsx): montado no layout, vive em todas as
+  // telas. Muda duas coisas: a lista é a de todas as conversas (a da barra), e a
+  // conversa aberta pode ser de qualquer escopo — e continua gravando no dela.
+  global = false,
 }: {
   contexto: string;
   endpoint?: string;
@@ -182,10 +192,14 @@ export default function ChatIa({
   botaoFlutuante?: boolean;
   compacto?: boolean;
   corIcone?: string;
+  global?: boolean;
 }) {
   // Já nasce aberto quando a URL trouxe uma conversa (?ia=): abrir num efeito
   // faria o painel piscar fechado antes de aparecer.
   const [aberto, setAberto] = useState(!!conversaInicial);
+  // Onde a conversa ABERTA grava. É o `escopo` do painel, menos no fixo do TI
+  // quando ele abre uma conversa de outra tela: aí ela segue no escopo dela.
+  const [escopoAtual, setEscopoAtual] = useState(escopo);
   const [conversas, setConversas] = useState<Resumo[]>([]);
   const [atualId, setAtualId] = useState<string | null>(null);
   const [falas, setFalas] = useState<Fala[]>([]);
@@ -235,6 +249,12 @@ export default function ChatIa({
       contextosDisponiveis()
         .then(setContextos)
         .catch(() => setContextos([]));
+    }
+    if (global) {
+      // A mesma lista da barra: o fixo abre conversa de qualquer tela.
+      setConversas(await conversasDaBarra());
+      setCarregandoLista(false);
+      return;
     }
     const r = await listarConversasIa(escopo);
     if (r.ok) {
@@ -310,7 +330,14 @@ export default function ChatIa({
      funções nomeadas do componente, então o alvo se muda de lugar a cada
      refator e os disables pontuais viram diretiva morta. */
   useEffect(() => {
-    if (!conversaInicial || atendidaRef.current === conversaInicial) return;
+    // O fixo não remonta ao trocar de tela: sem ?ia= na URL nova, esquece o
+    // que já atendeu, senão clicar de novo na mesma conversa da barra (com o
+    // painel fechado) não a reabriria.
+    if (!conversaInicial) {
+      if (global) atendidaRef.current = null;
+      return;
+    }
+    if (atendidaRef.current === conversaInicial) return;
     abertoPelaSidebarRef.current = true;
     atendidaRef.current = conversaInicial;
 
@@ -347,6 +374,20 @@ export default function ChatIa({
   }, [conversaInicial]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // O "+" da barra, no painel fixo do TI (ver EVENTO_NOVA_ANALISE).
+  useEffect(() => {
+    if (!global) return;
+    const aoPedirNova = () => {
+      abrirComLista();
+      novaConversa();
+    };
+    window.addEventListener(EVENTO_NOVA_ANALISE, aoPedirNova);
+    return () => window.removeEventListener(EVENTO_NOVA_ANALISE, aoPedirNova);
+    // abrirComLista/novaConversa são recriadas a cada render; o que importa é
+    // o painel ser o fixo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [global]);
+
   // Fechar o painel corta a resposta em andamento: sem isto o modelo continua
   // gerando (e sendo cobrado) para uma tela que ninguém está vendo.
   function fechar() {
@@ -356,6 +397,7 @@ export default function ChatIa({
 
   function novaConversa() {
     abortRef.current?.abort();
+    setEscopoAtual(escopo);
     setAtualId(null);
     setFalas([]);
     setVendoLista(false);
@@ -375,8 +417,9 @@ export default function ChatIa({
     setFalas([]);
     setAbrindo(true);
 
-    const r = await lerConversaIa(id, escopo);
+    const r = global ? await lerConversaIaPorId(id) : await lerConversaIa(id, escopoAtual);
     if (r.ok && r.dados) {
+      if (global && "escopo" in r.dados) setEscopoAtual(r.dados.escopo as string);
       setFalas(r.dados.falas);
     } else if (r.ok) {
       // Sumiu do banco entre a lista e o clique (outra aba apagou).
@@ -394,7 +437,10 @@ export default function ChatIa({
       setAtualId(null);
       setFalas([]);
     }
-    const r = await apagarConversaIa(id, escopo);
+    const r = await apagarConversaIa(
+      id,
+      conversas.find((c) => c.id === id)?.escopo ?? escopoAtual,
+    );
     // Falhou: a linha continua no banco, e esconder isso faria a conversa
     // "voltar" no próximo carregamento sem explicação.
     if (!r.ok) {
@@ -412,7 +458,7 @@ export default function ChatIa({
    */
   async function salvar(todas: Fala[], primeiraPergunta: string) {
     if (atualId) {
-      const r = await gravarConversaIa(atualId, escopo, todas);
+      const r = await gravarConversaIa(atualId, escopoAtual, todas);
       if (!r.ok) {
         setAvisoArmazem(r.erro);
         return;
@@ -432,7 +478,7 @@ export default function ChatIa({
       return;
     }
 
-    const r = await criarConversaIa(escopo, tituloDe(primeiraPergunta), todas);
+    const r = await criarConversaIa(escopoAtual, tituloDe(primeiraPergunta), todas);
     if (!r.ok) {
       setAvisoArmazem(r.erro);
       return;
@@ -553,7 +599,7 @@ export default function ChatIa({
 
   // Conversa aberta pela sidebar (?ia=...) usa sempre a apresentação enxuta:
   // ela sobe sobre a página como os chats de campanha, sem montar um painel.
-  const compactoEfetivo = compacto || abertoPelaSidebarRef.current;
+  const compactoEfetivo = compacto || (!global && abertoPelaSidebarRef.current);
   const lateral = modo === "lateral" && !compactoEfetivo;
 
   const acaoCabecalho =
@@ -666,8 +712,10 @@ export default function ChatIa({
                           {c.titulo}
                         </span>
                         <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">
-                          {dataHora(c.em)} · {c.falas}{" "}
-                          {c.falas === 1 ? "fala" : "falas"}
+                          {dataHora(c.em)} ·{" "}
+                          {c.falas === undefined
+                            ? lugarDoEscopo(c.escopo ?? "")
+                            : `${c.falas} ${c.falas === 1 ? "fala" : "falas"}`}
                         </span>
                       </button>
                       <button
@@ -880,4 +928,62 @@ export default function ChatIa({
       )}
     </>
   );
+}
+
+type PropsChatIa = Parameters<typeof PainelIa>[0];
+
+/**
+ * O chat de uma TELA. Para quem tem o painel fixo (o TI, ./ia-global.tsx), ele
+ * não se desenha: só conta ao fixo o que está na tela — a frase de contexto, o
+ * fluxo aberto, o que recarregar quando a IA gravar. Assim o TI tem UM botão de
+ * IA, o mesmo em todas as abas, e ele não some nem fecha ao trocar de aba.
+ * Para os demais, é o painel de sempre.
+ */
+export default function ChatIa(props: PropsChatIa) {
+  const fixa = useIaFixa();
+  if (fixa) {
+    return (
+      <RegistroNaIaFixa
+        canal={fixa}
+        contexto={props.contexto}
+        extra={props.extra}
+        aoAplicar={props.aoAplicar}
+      />
+    );
+  }
+  return <PainelIa {...props} />;
+}
+
+function RegistroNaIaFixa({
+  canal,
+  contexto,
+  extra,
+  aoAplicar,
+}: {
+  canal: CanalIaFixa;
+  contexto: string;
+  extra?: Record<string, string>;
+  aoAplicar?: () => void;
+}) {
+  const id = useId();
+  // A função de recarregar muda a cada render da tela (é uma arrow inline):
+  // guardada num ref, ela não faz o registro se refazer a cada render.
+  const aplicar = useRef(aoAplicar);
+  useEffect(() => {
+    aplicar.current = aoAplicar;
+  });
+  const temAplicar = Boolean(aoAplicar);
+  const chaveExtra = JSON.stringify(extra ?? null);
+
+  useEffect(() => {
+    canal.registrar(id, {
+      contexto,
+      extra: (JSON.parse(chaveExtra) as Record<string, string> | null) ?? undefined,
+      aoAplicar: temAplicar ? () => aplicar.current?.() : undefined,
+    });
+  }, [canal, id, contexto, chaveExtra, temAplicar]);
+
+  useEffect(() => () => canal.remover(id), [canal, id]);
+
+  return null;
 }

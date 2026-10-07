@@ -25,10 +25,14 @@ type CampanhaWpp = { id:string; nome:string; segmento_nome:string; template_nome
 const numero = (v?: string) => Number(v ?? 0).toLocaleString("pt-BR");
 const campo = "w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[12px] text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100";
 
-export default function PainelCampanhasMeta({ segmentos, tags, funis, etapas }: { segmentos: Segmento[]; tags:Opcao[]; funis:Opcao[]; etapas:EtapaOpcao[] }) {
+type ContaAds = { id: string; name: string; currency: string; timezone_name?: string };
+
+export default function PainelCampanhasMeta({ segmentos, tags, funis, etapas, contasAds, erroContas }: { segmentos: Segmento[]; tags:Opcao[]; funis:Opcao[]; etapas:EtapaOpcao[]; contasAds: ContaAds[]; erroContas: string | null }) {
   const [aba, setAba] = useState<"ads" | "whatsapp">("ads");
   const [canaisRecolhidos, setCanaisRecolhidos] = useState(false);
-  const { dados: status, erro, carregando, atualizar: carregar } = useConsulta<StatusMeta>("/api/meta/status");
+  // O status (WABA, números, templates) é só do WhatsApp: pedido quando a aba
+  // abre. O Meta Ads já tem as contas, que vêm do servidor (ver page.tsx).
+  const { dados: status, erro, carregando, atualizar: carregar } = useConsulta<StatusMeta>(aba === "whatsapp" ? "/api/meta/status" : null);
   return <div className="flex h-screen overflow-hidden bg-conteudo">
     <aside className={`flex h-screen shrink-0 flex-col gap-1 overflow-y-auto border-r border-zinc-200 p-2 transition-[width] dark:border-zinc-800 ${canaisRecolhidos?"w-[60px]":"w-[200px]"}`}>
       <div className={`mb-1 flex items-center py-1.5 ${canaisRecolhidos?"justify-center":"px-2.5"}`}>{!canaisRecolhidos&&<h1 className="min-w-0 flex-1 text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Campanhas</h1>}<BotaoRecolher recolhida={canaisRecolhidos} alternar={()=>setCanaisRecolhidos(v=>!v)}/></div>
@@ -39,7 +43,10 @@ export default function PainelCampanhasMeta({ segmentos, tags, funis, etapas }: 
       </nav>
     </aside>
     <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
-      {carregando ? <div className="px-6 py-6"><Vazio Icone={LoaderCircle} texto="Consultando a Meta…" girando/></div> : erro ? <div className="px-6 py-6"><Aviso texto={erro}/><button onClick={()=>void carregar()} className="mt-3 text-sm">Tentar novamente</button></div> : status && (aba === "ads" ? <PainelAds contas={status.contasAds}/> : <WhatsApp status={status} segmentos={segmentos} tags={tags} funis={funis} etapas={etapas} atualizar={carregar}/>) }
+      {aba === "ads" ? <PainelAds contas={contasAds} erro={erroContas}/>
+        : carregando ? <div className="px-6 py-6"><Vazio Icone={LoaderCircle} texto="Consultando o WhatsApp na Meta…" girando/></div>
+        : erro ? <div className="px-6 py-6"><Aviso texto={erro}/><button onClick={()=>void carregar()} className="mt-3 text-sm">Tentar novamente</button></div>
+        : status && <WhatsApp status={status} segmentos={segmentos} tags={tags} funis={funis} etapas={etapas} atualizar={carregar}/>}
     </main>
   </div>;
 }

@@ -3,7 +3,7 @@
 // Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
 // O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
 // pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
-import { exigirModulo } from "@/lib/auth/dal";
+import { exigirAlgumModulo } from "@/lib/auth/dal";
 
 // Mutações de Contatos. Roda no servidor — trate a entrada como não confiável.
 import { revalidatePath } from "next/cache";
@@ -25,17 +25,18 @@ export type NovoContato = {
 
 /** Anotação é append-only nesta interface: cria, mas não oferece edição ou exclusão. */
 export async function adicionarAnotacao(contatoId: string, textoBruto: string) {
-  const { usuario } = await exigirModulo("inicio");
+  const { usuario } = await exigirAlgumModulo("inicio", "contatos");
   if (!/^[0-9a-f-]{36}$/i.test(contatoId)) throw new Error("Contato inválido.");
   const texto = textoBruto.trim().slice(0, 4000);
   if (!texto) throw new Error("Escreva uma anotação.");
   await sql`INSERT INTO anotacoes (contato_id, texto, autor_id)
             VALUES (${contatoId}::uuid, ${texto}, ${usuario.id}::uuid)`;
   revalidatePath("/");
+  revalidatePath("/contatos");
 }
 
 export async function criarContato(dados: NovoContato): Promise<string> {
-  await exigirModulo("inicio");
+  await exigirAlgumModulo("inicio", "contatos");
   const nome = dados.nome.trim();
   if (!nome) throw new Error("Nome é obrigatório");
 
@@ -47,6 +48,7 @@ export async function criarContato(dados: NovoContato): Promise<string> {
 
   await registrarContatoCriado(novo.id);
   revalidatePath("/");
+  revalidatePath("/contatos");
   return novo.id;
 }
 
@@ -55,7 +57,7 @@ export async function atualizarContato(
   id: string,
   dados: NovoContato,
 ): Promise<void> {
-  await exigirModulo("inicio");
+  await exigirAlgumModulo("inicio", "contatos");
   const nome = dados.nome.trim();
   if (!nome) throw new Error("Nome é obrigatório");
   // O UPDATE mora em lib/historico.ts junto com a linha que ele gera: dizer
@@ -70,6 +72,7 @@ export async function atualizarContato(
     pais: dados.pais.trim() || "Brasil",
   });
   revalidatePath("/");
+  revalidatePath("/contatos");
   revalidatePath("/chat");
 }
 
@@ -77,7 +80,7 @@ export async function atualizarContato(
 // ON CONFLICT DO NOTHING: a PK (contato_id, x_id) já impede duplicar; ignora o
 // clique repetido em vez de estourar.
 export async function adicionarTag(contatoId: string, tagId: string) {
-  await exigirModulo("inicio");
+  await exigirAlgumModulo("inicio", "contatos");
   // RETURNING para não registrar o clique repetido: o ON CONFLICT engole a
   // segunda inserção, e sem esta checagem o histórico ganharia "Tag X
   // adicionada" duas vezes por uma tag só.
@@ -87,30 +90,34 @@ export async function adicionarTag(contatoId: string, tagId: string) {
     RETURNING contato_id`;
   if (linhas.length) await registrarTag(contatoId, tagId, "adicionada");
   revalidatePath("/");
+  revalidatePath("/contatos");
 }
 
 export async function removerTag(contatoId: string, tagId: string) {
-  await exigirModulo("inicio");
+  await exigirAlgumModulo("inicio", "contatos");
   const linhas = await sql`
     DELETE FROM contato_tags
     WHERE contato_id = ${contatoId} AND tag_id = ${tagId}
     RETURNING contato_id`;
   if (linhas.length) await registrarTag(contatoId, tagId, "removida");
   revalidatePath("/");
+  revalidatePath("/contatos");
 }
 
 export async function adicionarSegmento(contatoId: string, segmentoId: string) {
-  await exigirModulo("inicio");
+  await exigirAlgumModulo("inicio", "contatos");
   await sql`
     INSERT INTO contato_segmentos (contato_id, segmento_id)
     VALUES (${contatoId}, ${segmentoId}) ON CONFLICT DO NOTHING`;
   revalidatePath("/");
+  revalidatePath("/contatos");
 }
 
 export async function removerSegmento(contatoId: string, segmentoId: string) {
-  await exigirModulo("inicio");
+  await exigirAlgumModulo("inicio", "contatos");
   await sql`DELETE FROM contato_segmentos WHERE contato_id = ${contatoId} AND segmento_id = ${segmentoId}`;
   revalidatePath("/");
+  revalidatePath("/contatos");
 }
 
 // ── Excluir contato ─────────────────────────────────────────────────────────
@@ -140,7 +147,7 @@ export type ResumoExclusao = {
 export async function resumoExclusaoContato(
   id: string,
 ): Promise<ResumoExclusao> {
-  await exigirModulo("inicio");
+  await exigirAlgumModulo("inicio", "contatos");
   const [linha] = await sql`
     SELECT
       (SELECT count(*) FROM oportunidades WHERE contato_id = ${id}) AS oportunidades,
@@ -161,7 +168,7 @@ export async function resumoExclusaoContato(
 export type ResultadoExclusao = { ok: boolean; erro?: string };
 
 export async function excluirContato(id: string): Promise<ResultadoExclusao> {
-  await exigirModulo("inicio");
+  await exigirAlgumModulo("inicio", "contatos");
 
   // Recontado aqui, e não confiando no número que a tela mostrou: entre abrir
   // a gaveta e clicar pode ter entrado uma oportunidade nova.
@@ -184,6 +191,7 @@ export async function excluirContato(id: string): Promise<ResultadoExclusao> {
 
   // /chat também: a conversa da pessoa deixou de existir junto com ela.
   revalidatePath("/");
+  revalidatePath("/contatos");
   revalidatePath("/chat");
   return { ok: true };
 }

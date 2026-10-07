@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { dividir, metricasAds, origemDaOportunidade, pedidoDeCampanha, resolverOrigem, resumoCrm, type OportunidadeAds } from "../lib/meta-ads-calculos";
+import { dividir, leadsPor, metricasAds, origemDaOportunidade, pedidoDeCampanha, resolverOrigem, resumoCrm, situacaoDosLeads, type EntradaCrm, type OportunidadeAds } from "../lib/meta-ads-calculos";
 import { acaoAds, executarAcaoAds } from "../lib/meta-ads-gestao";
-import { carregarSerieCampanha, consultaAds, serieAds } from "../lib/meta-ads-relatorio";
+import { carregarDetalheCampanha, carregarRelatorioAds, consultaAds, serieAds } from "../lib/meta-ads-relatorio";
 import { listarMeta } from "../lib/meta";
 import type { ObjetoAds } from "../lib/meta-ads-tipos";
 
@@ -21,6 +21,21 @@ async function main() {
   const crm = resumoCrm([op, { ...op, id: "o2", status: "ganha", valor: 300, etapa_id: "e2", etapa_nome: "Proposta", etapa_ordem: 2 }, { ...op, id: "o3", contato_id: "c2", status: "perdida", valor: 500 }]);
   assert.equal(crm.leads, 2); assert.equal(crm.oportunidades, 3); assert.equal(crm.valorGanho, 300); assert.equal(crm.valorAberto, 100); assert.equal(crm.avancaram, 1);
   assert.equal(resumoCrm([op], { funil_id: "outro", ordem: 0 }).avancaram, 0);
+
+  // Leads no CRM: a pessoa conta UMA vez por campanha, no dia da primeira
+  // entrada — o contato que nasceu e a oportunidade dele são a mesma chegada. E
+  // cada pessoa fica com a melhor situação que a atribuição conseguiu.
+  const entradas: EntradaCrm[] = [
+    { contato_id: "c1", dia: "2026-04-01", campos: null, contato_campos: { campaign_id: "100" } },
+    { contato_id: "c1", dia: "2026-04-01", campos: { campaign_id: "100" }, contato_campos: { campaign_id: "100" } },
+    { contato_id: "c2", dia: "2026-04-02", campos: null, contato_campos: {} },
+    { contato_id: "c2", dia: "2026-04-03", campos: { utm_campaign: "Captação" }, contato_campos: {} },
+    { contato_id: "c3", dia: "2026-04-02", campos: null, contato_campos: { utm_campaign: "Google Ads" } },
+    { contato_id: "c4", dia: "2026-04-03", campos: { campaign_id: "100" }, contato_campos: {} },
+  ];
+  const porCampanha = leadsPor(entradas, e => resolverOrigem(origemDaOportunidade(e), catalogo, "campaign").id);
+  assert.deepEqual([...porCampanha.get("100")!], [["c1", "2026-04-01"], ["c4", "2026-04-03"]]);
+  assert.deepEqual(situacaoDosLeads(entradas, catalogo), { total: 4, atribuidos: 2, semOrigem: 0, semCorrespondencia: 1, ambiguas: 1 });
   assert.equal(dividir(100, 0), null);
   const m = metricasAds({ spend: "100", clicks: "20", impressions: "1000", actions: [{ action_type: "lead", value: "3" }, { action_type: "onsite_conversion.lead_grouped", value: "3" }] });
   assert.equal(m.leads, 3); assert.equal(m.cpc, 5); assert.equal(m.ctr, 2); assert.equal(metricasAds().cpc, null);
@@ -41,6 +56,8 @@ async function main() {
     if (caminho === "me/permissions") return Response.json({ data: gestao ? [{ permission: "ads_management", status: "granted" }] : [] });
     if (caminho === "100") return Response.json({ id: "100", account_id: contaObjeto, daily_budget: "1000" });
     if (caminho === "act_1/campaigns") return Response.json({ data: [{ id: "100", name: "Captação" }] });
+    // Conjuntos e anúncios da gaveta: a campanha não tem nenhum.
+    if (caminho === "act_1/adsets" || caminho === "act_1/ads") return Response.json({ data: [] });
     if (caminho === "act_1/insights") return Response.json({ data: [{ campaign_id: "100", date_start: "2026-04-02", spend: "50", clicks: "10", actions: [{ action_type: "lead", value: "2" }] }] });
     if (caminho === "paginas") return Response.json(url.searchParams.has("after") ? { data: [{ id: "2" }] } : { data: [{ id: "1" }], paging: { next: "https://graph.facebook.com/ignored", cursors: { after: "cursor" } } });
     throw new Error(`Consulta inesperada no teste: ${caminho}`);
@@ -61,18 +78,26 @@ async function main() {
     await assert.rejects(() => executarAcaoAds({ ...entrada, acao: "editar", status: "ACTIVE" }));
     assert.equal(escritas.length, 0);
 
-    // Série da gaveta: sem acesso ao CRM não encosta no banco, e todo dia do
-    // período aparece — inclusive os sem veiculação, que é o que desenha a
-    // pausa no gráfico em vez de emendar uma reta entre dois dias distantes.
+    // Relatório da conta sem acesso ao CRM: não encosta no banco, soma o
+    // investimento pelas campanhas e põe todo dia do período no gráfico.
+    const relatorio = await carregarRelatorioAds({ conta: "act_1", inicio: "2026-04-01", fim: "2026-04-03" }, { permitido: false, dono: null });
+    assert.equal(relatorio.total.gasto, 50); assert.equal(relatorio.total.leadsMeta, 2);
+    assert.equal(relatorio.total.crm, null); assert.equal(relatorio.leadsCrm, null);
+    assert.deepEqual(relatorio.diario.map(d => [d.dia, d.leadsMeta]), [["2026-04-01", 0], ["2026-04-02", 2], ["2026-04-03", 0]]);
+
+    // Gaveta: idem, e todo dia do período aparece — inclusive os sem
+    // veiculação, que é o que desenha a pausa no gráfico em vez de emendar uma
+    // reta entre dois dias distantes.
     assert.equal(serieAds.safeParse({ conta: "act_1", inicio: "2026-04-01", fim: "2026-04-03" }).success, false);
-    const serie = await carregarSerieCampanha({ conta: "act_1", campanha: "100", inicio: "2026-04-01", fim: "2026-04-03" }, { permitido: false, dono: null });
+    const serie = await carregarDetalheCampanha({ conta: "act_1", campanha: "100", inicio: "2026-04-01", fim: "2026-04-03" }, { permitido: false, dono: null });
     assert.equal(serie.crm, false);
     assert.equal(serie.campanha.nome, "Captação");
     assert.deepEqual(serie.dias.map(d => d.dia), ["2026-04-01", "2026-04-02", "2026-04-03"]);
-    assert.deepEqual(serie.dias[1], { dia: "2026-04-02", gasto: 50, cliques: 10, leads: 2, oportunidades: 0, ganhas: 0, valorGanho: 0 });
+    assert.deepEqual(serie.dias[1], { dia: "2026-04-02", gasto: 50, cliques: 10, leadsMeta: 2, leadsCrm: 0, oportunidades: 0, ganhas: 0, valorGanho: 0 });
     assert.equal(serie.dias[0].gasto, 0);
-    await assert.rejects(() => carregarSerieCampanha({ conta: "act_1", campanha: "999", inicio: "2026-04-01", fim: "2026-04-03" }, { permitido: false, dono: null }));
+    assert.deepEqual([serie.conjuntos, serie.anuncios], [[], []]);
+    await assert.rejects(() => carregarDetalheCampanha({ conta: "act_1", campanha: "999", inicio: "2026-04-01", fim: "2026-04-03" }, { permitido: false, dono: null }));
   } finally { globalThis.fetch = originalFetch; if (originalToken === undefined) delete process.env.META_SYSTEM_USER_TOKEN; else process.env.META_SYSTEM_USER_TOKEN = originalToken; }
-  console.log("Meta Ads: atribuição, coorte, métricas, datas, paginação, permissões, série diária da campanha e escritas validadas sem alterar a Meta.");
+  console.log("Meta Ads: atribuição, leads do CRM, coorte, métricas, datas, paginação, permissões, relatório, gaveta da campanha e escritas validadas sem alterar a Meta.");
 }
 void main();

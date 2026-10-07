@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { exigirModuloApi } from "@/lib/auth/dal";
 import { respostaErroMeta, ErroMeta } from "@/lib/meta";
-import { carregarRelatorioAds, carregarSerieCampanha, consultaAds, serieAds } from "@/lib/meta-ads-relatorio";
+import { carregarDetalheCampanha, carregarRelatorioAds, consultaAds, serieAds } from "@/lib/meta-ads-relatorio";
 import { acaoAds, executarAcaoAds, recursosAds } from "@/lib/meta-ads-gestao";
 
 export const dynamic = "force-dynamic";
@@ -16,12 +16,12 @@ export async function GET(req: NextRequest) {
     }
     const escopo = acesso.usuario.modulos.get("inicio");
     const crm = { permitido: Boolean(escopo), dono: escopo === "proprio" ? acesso.usuario.id : null };
-    // A gaveta de uma campanha pede só a série dela: o relatório inteiro já
-    // está na tela e recarregá-lo a cada clique custaria oito chamadas à Meta.
+    // A gaveta de uma campanha pede só o que é dela (série, conjuntos e
+    // anúncios): o relatório da conta já está na tela.
     if (req.nextUrl.searchParams.get("serie") === "1") {
       const s = serieAds.safeParse(Object.fromEntries(req.nextUrl.searchParams));
       if (!s.success) return Response.json({ erro: s.error.issues[0].message }, { status: 400 });
-      return Response.json(await carregarSerieCampanha(s.data, crm));
+      return Response.json(await carregarDetalheCampanha(s.data, crm));
     }
     const q = consultaAds.safeParse(Object.fromEntries(req.nextUrl.searchParams));
     if (!q.success) return Response.json({ erro: q.error.issues[0].message }, { status: 400 });

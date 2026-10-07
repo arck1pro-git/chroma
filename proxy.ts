@@ -34,6 +34,11 @@ const PUBLICAS_PREFIXO = [
   "/api/publico/",
   // Captação de formulário: quem chama é o site do cliente, sem sessão.
   "/api/webhooks/",
+  // O vídeo que vai para o lead (app/v/[slug]) e o que o player dele chama
+  // (app/api/v). A tranca é o slug sorteado do vídeo; os sinais de tempo
+  // assistido ainda exigem o token da abertura (lib/videos.ts).
+  "/v/",
+  "/api/v/",
 ];
 
 // Porta de serviço do n8n. Cada uma confere `Authorization: Bearer
@@ -50,6 +55,8 @@ const SERVICO_EXATAS = new Set([
   // O motor pedindo o envio de uma mensagem da cadência. Quem tem a credencial
   // da uazapi é o CRM, não o n8n — ver app/api/automacoes/enviar/route.ts.
   "/api/automacoes/enviar",
+  // A rodada das retomadas da IA (lib/ia/retomada.ts), de 5 em 5 minutos.
+  "/api/ia/retomar",
 ]);
 
 function dispensaSessao(caminho: string): boolean {

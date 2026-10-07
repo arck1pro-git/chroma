@@ -8,7 +8,7 @@ type Campanha = {id:string;name:string;effective_status:string};
 type Conjunto = {id:string;nome:string;anuncios:Array<{id:string;nome:string}>};
 
 export default function DashboardMetaAds({corSelecionada, filtro, aoFiltrar}:{corSelecionada:string; filtro:FiltroCampanhas; aoFiltrar:(filtro:FiltroCampanhas)=>void}){
-  const status=useConsulta<{contasAds:Array<{id:string;name:string}>}>("/api/meta/status");
+  const status=useConsulta<{contasAds:Array<{id:string;name:string}>}>("/api/meta/ads?contas=1");
   const [contaId,setConta]=useState("");
   const conta=contaId||status.dados?.contasAds[0]?.id;
   const ads=useConsulta<{campanhas:Campanha[]}>(conta?`/api/meta/ads?conta=${encodeURIComponent(conta)}`:null);

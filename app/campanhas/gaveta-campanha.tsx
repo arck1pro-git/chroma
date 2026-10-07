@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
-import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowUpRight, LoaderCircle, Settings2, Target, TrendingUp, Trophy, Wallet, X } from "lucide-react";
-import type { LinhaAds, SerieCampanhaAds } from "@/lib/meta-ads-tipos";
+import { useCallback, useEffect } from "react";
+import { ArrowUpRight, Contact, LoaderCircle, Megaphone, Settings2, TrendingUp, Wallet, X } from "lucide-react";
+import type { DetalheCampanhaAds, DiaCampanhaAds, LinhaAds } from "@/lib/meta-ads-tipos";
 import { dividir } from "@/lib/meta-ads-calculos";
 import Indicador from "../components/indicador";
+import { corDoCss, degrade, useGrafico, type Desenho } from "../components/grafico-canvas";
 import { useConsulta } from "./use-consulta";
 import { botaoAds, entregaLegivel, objetivos } from "./pecas";
 
@@ -18,22 +18,28 @@ import { botaoAds, entregaLegivel, objetivos } from "./pecas";
 // onde têm denominador visível, em vez de um parágrafo solto repetindo o que os
 // indicadores do topo já disseram.
 //
-// Tudo que veio no relatório da conta é lido das props; a série diária é a única
-// consulta nova, e só sai quando a gaveta abre.
+// Os números do topo vêm da linha da lista (o relatório da conta). O resto —
+// série por dia, conjuntos e anúncios — é a carga da própria gaveta, pedida só
+// quando ela abre (lib/meta-ads-relatorio.ts, carregarDetalheCampanha).
+//
+// Meta × CRM aqui também: os dois leads lado a lado no topo, nas linhas do
+// gráfico (nas mesmas cores do resumo da lista) e em cada conjunto e anúncio.
 
 const numero = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 const inteiro = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 const diaCurto = (v: string) => String(v).slice(5).split("-").reverse().join("/");
 
-export default function GavetaCampanha({ linha, conjuntos, anuncios, conta, periodo, podeGerenciar, gerenciando, aoGerenciar, aoFechar }: {
-  linha: LinhaAds; conjuntos: LinhaAds[]; anuncios: LinhaAds[];
+export default function GavetaCampanha({ linha, conta, periodo, podeGerenciar, gerenciando, aoGerenciar, aoFechar }: {
+  linha: LinhaAds;
   conta: { id: string; currency: string }; periodo: { inicio: string; fim: string };
   podeGerenciar: boolean; gerenciando: boolean; aoGerenciar: (item: LinhaAds) => void; aoFechar: () => void;
 }) {
   const m = linha.metricas, crm = linha.crm;
   const moedasIguais = conta.currency === "BRL";
   const dinheiro = (v: number | null, moeda = conta.currency) => v === null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: moeda });
-  const serie = useConsulta<SerieCampanhaAds>(`/api/meta/ads/painel?${new URLSearchParams({ serie: "1", conta: conta.id, campanha: linha.id, ...periodo })}`);
+  const detalhe = useConsulta<DetalheCampanhaAds>(`/api/meta/ads/painel?${new URLSearchParams({ serie: "1", conta: conta.id, campanha: linha.id, ...periodo })}`);
+  const conjuntos = detalhe.dados?.conjuntos ?? [], anuncios = detalhe.dados?.anuncios ?? [];
+  const carregandoDetalhe = detalhe.carregando || !detalhe.dados;
 
   // Esc fecha a gaveta — menos quando o painel de gestão está por cima, que tem
   // o próprio Esc: sem esta saída uma tecla fecharia os dois de uma vez.
@@ -90,30 +96,17 @@ export default function GavetaCampanha({ linha, conjuntos, anuncios, conta, peri
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         <div className="grid grid-cols-2 gap-2">
           <Indicador ordem={0} Icone={Wallet} rotulo="Investido" valor={dinheiro(m.gasto)} detalhe={`${inteiro(m.impressoes)} impressões`}/>
-          <Indicador ordem={1} Icone={Target} rotulo="Oportunidades" valor={crm ? inteiro(crm.oportunidades) : "—"} detalhe={crm ? `${inteiro(crm.leads)} leads · ${inteiro(crm.abertas)} em aberto` : "Sem acesso ao funil"}/>
-          <Indicador ordem={2} Icone={Trophy} rotulo="Valor ganho" valor={crm ? dinheiro(crm.valorGanho, "BRL") : "—"} detalhe={crm ? `${inteiro(crm.ganhas)} ganhas · ${inteiro(crm.perdidas)} perdidas` : "Sem acesso ao funil"}/>
+          <Indicador ordem={1} Icone={Megaphone} rotulo="Leads na Meta" valor={inteiro(m.leads)} detalhe={m.leads > 0 ? `${dinheiro(dividir(m.gasto, m.leads))} por lead` : "Nenhum lead no período"}/>
+          <Indicador ordem={2} Icone={Contact} rotulo="Leads no CRM" valor={crm ? inteiro(crm.leads) : "—"}
+            detalhe={crm ? (crm.leads > 0 ? `${dinheiro(dividir(m.gasto, crm.leads))} por lead${m.leads > 0 ? ` · ${inteiro(crm.leads / m.leads * 100)}% da Meta` : ""}` : "Nenhum lead no período") : "Sem acesso ao funil"}/>
           <Indicador ordem={3} Icone={TrendingUp} rotulo="Retorno" valor={crm && moedasIguais && m.gasto > 0 ? `${numero(crm.valorGanho / m.gasto)}×` : "—"}
-            detalhe={crm ? `${dinheiro(crm.valorAberto, "BRL")} ainda em aberto` : `Investimento em ${conta.currency}`}/>
+            detalhe={crm ? `${dinheiro(crm.valorGanho, "BRL")} ganho · ${inteiro(crm.ganhas)} ${crm.ganhas === 1 ? "venda" : "vendas"}` : `Investimento em ${conta.currency}`}/>
         </div>
 
-        <Bloco titulo="Dia a dia" descricao="Investimento da campanha e oportunidades criadas no mesmo dia, no fuso da conta.">
-          {serie.erro ? <p role="alert" className="py-10 text-center text-[11px] text-red-600 dark:text-red-400">{serie.erro}</p>
-            : serie.carregando || !serie.dados ? <p className="flex items-center justify-center gap-2 py-14 text-[11px] text-zinc-400"><LoaderCircle className="size-3.5 animate-spin" aria-hidden="true"/>Consultando a série da campanha…</p>
-            : <div className="h-44">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={serie.dados.dias} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                    <defs><linearGradient id={`gasto-${linha.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#71717a" stopOpacity={0.3}/><stop offset="100%" stopColor="#71717a" stopOpacity={0}/></linearGradient></defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7"/>
-                    <XAxis dataKey="dia" tickFormatter={diaCurto} tick={{ fontSize: 9 }} minTickGap={16}/>
-                    <YAxis yAxisId="gasto" width={52} tick={{ fontSize: 9 }}/>
-                    <YAxis yAxisId="crm" orientation="right" width={26} allowDecimals={false} tick={{ fontSize: 9 }}/>
-                    <Tooltip labelFormatter={v => String(v).split("-").reverse().join("/")}
-                      formatter={(v, nome) => [nome === "gasto" ? dinheiro(Number(v)) : inteiro(Number(v)), nome === "gasto" ? "Investido" : "Oportunidades"]}/>
-                    <Area yAxisId="gasto" type="monotone" dataKey="gasto" stroke="#71717a" fill={`url(#gasto-${linha.id})`}/>
-                    {serie.dados.crm && <Line yAxisId="crm" type="monotone" dataKey="oportunidades" stroke="#10b981" strokeWidth={2} dot={false}/>}
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>}
+        <Bloco titulo="Dia a dia" descricao="Investimento (área) e leads na Meta e no CRM no mesmo dia, no fuso da conta.">
+          {detalhe.erro ? <p role="alert" className="py-10 text-center text-[11px] text-red-600 dark:text-red-400">{detalhe.erro}</p>
+            : carregandoDetalhe ? <p className="flex items-center justify-center gap-2 py-14 text-[11px] text-zinc-400"><LoaderCircle className="size-3.5 animate-spin" aria-hidden="true"/>Consultando a campanha…</p>
+            : <SerieDiaria dias={detalhe.dados!.dias} crm={detalhe.dados!.crm} moeda={conta.currency}/>}
         </Bloco>
 
         <Bloco titulo="Do clique ao ganho" descricao="Quanto sobra de um degrau para o outro e quanto custa cada unidade. A Meta conta conversões pelas próprias regras; o CRM conta oportunidades criadas no período.">
@@ -146,7 +139,8 @@ export default function GavetaCampanha({ linha, conjuntos, anuncios, conta, peri
           </dl>
         </Bloco>
 
-        <Bloco titulo={`Conjuntos e anúncios · ${conjuntos.length}`}>
+        <Bloco titulo={carregandoDetalhe ? "Conjuntos e anúncios" : `Conjuntos e anúncios · ${conjuntos.length}`}>
+          {carregandoDetalhe && !detalhe.erro ? <p className="flex items-center justify-center gap-2 py-8 text-[11px] text-zinc-400"><LoaderCircle className="size-3.5 animate-spin" aria-hidden="true"/>Consultando conjuntos e anúncios…</p> :
           <div className="space-y-2">
             {conjuntos.map(j => <div key={j.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
               <Peca item={j} dinheiro={dinheiro} podeGerenciar={podeGerenciar} aoGerenciar={aoGerenciar}/>
@@ -155,7 +149,7 @@ export default function GavetaCampanha({ linha, conjuntos, anuncios, conta, peri
               </div>)}
             </div>)}
             {!conjuntos.length && <p className="py-8 text-center text-[11px] text-zinc-400">Esta campanha não tem conjuntos cadastrados.</p>}
-          </div>
+          </div>}
         </Bloco>
 
         <div className="flex items-center justify-between gap-2 pb-1">
@@ -177,6 +171,77 @@ function Bloco({ titulo, descricao, children }: { titulo: string; descricao?: st
   </section>;
 }
 
+// Investimento (área, eixo da esquerda) e leads na Meta e no CRM (linhas, eixo
+// da direita) por dia. Dois eixos aqui, ao contrário do LinhasPorDia: dinheiro
+// e contagem não dividem escala. As cores dos leads são as do resumo da lista
+// (o par azul de .viz[data-tom="blue"]), lidas do CSS na hora de desenhar.
+function SerieDiaria({ dias, crm, moeda }: { dias: DiaCampanhaAds[]; crm: boolean; moeda: string }) {
+  const desenhar = useCallback((canvas: HTMLCanvasElement): Desenho => {
+    const corMeta = corDoCss(canvas, "var(--serie-tom-claro)"), corCrm = corDoCss(canvas, "var(--serie-tom-escuro)");
+    // Moldura e tooltip pelos tokens do tema (.viz e :root), como o LinhasPorDia:
+    // com as cores fixas de antes, a grade saía branca no modo escuro.
+    const cor = (v: string) => corDoCss(canvas, v);
+    const traco = cor("var(--viz-eixo)"), grade = cor("var(--viz-grade)"), fundo = cor("var(--background)"), tinta = cor("var(--foreground)");
+    const eixo = { color: traco, font: { size: 9 } };
+    const ponto = (cor: string) => ({
+      borderColor: cor, cubicInterpolationMode: "monotone" as const,
+      pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: cor, pointHoverBorderColor: fundo, pointHoverBorderWidth: 2,
+    });
+    return {
+      data: {
+        labels: dias.map(d => diaCurto(d.dia)),
+        datasets: [
+          { label: "Investido", yAxisID: "gasto", data: dias.map(d => d.gasto), ...ponto("#71717a"), borderWidth: 1, backgroundColor: degrade("#71717a", 0.3), fill: "origin", order: 1 },
+          { label: "Leads na Meta", yAxisID: "leads", data: dias.map(d => d.leadsMeta), ...ponto(corMeta), borderWidth: 2, fill: false, order: 0 },
+          ...(crm ? [{ label: "Leads no CRM", yAxisID: "leads", data: dias.map(d => d.leadsCrm), ...ponto(corCrm), borderWidth: 2, fill: false, order: 0 }] : []),
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, locale: "pt-BR",
+        transitions: { active: { animation: { duration: 0 } } },
+        layout: { padding: { top: 4, right: 4 } },
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: { grid: { drawOnChartArea: false, color: traco }, border: { color: traco }, ticks: { ...eixo, maxRotation: 0, autoSkipPadding: 16 } },
+          gasto: { position: "left", beginAtZero: true, grid: { color: grade, tickColor: traco }, border: { color: traco, dash: [3, 3] }, ticks: eixo,
+            afterFit: e => { e.width = 52; } },
+          leads: { position: "right" as const, beginAtZero: true, grid: { drawOnChartArea: false, color: traco }, border: { color: traco }, ticks: { ...eixo, precision: 0 },
+            afterFit: (e: { width: number }) => { e.width = 26; } },
+        },
+        plugins: {
+          cursor: { cor: cor("var(--viz-cursor)") },
+          tooltip: {
+            backgroundColor: fundo, borderColor: grade, borderWidth: 1, titleColor: tinta, bodyColor: tinta,
+            titleFont: { size: 11, weight: "normal" }, bodyFont: { size: 11 }, padding: 8, boxWidth: 8, boxHeight: 8, boxPadding: 4,
+            itemSort: (a, b) => a.datasetIndex - b.datasetIndex,
+            callbacks: {
+              title: ([p]) => p ? dias[p.dataIndex].dia.split("-").reverse().join("/") : "",
+              label: p => p.datasetIndex === 0
+                ? `Investido: ${Number(p.parsed.y).toLocaleString("pt-BR", { style: "currency", currency: moeda })}`
+                : `${p.dataset.label}: ${inteiro(Number(p.parsed.y))}`,
+              labelColor: p => { const cor = String(p.dataset.borderColor); return { borderColor: cor, backgroundColor: cor }; },
+            },
+          },
+        },
+      },
+    };
+  }, [dias, crm, moeda]);
+  const canvas = useGrafico(desenhar);
+  // .viz e data-tom: é deles que saem as duas cores dos leads (ver acima).
+  // Legenda sempre: duas linhas azuis sem nome seriam adivinhação.
+  const legenda = [
+    { nome: "Investido", marca: <span className="h-2 w-3 shrink-0 rounded-sm bg-zinc-400/50" aria-hidden="true"/> },
+    { nome: "Leads na Meta", marca: <span className="h-0.5 w-3 shrink-0 rounded-full" style={{ background: "var(--serie-tom-claro)" }} aria-hidden="true"/> },
+    ...(crm ? [{ nome: "Leads no CRM", marca: <span className="h-0.5 w-3 shrink-0 rounded-full" style={{ background: "var(--serie-tom-escuro)" }} aria-hidden="true"/> }] : []),
+  ];
+  return <div className="viz" data-tom="blue">
+    <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+      {legenda.map(l => <span key={l.nome} className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">{l.marca}{l.nome}</span>)}
+    </div>
+    <div className="relative h-44"><canvas ref={canvas} aria-hidden="true"/></div>
+  </div>;
+}
+
 // Conjunto ou anúncio: mesma linha para os dois, porque a pergunta é a mesma —
 // quanto consumiu e o que rendeu.
 function Peca({ item, dinheiro, podeGerenciar, aoGerenciar, miudo }: {
@@ -188,7 +253,8 @@ function Peca({ item, dinheiro, podeGerenciar, aoGerenciar, miudo }: {
       <p className="mt-0.5 truncate text-[10px] text-zinc-400">
         {item.effective_status !== "ACTIVE" ? `${entregaLegivel(item.effective_status)} · ` : ""}
         {dinheiro(item.metricas.gasto)}
-        {item.crm ? ` · ${item.crm.oportunidades} oportunidades · ${item.crm.ganhas} ganhas` : ""}
+        {` · ${item.metricas.leads} ${item.metricas.leads === 1 ? "lead" : "leads"} na Meta`}
+        {item.crm ? ` · ${item.crm.leads} no CRM · ${item.crm.oportunidades} ${item.crm.oportunidades === 1 ? "oportunidade" : "oportunidades"}` : ""}
       </p>
     </div>
     <button type="button" disabled={!podeGerenciar} onClick={() => aoGerenciar(item)} aria-label={`Gerenciar ${item.name}`}

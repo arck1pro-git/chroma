@@ -142,7 +142,6 @@ export type Atendimento = {
   // e exige template fora dela —, por isso não são o mesmo valor.
   canal: "whatsapp" | "whatsapp_oficial" | "instagram" | "email";
   numero_instancia: string | null; // qual número nosso recebeu (whatsapp)
-  oportunidade_id: string | null; // atendimento anexado a esta oportunidade
   data_criacao: string;
   nao_lidas: number; // ⚠ derivado de lido_em
 };

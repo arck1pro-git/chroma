@@ -42,9 +42,12 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Blocks,
   CalendarDays,
+  Clapperboard,
+  UsersRound,
   ChartNoAxesColumn,
   ChevronRight,
   Grid2x2,
+  ListChecks,
   FileText,
   LayoutDashboard,
   Link2,
@@ -68,6 +71,7 @@ import ModalNovoBlog, { type BlogCriado } from "./modal-novo-blog";
 import SeloWhatsApp from "./selo-whatsapp";
 import type { ConversaNaBarra } from "@/lib/ia/conversas";
 import { lugarDoEscopo, rotaDaConversa } from "@/lib/ia/navegacao";
+import { EVENTO_NOVA_ANALISE } from "./ia-global-contexto";
 import { sair } from "@/app/login/acoes";
 import type { ChaveModulo } from "@/lib/auth/modulos";
 
@@ -86,7 +90,9 @@ import type { ChaveModulo } from "@/lib/auth/modulos";
 const ICONES: Record<ChaveModulo, LucideIcon> = {
   inicio: LayoutDashboard,
   chat: MessagesSquare,
+  contatos: UsersRound,
   agenda: CalendarDays,
+  demandas: ListChecks,
   metricas: ChartNoAxesColumn,
   emails: Mail,
   automacoes: Workflow,
@@ -95,11 +101,41 @@ const ICONES: Record<ChaveModulo, LucideIcon> = {
   blog: Newspaper,
   webhooks: Webhook,
   documentos: Paperclip,
+  videos: Clapperboard,
   contextos: Blocks,
   meta: Grid2x2,
   integracoes: Link2,
   configuracoes: Settings,
 };
+
+// O "+" de Análises: para o TI, um botão que abre o painel fixo na hora (sem
+// navegar — ver EVENTO_NOVA_ANALISE); para os demais, o link de sempre para a
+// raiz.
+function BotaoNovaAnalise({
+  iaFixa,
+  className,
+  tamanho,
+}: {
+  iaFixa: boolean;
+  className: string;
+  tamanho: string;
+}) {
+  return iaFixa ? (
+    <button
+      type="button"
+      onClick={() => window.dispatchEvent(new Event(EVENTO_NOVA_ANALISE))}
+      aria-label="Nova análise"
+      title="Nova análise"
+      className={className}
+    >
+      <Plus className={tamanho} aria-hidden="true" />
+    </button>
+  ) : (
+    <Link href="/?ia=nova" aria-label="Nova análise" title="Nova análise" className={className}>
+      <Plus className={tamanho} aria-hidden="true" />
+    </Link>
+  );
+}
 
 /** O que o servidor manda desenhar. Ver `modulosDaBarra` em app/layout.tsx. */
 export type ItemDeModulo = { chave: ChaveModulo; rotulo: string; href: string };
@@ -240,6 +276,7 @@ export default function Sidebar({
   modulos,
   temConfiguracoes,
   podeWhatsApp = false,
+  iaFixa = false,
 }: {
   usuario: UsuarioDaBarra | null;
   /** Já peneirados pelo departamento, no servidor. */
@@ -248,11 +285,24 @@ export default function Sidebar({
   temConfiguracoes: boolean;
   /** Só o módulo 'configuracoes': é o que as actions da uazapi exigem. */
   podeWhatsApp?: boolean;
+  /**
+   * O painel fixo de IA do TI (app/components/ia-global.tsx). Com ele, o "+" e
+   * as conversas abrem a IA NA TELA EM QUE SE ESTÁ, em vez de levar à raiz ou à
+   * tela onde a conversa nasceu.
+   */
+  iaFixa?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const parametros = useSearchParams();
   const conversaAberta = parametros.get("ia");
+
+  // ?ia=<valor> na própria tela, preservando o resto da URL (?video=, ?webhook=…).
+  const naTela = (valor: string) => {
+    const busca = new URLSearchParams(parametros.toString());
+    busca.set("ia", valor);
+    return `${pathname}?${busca.toString()}`;
+  };
 
   const estaEm = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -343,7 +393,10 @@ export default function Sidebar({
   //
   // Depois de TODOS os hooks, nunca antes: sair no meio muda a quantidade de
   // hooks entre um render e outro e o React quebra.
-  if (!usuario) return null;
+  //
+  // A página do vídeo (/v/…) é do LEAD: sem barra mesmo para quem está logado
+  // — é assim que o time confere o link vendo o que o lead vai ver.
+  if (!usuario || pathname.startsWith("/v/")) return null;
 
   // Clicar em Blog com a barra recolhida ABRE a barra junto: a sanfona não cabe
   // num trilho de 60px, e abrir uma lista que ninguém consegue ler seria um
@@ -529,14 +582,11 @@ export default function Sidebar({
           análise, que continua sendo uma ação de um clique. */}
       <div className="mt-2 flex min-h-0 flex-1 flex-col">
         {recolhida ? (
-          <Link
-            href="/?ia=nova"
-            aria-label="Nova análise"
-            title="Nova análise"
+          <BotaoNovaAnalise
+            iaFixa={iaFixa}
             className="flex h-8 w-full items-center justify-center rounded-lg text-zinc-950 transition-colors hover:bg-zinc-100 dark:text-zinc-50 dark:hover:bg-zinc-800/60"
-          >
-            <Plus className="size-4" aria-hidden="true" />
-          </Link>
+            tamanho="size-4"
+          />
         ) : (
           <>
             <div className="flex items-center justify-between gap-1 pb-1 pl-2.5 pr-1">
@@ -555,14 +605,11 @@ export default function Sidebar({
                   "?ia=nova" é consumido pelo painel assim que ele abre — a URL
                   fica limpa de novo, e é isso que faz o segundo clique aqui
                   voltar a ser uma navegação de verdade. */}
-              <Link
-                href="/?ia=nova"
-                aria-label="Nova análise"
-                title="Nova análise"
+              <BotaoNovaAnalise
+                iaFixa={iaFixa}
                 className="flex size-6 shrink-0 items-center justify-center rounded-md text-zinc-950 transition-colors hover:bg-zinc-100 dark:text-zinc-50 dark:hover:bg-zinc-800/60"
-              >
-                <Plus className="size-3.5" aria-hidden="true" />
-              </Link>
+                tamanho="size-3.5"
+              />
             </div>
 
             {conversas.length === 0 ? (
@@ -578,7 +625,7 @@ export default function Sidebar({
                   return (
                     <li key={c.id}>
                       <Link
-                        href={rotaDaConversa(c.escopo, c.id)}
+                        href={iaFixa ? naTela(c.id) : rotaDaConversa(c.escopo, c.id)}
                         aria-current={ativa ? "page" : undefined}
                         className={classesDoItem(ativa)}
                         title={`${c.titulo} · ${lugarDoEscopo(c.escopo)}`}

@@ -20,15 +20,23 @@ export function montarWorkflowCampanha({ campanhaId, nome, crmBaseUrl, credencia
   };
 }
 
-export async function publicarWorkflowCampanha(dados:{campanhaId:string;nome:string;crmBaseUrl:string}){
+/**
+ * A credencial do n8n com o token de serviço do CRM (Header Auth), criada na
+ * primeira vez. Os agendadores que chamam o CRM de volta usam esta mesma: as
+ * campanhas e as retomadas da IA (lib/ia/retomada.ts).
+ */
+export async function garantirCredencialDoCrm(): Promise<{ id: string }> {
   const token=process.env.CRM_SERVICE_TOKEN;
-  if(!token)throw new Error("CRM_SERVICE_TOKEN não definido para o executor da campanha.");
-  let credencial=await credencialDoMotor("n8n",CHAVE_CREDENCIAL);
-  if(!credencial){
-    const id=await criarCredencial("Chroma · CRM (token de serviço)","httpHeaderAuth",{name:"Authorization",value:`Bearer ${token}`});
-    await sql`INSERT INTO motor_credenciais(chave,motor,motor_cred_id,motor_cred_tipo,descricao) VALUES(${CHAVE_CREDENCIAL},'n8n',${id},'httpHeaderAuth','Campanhas oficiais de WhatsApp') ON CONFLICT(motor,chave) DO NOTHING`;
-    credencial={id,nome:CHAVE_CREDENCIAL};
-  }
+  if(!token)throw new Error("CRM_SERVICE_TOKEN não definido: sem ele o n8n não consegue chamar o CRM.");
+  const credencial=await credencialDoMotor("n8n",CHAVE_CREDENCIAL);
+  if(credencial)return credencial;
+  const id=await criarCredencial("Chroma · CRM (token de serviço)","httpHeaderAuth",{name:"Authorization",value:`Bearer ${token}`});
+  await sql`INSERT INTO motor_credenciais(chave,motor,motor_cred_id,motor_cred_tipo,descricao) VALUES(${CHAVE_CREDENCIAL},'n8n',${id},'httpHeaderAuth','Campanhas oficiais de WhatsApp') ON CONFLICT(motor,chave) DO NOTHING`;
+  return {id};
+}
+
+export async function publicarWorkflowCampanha(dados:{campanhaId:string;nome:string;crmBaseUrl:string}){
+  const credencial=await garantirCredencialDoCrm();
   const id=await criarWorkflow(montarWorkflowCampanha({...dados,credencialId:credencial.id}));
   await ativarWorkflow(id);
   return id;

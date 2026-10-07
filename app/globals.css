@@ -174,10 +174,6 @@ body {
 .viz {
   --serie-ok: #2a78d6;
   --serie-erro: #d03b3b;
-  /* Segunda série que NÃO é erro (reuniões, no gráfico de IA do dashboard):
-     laranja, o slot 2 do categórico. Com o azul de --serie-ok passa em todos
-     os checks — ΔE 24.7 protan no claro, 26.8 no escuro. */
-  --serie-reuniao: #eb6834;
   /* A moldura do gráfico (app/components/grafico-linhas.tsx): grade e eixo
      recessivos, um degrau fora da superfície; o cursor um pouco mais forte
      para a linha vertical do dia sob o mouse aparecer sobre a grade. */
@@ -188,11 +184,55 @@ body {
 @media (prefers-color-scheme: dark) {
   .viz {
     --serie-ok: #3987e5;
-    --serie-reuniao: #d95926;
     --viz-grade: #27272a;
     --viz-eixo: #71717a;
     --viz-cursor: #52525b;
   }
+}
+
+/* As duas pontas do TOM DO FUNIL (funis.cor, o que se escolhe na configuração
+   do funil), para gráfico que acompanha o funil — o de IA do dashboard:
+   --serie-tom-claro é a ponta clara (onde o lead entra), --serie-tom-escuro a
+   escura (perto do fechamento), a mesma leitura das colunas. Quem usa põe
+   data-tom no .viz (LinhasPorDia, prop `tom`).
+
+   Não são os degraus 300 e 950 ao pé da letra: o 300 some no branco (~1,8:1) e
+   o 950 some no fundo escuro e lê como cinza. Para cada tom e modo, andando
+   pela rampa do Tailwind em OKLCH, é o claro mais perto do 300 e o escuro mais
+   perto do 950 que passam no validador do dataviz: L na faixa do modo, 3:1
+   sobre a superfície (branco / zinc-950) e ΔE ≥ 15 entre os dois (normal e
+   daltonismo). Cinza, ciano e verde-azulado ficam sem o piso de croma: o sRGB
+   não leva o escuro desses tons a 0,10 (o funil mostra o mesmo escuro).
+
+   MANTER em sincronia com TONS_FUNIL (lib/cores-funil.ts): tom novo lá pede a
+   linha dele aqui, validada do mesmo jeito. */
+.viz[data-tom="blue"]    { --serie-tom-claro: #4493ff; --serie-tom-escuro: #193dbf; }
+.viz[data-tom="sky"]     { --serie-tom-claro: #009ce1; --serie-tom-escuro: #005986; }
+.viz[data-tom="cyan"]    { --serie-tom-claro: #00a1c2; --serie-tom-escuro: #005973; }
+.viz[data-tom="teal"]    { --serie-tom-claro: #00a597; --serie-tom-escuro: #005e58; }
+.viz[data-tom="emerald"] { --serie-tom-claro: #00a875; --serie-tom-escuro: #007454; }
+.viz[data-tom="lime"]    { --serie-tom-claro: #65a400; --serie-tom-escuro: #395c06; }
+.viz[data-tom="amber"]   { --serie-tom-claro: #dc7a00; --serie-tom-escuro: #843602; }
+.viz[data-tom="orange"]  { --serie-tom-claro: #f66700; --serie-tom-escuro: #8b2c07; }
+.viz[data-tom="rose"]    { --serie-tom-claro: #ff5773; --serie-tom-escuro: #980036; }
+.viz[data-tom="fuchsia"] { --serie-tom-claro: #e74cfe; --serie-tom-escuro: #810a8a; }
+.viz[data-tom="violet"]  { --serie-tom-claro: #a07dff; --serie-tom-escuro: #5e0ec1; }
+.viz[data-tom="indigo"]  { --serie-tom-claro: #7e88ff; --serie-tom-escuro: #3e2cc6; }
+.viz[data-tom="zinc"]    { --serie-tom-claro: #92929d; --serie-tom-escuro: #4f4f5a; }
+@media (prefers-color-scheme: dark) {
+  .viz[data-tom="blue"]    { --serie-tom-claro: #4493ff; --serie-tom-escuro: #144bea; }
+  .viz[data-tom="sky"]     { --serie-tom-claro: #009fe4; --serie-tom-escuro: #006499; }
+  .viz[data-tom="cyan"]    { --serie-tom-claro: #00a5c5; --serie-tom-escuro: #006984; }
+  .viz[data-tom="teal"]    { --serie-tom-claro: #00ab9b; --serie-tom-escuro: #006e67; }
+  .viz[data-tom="emerald"] { --serie-tom-claro: #00af7a; --serie-tom-escuro: #007454; }
+  .viz[data-tom="lime"]    { --serie-tom-claro: #69aa00; --serie-tom-escuro: #426d00; }
+  .viz[data-tom="amber"]   { --serie-tom-claro: #da7700; --serie-tom-escuro: #9e4300; }
+  .viz[data-tom="orange"]  { --serie-tom-claro: #f16000; --serie-tom-escuro: #ac3300; }
+  .viz[data-tom="rose"]    { --serie-tom-claro: #ff4165; --serie-tom-escuro: #bd003a; }
+  .viz[data-tom="fuchsia"] { --serie-tom-claro: #e12afb; --serie-tom-escuro: #a400b2; }
+  .viz[data-tom="violet"]  { --serie-tom-claro: #9c76ff; --serie-tom-escuro: #7818f3; }
+  .viz[data-tom="indigo"]  { --serie-tom-claro: #7b85ff; --serie-tom-escuro: #4f39f5; }
+  .viz[data-tom="zinc"]    { --serie-tom-claro: #93939d; --serie-tom-escuro: #5d5d68; }
 }
 
 /* Enquanto o filtro novo ainda não foi aplicado (useDeferredValue), a lista

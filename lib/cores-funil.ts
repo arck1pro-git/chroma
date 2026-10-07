@@ -15,7 +15,9 @@
 // migration-cor-no-funil.sql). Uma etapa reordenada muda de tom sozinha, o que
 // não aconteceria com a cor gravada na linha.
 
-/** Os tons que um funil pode ter. O valor é o nome da cor no Tailwind. */
+/** Os tons que um funil pode ter. O valor é o nome da cor no Tailwind.
+ *  Cada um tem as cores do gráfico de IA em app/globals.css (.viz[data-tom]):
+ *  tom novo aqui pede a linha dele lá. */
 export const TONS_FUNIL = [
   { id: "blue", rotulo: "Azul" },
   { id: "sky", rotulo: "Celeste" },

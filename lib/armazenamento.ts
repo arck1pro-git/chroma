@@ -108,6 +108,90 @@ export async function baixar(bucket: string, caminho: string): Promise<Buffer> {
 }
 
 /**
+ * URL para o NAVEGADOR subir um objeto direto no Storage, sem passar pelo CRM.
+ *
+ * Existe por causa dos vídeos: na Vercel o corpo de uma requisição para no
+ * ~4,5 MB, e vídeo passa disso fácil. Com esta URL o arquivo vai do navegador
+ * para o Supabase, e o CRM só assina — a chave de servidor nunca sai daqui.
+ * Quem sobe usa só o token da URL (PUT multipart, como o supabase-js faz), que
+ * vale para ESTE caminho e expira em 2 h.
+ */
+export async function urlDeEnvio(bucket: string, caminho: string): Promise<string> {
+  const res = await fetch(
+    `${URL_BASE()}/storage/v1/object/upload/sign/${bucket}/${encodeURI(caminho)}`,
+    {
+      method: "POST",
+      headers: cabecalhos(),
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (!res.ok) {
+    const corpo = await res.text().catch(() => "");
+    throw new Error(`Supabase Storage não assinou o envio (${res.status}): ${corpo.slice(0, 300)}`);
+  }
+  const { url } = (await res.json()) as { url: string };
+  return `${URL_BASE()}/storage/v1${url}`;
+}
+
+/**
+ * URL temporária de LEITURA de um objeto de bucket privado. Aceita Range — é o
+ * que deixa o player pular para o meio do vídeo sem baixar tudo antes.
+ */
+export async function urlDeLeitura(
+  bucket: string,
+  caminho: string,
+  segundos: number,
+): Promise<string> {
+  const res = await fetch(
+    `${URL_BASE()}/storage/v1/object/sign/${bucket}/${encodeURI(caminho)}`,
+    {
+      method: "POST",
+      headers: { ...cabecalhos(), "Content-Type": "application/json" },
+      body: JSON.stringify({ expiresIn: segundos }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Supabase Storage não assinou a leitura (${res.status}): ${caminho}`);
+  }
+  const { signedURL } = (await res.json()) as { signedURL: string };
+  return `${URL_BASE()}/storage/v1${signedURL}`;
+}
+
+/** Tamanho e tipo do objeto, ou null se ele não está lá. */
+export async function infoDoObjeto(
+  bucket: string,
+  caminho: string,
+): Promise<{ tamanho: number; mime: string } | null> {
+  const res = await fetch(
+    `${URL_BASE()}/storage/v1/object/info/authenticated/${bucket}/${encodeURI(caminho)}`,
+    { headers: cabecalhos(), cache: "no-store", signal: AbortSignal.timeout(15_000) },
+  );
+  if (res.status === 400 || res.status === 404) return null;
+  if (!res.ok) throw new Error(`Supabase Storage não respondeu sobre ${caminho} (${res.status})`);
+  const info = (await res.json()) as { size?: number; content_type?: string };
+  return { tamanho: Number(info.size ?? 0), mime: info.content_type ?? "" };
+}
+
+/**
+ * O teto de tamanho por arquivo do bucket, em bytes (null = sem teto próprio).
+ * Lido do Supabase, e não escrito no código: o projeto hoje para em 50 MB, e
+ * quando alguém subir esse limite lá a tela acompanha sem deploy.
+ */
+export async function limiteDoBucket(bucket: string): Promise<number | null> {
+  const res = await fetch(`${URL_BASE()}/storage/v1/bucket/${bucket}`, {
+    headers: cabecalhos(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`Bucket ${bucket} não encontrado no Supabase (${res.status})`);
+  const b = (await res.json()) as { file_size_limit?: number | null };
+  return b.file_size_limit ?? null;
+}
+
+/**
  * Apaga o objeto. NÃO lança quando o arquivo já não está lá: quem chama está
  * removendo um documento, e a linha do banco é a fonte da verdade — falhar
  * aqui só deixaria a linha viva apontando para o vazio.

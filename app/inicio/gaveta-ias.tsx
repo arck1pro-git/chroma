@@ -9,12 +9,13 @@
 // do quadro (etapas.ia_id) e o interruptor do contato. A lista só mostra onde
 // cada uma está em uso, que é a pergunta antes de editar ou excluir.
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { ArrowLeft, ArrowRightLeft, Bot, ChevronRight, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, Bot, ChevronRight, Clock3, Loader2, Plus, Trash2, X } from "lucide-react";
 import {
   ACOES_IA,
   LIMITE_NOME_IA,
   LIMITE_PALAVRA_IA,
   LIMITE_PROMPT_IA,
+  MAX_RETOMADAS,
   type Ia,
 } from "@/lib/ia/catalogo";
 import CamadaTopo from "../components/camada-topo";
@@ -38,6 +39,9 @@ export default function GavetaIas({
 }) {
   // null = lista; "nova" = criar; id = editar aquela IA.
   const [aberta, setAberta] = useState<"nova" | string | null>(null);
+  // O que salvar deixou para avisar (o agendador das retomadas não ligou). Vai
+  // na lista, para onde o formulário volta depois de salvar.
+  const [aviso, setAviso] = useState<string | null>(null);
   const emEdicao = aberta && aberta !== "nova" ? (ias.find((i) => i.id === aberta) ?? null) : null;
   const noFormulario = aberta === "nova" || emEdicao !== null;
 
@@ -93,7 +97,10 @@ export default function GavetaIas({
             key={emEdicao?.id ?? "nova"}
             ia={emEdicao}
             uso={emEdicao ? (usoPorIa.get(emEdicao.id) ?? null) : null}
-            aoVoltar={() => setAberta(null)}
+            aoVoltar={(novoAviso) => {
+              setAviso(novoAviso ?? null);
+              setAberta(null);
+            }}
             aoFechar={aoFechar}
           />
         ) : (
@@ -127,6 +134,22 @@ export default function GavetaIas({
               <p className="mt-1 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
                 Quem responde os contatos no WhatsApp. Escolha a IA de cada etapa no botão IA da coluna.
               </p>
+              {aviso && (
+                <p
+                  role="status"
+                  className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-snug text-amber-800 dark:bg-amber-500/10 dark:text-amber-200"
+                >
+                  <span className="min-w-0 flex-1">{aviso}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAviso(null)}
+                    aria-label="Dispensar aviso"
+                    className="-mr-1 shrink-0 rounded p-0.5 opacity-60 transition hover:opacity-100"
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                  </button>
+                </p>
+              )}
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -172,6 +195,12 @@ export default function GavetaIas({
                                 aria-label="Move entre etapas"
                               />
                             )}
+                            {ia.retomar_apos.length > 0 && (
+                              <Clock3
+                                className="size-3 shrink-0 text-violet-500"
+                                aria-label={`Retoma quem não responde (${ia.retomar_apos.length}×)`}
+                              />
+                            )}
                           </span>
                           <span className="mt-0.5 block truncate text-[11px] text-zinc-500 dark:text-zinc-400">
                             {fraseUso(usoPorIa.get(ia.id))}
@@ -205,6 +234,29 @@ function fraseUso(uso: Uso | undefined): string {
   return partes.join(" · ");
 }
 
+// ── As retomadas ────────────────────────────────────────────────────────────
+
+// O banco guarda minutos (ias.retomar_apos); a tela mostra na maior unidade
+// que dá conta inteira: 1440 → "1 dia", 180 → "3 horas", 90 → "90 minutos".
+type Unidade = "min" | "h" | "d";
+type Passo = { valor: string; unidade: Unidade };
+const MINUTOS: Record<Unidade, number> = { min: 1, h: 60, d: 1440 };
+
+function paraPasso(minutos: number): Passo {
+  if (minutos % 1440 === 0) return { valor: String(minutos / 1440), unidade: "d" };
+  if (minutos % 60 === 0) return { valor: String(minutos / 60), unidade: "h" };
+  return { valor: String(minutos), unidade: "min" };
+}
+
+/** Os minutos de cada passo, ou null se algum não é um número positivo. */
+function paraMinutos(passos: Passo[]): number[] | null {
+  const minutos = passos.map((p) => Math.round(Number(p.valor.replace(",", ".")) * MINUTOS[p.unidade]));
+  return minutos.every((m) => Number.isFinite(m) && m > 0) ? minutos : null;
+}
+
+const CAMPO_PEQUENO =
+  "rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-[13px] text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50";
+
 // ── O formulário ────────────────────────────────────────────────────────────
 
 function FormIa({
@@ -215,7 +267,8 @@ function FormIa({
 }: {
   ia: Ia | null;
   uso: Uso | null;
-  aoVoltar: () => void;
+  /** Volta para a lista; `aviso` é o que salvar deixou para dizer. */
+  aoVoltar: (aviso?: string) => void;
   aoFechar: () => void;
 }) {
   const [nome, setNome] = useState(ia?.nome ?? "");
@@ -224,6 +277,9 @@ function FormIa({
   // todas antes de virar ação.
   const [acoes, setAcoes] = useState<string[]>(ia?.acoes ?? ["passar_para_humano"]);
   const [palavra, setPalavra] = useState(ia?.palavra_chave ?? "");
+  const [passos, setPassos] = useState<Passo[]>(() => (ia?.retomar_apos ?? []).map(paraPasso));
+  const [das, setDas] = useState(ia?.retomar_das ?? 9);
+  const [ate, setAte] = useState(ia?.retomar_ate ?? 19);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
   const [excluindo, iniciarExclusao] = useTransition();
@@ -234,12 +290,26 @@ function FormIa({
   function salvar() {
     if (!pronto || salvando) return;
     setErro(null);
-    const dados = { nome, prompt, acoes, palavra };
+    const retomarApos = paraMinutos(passos);
+    if (!retomarApos) {
+      setErro("Preencha o tempo de cada retomada.");
+      return;
+    }
+    const dados = { nome, prompt, acoes, palavra, retomarApos, retomarDas: das, retomarAte: ate };
     iniciar(async () => {
       const r = ia ? await atualizarIa(ia.id, dados) : await criarIa(dados);
       if (r.erro) setErro(r.erro);
-      else aoVoltar();
+      else aoVoltar(r.aviso);
     });
+  }
+
+  function mudarPasso(i: number, mudanca: Partial<Passo>) {
+    setPassos((atual) => atual.map((p, j) => (j === i ? { ...p, ...mudanca } : p)));
+  }
+
+  // A primeira sugere 3 horas; as seguintes, 1 dia.
+  function adicionarPasso() {
+    setPassos((atual) => [...atual, atual.length === 0 ? { valor: "3", unidade: "h" } : { valor: "1", unidade: "d" }]);
   }
 
   function excluir() {
@@ -272,7 +342,7 @@ function FormIa({
       <header className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <button
           type="button"
-          onClick={aoVoltar}
+          onClick={() => aoVoltar()}
           aria-label="Voltar para a lista de IAs"
           className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
         >
@@ -389,6 +459,100 @@ function FormIa({
             </p>
           </fieldset>
 
+          <fieldset>
+            <legend className="mb-1.5 text-[12px] font-medium text-zinc-700 dark:text-zinc-300">
+              Se o contato não responder
+            </legend>
+            {passos.length > 0 && (
+              <ol className="flex flex-col gap-1.5">
+                {passos.map((p, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <span className="w-5 shrink-0 text-[12px] font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
+                      {i + 1}ª
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      inputMode="numeric"
+                      value={p.valor}
+                      onChange={(e) => mudarPasso(i, { valor: e.target.value })}
+                      aria-label={`Tempo da ${i + 1}ª retomada`}
+                      className={`${CAMPO_PEQUENO} w-16 tabular-nums`}
+                    />
+                    <select
+                      value={p.unidade}
+                      onChange={(e) => mudarPasso(i, { unidade: e.target.value as Unidade })}
+                      aria-label={`Unidade da ${i + 1}ª retomada`}
+                      className={CAMPO_PEQUENO}
+                    >
+                      <option value="min">minutos</option>
+                      <option value="h">horas</option>
+                      <option value="d">dias</option>
+                    </select>
+                    <span className="min-w-0 flex-1 truncate text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                      depois {i === 0 ? "da pergunta" : `da ${i}ª`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPassos((atual) => atual.filter((_, j) => j !== i))}
+                      aria-label={`Tirar a ${i + 1}ª retomada`}
+                      className="shrink-0 rounded-lg p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+                    >
+                      <X className="size-3.5" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+            {passos.length < MAX_RETOMADAS && (
+              <button
+                type="button"
+                onClick={adicionarPasso}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-medium text-violet-700 transition hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-500/10 ${
+                  passos.length ? "mt-1.5" : "-ml-2"
+                }`}
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                {passos.length ? "Mais uma retomada" : "Retomar a conversa"}
+              </button>
+            )}
+            {passos.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
+                Só das
+                <select
+                  value={das}
+                  onChange={(e) => setDas(Number(e.target.value))}
+                  aria-label="Início do horário das retomadas"
+                  className={`${CAMPO_PEQUENO} tabular-nums`}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>
+                      {h}h
+                    </option>
+                  ))}
+                </select>
+                às
+                <select
+                  value={ate}
+                  onChange={(e) => setAte(Number(e.target.value))}
+                  aria-label="Fim do horário das retomadas"
+                  className={`${CAMPO_PEQUENO} tabular-nums`}
+                >
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h + 1} value={h + 1}>
+                      {h + 1}h
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+              {passos.length
+                ? "Quando a última mensagem dela tem pergunta e o cliente fica calado, ela mesma escreve a retomada, lendo a conversa. Para assim que ele responde ou alguém da equipe entra. Fora do horário (de Brasília), sai na abertura seguinte. Sem resposta à última, 24h depois o responsável da oportunidade é avisado no WhatsApp."
+                : "Sem retomada, ela espera o cliente voltar."}
+            </p>
+          </fieldset>
+
           {erro && (
             <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-700 dark:bg-red-500/10 dark:text-red-300">
               {erro}
@@ -422,7 +586,7 @@ function FormIa({
         <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-200 px-5 py-3 dark:border-zinc-800">
           <button
             type="button"
-            onClick={aoVoltar}
+            onClick={() => aoVoltar()}
             className="rounded-lg px-3 py-1.5 text-[12px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900"
           >
             Cancelar

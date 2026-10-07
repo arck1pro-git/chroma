@@ -17,7 +17,7 @@ export type AcaoAds = z.infer<typeof acaoAds>;
 
 export async function executarAcaoAds(entrada: AcaoAds) {
   const conta = await contaAutorizada(entrada.conta);
-  if (!(await permissoesMeta()).includes("ads_management")) throw new ErroMeta("A integração não possui ads_management.", undefined, 403);
+  if (!(await permissoesMeta(true)).includes("ads_management")) throw new ErroMeta("A integração não possui ads_management.", undefined, 403);
   if (entrada.acao === "criar_campanha") return requisicao<{id:string}>(`${entrada.conta}/campaigns`, { method: "POST", body: {
     name: entrada.nome, objective: entrada.objetivo, status: "PAUSED", special_ad_categories: entrada.categorias, is_adset_budget_sharing_enabled: false,
   } });

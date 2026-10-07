@@ -4,6 +4,7 @@ import { enviarMidia, enviarTexto, instanciaExataPorNumero, type Instancia } fro
 import { paraEnvio } from "@/lib/documentos";
 import { sql } from "@/lib/db";
 import { soDigitos } from "@/lib/telefone";
+import { abrirConversaDaCadencia } from "@/lib/automacoes/conversa-da-cadencia";
 
 // O CRM NA FRENTE DO ENVIO. O motor não fala mais com a uazapi: ele diz "manda
 // este texto, por este número", e quem tem a credencial é quem sempre teve — o
@@ -188,12 +189,36 @@ export async function POST(req: NextRequest) {
       r = await enviarTexto(destino, texto, instancia);
     }
 
+    // A CONVERSA, quando a mensagem foi para o LEAD (aviso para alguém do time
+    // não abre conversa com o lead). Sem ela, o registro do workflow não tinha
+    // onde gravar e a mensagem sumia do CRM — ver
+    // lib/automacoes/conversa-da-cadencia.ts.
+    //
+    // Falhar aqui NÃO derruba a resposta: a mensagem já saiu. Um 502 agora
+    // faria o motor achar que não saiu e tentar de novo — o lead receberia em
+    // dobro por causa de um problema só de registro.
+    let atendimentoId: string | null = null;
+    if (!usuarioId) {
+      try {
+        atendimentoId = await abrirConversaDaCadencia({
+          execucaoId: String(corpo.execucao_id ?? ""),
+          numeroLead: destino,
+          numeroInstancia: soDigitos(instancia.numero ?? "") || null,
+        });
+      } catch (e) {
+        console.error("[automacoes/enviar] mensagem saiu, mas a conversa não abriu:", e);
+      }
+    }
+
     // `text` vai no retorno porque o nó que registra a mensagem no motor lê o
     // texto DAQUI, não do que ele mesmo mandou — é o que garante que o
-    // histórico guarde exatamente o que saiu.
+    // histórico guarde exatamente o que saiu. `atendimento_id` é a conversa
+    // onde ela deve ficar (o registro dos workflows publicados depois desta
+    // correção grava nela, e não "na mais recente aberta").
     return Response.json({
       ...r,
       text: texto,
+      atendimento_id: atendimentoId,
       documento_id: documentoId || null,
       // Quem foi avisado, quando é notificação. O nó que registra lê daqui
       // para escrever no histórico do lead.

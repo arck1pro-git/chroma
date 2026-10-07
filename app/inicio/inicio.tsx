@@ -31,14 +31,14 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bot, Check, Funnel, Layers, ListTree, Plus, Users } from "lucide-react";
+import { Bot, Check, Funnel, Layers, LifeBuoy, ListTree, Plus, Users } from "lucide-react";
 import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
 import type { DadosFunil } from "../funil/dados";
 import type { Ia } from "@/lib/ia/catalogo";
 import { brl } from "../formato";
 import CartaoOportunidade from "../funil/cartao";
 import BarraSelecao, { type FluxoDisponivel } from "../funil/barra-selecao";
-import { tomEscuro } from "@/lib/cores-funil";
+import { corValida, tomEscuro } from "@/lib/cores-funil";
 import FichaOportunidade from "../funil/ficha-oportunidade";
 import FormOportunidade, { type DadosOportunidade } from "../funil/form-oportunidade";
 import { criarOportunidade, moverOportunidade } from "../funil/actions";
@@ -60,6 +60,8 @@ import GavetaIas from "./gaveta-ias";
 import InterruptorIa from "./interruptor-ia";
 import { corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
+import ModalDemanda from "../components/modal-demanda";
+import { abrirChamado } from "../demandas/acoes";
 import { metricasDoFunil, type Conversao, type MetricaEtapa } from "./metricas";
 import PainelSubetapas from "./painel-subetapas";
 import type { CadenciaDaEtapa, DadosCadencias } from "./cadencias";
@@ -300,7 +302,8 @@ function ColunaResumo({
       // assentaria depois de um segundo.
       // A animação usa transform e cria um stacking context por coluna. A
       // coluna anterior precisa ficar acima da próxima para a pílula, que
-      // atravessa metade do vão, nunca ser coberta pelo irmão seguinte.
+      // atravessa metade do vão, nunca ser coberta pelo irmão seguinte. Esse
+      // z vale só DENTRO do quadro: o contêiner das colunas é `isolate`.
       style={{ animationDelay: atrasoDaEtapa(ordem), zIndex: 100 - ordem }}
       aria-label={etapa.nome}
     >
@@ -582,6 +585,8 @@ export default function Inicio({
   // A gaveta das IAs (botão IA do topo). Uma gaveta por vez: as duas moram no
   // mesmo canto e abrir uma fecha a outra.
   const [gavetaIasAberta, setGavetaIasAberta] = useState(false);
+  // O modal "Abrir chamado" do topo (vira uma demanda do TI).
+  const [chamadoAberto, setChamadoAberto] = useState(false);
   const [opAbertaId, setOpAbertaId] = useState<string | null>(opInicial);
   const [destacadoId, setDestacadoId] = useState<string | null>(opInicial);
   // etapa onde o botão "+" foi clicado; não-nulo abre o formulário.
@@ -855,8 +860,9 @@ export default function Inicio({
         {/* A barra abre a cascata: ela, os filtros e o título entram na frente
             das etapas, então quando a primeira coluna aparece a moldura da tela
             já está de pé. */}
-        {/* z-[160]: o menu do seletor de funil abre por cima das colunas, que
-            têm z-index até 100 (ColunaResumo). */}
+        {/* z-[160]: o menu do seletor de funil abre por cima das colunas e de
+            tudo que flutua sobre o quadro (as colunas em si já ficam numa
+            camada isolada, ver o contêiner delas). */}
         <header className="surge relative z-[160] shrink-0 border-b border-zinc-200 px-6 py-2 xl:pr-16 dark:border-zinc-800">
           <div className="flex max-w-[1600px] items-center gap-2">
             {/* Um controle só, não uma fileira de abas: a lista de funis cresce
@@ -871,6 +877,19 @@ export default function Inicio({
               botao="w-56"
             />
 
+            {/* Abrir chamado para o TI (vira uma demanda do departamento, ver
+                app/demandas). À esquerda das IAs: o de contatos fica no canto. */}
+            <button
+              type="button"
+              onClick={() => setChamadoAberto(true)}
+              aria-haspopup="dialog"
+              title="Abrir chamado para o TI"
+              className={`ml-auto ${botaoTopo}`}
+            >
+              <LifeBuoy className="size-4" aria-hidden="true" />
+              <span className="hidden sm:inline">Abrir chamado</span>
+            </button>
+
             {/* As IAs de atendimento, ao lado dos contatos: a mesma gaveta da
                 direita, com as IAs criadas e o botão de criar. Fica À ESQUERDA
                 do de contatos para o de contatos continuar no canto. */}
@@ -880,7 +899,7 @@ export default function Inicio({
               aria-expanded={gavetaIasAberta}
               aria-label={`IAs de atendimento (${dados.ias.length})`}
               title="IAs de atendimento"
-              className={`ml-auto ${botaoTopo}`}
+              className={botaoTopo}
             >
               <Bot className="size-4" aria-hidden="true" />
               <span className="hidden sm:inline">IAs</span>
@@ -936,13 +955,8 @@ export default function Inicio({
                 className="flex min-h-0 flex-1 flex-col"
                 aria-label={`Quadro · ${funil.nome}`}
               >
-                {/* Os números do funil (sobre o que está na tela) e a IA. */}
-                <VisaoGeral
-                  metricas={metricas}
-                  totalDoFunil={totalDoFunil}
-                  filtrado={temFiltro}
-                  dias={graficoIa}
-                />
+                {/* A IA nos últimos 30 dias, nas cores do funil aberto. */}
+                <VisaoGeral dias={graficoIa} tom={corValida(funil?.cor)} />
 
                 {/* As campanhas da Meta em pílulas, como sempre foram (ele
                     pediu de volta depois de vê-las em dropdown, 2026-10-05). */}
@@ -958,8 +972,8 @@ export default function Inicio({
                 {/* O botão de Filtros (o painel abre por cima, ver
                     app/funil/painel-filtros.tsx) e, encostada à direita, a
                     descrição do funil. O nome, a contagem e o total que moravam
-                    numa linha própria agora são o seletor do topo e a visão
-                    geral. */}
+                    numa linha própria agora são o seletor do topo e as próprias
+                    colunas. */}
                 <PainelFiltros
                   aberto={filtrosAbertos}
                   aoAlternar={setFiltrosAbertos}
@@ -1009,7 +1023,13 @@ export default function Inicio({
                       // escalonada rode de novo a cada funil escolhido, e não
                       // só na primeira vez que o Dashboard monta.
                       key={funil.id}
-                      className="flex min-h-0 flex-1 items-start gap-1 overflow-x-auto pb-2 pt-4"
+                      // `isolate`: as colunas têm z-index 100 - ordem (ver
+                      // ColunaResumo), e solto na página esse z passava por
+                      // cima de tudo que flutua sobre o quadro — o chat de IA
+                      // (z-40), a barra de seleção (z-30), os filtros. Isolado,
+                      // o z delas só ordena uma coluna contra a outra, e o
+                      // quadro inteiro fica numa camada só, embaixo.
+                      className="isolate flex min-h-0 flex-1 items-start gap-1 overflow-x-auto pb-2 pt-4"
                     >
                       {colunas.map(({ etapa, oportunidades: doEtapa, metrica, conversao }, i) => (
                         <ColunaResumo
@@ -1066,6 +1086,16 @@ export default function Inicio({
         </main>
       </div>
 
+      {chamadoAberto && (
+        <ModalDemanda
+          titulo="Abrir chamado"
+          subtitulo="Vai para o TI, em Demandas. Você acompanha em “Abertas por mim”."
+          botao="Abrir chamado"
+          enviar={abrirChamado}
+          aoFechar={() => setChamadoAberto(false)}
+        />
+      )}
+
       <BarraSelecao
         selecionados={[...selecionados]}
         usuarios={usuarios}
@@ -1080,6 +1110,10 @@ export default function Inicio({
         // A marca da IA sai na cor do funil ABERTO: o tom mais escuro dele,
         // o mesmo da última etapa do quadro (lib/cores-funil.ts).
         corIcone={tomEscuro(funil?.cor)}
+        // No modo completo (o TI, lib/ia/completa.ts) a IA daqui também grava —
+        // cria a cadência de uma etapa, por exemplo. Recarregar faz a coluna
+        // mostrar a cadência nova sem F5. Para quem só lê, nunca dispara.
+        aoAplicar={() => router.refresh()}
         usaContextos
         // Quem abre a análise aqui é o "+" da sidebar, ao lado de "Análises".
         botaoFlutuante

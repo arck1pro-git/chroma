@@ -36,6 +36,7 @@ import {
   criarConversa,
   gravarFalas,
   lerConversa,
+  lerConversaPorId,
   limparFalas,
   listarConversas,
   SEM_TABELA,
@@ -88,6 +89,19 @@ export async function lerConversaIa(
       ok: true,
       dados: await lerConversa(texto(id, 64), escopoDe(escopo), usuario.id),
     };
+  } catch (e) {
+    if (semTabela(e)) return { ok: false, erro: SEM_TABELA };
+    return { ok: false, erro: "Não consegui abrir esta conversa." };
+  }
+}
+
+/** A conversa pelo id, de qualquer escopo do próprio usuário (painel fixo do TI). */
+export async function lerConversaIaPorId(
+  id: string,
+): Promise<Resposta<(ConversaCompleta & { escopo: string }) | null>> {
+  const usuario = await exigirLogin();
+  try {
+    return { ok: true, dados: await lerConversaPorId(texto(id, 64), usuario.id) };
   } catch (e) {
     if (semTabela(e)) return { ok: false, erro: SEM_TABELA };
     return { ok: false, erro: "Não consegui abrir esta conversa." };

@@ -1,4 +1,4 @@
-import type { CrmAds, InsightAds, MetricasAds, ObjetoAds } from "./meta-ads-tipos";
+import type { CrmAds, InsightAds, LeadsCrm, MetricasAds, ObjetoAds } from "./meta-ads-tipos";
 
 export type OrigemAds = Record<string, unknown> | null;
 export type OportunidadeAds = {
@@ -6,6 +6,14 @@ export type OportunidadeAds = {
   etapa_id: string; etapa_nome: string; etapa_ordem: number; funil_id: string; funil_nome: string;
   primeira_ordem: number; campos: OrigemAds; contato_campos: OrigemAds;
 };
+/**
+ * Uma ENTRADA no CRM dentro do período: o contato que nasceu, ou a oportunidade
+ * nova de alguém (que pode já ser contato antigo — é o lead que voltou). As
+ * duas carregam a origem: `campos` é o da oportunidade (null na entrada de
+ * contato) e `contato_campos` o do contato.
+ */
+export type EntradaCrm = { contato_id: string; dia: string; campos: OrigemAds; contato_campos: OrigemAds };
+
 export function dividir(n: number, d: number): number | null { return d > 0 ? n / d : null; }
 const numero = (v: unknown) => Number.isFinite(Number(v)) ? Number(v) : 0;
 export function metricasAds(i?: InsightAds): MetricasAds {
@@ -23,7 +31,9 @@ function valor(origem: OrigemAds, chaves: string[]) {
   }
   return null;
 }
-export function origemDaOportunidade(o: OportunidadeAds) {
+// A origem que vale: a da oportunidade, quando ela tem campanha; senão a do
+// contato. Serve à oportunidade e à entrada no CRM, que carregam os dois.
+export function origemDaOportunidade(o: { campos: OrigemAds; contato_campos: OrigemAds }) {
   return valor(o.campos, ["campaign_id", "campanha_id", "utm_id", "campaign_name", "utm_campaign"])
     ? o.campos : o.contato_campos;
 }
@@ -64,4 +74,43 @@ export function resumoCrm(oportunidades: OportunidadeAds[], etapaAlvo?: { funil_
     valorAberto: oportunidades.filter(o => o.status === "aberta").reduce((s, o) => s + numero(o.valor), 0),
     etapas: [...etapas.values()].sort((a, b) => a.funil.localeCompare(b.funil) || a.ordem - b.ordem),
   };
+}
+
+/**
+ * Leads por objeto (campanha, conjunto, anúncio): para cada id que `resolver`
+ * devolver, os contatos dele com o dia da PRIMEIRA entrada. Uma pessoa conta
+ * uma vez por objeto, mesmo com duas entradas no período — o contato que nasceu
+ * e a oportunidade dele no mesmo minuto são a mesma pessoa chegando.
+ *
+ * `entradas` precisa vir em ordem de chegada: é a primeira que fica.
+ */
+export function leadsPor(entradas: EntradaCrm[], resolver: (e: EntradaCrm) => string | null) {
+  const porObjeto = new Map<string, Map<string, string>>();
+  for (const e of entradas) {
+    const id = resolver(e);
+    if (!id) continue;
+    const contatos = porObjeto.get(id) ?? new Map<string, string>();
+    if (!contatos.has(e.contato_id)) contatos.set(e.contato_id, e.dia);
+    porObjeto.set(id, contatos);
+  }
+  return porObjeto;
+}
+
+type Situacao = Exclude<keyof LeadsCrm, "total">;
+// Com duas entradas, vale a que a atribuição mais conseguiu dizer: a pessoa que
+// entrou sem UTM e depois voltou por uma campanha é lead dessa campanha.
+const PESO: Record<Situacao, number> = { atribuidos: 3, ambiguas: 2, semCorrespondencia: 1, semOrigem: 0 };
+
+/** Quantas PESSOAS entraram no CRM no período, e o que a atribuição disse de cada uma. */
+export function situacaoDosLeads(entradas: EntradaCrm[], campanhas: ObjetoAds[]): LeadsCrm {
+  const porContato = new Map<string, Situacao>();
+  for (const e of entradas) {
+    const r = resolverOrigem(origemDaOportunidade(e), campanhas, "campaign");
+    const s: Situacao = r.id ? "atribuidos" : r.motivo!;
+    const atual = porContato.get(e.contato_id);
+    if (atual === undefined || PESO[s] > PESO[atual]) porContato.set(e.contato_id, s);
+  }
+  const resumo: LeadsCrm = { total: porContato.size, atribuidos: 0, semOrigem: 0, semCorrespondencia: 0, ambiguas: 0 };
+  for (const s of porContato.values()) resumo[s]++;
+  return resumo;
 }

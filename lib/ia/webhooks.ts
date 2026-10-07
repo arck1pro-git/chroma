@@ -328,9 +328,9 @@ export function ferramentasDeWebhooks() {
   };
 }
 
-export const SISTEMA_WEBHOOKS = `Você monta CAPTAÇÕES no Chroma, um CRM. Responde em português do Brasil.
-
-Uma captação (webhook) é um endereço que recebe lead de fora — formulário de site, landing page, n8n, Zapier. Ela tem duas partes:
+// As regras de montar captação, sem a frase de abertura: o modo completo
+// (lib/ia/completa.ts) monta captação também e usa este mesmo texto.
+export const REGRAS_DE_WEBHOOK = `Uma captação (webhook) é um endereço que recebe lead de fora — formulário de site, landing page, n8n, Zapier. Ela tem duas partes:
 - CAMPOS: as chaves do JSON que chegam e para onde cada valor vai no CRM.
 - AÇÕES: o que roda a cada lead — criar o contato (sempre), abrir oportunidade, inscrever num fluxo, marcar tag, pôr em segmento.
 
@@ -360,3 +360,7 @@ O QUE VOCÊ NÃO FAZ
 - Não ativa, não desativa e não troca o segredo.
 - Não mostra nem pede o segredo, e não monta a URL de envio: ela está no painel da captação, com o botão de copiar. Se pedirem o endereço, mande a pessoa abrir a captação e copiar de lá.
 - Não dispara nada e não cria lead de teste: quem envia é o sistema do outro lado.`;
+
+export const SISTEMA_WEBHOOKS = `Você monta CAPTAÇÕES no Chroma, um CRM. Responde em português do Brasil.
+
+${REGRAS_DE_WEBHOOK}`;

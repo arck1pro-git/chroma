@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Sidebar, { type ItemDeModulo } from "./components/sidebar";
+import ProvedorIaGlobal from "./components/ia-global";
+import { temIaCompleta } from "@/lib/ia/modo-completo";
 import { usuarioAtual } from "@/lib/auth/dal";
 import { MODULOS } from "@/lib/auth/modulos";
 import "./globals.css";
@@ -46,6 +48,10 @@ export default async function RootLayout({
 
   // Configurações tem lugar próprio no rodapé da barra, e duas portas: o módulo
   // ou o direito de administrar acessos.
+  // O TI tem a IA num painel FIXO, igual em todas as telas
+  // (app/components/ia-global.tsx).
+  const iaFixa = usuario ? temIaCompleta(usuario) : false;
+
   const temConfiguracoes =
     (usuario?.modulos.has("configuracoes") ?? false) ||
     (usuario?.departamento?.gerenciaAcessos ?? false);
@@ -83,9 +89,12 @@ export default async function RootLayout({
               // acessos sem ter o módulo, e essas actions chamam
               // exigirModulo("configuracoes").
               podeWhatsApp={usuario?.modulos.has("configuracoes") ?? false}
+              iaFixa={iaFixa}
             />
           </Suspense>
-          <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+          <ProvedorIaGlobal ativa={iaFixa}>
+            <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+          </ProvedorIaGlobal>
 
         </div>
       </body>

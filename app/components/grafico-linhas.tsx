@@ -5,9 +5,9 @@
 // tipo nas três telas (2026-10-05): três cópias do mesmo desenho divergiriam
 // no primeiro ajuste.
 //
-// LINHA COM SOMBRA EMBAIXO (área em degradê), pelo recharts — pedido dele, no
-// mesmo dia: "gosto do gráfico de linha com a sombra abaixo". Era SVG à mão;
-// o recharts já estava no projeto (gaveta de campanhas), então não entra lib.
+// LINHA COM SOMBRA EMBAIXO (área em degradê) — pedido dele em 2026-10-05:
+// "gosto do gráfico de linha com a sombra abaixo". Era SVG à mão, foi para o
+// recharts no mesmo dia e para o chart.js em 2026-10-06 (./grafico-canvas.ts).
 //
 // A anatomia: legenda sempre presente (traço colorido + nome em tinta de
 // texto) com o total do período no canto, grade em hairline, eixo com três
@@ -19,14 +19,19 @@
 //
 // Cores: variáveis --serie-* e --viz-* da classe .viz (globals.css),
 // validadas para daltonismo nos dois modos.
-import { useId } from "react";
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useCallback, useState } from "react";
+import type { LucideIcon } from "lucide-react";
+import { corDoCss, degrade, useGrafico, type Desenho } from "./grafico-canvas";
 
 export type SerieLinha<T> = {
   nome: string;
   /** Uma var(--serie-…) de .viz. */
   cor: string;
+  /** Ícone na cor da série, no lugar do traço, na legenda e no tooltip. */
+  Icone?: LucideIcon;
   valor: (d: T) => number;
+  /** Texto apagado depois do total na legenda — "(9 pela IA)". */
+  nota?: (dados: T[]) => string | null;
 };
 
 function diaCurto(iso: string) {
@@ -35,6 +40,19 @@ function diaCurto(iso: string) {
 
 export function mesCurto(iso: string) {
   return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+}
+
+// O dia no eixo, com o mês no primeiro e na virada ("01/10"): só "29 30 01"
+// não diz em que mês se está.
+function rotuloDoEixo(iso: string, i: number) {
+  return i === 0 || iso.endsWith("-01") ? mesCurto(iso) : diaCurto(iso);
+}
+
+// Hoje em 'YYYY-MM-DD' no fuso de Brasília, o mesmo em que as séries contam o
+// dia. O último ponto, quando é hoje, é um dia pela metade: o trecho até ele
+// sai tracejado, senão a queda do fim parece tendência.
+function hoje() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 }
 
 // Teto do eixo em número limpo E divisível por 2 — o gráfico mostra o tick do
@@ -54,11 +72,19 @@ export function LinhasPorDia<T extends { dia: string }>({
   vazio,
   titulo,
   altura = "h-32",
+  totais = false,
+  tom,
 }: {
   dados: T[];
   series: SerieLinha<T>[];
   /** O canto direito da legenda: o total do período. */
   resumo: string;
+  /** O total do período de cada série ao lado do nome dela na legenda — aí o
+   *  `resumo` fica só com o período, sem repetir os nomes. */
+  totais?: boolean;
+  /** O tom do funil (funis.cor): liga --serie-tom-claro e --serie-tom-escuro
+   *  daquele tom no .viz (globals.css). */
+  tom?: string;
   /** Uma linha a mais no tooltip do dia, quando houver o que dizer. */
   notaNoDia?: (d: T) => string | null;
   /** O texto quando todas as séries somam zero. */
@@ -68,10 +94,6 @@ export function LinhasPorDia<T extends { dia: string }>({
   /** Altura da área do gráfico (classe Tailwind). */
   altura?: string;
 }) {
-  // id do degradê: único por gráfico (podem existir dois na mesma tela) e sem
-  // os dois-pontos do useId, que quebram o url(#…).
-  const base = useId().replace(/[^a-zA-Z0-9_-]/g, "");
-
   const maximo = Math.max(0, ...dados.flatMap((d) => series.map((s) => s.valor(d))));
   if (maximo === 0) {
     return (
@@ -81,97 +103,41 @@ export function LinhasPorDia<T extends { dia: string }>({
     );
   }
 
-  // Teto pela MAIOR série, não pela soma: são linhas, não pilha.
-  const teto = tetoLimpo(maximo);
-
   return (
-    <div className="viz">
+    <div className="viz" data-tom={tom}>
       {/* Legenda sempre presente com 2 séries ou mais: identidade nunca
           depende só da cor. O texto usa token de tinta; quem carrega a
           identidade é o traço colorido ao lado. */}
       <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-        {series.map((s) => (
-          <span key={s.nome} className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-            <span className="h-0.5 w-3 rounded-full" style={{ background: s.cor }} aria-hidden="true" />
-            {s.nome}
-          </span>
-        ))}
+        {series.map((s) => {
+          const nota = s.nota?.(dados);
+          return (
+            <span key={s.nome} className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+              <Marca serie={s} />
+              {s.nome}
+              {totais && (
+                <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {dados.reduce((t, d) => t + s.valor(d), 0)}
+                </span>
+              )}
+              {nota && <span className="text-zinc-400 dark:text-zinc-500">{nota}</span>}
+            </span>
+          );
+        })}
         <span className="ml-auto text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500">{resumo}</span>
       </div>
 
-      <div className={`${altura} -ml-1`} aria-hidden="true">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={dados} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
-            <defs>
-              {series.map((s, i) => (
-                <linearGradient key={s.nome} id={`${base}-${i}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={s.cor} stopOpacity={0.26} />
-                  <stop offset="95%" stopColor={s.cor} stopOpacity={0} />
-                </linearGradient>
-              ))}
-            </defs>
-            <CartesianGrid vertical={false} stroke="var(--viz-grade)" />
-            <XAxis
-              dataKey="dia"
-              tickFormatter={diaCurto}
-              tick={{ fontSize: 10, fill: "var(--viz-eixo)" }}
-              tickLine={false}
-              axisLine={false}
-              tickMargin={6}
-              minTickGap={8}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              width={26}
-              domain={[0, teto]}
-              ticks={[0, teto / 2, teto]}
-              allowDecimals={false}
-              tick={{ fontSize: 10, fill: "var(--viz-eixo)" }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <Tooltip
-              cursor={{ stroke: "var(--viz-cursor)", strokeWidth: 1 }}
-              isAnimationActive={false}
-              // O gráfico do dashboard é baixo: o tooltip passa da borda do
-              // cartão e tem de ficar por cima do que vem embaixo.
-              wrapperStyle={{ zIndex: 60 }}
-              content={({ active, payload }) => {
-                const d = payload?.[0]?.payload as T | undefined;
-                if (!active || !d) return null;
-                const nota = notaNoDia?.(d);
-                return (
-                  <div className="rounded-lg border border-zinc-200 bg-white px-2.5 py-2 text-[11px] shadow-md dark:border-zinc-800 dark:bg-zinc-900">
-                    <p className="mb-1 text-zinc-500 dark:text-zinc-400">{mesCurto(d.dia)}</p>
-                    {series.map((s) => (
-                      <p key={s.nome} className="flex items-center gap-2">
-                        <span className="h-0.5 w-3 shrink-0 rounded-full" style={{ background: s.cor }} aria-hidden="true" />
-                        <span className="min-w-4 font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{s.valor(d)}</span>
-                        <span className="text-zinc-500 dark:text-zinc-400">{s.nome}</span>
-                      </p>
-                    ))}
-                    {nota && <p className="mt-1 text-zinc-400 dark:text-zinc-500">{nota}</p>}
-                  </div>
-                );
-              }}
-            />
-            {series.map((s, i) => (
-              <Area
-                key={s.nome}
-                type="monotone"
-                dataKey={s.valor}
-                name={s.nome}
-                stroke={s.cor}
-                strokeWidth={2}
-                fill={`url(#${base}-${i})`}
-                dot={false}
-                activeDot={{ r: 4, fill: s.cor, stroke: "var(--conteudo)", strokeWidth: 2 }}
-                animationDuration={500}
-              />
-            ))}
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Teto pela MAIOR série, não pela soma: são linhas, não pilha. A
+          `key` pelo tom: o canvas não acompanha o CSS, então trocar de funil
+          (e de tom) monta o gráfico de novo com as cores relidas. */}
+      <Linhas
+        key={tom}
+        dados={dados}
+        series={series}
+        teto={tetoLimpo(maximo)}
+        notaNoDia={notaNoDia}
+        altura={altura}
+      />
 
       <table className="sr-only">
         <caption>{titulo}</caption>
@@ -194,6 +160,153 @@ export function LinhasPorDia<T extends { dia: string }>({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// A marca de identidade da série, igual na legenda e no tooltip: o ícone dela
+// na cor dela, ou o traço da linha quando não tem ícone. O texto ao lado
+// continua em tinta de texto.
+function Marca<T>({ serie }: { serie: SerieLinha<T> }) {
+  const { Icone, cor } = serie;
+  return Icone ? (
+    <Icone className="size-3.5 shrink-0" style={{ color: cor }} aria-hidden="true" />
+  ) : (
+    <span className="h-0.5 w-3 shrink-0 rounded-full" style={{ background: cor }} aria-hidden="true" />
+  );
+}
+
+/** O dia sob o mouse: índice em `dados` e onde desenhar o tooltip. */
+type Dica = { i: number; x: number; largura: number };
+
+// À parte do LinhasPorDia porque o <canvas> só existe quando há o que
+// desenhar, e o hook do gráfico precisa dele montado.
+function Linhas<T extends { dia: string }>({
+  dados,
+  series,
+  teto,
+  notaNoDia,
+  altura,
+}: {
+  dados: T[];
+  series: SerieLinha<T>[];
+  teto: number;
+  notaNoDia?: (d: T) => string | null;
+  altura: string;
+}) {
+  const [dica, setDica] = useState<Dica | null>(null);
+
+  const desenhar = useCallback(
+    (el: HTMLCanvasElement): Desenho => {
+      const cor = (c: string) => corDoCss(el, c);
+      const eixo = { color: cor("var(--viz-eixo)"), font: { size: 10 } };
+      const fundo = cor("var(--conteudo)");
+      const ultimo = dados.length - 1;
+      const parcial = dados[ultimo]?.dia === hoje();
+      return {
+        data: {
+          labels: dados.map((d, i) => rotuloDoEixo(d.dia, i)),
+          datasets: series.map((s, i) => {
+            const c = cor(s.cor);
+            return {
+              label: s.nome,
+              data: dados.map(s.valor),
+              borderColor: c,
+              borderWidth: 2,
+              segment: { borderDash: (seg) => (parcial && seg.p1DataIndex === ultimo ? [3, 3] : undefined) },
+              backgroundColor: degrade(c, 0.26),
+              fill: "origin",
+              cubicInterpolationMode: "monotone",
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              pointHoverBackgroundColor: c,
+              pointHoverBorderColor: fundo,
+              pointHoverBorderWidth: 2,
+              // O chart.js põe a de menor `order` por cima: a última série
+              // da lista fica na frente, como no desenho de antes.
+              order: series.length - 1 - i,
+            };
+          }),
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          locale: "pt-BR",
+          animation: { duration: 500 },
+          // O ponto do dia aparece na hora, junto com o tooltip.
+          transitions: { active: { animation: { duration: 0 } } },
+          layout: { padding: { top: 6, right: 6 } },
+          interaction: { mode: "index", intersect: false },
+          scales: {
+            x: {
+              grid: { display: false },
+              border: { display: false },
+              ticks: { ...eixo, maxRotation: 0, autoSkipPadding: 8, padding: 6 },
+            },
+            y: {
+              min: 0,
+              max: teto,
+              grid: { color: cor("var(--viz-grade)"), drawTicks: false },
+              border: { display: false },
+              ticks: { ...eixo, padding: 4 },
+              afterBuildTicks: (escala) => {
+                escala.ticks = [0, teto / 2, teto].map((value) => ({ value }));
+              },
+              afterFit: (escala) => {
+                escala.width = 26;
+              },
+            },
+          },
+          plugins: {
+            cursor: { cor: cor("var(--viz-cursor)") },
+            // O tooltip é HTML (abaixo): o chart.js só diz qual dia e onde.
+            tooltip: {
+              enabled: false,
+              external: ({ chart, tooltip }) => {
+                const i = tooltip.dataPoints?.[0]?.dataIndex;
+                if (!tooltip.opacity || i === undefined) return setDica(null);
+                setDica((atual) => (atual?.i === i ? atual : { i, x: tooltip.caretX, largura: chart.width }));
+              },
+            },
+          },
+        },
+      };
+    },
+    [dados, series, teto],
+  );
+  const canvas = useGrafico(desenhar);
+
+  const d = dica && dados[dica.i];
+  const nota = d && notaNoDia?.(d);
+
+  return (
+    <div className={`relative ${altura} -ml-1`} aria-hidden="true">
+      <canvas ref={canvas} />
+      {dica && d && (
+        // O gráfico do dashboard é baixo: o tooltip passa da borda do cartão
+        // e tem de ficar por cima do que vem embaixo. Na metade direita ele
+        // vira para a esquerda do cursor, para não sair do cartão.
+        <div
+          className="pointer-events-none absolute top-0 z-[60] w-max rounded-lg border border-zinc-200 bg-white px-2.5 py-2 text-[11px] shadow-md dark:border-zinc-800 dark:bg-zinc-900"
+          style={{
+            left: dica.x,
+            transform: dica.x > dica.largura / 2 ? "translateX(calc(-100% - 12px))" : "translateX(12px)",
+          }}
+        >
+          <p className="mb-1 text-zinc-500 dark:text-zinc-400">
+            {mesCurto(d.dia)}
+            {d.dia === hoje() && " · hoje, até agora"}
+          </p>
+          {series.map((s) => (
+            <p key={s.nome} className="flex items-center gap-2">
+              <Marca serie={s} />
+              <span className="min-w-4 font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{s.valor(d)}</span>
+              <span className="text-zinc-500 dark:text-zinc-400">{s.nome}</span>
+            </p>
+          ))}
+          {nota && <p className="mt-1 text-zinc-400 dark:text-zinc-500">{nota}</p>}
+        </div>
+      )}
     </div>
   );
 }

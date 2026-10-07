@@ -1,4 +1,5 @@
 import "server-only";
+import { after } from "next/server";
 import { conferirDestino } from "@/lib/destino-permitido";
 
 const GRAPH_VERSION = process.env.META_GRAPH_VERSION?.trim() || "v26.0";
@@ -67,16 +68,19 @@ export type CampanhaAdsMeta = {
   lifetime_budget?: string;
   start_time?: string;
   stop_time?: string;
-  insights?: { data?: Array<{
-    spend?: string; impressions?: string; reach?: string; clicks?: string;
-    ctr?: string; cpc?: string; cpm?: string;
-    actions?: Array<{ action_type: string; value: string }>;
-  }> };
 };
 
-export async function permissoesMeta() {
-  const r = await requisicao<{ data: Array<{ permission: string; status: string }> }>("me/permissions");
-  return r.data.filter((p) => p.status === "granted").map((p) => p.permission);
+/**
+ * Guardadas como as contas para LER (mostrar ou esconder um botão). Antes de
+ * uma ESCRITA, `fresca`: permissão revogada há cinco minutos não pode passar
+ * na conferência só porque estava guardada.
+ */
+export async function permissoesMeta(fresca = false) {
+  const { valor } = await lembrar("me/permissions", VALIDADE_CADASTRO, async () => {
+    const r = await requisicao<{ data: Array<{ permission: string; status: string }> }>("me/permissions");
+    return r.data.filter((p) => p.status === "granted").map((p) => p.permission);
+  }, fresca);
+  return valor;
 }
 
 export async function listarMeta<T>(caminho: string, params: Record<string,string>, accessToken?: string): Promise<T[]> {
@@ -93,24 +97,109 @@ export async function listarMeta<T>(caminho: string, params: Record<string,strin
   return dados;
 }
 
-export async function contasDeAnuncios(): Promise<ContaAnunciosMeta[]> {
-  return listarMeta("me/adaccounts", { fields: "id,name,account_status,currency,timezone_name,business", limit: "100" });
+// ── Leituras guardadas ──────────────────────────────────────────────────────
+//
+// POR QUE EXISTE: até 2026-10-07 a tela de Campanhas ia à Meta em cascata e sem
+// guardar nada — o status (contas, permissões, WhatsApp, templates) e depois
+// mais dez chamadas do relatório. Eram 8 a 10 s até o primeiro número, a cada
+// abertura e a cada troca de período.
+//
+// COMO FUNCIONA: guarda a PROMESSA, não só o resultado, então duas telas pedindo
+// a mesma leitura no mesmo instante esperam UMA ida à Meta. Dentro de
+// `fresco`, devolve o guardado. Depois disso, até `velho`, devolve o guardado
+// NA HORA e busca de novo por trás — quem pediu não espera, e o próximo já
+// recebe o novo. Passado `velho`, espera a Meta. Falha não fica guardada.
+// `forcar` (o botão Atualizar) vai à Meta e espera.
+//
+// EM MEMÓRIA, POR INSTÂNCIA: na Vercel cada instância quente tem o seu, e uma
+// fria começa vazia. O cache de `fetch` do Next não serve aqui — as rotas são
+// `force-dynamic`, que desliga esse cache, e o substituto (Cache Components)
+// mudaria a renderização do app inteiro. É o mesmo arranjo de
+// lib/campanha-do-lead.ts e lib/meta-eventos.ts.
+
+export const MINUTO = 60_000;
+export type Validade = { fresco: number; velho: number };
+
+/** Contas, permissões e WhatsApp: muda quando alguém mexe no Business Manager. */
+export const VALIDADE_CADASTRO: Validade = { fresco: 10 * MINUTO, velho: 60 * MINUTO };
+
+type Guardado = { em: number; valor: Promise<unknown>; renovando: boolean };
+const guardados = new Map<string, Guardado>();
+// Teto de chaves: cada período escolhido na tela é uma chave nova, e sem teto a
+// memória da instância cresceria a cada combinação de datas.
+const TETO_GUARDADOS = 300;
+
+function guardar(chave: string, valor: Promise<unknown>) {
+  guardados.delete(chave); // reinserir põe no fim: o Map vira fila do mais velho ao mais novo
+  guardados.set(chave, { em: Date.now(), valor, renovando: false });
+  while (guardados.size > TETO_GUARDADOS) guardados.delete(guardados.keys().next().value!);
+  valor.catch(() => {
+    if (guardados.get(chave)?.valor === valor) guardados.delete(chave);
+  });
 }
 
+/**
+ * A leitura `buscar`, guardada sob `chave`. Devolve também QUANDO o valor saiu
+ * da Meta — é o "atualizado há 3 min" da tela.
+ */
+export async function lembrar<T>(
+  chave: string,
+  validade: Validade,
+  buscar: () => Promise<T>,
+  forcar = false,
+): Promise<{ valor: T; em: number }> {
+  const atual = guardados.get(chave);
+  const idade = atual ? Date.now() - atual.em : Infinity;
+
+  if (!forcar && atual && idade < validade.velho) {
+    if (idade >= validade.fresco && !atual.renovando) {
+      atual.renovando = true;
+      // Por trás: só troca o guardado quando o novo chegar inteiro. O after()
+      // segura a instância viva até lá; fora de uma requisição (script) roda solto.
+      const renovacao = buscar().then(
+        (v) => guardar(chave, Promise.resolve(v)),
+        () => { atual.renovando = false; },
+      );
+      try { after(renovacao); } catch { void renovacao; }
+    }
+    return { valor: (await atual.valor) as T, em: atual.em };
+  }
+
+  const valor = buscar();
+  guardar(chave, valor);
+  return { valor: await valor, em: Date.now() };
+}
+
+/** listarMeta guardado. A chave é o caminho mais os parâmetros, em ordem. */
+export async function listarGuardado<T>(
+  caminho: string,
+  params: Record<string, string>,
+  validade: Validade,
+  forcar = false,
+): Promise<{ valor: T[]; em: number }> {
+  const chave = `${caminho}?${new URLSearchParams(Object.entries(params).sort()).toString()}`;
+  return lembrar(chave, validade, () => listarMeta<T>(caminho, params), forcar);
+}
+
+export async function contasDeAnuncios(): Promise<ContaAnunciosMeta[]> {
+  return (await listarGuardado<ContaAnunciosMeta>("me/adaccounts", { fields: "id,name,account_status,currency,timezone_name,business", limit: "100" }, VALIDADE_CADASTRO)).valor;
+}
+
+// As pílulas de campanha do Dashboard: só nome e situação. Até 2026-10-07 isto
+// trazia junto os insights de 30 dias de cada campanha, que ninguém lia — e
+// era a parte lenta da chamada.
 export async function campanhasDeAnuncios(contaId: string): Promise<CampanhaAdsMeta[]> {
   if (!/^act_\d+$/.test(contaId)) throw new ErroMeta("Conta de anúncios inválida.", undefined, 400);
-  return listarMeta(`${contaId}/campaigns`, {
-    fields: "id,name,status,effective_status,objective,daily_budget,lifetime_budget,start_time,stop_time,insights.date_preset(last_30d){spend,impressions,reach,clicks,ctr,cpc,cpm,actions}", limit: "100",
-  });
+  return (await listarGuardado<CampanhaAdsMeta>(`${contaId}/campaigns`, { fields: "id,name,status,effective_status", limit: "100" }, VALIDADE_CADASTRO)).valor;
 }
 
 // A navegação do filtro usa o cadastro completo, inclusive anúncios sem
 // veiculação recente, em vez de depender dos insights dos últimos 30 dias.
 export async function estruturaCampanhaAds(id: string) {
   if (!/^\d+$/.test(id)) throw new ErroMeta("Campanha inválida.", undefined, 400);
-  const [conjuntos, anuncios] = await Promise.all([
-    listarMeta<{id:string;name:string}>(`${id}/adsets`, {fields:"id,name",limit:"100"}),
-    listarMeta<{id:string;name:string;adset_id:string}>(`${id}/ads`, {fields:"id,name,adset_id",limit:"100"}),
+  const [{ valor: conjuntos }, { valor: anuncios }] = await Promise.all([
+    listarGuardado<{id:string;name:string}>(`${id}/adsets`, {fields:"id,name",limit:"100"}, VALIDADE_CADASTRO),
+    listarGuardado<{id:string;name:string;adset_id:string}>(`${id}/ads`, {fields:"id,name,adset_id",limit:"100"}, VALIDADE_CADASTRO),
   ]);
   return {grupos:conjuntos.map(c=>({id:c.id,nome:c.name,anuncios:anuncios.filter(a=>a.adset_id===c.id).map(a=>({id:a.id,nome:a.name}))}))};
 }
@@ -145,6 +234,10 @@ export type TemplateMeta = {
 };
 
 export async function wabasMeta(): Promise<WabaMeta[]> {
+  return (await lembrar("whatsapp/wabas", VALIDADE_CADASTRO, buscarWabas)).valor;
+}
+
+async function buscarWabas(): Promise<WabaMeta[]> {
   const r = await requisicao<{ data: WabaMeta[] }>("me/assigned_whatsapp_business_accounts", {
     params: { fields: "id,name,currency,timezone_id", limit: "100" },
   });
@@ -174,10 +267,13 @@ export async function wabasMeta(): Promise<WabaMeta[]> {
 }
 
 export async function telefonesMeta(wabaId: string): Promise<TelefoneMeta[]> {
-  const r = await requisicao<{ data: TelefoneMeta[] }>(`${wabaId}/phone_numbers`, {
-    params: { fields: "id,display_phone_number,verified_name,quality_rating", limit: "100" },
+  const { valor } = await lembrar(`whatsapp/${wabaId}/telefones`, VALIDADE_CADASTRO, async () => {
+    const r = await requisicao<{ data: TelefoneMeta[] }>(`${wabaId}/phone_numbers`, {
+      params: { fields: "id,display_phone_number,verified_name,quality_rating", limit: "100" },
+    });
+    return r.data;
   });
-  return r.data;
+  return valor;
 }
 
 export async function templatesMeta(wabaId: string): Promise<TemplateMeta[]> {

@@ -205,6 +205,23 @@ export async function exigirModulo(
 }
 
 /**
+ * Para ação que serve a MAIS DE UMA tela: basta ter um dos módulos. É o caso de
+ * editar contato, anotar ou ligar a IA de um contato — o mesmo gesto existe na
+ * gaveta do Dashboard ('inicio') e no módulo Contatos ('contatos'), e prender a
+ * ação a um só deixaria a outra tela quebrada para quem não tem os dois.
+ */
+export async function exigirAlgumModulo(
+  ...chaves: ChaveModulo[]
+): Promise<AcessoAoModulo> {
+  const usuario = await exigirLogin();
+  for (const chave of chaves) {
+    const escopo = usuario.modulos.get(chave);
+    if (escopo) return { usuario, escopo };
+  }
+  redirect(destinoPossivel(usuario));
+}
+
+/**
  * A portaria da própria portaria: só o departamento marcado com
  * `gerencia_acessos` edita departamentos e permissões.
  *

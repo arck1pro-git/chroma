@@ -14,7 +14,6 @@ import {
   MapPin,
   MessageCircle,
   Pause,
-  Paperclip,
   Play,
   Workflow,
   Phone,
@@ -39,7 +38,6 @@ import type {
 } from "../data";
 import { brl, dataCurta, dataHora, localizacao } from "../formato";
 import {
-  anexarAtendimento,
   automacoesDaOportunidade,
   excluirOportunidade,
   moverParaResponsavel,
@@ -174,7 +172,6 @@ export default function FichaOportunidade({
   aoFechar: () => void;
 }) {
   const [aba, setAba] = useState<"oportunidade" | "cliente">("oportunidade");
-  const [, startTransition] = useTransition();
 
   const etapa = etapaPorId.get(oportunidade.etapa_id);
   const funil = funilPorId.get(oportunidade.funil_id);
@@ -189,10 +186,6 @@ export default function FichaOportunidade({
   const segmentos = contato ? (segmentosDoContato.get(contato.id) ?? []) : [];
   const tags = contato ? (tagsDoContato.get(contato.id) ?? []) : [];
   const atendimentos = contato ? (atendimentosDoContato.get(contato.id) ?? []) : [];
-
-  function aoAnexar(atendimentoId: string) {
-    startTransition(() => anexarAtendimento(atendimentoId, oportunidade.id));
-  }
 
   // ── Automações em que este lead está ──────────────────────────────────────
   // Buscadas ao abrir a ficha, não junto do funil: é uma consulta por
@@ -656,25 +649,17 @@ export default function FichaOportunidade({
                 <Vazio>Nenhum atendimento com este contato</Vazio>
               ) : (
                 <ul className="flex flex-col gap-2">
+                  {/* A conversa é do CONTATO, não da oportunidade: não há o que
+                      anexar (o botão saiu em 2026-10-06). Qual trecho dela é
+                      deste negócio a IA decide pela data — o que veio do dia
+                      em que a oportunidade foi criada em diante. */}
                   {atendimentos.map((a) => {
                     const { rotulo, Icone: IconeCanal } = CANAL[a.canal];
-                    const anexado = a.oportunidade_id === oportunidade.id;
-
                     return (
-                      <li
-                        key={a.id}
-                        className={`flex items-center gap-2 rounded-xl border p-3 ${
-                          anexado
-                            ? "border-zinc-300 bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900"
-                            : "border-zinc-200 dark:border-zinc-800"
-                        }`}
-                      >
-                        {/* Link em vez de envolver a linha inteira: o botão de
-                            anexar ao lado precisa do próprio clique, e <button>
-                            dentro de <a> não é HTML válido. */}
+                      <li key={a.id}>
                         <Link
                           href={`/chat?atendimento=${a.id}`}
-                          className="group flex min-w-0 flex-1 items-center gap-2.5"
+                          className="group flex items-center gap-2.5 rounded-xl border border-zinc-200 p-3 transition hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700"
                         >
                           <IconeCanal
                             className="size-4 shrink-0 text-zinc-400 transition group-hover:text-zinc-600 dark:group-hover:text-zinc-300"
@@ -690,27 +675,6 @@ export default function FichaOportunidade({
                             </span>
                           </span>
                         </Link>
-                        <button
-                          type="button"
-                          onClick={() => aoAnexar(a.id)}
-                          aria-label={
-                            anexado
-                              ? "Desanexar desta oportunidade"
-                              : "Anexar a esta oportunidade"
-                          }
-                          title={
-                            anexado
-                              ? "Desanexar desta oportunidade"
-                              : "Anexar a esta oportunidade"
-                          }
-                          className={`flex size-7 shrink-0 items-center justify-center rounded-md transition ${
-                            anexado
-                              ? "bg-zinc-900 text-white hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-                              : "text-zinc-400 hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-                          }`}
-                        >
-                          <Paperclip className="size-3.5" aria-hidden="true" />
-                        </button>
                       </li>
                     );
                   })}

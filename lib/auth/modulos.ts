@@ -18,7 +18,9 @@
 export type ChaveModulo =
   | "inicio"
   | "chat"
+  | "contatos"
   | "agenda"
+  | "demandas"
   | "metricas"
   | "emails"
   | "automacoes"
@@ -27,6 +29,7 @@ export type ChaveModulo =
   | "blog"
   | "webhooks"
   | "documentos"
+  | "videos"
   | "contextos"
   | "meta"
   | "integracoes"
@@ -85,6 +88,15 @@ export const MODULOS: readonly Modulo[] = [
     descricao: "Conversas de WhatsApp e a fila de atendimento.",
   },
   {
+    chave: "contatos",
+    rotulo: "Contatos",
+    href: "/contatos",
+    escopavel: false,
+    naBarra: true,
+    descricao:
+      "A base de contatos com a ficha completa de cada um: origem, oportunidades, conversas, reuniões, vídeos que recebeu, automações e histórico. Vê todos os contatos — não filtra por responsável.",
+  },
+  {
     chave: "agenda",
     rotulo: "Agenda",
     href: "/agenda",
@@ -92,6 +104,18 @@ export const MODULOS: readonly Modulo[] = [
     naBarra: true,
     descricao:
       "Compromissos da semana no Google Calendar da conta conectada em Integrações, com o lead de cada reunião marcada pelo CRM.",
+  },
+  {
+    chave: "demandas",
+    rotulo: "Demandas",
+    href: "/demandas",
+    // Não é escopável: quem cria para os outros e vê as de todo mundo é o
+    // DEPARTAMENTO (Admin e TI, em lib/demandas.ts), decisão dele de
+    // 2026-10-07. O resto vê as suas e cria só para si ou para o TI.
+    escopavel: false,
+    naBarra: true,
+    descricao:
+      "Tarefas de cada pessoa, com o check de feito, e os chamados para o TI. Cada um cria demandas para si ou abre chamado para o TI (também pelo botão do Dashboard); Admin e TI criam para qualquer pessoa ou para todos e veem as de todos. O TI precisa do módulo para receber os chamados.",
   },
   {
     chave: "metricas",
@@ -158,6 +182,15 @@ export const MODULOS: readonly Modulo[] = [
     naBarra: true,
     descricao:
       "Biblioteca de arquivos (PDF, imagem, vídeo) para anexar na cadência e no chat. Quem tem o módulo vê e sobe arquivo para todo mundo — o acervo é da empresa, não de cada um.",
+  },
+  {
+    chave: "videos",
+    rotulo: "Vídeos",
+    href: "/videos",
+    escopavel: false,
+    naBarra: true,
+    descricao:
+      "Vídeos com link rastreável: o link leva o WhatsApp do lead, e a tela mostra quem abriu e quanto assistiu.",
   },
   {
     chave: "contextos",
