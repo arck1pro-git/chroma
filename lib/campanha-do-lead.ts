@@ -14,31 +14,57 @@
 //
 // Ordem de resolução: anúncio ou conjunto com ID numérico nos campos (a
 // campanha deles não muda nunca) → nome exato entre as campanhas das contas de
-// anúncio da integração. Nome ambíguo ou desconhecido não grava nada: chutar
-// uma campanha é pior que deixar sem.
+// anúncio da integração → (desde 2026-10-07) nome do conjunto e do anúncio,
+// quando o nome da campanha não é mais o atual: renomeada entre o clique e o
+// formulário, ou UTM guardada pela página de uma visita antiga. Foram os dois
+// leads que escaparam do carimbo depois que ele entrou no ar. Nome ambíguo ou
+// desconhecido não grava nada: chutar uma campanha é pior que deixar sem.
 import "server-only";
 import { after } from "next/server";
 import { sql } from "./db";
 import { contasDeAnuncios, listarMeta, requisicao } from "./meta";
-import { pedidoDeCampanha, resolverOrigem } from "./meta-ads-calculos";
+import { campanhaPelosNomes, pedidoDeCampanha, resolverOrigem } from "./meta-ads-calculos";
 import type { ObjetoAds } from "./meta-ads-tipos";
 
 type Pedido = NonNullable<ReturnType<typeof pedidoDeCampanha>>;
 
-// Lista de campanhas guardada por 10 minutos: não vira uma chamada à Meta por
-// lead. Nome que não está na lista força uma releitura (campanha criada agora),
-// mas no máximo uma por minuto — lixo como "{{campaign.name}}" não pode
-// martelar a Meta a cada formulário.
+// Campanhas, conjuntos e anúncios das contas, guardados por 10 minutos: não
+// vira uma chamada à Meta por lead. Nome que não está na lista força uma
+// releitura (campanha criada agora), mas no máximo uma por minuto — lixo de
+// UTM não pode martelar a Meta a cada formulário.
 const DEZ_MINUTOS = 10 * 60_000, UM_MINUTO = 60_000;
-let cache: { em: number; campanhas: ObjetoAds[] } | null = null;
+type Peca = { id: string; name: string; campaign_id: string };
+type Catalogo = { campanhas: ObjetoAds[]; conjuntos: Peca[]; anuncios: Peca[] };
+let cache: { em: number; catalogo: Catalogo } | null = null;
 
-async function campanhas(releitura: boolean) {
+async function catalogo(releitura: boolean): Promise<Catalogo> {
   const idade = cache ? Date.now() - cache.em : Infinity;
-  if (cache && idade < (releitura ? UM_MINUTO : DEZ_MINUTOS)) return cache.campanhas;
+  if (cache && idade < (releitura ? UM_MINUTO : DEZ_MINUTOS)) return cache.catalogo;
   const contas = await contasDeAnuncios();
-  const listas = await Promise.all(contas.map((c) => listarMeta<ObjetoAds>(`${c.id}/campaigns`, { fields: "id,name", limit: "100" })));
-  cache = { em: Date.now(), campanhas: listas.flat() };
-  return cache.campanhas;
+  const porConta = await Promise.all(contas.map((c) => Promise.all([
+    listarMeta<ObjetoAds>(`${c.id}/campaigns`, { fields: "id,name", limit: "100" }),
+    listarMeta<Peca>(`${c.id}/adsets`, { fields: "id,name,campaign_id", limit: "100" }),
+    listarMeta<Peca>(`${c.id}/ads`, { fields: "id,name,campaign_id", limit: "100" }),
+  ])));
+  cache = {
+    em: Date.now(),
+    catalogo: {
+      campanhas: porConta.flatMap(([c]) => c),
+      conjuntos: porConta.flatMap(([, j]) => j),
+      anuncios: porConta.flatMap(([, , a]) => a),
+    },
+  };
+  return cache.catalogo;
+}
+
+/** Pelo nome da campanha e, na falta, pelos nomes de conjunto e anúncio. "ambiguo" = o nome bate em duas campanhas. */
+function resolverNoCatalogo(pedido: Pedido, cat: Catalogo): string | "ambiguo" | null {
+  if (pedido.nome) {
+    const r = resolverOrigem({ utm_campaign: pedido.nome }, cat.campanhas, "campaign");
+    if (r.id) return r.id;
+    if (r.motivo === "ambiguas") return "ambiguo";
+  }
+  return campanhaPelosNomes(pedido, cat.conjuntos, cat.anuncios);
 }
 
 /**
@@ -54,12 +80,12 @@ export async function idDaCampanha(pedido: Pedido, renomeadas?: Map<string, stri
     const r = await requisicao<{ campaign_id?: string }>(id, { params: { fields: "campaign_id" } }).catch(() => null);
     if (r?.campaign_id) return r.campaign_id;
   }
-  if (!pedido.nome) return null;
-  const antigo = renomeadas?.get(pedido.nome);
+  const antigo = pedido.nome ? renomeadas?.get(pedido.nome) : undefined;
   if (antigo) return antigo;
-  let r = resolverOrigem({ utm_campaign: pedido.nome }, await campanhas(false), "campaign");
-  if (r.motivo === "semCorrespondencia") r = resolverOrigem({ utm_campaign: pedido.nome }, await campanhas(true), "campaign");
-  return r.id;
+  if (!pedido.nome && !pedido.nomeDoConjunto && !pedido.nomeDoAnuncio) return null;
+  let r = resolverNoCatalogo(pedido, await catalogo(false));
+  if (r === null) r = resolverNoCatalogo(pedido, await catalogo(true));
+  return r === "ambiguo" ? null : r;
 }
 
 export type Carimbo = { tabela: "contatos" | "oportunidades"; id: string; nome: string | null; campanhaId: string | null };

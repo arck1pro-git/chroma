@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { dividir, leadsPor, metricasAds, origemDaOportunidade, pedidoDeCampanha, resolverOrigem, resumoCrm, situacaoDosLeads, type EntradaCrm, type OportunidadeAds } from "../lib/meta-ads-calculos";
+import { campanhaPelosNomes, dividir, leadsPor, metricasAds, origemDaOportunidade, pedidoDeCampanha, resolverOrigem, resumoCrm, situacaoDosLeads, type EntradaCrm, type OportunidadeAds } from "../lib/meta-ads-calculos";
 import { acaoAds, executarAcaoAds } from "../lib/meta-ads-gestao";
 import { carregarDetalheCampanha, carregarRelatorioAds, consultaAds, serieAds } from "../lib/meta-ads-relatorio";
 import { listarMeta } from "../lib/meta";
@@ -13,8 +13,23 @@ async function main() {
   assert.equal(resolverOrigem(null, catalogo, "campaign").motivo, "semOrigem");
   assert.equal(pedidoDeCampanha({ utm_id: "100", utm_campaign: "Captação" }), null);
   assert.equal(pedidoDeCampanha({ utm_source: "facebook" }), null);
-  assert.deepEqual(pedidoDeCampanha({ utm_campaign: " Captação ", adset_id: "{{adset.id}}" }), { nome: "Captação", anuncio: null, conjunto: null });
-  assert.deepEqual(pedidoDeCampanha({ ad_id: "300" }), { nome: null, anuncio: "300", conjunto: null });
+  assert.deepEqual(pedidoDeCampanha({ utm_campaign: " Captação ", adset_id: "{{adset.id}}" }), { nome: "Captação", anuncio: null, conjunto: null, nomeDoConjunto: null, nomeDoAnuncio: null });
+  assert.deepEqual(pedidoDeCampanha({ ad_id: "300" }), { nome: null, anuncio: "300", conjunto: null, nomeDoConjunto: null, nomeDoAnuncio: null });
+  // Macro não substituída não é pista; nome de conjunto e anúncio é.
+  assert.equal(pedidoDeCampanha({ utm_campaign: "{{campaign.name}}", utm_term: "{{adset.name}}", utm_content: "{{ad.name}}" }), null);
+  assert.deepEqual(pedidoDeCampanha({ utm_campaign: "Nome antigo", utm_term: "Conjunto A", utm_content: "Anúncio 1" }),
+    { nome: "Nome antigo", anuncio: null, conjunto: null, nomeDoConjunto: "Conjunto A", nomeDoAnuncio: "Anúncio 1" });
+
+  // A campanha pelo conjunto e pelo anúncio: só com UMA campanha por pista, e
+  // as duas concordando. Conjunto repetido em duas campanhas (campanha
+  // duplicada) não é pista; o anúncio decide sozinho.
+  const conjuntos = [{ id: "j1", name: "Conjunto A", campaign_id: "100" }, { id: "j2", name: "Conjunto B", campaign_id: "100" }, { id: "j3", name: "Conjunto B", campaign_id: "200" }];
+  const anuncios = [{ id: "a1", name: "Anúncio 1", campaign_id: "100" }, { id: "a2", name: "Anúncio 2", campaign_id: "200" }];
+  assert.equal(campanhaPelosNomes({ nomeDoConjunto: "Conjunto A", nomeDoAnuncio: "Anúncio 1" }, conjuntos, anuncios), "100");
+  assert.equal(campanhaPelosNomes({ nomeDoConjunto: "Conjunto B", nomeDoAnuncio: "Anúncio 2" }, conjuntos, anuncios), "200");
+  assert.equal(campanhaPelosNomes({ nomeDoConjunto: "Conjunto B", nomeDoAnuncio: null }, conjuntos, anuncios), null);
+  assert.equal(campanhaPelosNomes({ nomeDoConjunto: "Conjunto A", nomeDoAnuncio: "Anúncio 2" }, conjuntos, anuncios), null);
+  assert.equal(campanhaPelosNomes({ nomeDoConjunto: "Inexistente", nomeDoAnuncio: null }, conjuntos, anuncios), null);
   const op: OportunidadeAds = { id: "o1", contato_id: "c1", status: "aberta", valor: 100, etapa_id: "e1", etapa_nome: "Entrada", etapa_ordem: 0, funil_id: "f1", funil_nome: "Vendas", primeira_ordem: 0, campos: { campaign_id: "100" }, contato_campos: { campaign_id: "101", adset_id: "20" } };
   assert.deepEqual(origemDaOportunidade(op), { campaign_id: "100" });
   assert.deepEqual(origemDaOportunidade({ ...op, campos: {} }), op.contato_campos);

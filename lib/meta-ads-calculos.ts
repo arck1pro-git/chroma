@@ -48,13 +48,50 @@ export function resolverOrigem(origem: OrigemAds, objetos: ObjetoAds[], nivel: "
 }
 // O que perguntar à Meta para gravar o ID da campanha no lead, ou null quando
 // não há o que fazer: já tem ID (que prevalece sobre o nome) ou não tem origem.
-// Conjunto e anúncio só valem como número: a macro não substituída da URL
-// ("{{adset.id}}") chega como texto literal.
+// Conjunto e anúncio por ID só valem como número, e todo texto com macro não
+// substituída da URL ("{{adset.id}}", "{{campaign.name}}") é descartado: ele
+// chega literal quando o link é aberto fora do anúncio (prévia, link copiado).
+//
+// Os NOMES de conjunto e anúncio (utm_term e utm_content, na convenção dos
+// links) entraram em 2026-10-07: são a pista que sobra quando o nome da
+// campanha não é mais o atual — ver campanhaPelosNomes.
 export function pedidoDeCampanha(campos: OrigemAds) {
   if (valor(campos, ["campaign_id", "campanha_id", "utm_id"])) return null;
   const numero = (chaves: string[]) => { const v = valor(campos, chaves); return v && /^\d+$/.test(v) ? v : null; };
-  const pedido = { nome: valor(campos, ["campaign_name", "utm_campaign"]), anuncio: numero(["ad_id", "anuncio_id"]), conjunto: numero(["adset_id", "conjunto_id"]) };
-  return pedido.nome || pedido.anuncio || pedido.conjunto ? pedido : null;
+  const texto = (chaves: string[]) => { const v = valor(campos, chaves); return v && !/\{\{.*\}\}/.test(v) ? v : null; };
+  const pedido = {
+    nome: texto(["campaign_name", "utm_campaign"]),
+    anuncio: numero(["ad_id", "anuncio_id"]), conjunto: numero(["adset_id", "conjunto_id"]),
+    nomeDoConjunto: texto(["adset_name", "utm_term"]), nomeDoAnuncio: texto(["ad_name", "utm_content"]),
+  };
+  return Object.values(pedido).some(Boolean) ? pedido : null;
+}
+
+type PecaAds = { id: string; name: string; campaign_id?: string };
+
+/**
+ * A campanha de um lead pelo nome do CONJUNTO e do ANÚNCIO, quando o nome da
+ * campanha não casa — ela foi renomeada entre o clique e o formulário, ou a
+ * página guardou a UTM de uma visita antiga. Foi assim que os 42 leads de
+ * "SCP - TOPO DE FUNIL [LEADS][CBO][LP]" se provaram da "TOPO CHECKLIST": o
+ * conjunto e o anúncio deles só existem nela.
+ *
+ * Cada pista só vale se apontar UMA campanha (conjunto com o mesmo nome em duas
+ * campanhas é o normal de quem duplica campanha), e as duas juntas têm de
+ * concordar. Na dúvida, null: lead sem campanha é melhor que lead na errada.
+ */
+export function campanhaPelosNomes(
+  pedido: { nomeDoConjunto: string | null; nomeDoAnuncio: string | null },
+  conjuntos: PecaAds[], anuncios: PecaAds[],
+): string | null {
+  const unica = (lista: PecaAds[], nome: string | null) => {
+    if (!nome) return null;
+    const ids = new Set(lista.filter(x => x.name === nome && x.campaign_id).map(x => x.campaign_id!));
+    return ids.size === 1 ? [...ids][0] : null;
+  };
+  const peloConjunto = unica(conjuntos, pedido.nomeDoConjunto), peloAnuncio = unica(anuncios, pedido.nomeDoAnuncio);
+  if (peloConjunto && peloAnuncio && peloConjunto !== peloAnuncio) return null;
+  return peloConjunto ?? peloAnuncio;
 }
 export function resumoCrm(oportunidades: OportunidadeAds[], etapaAlvo?: { funil_id: string; ordem: number }): CrmAds {
   const etapas = new Map<string, CrmAds["etapas"][number]>();
