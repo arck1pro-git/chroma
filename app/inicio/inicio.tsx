@@ -1193,7 +1193,7 @@ export default function Inicio({
       {chamadoAberto && (
         <ModalDemanda
           titulo="Abrir chamado"
-          subtitulo="Vai para o TI, em Demandas. Você acompanha em “Geradas para outros”."
+          subtitulo="Vai para o TI. Você acompanha em Demandas, na aba “Enviadas”."
           botao="Abrir chamado"
           enviar={abrirChamado}
           aoFechar={() => setChamadoAberto(false)}

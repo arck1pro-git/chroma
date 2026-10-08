@@ -1,6 +1,6 @@
 "use client";
 
-// O checklist dentro do cartão aberto de uma demanda.
+// O checklist na gaveta de uma demanda (./detalhe.tsx).
 //
 // QUEM FAZ O QUÊ (decisão dele, 2026-10-07): quem CRIOU a demanda monta —
 // acrescenta, renomeia (clicando no texto) e tira passos; quem RECEBEU marca.
@@ -13,7 +13,7 @@
 // agrupado mostra os passos da MINHA cópia (quando eu também recebi) e, ao lado
 // de cada um, quantas pessoas já o fizeram.
 import { useRef, useState, useTransition } from "react";
-import { Check, CircleCheck, ListChecks, Plus, X } from "lucide-react";
+import { Check, CircleCheck, Plus, X } from "lucide-react";
 import { TETO_ITENS, TETO_TEXTO_ITEM, type Demanda, type ItemDemanda, type ResultadoDemanda } from "@/lib/demandas-tipos";
 import { horaDe } from "./datas";
 
@@ -99,8 +99,7 @@ export default function Checklist({
 
   return (
     <section aria-label="Checklist" className="space-y-1.5">
-      <header className="flex items-center gap-2 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-        <ListChecks className="size-3.5" aria-hidden="true" />
+      <header className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
         Checklist
         {itens.length > 0 && (
           <>
@@ -128,7 +127,7 @@ export default function Checklist({
                   onClick={() => aoMarcarItem(i.id, !feito)}
                   aria-label={feito ? `Desmarcar “${i.texto}”` : `Marcar “${i.texto}”`}
                   title={podeMarcar ? undefined : "Só quem recebeu marca os passos"}
-                  className={`mt-[3px] flex size-3.5 shrink-0 items-center justify-center rounded-[4px] border transition active:scale-90 disabled:cursor-default disabled:active:scale-100 ${
+                  className={`mt-[2px] flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition active:scale-90 disabled:cursor-default disabled:active:scale-100 ${
                     feito
                       ? "border-emerald-500 bg-emerald-500 text-white dark:text-zinc-950"
                       : podeMarcar
@@ -154,7 +153,7 @@ export default function Checklist({
                       }
                     }}
                     aria-label="Texto do passo"
-                    className="min-w-0 flex-1 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-[12px] text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                    className="min-w-0 flex-1 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-[13px] text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
                   />
                 ) : podeMontar ? (
                   // Quem monta renomeia clicando no texto: o lápis seria mais um
@@ -167,7 +166,7 @@ export default function Checklist({
                       setRascunho(i.texto);
                     }}
                     title="Clique para renomear"
-                    className={`min-w-0 flex-1 cursor-text break-words rounded px-0.5 text-left text-[12px] leading-snug transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                    className={`min-w-0 flex-1 cursor-text break-words rounded px-0.5 text-left text-[13px] leading-snug transition hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
                       feito ? "text-zinc-400 line-through decoration-zinc-300 dark:text-zinc-500 dark:decoration-zinc-600" : "text-zinc-700 dark:text-zinc-200"
                     }`}
                   >
@@ -175,7 +174,7 @@ export default function Checklist({
                   </button>
                 ) : (
                   <span
-                    className={`min-w-0 flex-1 break-words text-[12px] leading-snug ${
+                    className={`min-w-0 flex-1 break-words text-[13px] leading-snug ${
                       feito ? "text-zinc-400 line-through decoration-zinc-300 dark:text-zinc-500 dark:decoration-zinc-600" : "text-zinc-700 dark:text-zinc-200"
                     }`}
                   >
@@ -231,7 +230,7 @@ export default function Checklist({
             onChange={(e) => setNovo(e.target.value)}
             placeholder={itens.length ? "Acrescentar um passo" : "Quebrar em passos: escreva o primeiro e Enter"}
             aria-label="Novo passo do checklist"
-            className="min-w-0 flex-1 bg-transparent py-0.5 text-[12px] text-zinc-900 outline-none placeholder:text-zinc-400 disabled:opacity-60 dark:text-zinc-50"
+            className="min-w-0 flex-1 bg-transparent py-0.5 text-[13px] text-zinc-900 outline-none placeholder:text-zinc-400 disabled:opacity-60 dark:text-zinc-50"
           />
           {novo.trim() && (
             <button type="submit" disabled={salvando} className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800">

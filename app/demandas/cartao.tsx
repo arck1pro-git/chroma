@@ -1,47 +1,41 @@
 "use client";
 
-// O cartão de uma demanda.
+// O cartão de uma demanda no quadro.
 //
-// EM REPOUSO ELE MOSTRA SÓ O QUE DECIDE O DIA: o check, o título, uma linha de
-// descrição e uma linha de sinais (prazo, prioridade, chamado, de quem veio).
-// Clicar abre o resto no próprio cartão — descrição inteira, datas, quem fez,
-// editar e excluir. Assim a coluna se lê de relance e nada precisa de hover
-// para ser achado.
+// EM REPOUSO ELE MOSTRA SÓ O QUE DECIDE O DIA: o check, o título, duas linhas
+// de descrição, o progresso do checklist e uma linha de sinais (prazo,
+// prioridade, chamado) com a pessoa do outro lado — quem mandou, no quadro
+// "Minhas"; para quem foi, no "Enviadas". O resto (descrição inteira,
+// checklist, datas, editar e excluir) mora na gaveta (./detalhe.tsx), que abre
+// no clique: numa coluna de quadro, abrir o cartão no lugar empurrava a coluna
+// inteira e espremia o checklist.
 //
 // PRIORIDADE ALTA É UMA BARRA VERMELHA na borda esquerda, além do selo escrito:
 // a barra é o que o olho pega descendo a coluna; o texto é o que garante a
 // leitura para quem não distingue a cor.
 //
-// A DEMANDA "PARA TODOS" vira UM cartão (ver `Item`): sem isso, na visão do
-// Admin uma demanda para dez pessoas eram dez cartões iguais empurrando o resto
-// para baixo. O cartão diz quantas já fizeram e mostra quem falta.
+// A DEMANDA "PARA TODOS" vira UM cartão (ver `Item`): sem isso, uma demanda
+// para dez pessoas eram dez cartões iguais empurrando o resto para baixo. O
+// cartão mostra quem ainda falta e o progresso somado do checklist.
 //
-// O CHECKLIST (./checklist.tsx) mora no cartão aberto; fechado, o cartão só
-// diz o progresso ("3/5") na linha de sinais.
+// ARRASTAR: o cartão que eu posso marcar vai para "Feitas" arrastando, e volta
+// de lá do mesmo jeito — é o gesto do quadro do Dashboard. O círculo do check
+// continua sendo o caminho do teclado e do toque.
 import { useEffect, useRef, useState } from "react";
-import {
-  ArrowDown,
-  CalendarClock,
-  Check,
-  Flag,
-  LifeBuoy,
-  ListChecks,
-  Pencil,
-  Trash2,
-  Users,
-} from "lucide-react";
+import { useDraggable } from "@dnd-kit/core";
+import { ArrowDown, CalendarClock, Check, Flag, LifeBuoy } from "lucide-react";
 import type { Demanda } from "@/lib/demandas-tipos";
-import { dataHora } from "../formato";
-import { diaComSemana, haQuanto, horaDe, prazoEmTexto, type TomDoPrazo } from "./datas";
-import Checklist, { type MontarChecklist } from "./checklist";
+import { tintaDe } from "../components/tinta";
+import type { ColunaId, Quadro } from "./colunas";
+import { haQuanto, horaDe, prazoEmTexto, type TomDoPrazo } from "./datas";
 
 export type Eu = { id: string; nome: string; departamentoId: string | null };
 
 /**
- * O que vira um cartão. `demandas` são as do cartão nesta coluna (na A fazer,
- * as pendentes); `lote` são todas as irmãs no recorte, feitas ou não — é delas
- * que sai o "2 de 5 feitas". Fora da demanda "para todos", os dois têm uma
- * linha só.
+ * O que vira um cartão. `demandas` são as do cartão nesta coluna (nas
+ * pendentes, as que ainda faltam); `lote` são todas as irmãs no recorte, feitas
+ * ou não — é delas que sai o "2 de 5". Fora da demanda "para todos", os dois
+ * têm uma linha só.
  */
 export type Item = { chave: string; demandas: Demanda[]; lote: Demanda[] };
 
@@ -52,64 +46,125 @@ export function ehMinha(d: Demanda, eu: Eu) {
   );
 }
 
-const TOM_PRAZO: Record<TomDoPrazo, string> = {
-  atrasada: "font-medium text-red-600 dark:text-red-400",
-  hoje: "font-medium text-amber-700 dark:text-amber-400",
-  perto: "text-zinc-700 dark:text-zinc-300",
-  longe: "",
+/** A linha que o MEU check mexe: a minha dentre as do cartão — ou nenhuma. */
+export function alvoDo(item: Item, eu: Eu) {
+  return item.demandas.find((x) => ehMinha(x, eu)) ?? null;
+}
+
+/** O chip do prazo: vermelho atrasado, âmbar hoje, neutro o resto. */
+export const TOM_PRAZO: Record<TomDoPrazo, string> = {
+  atrasada: "bg-red-50 text-red-700 ring-red-200/70 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-500/20",
+  hoje: "bg-amber-50 text-amber-800 ring-amber-200/70 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20",
+  perto: "bg-zinc-50 text-zinc-700 ring-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-300 dark:ring-zinc-700/60",
+  longe: "bg-zinc-50 text-zinc-500 ring-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-400 dark:ring-zinc-700/60",
 };
 
-const ROTULO_PRIORIDADE = { alta: "Alta", normal: "Normal", baixa: "Baixa" } as const;
-
 /** As iniciais do departamento do chamado: "TI". */
-function siglaDe(nome: string | null) {
+export function siglaDe(nome: string | null) {
   return (nome ?? "?").slice(0, 2).toUpperCase();
 }
 
-function Avatar({ texto, titulo, feito = false }: { texto: string; titulo: string; feito?: boolean }) {
+export function primeiroNome(nome: string | null) {
+  return (nome ?? "").trim().split(/\s+/)[0] || "Alguém";
+}
+
+function iniciaisDe(nome: string) {
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return "?";
+  return ((partes[0][0] ?? "") + (partes.length > 1 ? partes[partes.length - 1][0] : "")).toUpperCase();
+}
+
+/** A pessoa (ou o departamento), na tinta dela — a mesma das Configurações. */
+export function Avatar({
+  nome,
+  texto,
+  tamanho = "sm",
+  apagado = false,
+  titulo,
+}: {
+  nome: string;
+  /** As iniciais, quando já vêm prontas do banco. */
+  texto?: string | null;
+  tamanho?: "xs" | "sm" | "md";
+  /** Quem já fez, na lista da demanda "para todos". */
+  apagado?: boolean;
+  titulo?: string;
+}) {
+  const medida = tamanho === "xs" ? "size-5 text-[8px]" : tamanho === "sm" ? "size-6 text-[9px]" : "size-8 text-[11px]";
   return (
     <span
       title={titulo}
-      className={`flex size-6 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold ring-2 ring-white dark:ring-zinc-900 ${
-        feito
-          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+      aria-hidden={titulo ? undefined : true}
+      className={`flex shrink-0 items-center justify-center rounded-full font-semibold ring-2 ring-white dark:ring-zinc-900 ${medida} ${
+        apagado ? "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500" : tintaDe(nome)
       }`}
     >
-      {texto}
+      {texto || iniciaisDe(nome)}
     </span>
   );
 }
 
-const botaoAcao =
-  "inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium transition disabled:opacity-40";
+/** As pessoas de uma demanda "para todos" que ainda faltam, empilhadas. */
+export function Pilha({ demandas, limite = 3 }: { demandas: Demanda[]; limite?: number }) {
+  return (
+    <span className="flex shrink-0 -space-x-1.5">
+      {demandas.slice(0, limite).map((x) => (
+        <Avatar
+          key={x.id}
+          nome={x.responsavel ?? "?"}
+          texto={x.responsavelIniciais}
+          tamanho="xs"
+          titulo={`Falta: ${x.responsavel ?? "alguém que saiu"}`}
+        />
+      ))}
+      {demandas.length > limite && (
+        <span className="flex size-5 items-center justify-center rounded-full bg-zinc-200 text-[8px] font-semibold text-zinc-600 ring-2 ring-white dark:bg-zinc-700 dark:text-zinc-200 dark:ring-zinc-900">
+          +{demandas.length - limite}
+        </span>
+      )}
+    </span>
+  );
+}
 
-export default function Cartao({
-  item,
-  eu,
-  hoje,
-  agora,
-  aoMarcar,
-  aoEditar,
-  aoExcluir,
-  aoMarcarItem,
-  montar,
-  aoAvisar,
-}: {
+type Props = {
   item: Item;
+  coluna: ColunaId;
+  quadro: Quadro;
   eu: Eu;
   hoje: string;
   agora: string;
   aoMarcar: (id: string, feita: boolean) => void;
-  aoEditar: (item: Item) => void;
-  aoExcluir: (ids: string[]) => void;
-  aoMarcarItem: (itemId: string, feito: boolean) => void;
-  montar: MontarChecklist;
-  aoAvisar: (texto: string) => void;
-}) {
-  const [aberto, setAberto] = useState(false);
-  // Segundo clique é que exclui, como em Documentos.
-  const [confirmando, setConfirmando] = useState(false);
+  aoAbrir: (id: string) => void;
+};
+
+/** O cartão no quadro: arrastável quando o check é meu. */
+export default function Cartao(props: Props) {
+  const { item, coluna, eu } = props;
+  const alvo = alvoDo(item, eu);
+  const { setNodeRef, listeners, isDragging } = useDraggable({
+    id: item.chave,
+    data: { coluna, alvo: alvo?.id ?? null },
+    disabled: !alvo,
+  });
+
+  return (
+    <li ref={setNodeRef} {...listeners} className={`list-none ${isDragging ? "opacity-30" : ""}`}>
+      <CorpoCartao {...props} />
+    </li>
+  );
+}
+
+/** O desenho do cartão — também a cópia que segue o cursor no arraste. */
+export function CorpoCartao({
+  item,
+  quadro,
+  eu,
+  hoje,
+  agora,
+  aoMarcar,
+  aoAbrir,
+  flutuando = false,
+}: Props & { flutuando?: boolean }) {
   // O instante entre o clique e a ida para Feitas: o círculo enche e o título
   // é riscado AQUI, onde a pessoa está olhando. Sem essa pausa o cartão sumia
   // no mesmo quadro do clique, e o check parecia não ter acontecido.
@@ -128,295 +183,190 @@ export default function Cartao({
   const emLote = item.lote.length > 1;
   const chamado = d.departamentoId !== null;
   const alta = d.prioridade === "alta" && !feita;
-
-  // Qual linha o MEU check mexe: a minha dentre as pendentes do cartão, ou a
-  // própria feita, se for minha (desmarcar).
-  const alvo = item.demandas.find((x) => ehMinha(x, eu)) ?? null;
-  // Só o desenho do check e do título: o resto do cartão segue o que está gravado.
+  const alvo = alvoDo(item, eu);
   const marcada = feita || (concluindo !== null && concluindo === alvo?.id);
-  // Editar e excluir: só quem criou (regra dele, 2026-10-07) — o servidor
-  // confere de novo em lib/demandas.ts.
-  const podeMexer = d.criadoPor === eu.id;
-  const prazo = d.prazo ? prazoEmTexto(d.prazo, hoje, feita) : null;
+  const prazo = d.prazo && !feita ? prazoEmTexto(d.prazo, hoje, false) : null;
+
+  // O progresso do checklist: o da MINHA cópia quando ela está no cartão; no
+  // cartão "para todos" de quem mandou, a soma de todas as cópias — é o "quanto
+  // a equipe já andou".
+  const base = alvo ?? (emLote ? null : d);
+  const passos = base
+    ? { feitos: base.itens.filter((i) => i.feitoEm).length, total: base.itens.length }
+    : {
+        feitos: item.lote.reduce((n, x) => n + x.itens.filter((i) => i.feitoEm).length, 0),
+        total: item.lote.reduce((n, x) => n + x.itens.length, 0),
+      };
   const feitasNoLote = item.lote.filter((x) => x.feitaEm).length;
-  const idsDoCartao = emLote ? item.lote.map((x) => x.id) : [d.id];
 
-  // O checklist que aparece: o da MINHA cópia quando a demanda é minha; no
-  // cartão "para todos" de quem não recebeu, a lista em si, sem o check de
-  // ninguém — o de cada pessoa aparece como "2/5" ao lado do passo.
-  const baseDoChecklist = alvo ?? (emLote ? { ...d, itens: d.itens.map((i) => ({ ...i, feitoEm: null, feitoPor: null })) } : d);
-  const passosFeitos = baseDoChecklist.itens.filter((i) => i.feitoEm).length;
-  // Montar o checklist é de quem criou a demanda (decisão dele, 2026-10-07).
-  const podeMontar = d.criadoPor === eu.id;
-
-  // Marcar como feita — pelo círculo ou pela sugestão do checklist completo.
-  function concluir() {
-    if (!alvo || marcada !== feita || feita) return;
+  function clicarCheck() {
+    if (!alvo || marcada !== feita) return;
+    if (feita) return aoMarcar(alvo.id, false);
     setConcluindo(alvo.id);
     espera.current = setTimeout(() => aoMarcar(alvo.id, true), 280);
   }
 
-  const autor = d.criadoPor === eu.id ? "você" : (d.autor ?? "alguém que saiu");
-  const origem = chamado ? `aberto por ${autor}` : d.criadoPor === eu.id ? "criada por você" : `de ${autor}`;
-  const quemFez = d.feitaPor === eu.nome ? "você" : (d.feitaPor ?? "alguém que saiu");
-
-  const idDetalhe = `demanda-${d.id}`;
+  // Quem aparece no canto: o outro lado da demanda.
+  //   · "para todos": quem ainda falta;
+  //   · não é minha (Enviadas, ou o Admin vendo a equipe): para quem foi;
+  //   · minha, mandada por outra pessoa: quem mandou;
+  //   · minha, criada por mim: ninguém — só há quanto tempo.
+  const autor = d.autor ?? "alguém que saiu";
+  let pessoa: React.ReactNode = null;
+  if (emLote) {
+    pessoa = feita ? null : <Pilha demandas={item.demandas} />;
+  } else if (!ehMinha(d, eu)) {
+    const nome = chamado ? (d.departamento ?? "?") : (d.responsavel ?? "Alguém que saiu");
+    pessoa = (
+      <span className="flex min-w-0 items-center gap-1.5" title={`Para ${nome}`}>
+        <Avatar nome={nome} texto={chamado ? siglaDe(d.departamento) : d.responsavelIniciais} tamanho="xs" />
+        <span className="truncate text-zinc-600 dark:text-zinc-300">{chamado ? nome : primeiroNome(nome)}</span>
+      </span>
+    );
+  } else if (d.criadoPor !== eu.id) {
+    pessoa = (
+      <span className="flex min-w-0 items-center gap-1.5" title={`De ${autor}`}>
+        <Avatar nome={autor} tamanho="xs" />
+        <span className="truncate text-zinc-500 dark:text-zinc-400">de {primeiroNome(autor)}</span>
+      </span>
+    );
+  }
 
   return (
-    <li
-      className={`surge relative overflow-hidden rounded-xl border transition-[border-color,box-shadow] ${
-        feita
-          ? "border-zinc-200/70 bg-white/60 dark:border-zinc-800/70 dark:bg-zinc-900/40"
-          : "border-zinc-200 bg-white hover:border-zinc-300 hover:shadow-[0_1px_3px_rgba(0,0,0,0.05)] dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
-      } ${aberto ? "border-zinc-300 shadow-[0_1px_3px_rgba(0,0,0,0.05)] dark:border-zinc-700" : ""}`}
+    <article
+      className={`group relative rounded-xl border text-left transition-[border-color,box-shadow,background-color] ${
+        flutuando
+          ? "rotate-2 cursor-grabbing border-zinc-300 bg-white shadow-xl dark:border-zinc-600 dark:bg-zinc-900"
+          : feita
+            ? "border-zinc-200/80 bg-white/70 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900/40 dark:hover:border-zinc-700"
+            : "border-zinc-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:border-zinc-300 hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)] dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-none dark:hover:border-zinc-700"
+      }`}
     >
       {alta && (
-        <span aria-hidden="true" className="absolute inset-y-0 left-0 w-[3px] bg-red-500 dark:bg-red-500/90" />
+        <span aria-hidden="true" className="absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-red-500" />
       )}
 
-      <div className={`flex items-start gap-3 px-3 ${feita ? "py-2" : "py-2.5"}`}>
-        {/* O check. Sem `alvo`, a demanda é de outra pessoa: o círculo fica
-            tracejado — dá para ver o estado, não para mudá-lo. */}
+      <div className={`flex items-start gap-2.5 px-3 ${feita ? "pt-2.5" : "pt-3"}`}>
+        {/* O check fica ACIMA do botão que cobre o cartão (z-10). Sem `alvo`,
+            a demanda é de outra pessoa: o círculo fica tracejado — dá para ver
+            o estado, não para mudá-lo. */}
         <button
           type="button"
           role="checkbox"
           aria-checked={marcada}
           disabled={!alvo}
-          onClick={() => {
-            if (!alvo || marcada !== feita) return;
-            if (feita) return aoMarcar(alvo.id, false);
-            concluir();
-          }}
+          onClick={clicarCheck}
           aria-label={feita ? `Desmarcar “${d.titulo}”` : `Marcar “${d.titulo}” como feita`}
-          title={alvo ? (feita ? "Desmarcar" : "Marcar como feita") : "Só quem recebeu dá o check"}
-          className={`peer mt-px flex size-[18px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition duration-150 active:scale-90 disabled:cursor-default disabled:active:scale-100 ${
+          title={alvo ? (feita ? "Desmarcar" : "Marcar como feita") : feita ? "Feita" : "Só quem recebeu dá o check"}
+          className={`relative z-10 mt-px flex size-[18px] shrink-0 items-center justify-center rounded-full border-[1.5px] transition duration-150 active:scale-90 disabled:cursor-default disabled:active:scale-100 ${
             marcada
-              ? "border-emerald-500 bg-emerald-500 text-white dark:border-emerald-500 dark:bg-emerald-500 dark:text-zinc-950"
+              ? "border-emerald-500 bg-emerald-500 text-white dark:text-zinc-950"
               : alvo
-                ? "border-zinc-300 text-transparent hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-500 dark:border-zinc-600 dark:hover:bg-emerald-950"
-                : "border-dashed border-zinc-300 text-transparent dark:border-zinc-700"
+                ? "border-zinc-300 text-transparent hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-500 dark:border-zinc-600 dark:hover:bg-emerald-500/10"
+                : "border-dashed border-zinc-300 text-transparent dark:border-zinc-600"
           }`}
         >
           <Check className="size-3" strokeWidth={3} aria-hidden="true" />
         </button>
 
-        <button
-          type="button"
-          onClick={() => setAberto((v) => !v)}
-          aria-expanded={aberto}
-          aria-controls={idDetalhe}
-          className="min-w-0 flex-1 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:focus-visible:ring-zinc-100/10"
-        >
-          <p
-            className={`break-words text-[13px] leading-snug ${
+        <div className="min-w-0 flex-1">
+          {/* O título é o botão que abre a gaveta — e o ::after estica o clique
+              para o cartão inteiro, sem botão dentro de botão. */}
+          <button
+            type="button"
+            onClick={() => aoAbrir(d.id)}
+            className={`block w-full break-words text-left text-[13px] leading-snug outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-2 focus-visible:after:ring-zinc-900/15 dark:focus-visible:after:ring-zinc-100/20 ${
               marcada
                 ? "text-zinc-500 line-through decoration-zinc-300 dark:text-zinc-500 dark:decoration-zinc-600"
                 : "font-medium text-zinc-900 dark:text-zinc-50"
             }`}
           >
-            {d.titulo}
-          </p>
-
-          {d.descricao && !aberto && !feita && (
-            <p className="mt-0.5 line-clamp-1 text-[12px] text-zinc-500 dark:text-zinc-400">{d.descricao}</p>
+            <span className="line-clamp-3">{d.titulo}</span>
+          </button>
+          {d.descricao && !feita && (
+            <p className="mt-1 line-clamp-2 break-words text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+              {d.descricao}
+            </p>
           )}
+        </div>
+      </div>
 
-          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+      {/* O checklist em uma barra: o quanto andou, sem abrir. */}
+      {passos.total > 0 && !feita && (
+        <div className="flex items-center gap-2 pl-[42px] pr-3 pt-2.5" title="Passos do checklist">
+          <span className="h-1 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800" aria-hidden="true">
+            <span
+              className={`block h-full rounded-full transition-[width] duration-300 ${
+                passos.feitos === passos.total ? "bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-500"
+              }`}
+              style={{ width: `${(passos.feitos / passos.total) * 100}%` }}
+            />
+          </span>
+          <span
+            className={`text-[10px] tabular-nums ${
+              passos.feitos === passos.total ? "font-semibold text-emerald-700 dark:text-emerald-400" : "text-zinc-500 dark:text-zinc-400"
+            }`}
+          >
+            {passos.feitos}/{passos.total}
+          </span>
+        </div>
+      )}
+
+      <div
+        className={`flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1.5 pl-[42px] pr-3 text-[11px] text-zinc-500 dark:text-zinc-400 ${
+          feita ? "pb-2.5 pt-1" : "pb-3 pt-2.5"
+        }`}
+      >
+        {feita ? (
+          <span className="flex min-w-0 items-center gap-1 truncate">
+            <Check className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={2.5} aria-hidden="true" />
+            {horaDe(d.feitaEm!)}
+            {d.feitaPor && d.feitaPor !== eu.nome && quadro === "minhas" && (
+              <span className="truncate"> · {primeiroNome(d.feitaPor)}</span>
+            )}
+          </span>
+        ) : (
+          <>
             {chamado && (
-              <span className="inline-flex items-center gap-1 font-medium text-sky-700 dark:text-sky-400">
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-sky-50 px-1.5 py-0.5 font-medium text-sky-700 ring-1 ring-inset ring-sky-200/70 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20">
                 <LifeBuoy className="size-3" aria-hidden="true" />
                 Chamado
               </span>
             )}
-            {feita ? (
-              <span>
-                feita por {quemFez} · {horaDe(d.feitaEm!)}
+            {prazo && (
+              <span
+                className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium ring-1 ring-inset ${TOM_PRAZO[prazo.tom]}`}
+              >
+                <CalendarClock className="size-3" aria-hidden="true" />
+                {prazo.texto}
               </span>
-            ) : (
-              <>
-                {prazo && (
-                  <span className={`inline-flex items-center gap-1 ${TOM_PRAZO[prazo.tom]}`}>
-                    <CalendarClock className="size-3" aria-hidden="true" />
-                    {prazo.texto}
-                  </span>
-                )}
-                {d.prioridade === "alta" && (
-                  <span className="inline-flex items-center gap-1 font-medium text-red-600 dark:text-red-400">
-                    <Flag className="size-3 fill-current" aria-hidden="true" />
-                    Alta
-                  </span>
-                )}
-                {d.prioridade === "baixa" && (
-                  <span className="inline-flex items-center gap-1 text-zinc-400 dark:text-zinc-500">
-                    <ArrowDown className="size-3" aria-hidden="true" />
-                    Baixa
-                  </span>
-                )}
-                {emLote && (
-                  <span className="inline-flex items-center gap-1">
-                    <Users className="size-3" aria-hidden="true" />
-                    {feitasNoLote} de {item.lote.length} feitas
-                  </span>
-                )}
-                {baseDoChecklist.itens.length > 0 && (
-                  <span
-                    className={`inline-flex items-center gap-1 tabular-nums ${
-                      !emLote && passosFeitos === baseDoChecklist.itens.length ? "font-medium text-emerald-700 dark:text-emerald-400" : ""
-                    }`}
-                    title={emLote ? "Passos do checklist" : "Passos feitos do checklist"}
-                  >
-                    <ListChecks className="size-3" aria-hidden="true" />
-                    {emLote && !alvo ? `${baseDoChecklist.itens.length} passos` : `${passosFeitos}/${baseDoChecklist.itens.length}`}
-                  </span>
-                )}
-                <span className="text-zinc-400 dark:text-zinc-500">
-                  {origem} · {haQuanto(d.dataCriacao, agora, hoje)}
-                </span>
-              </>
             )}
-          </p>
-        </button>
-
-        {/* Para quem é — só quando não é para mim, senão é repetir o óbvio. Na
-            demanda "para todos", quem AINDA não fez. */}
-        {emLote ? (
-          <span className="flex shrink-0 -space-x-1.5 pt-px">
-            {item.demandas.slice(0, 3).map((x) => (
-              <Avatar key={x.id} texto={x.responsavelIniciais ?? "?"} titulo={`Falta: ${x.responsavel ?? "?"}`} />
-            ))}
-            {item.demandas.length > 3 && (
-              <Avatar texto={`+${item.demandas.length - 3}`} titulo={`Faltam mais ${item.demandas.length - 3}`} />
+            {d.prioridade === "alta" && (
+              <span className="inline-flex shrink-0 items-center gap-0.5 font-semibold text-red-600 dark:text-red-400" title="Prioridade alta">
+                <Flag className="size-3 fill-current" aria-hidden="true" />
+                Alta
+              </span>
             )}
-          </span>
-        ) : (
-          !ehMinha(d, eu) && (
-            <span className="pt-px">
-              <Avatar
-                texto={chamado ? siglaDe(d.departamento) : (d.responsavelIniciais ?? "?")}
-                titulo={`Para ${chamado ? d.departamento : d.responsavel}`}
-                feito={feita}
-              />
-            </span>
-          )
+            {d.prioridade === "baixa" && (
+              <span className="inline-flex shrink-0 items-center gap-0.5 text-zinc-400 dark:text-zinc-500" title="Prioridade baixa">
+                <ArrowDown className="size-3" aria-hidden="true" />
+                Baixa
+              </span>
+            )}
+            {emLote && (
+              <span className="shrink-0 tabular-nums" title="Pessoas que já fizeram">
+                {feitasNoLote}/{item.lote.length} feitas
+              </span>
+            )}
+            {!prazo && !chamado && !emLote && d.prioridade === "normal" && (
+              <span className="truncate text-zinc-400 dark:text-zinc-500">{haQuanto(d.dataCriacao, agora, hoje)}</span>
+            )}
+          </>
         )}
+        {/* Sem espaço ao lado dos sinais, a pessoa desce para a linha de baixo
+            — o nome não some. */}
+        {pessoa && <span className="ml-auto flex min-w-0 max-w-full items-center pl-1">{pessoa}</span>}
       </div>
-
-      {aberto && (
-        <div
-          id={idDetalhe}
-          className="surge-suave space-y-3 border-t border-zinc-100 pb-3 pl-[42px] pr-3 pt-2.5 dark:border-zinc-800"
-        >
-          {d.descricao && (
-            <p className="whitespace-pre-line break-words text-[12px] leading-relaxed text-zinc-700 dark:text-zinc-300">
-              {d.descricao}
-            </p>
-          )}
-
-          <Checklist
-            base={baseDoChecklist}
-            lote={item.lote}
-            podeMarcar={Boolean(alvo)}
-            podeMontar={podeMontar}
-            demandaPendente={baseDoChecklist.feitaEm === null}
-            eu={eu}
-            aoMarcarItem={aoMarcarItem}
-            montar={montar}
-            aoFecharDemanda={concluir}
-            aoAvisar={aoAvisar}
-          />
-
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
-            <dt className="text-zinc-400 dark:text-zinc-500">Para</dt>
-            <dd className="text-zinc-700 dark:text-zinc-300">
-              {emLote
-                ? `${item.lote.length} pessoas, uma demanda para cada`
-                : chamado
-                  ? `${d.departamento} — qualquer pessoa do departamento`
-                  : d.responsavelId === eu.id
-                    ? "Você"
-                    : d.responsavel}
-            </dd>
-            <dt className="text-zinc-400 dark:text-zinc-500">{chamado ? "Aberto" : "Criada"}</dt>
-            <dd className="text-zinc-700 dark:text-zinc-300">
-              {dataHora(d.dataCriacao)} · {autor}
-            </dd>
-            {d.prazo && (
-              <>
-                <dt className="text-zinc-400 dark:text-zinc-500">Prazo</dt>
-                <dd className="text-zinc-700 dark:text-zinc-300">{diaComSemana(d.prazo, hoje)}</dd>
-              </>
-            )}
-            <dt className="text-zinc-400 dark:text-zinc-500">Prioridade</dt>
-            <dd className="text-zinc-700 dark:text-zinc-300">{ROTULO_PRIORIDADE[d.prioridade]}</dd>
-            {!emLote && d.feitaEm && (
-              <>
-                <dt className="text-zinc-400 dark:text-zinc-500">Feita</dt>
-                <dd className="text-emerald-700 dark:text-emerald-400">
-                  {dataHora(d.feitaEm)} · {quemFez}
-                </dd>
-              </>
-            )}
-          </dl>
-
-          {/* Quem já fez e quem falta, na demanda "para todos". */}
-          {emLote && (
-            <ul className="flex flex-col gap-1.5">
-              {[...item.lote]
-                .sort((a, b) => Number(Boolean(a.feitaEm)) - Number(Boolean(b.feitaEm)))
-                .map((x) => (
-                  <li key={x.id} className="flex items-center gap-2 text-[11px]">
-                    <Avatar texto={x.responsavelIniciais ?? "?"} titulo={x.responsavel ?? "?"} feito={Boolean(x.feitaEm)} />
-                    <span className="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-300">
-                      {x.responsavelId === eu.id ? "Você" : x.responsavel}
-                    </span>
-                    {/* Até onde cada pessoa foi no checklist dela. */}
-                    {x.itens.length > 0 && (
-                      <span className="inline-flex items-center gap-1 tabular-nums text-zinc-400 dark:text-zinc-500" title="Passos feitos do checklist">
-                        <ListChecks className="size-3" aria-hidden="true" />
-                        {x.itens.filter((i) => i.feitoEm).length}/{x.itens.length}
-                      </span>
-                    )}
-                    {x.feitaEm ? (
-                      <span className="text-emerald-700 dark:text-emerald-400">feita · {dataHora(x.feitaEm)}</span>
-                    ) : (
-                      <span className="text-zinc-400 dark:text-zinc-500">falta</span>
-                    )}
-                  </li>
-                ))}
-            </ul>
-          )}
-
-          {podeMexer && (
-            <div className="-ml-2 flex flex-wrap gap-1">
-              <button
-                type="button"
-                onClick={() => aoEditar(item)}
-                className={`${botaoAcao} text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50`}
-              >
-                <Pencil className="size-3" aria-hidden="true" />
-                Editar
-              </button>
-              <button
-                type="button"
-                onClick={() => (confirmando ? aoExcluir(idsDoCartao) : setConfirmando(true))}
-                onBlur={() => setConfirmando(false)}
-                className={`${botaoAcao} ${
-                  confirmando
-                    ? "bg-red-600 text-white hover:bg-red-700"
-                    : "text-zinc-500 hover:bg-red-50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-950 dark:hover:text-red-400"
-                }`}
-              >
-                <Trash2 className="size-3" aria-hidden="true" />
-                {confirmando
-                  ? emLote
-                    ? `Confirmar: excluir das ${item.lote.length} pessoas`
-                    : "Confirmar exclusão"
-                  : "Excluir"}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </li>
+    </article>
   );
 }

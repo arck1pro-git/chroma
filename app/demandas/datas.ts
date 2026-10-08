@@ -97,43 +97,28 @@ export function rotuloDoDia(dia: string, hoje: string) {
   return diaComSemana(dia, hoje);
 }
 
-// ── Agrupar e filtrar ───────────────────────────────────────────────────────
+// ── Colunas e filtros ───────────────────────────────────────────────────────
 
-export type GrupoDePrazo = "atrasadas" | "hoje" | "semana" | "adiante" | "sem";
+/**
+ * A coluna do quadro de uma demanda PENDENTE, pelo prazo — é a pergunta de quem
+ * abre a tela: o que já passou, o que é para hoje, o que vem depois (com prazo
+ * mais adiante ou sem prazo nenhum). A feita vai para "Feitas", seja qual for.
+ */
+export type ColunaDePrazo = "atrasadas" | "hoje" | "fila";
 
-export const GRUPOS_DE_PRAZO: readonly { grupo: GrupoDePrazo; rotulo: string }[] = [
-  { grupo: "atrasadas", rotulo: "Atrasadas" },
-  { grupo: "hoje", rotulo: "Hoje" },
-  { grupo: "semana", rotulo: "Próximos 7 dias" },
-  { grupo: "adiante", rotulo: "Mais adiante" },
-  { grupo: "sem", rotulo: "Sem prazo" },
-];
-
-export function grupoDoPrazo(prazo: string | null, hoje: string): GrupoDePrazo {
-  if (!prazo) return "sem";
-  if (prazo < hoje) return "atrasadas";
-  if (prazo === hoje) return "hoje";
-  if (prazo <= somarDias(hoje, 7)) return "semana";
-  return "adiante";
+export function colunaDoPrazo(prazo: string | null, hoje: string): ColunaDePrazo {
+  if (!prazo || prazo > hoje) return "fila";
+  return prazo < hoje ? "atrasadas" : "hoje";
 }
 
 export type FiltroDia = "qualquer" | "hoje" | "ontem" | "7d" | "30d";
-export type FiltroPrazo = "qualquer" | "vencido" | "hoje" | "semana" | "sem";
 
 export const OPCOES_DIA: { valor: FiltroDia; rotulo: string }[] = [
-  { valor: "qualquer", rotulo: "Qualquer dia" },
+  { valor: "qualquer", rotulo: "Qualquer data" },
   { valor: "hoje", rotulo: "Criadas hoje" },
   { valor: "ontem", rotulo: "Criadas ontem" },
-  { valor: "7d", rotulo: "Últimos 7 dias" },
-  { valor: "30d", rotulo: "Últimos 30 dias" },
-];
-
-export const OPCOES_PRAZO: { valor: FiltroPrazo; rotulo: string }[] = [
-  { valor: "qualquer", rotulo: "Qualquer prazo" },
-  { valor: "vencido", rotulo: "Prazo vencido" },
-  { valor: "hoje", rotulo: "Vence hoje" },
-  { valor: "semana", rotulo: "Próximos 7 dias" },
-  { valor: "sem", rotulo: "Sem prazo" },
+  { valor: "7d", rotulo: "Criadas em 7 dias" },
+  { valor: "30d", rotulo: "Criadas em 30 dias" },
 ];
 
 /** O filtro de dia olha a CRIAÇÃO da demanda. */
@@ -143,19 +128,4 @@ export function passaNoDia(dataCriacao: string, filtro: FiltroDia, hoje: string)
   if (filtro === "hoje") return dia === hoje;
   if (filtro === "ontem") return dia === somarDias(hoje, -1);
   return dia >= somarDias(hoje, filtro === "7d" ? -6 : -29);
-}
-
-export function passaNoPrazo(prazo: string | null, filtro: FiltroPrazo, hoje: string) {
-  switch (filtro) {
-    case "qualquer":
-      return true;
-    case "vencido":
-      return prazo !== null && prazo < hoje;
-    case "hoje":
-      return prazo === hoje;
-    case "semana":
-      return prazo !== null && prazo >= hoje && prazo <= somarDias(hoje, 7);
-    case "sem":
-      return prazo === null;
-  }
 }

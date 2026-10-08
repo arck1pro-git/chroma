@@ -15,12 +15,25 @@
 //
 // Sai pelo <CamadaTopo>, no <body>: no Dashboard ele precisa ficar por cima do
 // quadro e de tudo que flutua sobre ele (ver a escala em camada-topo.tsx).
-import { useEffect, useId, useState, useTransition } from "react";
-import { CircleCheck, ListChecks, Plus, X } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
+import {
+  Check,
+  ChevronDown,
+  CircleCheck,
+  LifeBuoy,
+  ListChecks,
+  Plus,
+  Search,
+  UserRound,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import CamadaTopo from "./camada-topo";
 import {
   avisarQueDemandasMudaram,
   PARA_O_TI,
+  PARA_TODOS,
   PRIORIDADES,
   TETO_ITENS,
   TETO_TEXTO_ITEM,
@@ -33,14 +46,21 @@ import {
 export type Destino = {
   valor: string;
   rotulo: string;
-  /** No seletor, as opções com grupo entram num <optgroup> com este nome. */
+  /** No seletor, as opções com grupo entram numa seção com este nome. */
   grupo?: string;
   /** Uma linha embaixo do campo quando esta opção está escolhida. */
   dica?: string;
+  /**
+   * O ícone da opção no seletor. Sem ele: o chamado ganha a boia, "todos" as
+   * pessoas, e quem está num grupo (a equipe) ganha as iniciais do nome.
+   */
+  Icone?: LucideIcon;
 };
 
+// [color-scheme]: o calendário do campo de prazo é desenhado pelo navegador, e
+// sem isto ele abria claro no tema escuro.
 const campo =
-  "w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600";
+  "w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-950 outline-none transition [color-scheme:light] placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:[color-scheme:dark] dark:focus:border-zinc-600";
 
 const rotulo = "text-[11px] font-medium text-zinc-600 dark:text-zinc-400";
 
@@ -236,30 +256,13 @@ export default function ModalDemanda({
                       ))}
                     </div>
                   ) : (
-                    <select
-                      aria-labelledby={idPara}
-                      value={para}
-                      onChange={(e) => setPara(e.target.value)}
-                      className={campo}
-                    >
-                      <option value="" disabled>
-                        Escolha
-                      </option>
-                      {soltos.map((d) => (
-                        <option key={d.valor} value={d.valor}>
-                          {d.rotulo}
-                        </option>
-                      ))}
-                      {[...grupos].map(([grupo, lista]) => (
-                        <optgroup key={grupo} label={grupo}>
-                          {lista.map((d) => (
-                            <option key={d.valor} value={d.valor}>
-                              {d.rotulo}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
+                    <SeletorDestino
+                      idRotulo={idPara}
+                      valor={para}
+                      soltos={soltos}
+                      grupos={grupos}
+                      aoEscolher={setPara}
+                    />
                   )}
                   {escolhido?.dica && (
                     <span className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
@@ -416,5 +419,265 @@ export default function ModalDemanda({
         )}
       </div>
     </CamadaTopo>
+  );
+}
+
+// ── O seletor de "Para" ─────────────────────────────────────────────────────
+//
+// Era um <select> nativo. A lista aberta dele quem desenha é o navegador, com
+// as cores do sistema — no tema escuro saía clara e com o texto apagado, e
+// nem os grupos ("Equipe") nem quem é quem dava para mostrar direito (pedido
+// dele de 2026-10-08: "o seletor personalizado, que dê boa no preto e no
+// branco"). Agora é uma lista desenhada aqui, nas cores do app nos dois temas:
+// você e o TI em cima, a equipe embaixo com as iniciais de cada um, busca
+// quando a equipe passa de oito pessoas, e teclado (setas, Enter, Esc).
+
+/** A partir de quantas opções a busca aparece. */
+const BUSCA_A_PARTIR_DE = 9;
+
+function iniciaisDe(nome: string) {
+  const p = nome.trim().split(/\s+/);
+  return ((p[0]?.[0] ?? "") + (p.length > 1 ? (p[p.length - 1]?.[0] ?? "") : "")).toUpperCase();
+}
+
+function semAcento(s: string) {
+  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+}
+
+/** O que aparece à esquerda de cada opção: ícone, ou as iniciais da pessoa. */
+function Marca({ d }: { d: Destino }) {
+  const Icone =
+    d.Icone ?? (d.valor === PARA_O_TI ? LifeBuoy : d.valor === PARA_TODOS ? Users : d.grupo ? null : UserRound);
+  const caixa = "size-6";
+  if (Icone) {
+    return (
+      <span
+        className={`flex ${caixa} shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300`}
+        aria-hidden="true"
+      >
+        <Icone className="size-3.5" />
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`flex ${caixa} shrink-0 items-center justify-center rounded-full bg-zinc-900 text-[9px] font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900`}
+      aria-hidden="true"
+    >
+      {iniciaisDe(d.rotulo)}
+    </span>
+  );
+}
+
+function SeletorDestino({
+  idRotulo,
+  valor,
+  soltos,
+  grupos,
+  aoEscolher,
+}: {
+  idRotulo: string;
+  valor: string;
+  soltos: Destino[];
+  grupos: Map<string, Destino[]>;
+  aoEscolher: (valor: string) => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [ativo, setAtivo] = useState(0);
+  const caixaRef = useRef<HTMLDivElement | null>(null);
+  const botaoRef = useRef<HTMLButtonElement | null>(null);
+  const listaRef = useRef<HTMLUListElement | null>(null);
+  const idLista = useId();
+  // Fechar a lista devolve o foco ao botão — por efeito, e não direto no
+  // clique: o React Compiler não deixa função de evento ler ref na mesma
+  // passagem em que monta a lista.
+  const [devolverFoco, setDevolverFoco] = useState(0);
+  useEffect(() => {
+    if (devolverFoco) botaoRef.current?.focus();
+  }, [devolverFoco]);
+
+  const todas = useMemo(() => [...soltos, ...[...grupos.values()].flat()], [soltos, grupos]);
+  const escolhido = todas.find((d) => d.valor === valor) ?? null;
+  const comBusca = todas.length >= BUSCA_A_PARTIR_DE;
+
+  // O que a lista mostra, já filtrado pela busca, e a mesma ordem achatada para
+  // as setas do teclado andarem por ela.
+  const termo = semAcento(busca.trim());
+  const passa = (d: Destino) => !termo || semAcento(d.rotulo).includes(termo);
+  const filtradas: Array<{ titulo: string | null; itens: Destino[] }> = [
+    { titulo: null, itens: soltos.filter(passa) },
+    ...[...grupos].map(([titulo, lista]) => ({ titulo, itens: lista.filter(passa) })),
+  ].filter((s) => s.itens.length > 0);
+  // Cada seção sabe em que posição da lista achatada ela começa: é o que liga
+  // o item da tela ao índice que as setas movem.
+  const secoes = filtradas.map((s, k) => ({
+    ...s,
+    inicio: filtradas.slice(0, k).reduce((n, x) => n + x.itens.length, 0),
+  }));
+  const visiveis = filtradas.flatMap((s) => s.itens);
+
+  // Fecha ao clicar fora.
+  useEffect(() => {
+    if (!aberto) return;
+    const aoClicar = (e: MouseEvent) => {
+      if (caixaRef.current && !caixaRef.current.contains(e.target as Node)) setAberto(false);
+    };
+    document.addEventListener("mousedown", aoClicar);
+    return () => document.removeEventListener("mousedown", aoClicar);
+  }, [aberto]);
+
+  // A opção ativa sempre à vista quando as setas a levam para fora da lista.
+  useEffect(() => {
+    if (!aberto) return;
+    listaRef.current?.querySelector<HTMLElement>(`[data-indice="${ativo}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [ativo, aberto]);
+
+  function abrir() {
+    setBusca("");
+    setAtivo(Math.max(0, todas.findIndex((d) => d.valor === valor)));
+    setAberto(true);
+  }
+
+  function escolher(d: Destino) {
+    aoEscolher(d.valor);
+    setAberto(false);
+    setDevolverFoco((n) => n + 1);
+  }
+
+  function aoTeclar(e: React.KeyboardEvent) {
+    if (e.key === "Escape") {
+      if (!aberto) return; // deixa o Esc fechar o modal
+      // Fecha só a lista: sem isto, o mesmo Esc fecharia o modal inteiro.
+      e.stopPropagation();
+      e.preventDefault();
+      setAberto(false);
+      setDevolverFoco((n) => n + 1);
+      return;
+    }
+    if (!aberto) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        abrir();
+      }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setAtivo((i) => Math.min(i + 1, visiveis.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setAtivo((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const d = visiveis[ativo];
+      if (d) escolher(d);
+    } else if (e.key === "Tab") {
+      setAberto(false);
+    }
+  }
+
+  return (
+    <div ref={caixaRef} className="relative" onKeyDown={aoTeclar}>
+      <button
+        ref={botaoRef}
+        type="button"
+        onClick={() => (aberto ? setAberto(false) : abrir())}
+        aria-haspopup="listbox"
+        aria-expanded={aberto}
+        aria-controls={idLista}
+        aria-labelledby={idRotulo}
+        className={`flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left text-[13px] outline-none transition focus-visible:ring-4 focus-visible:ring-zinc-900/5 dark:focus-visible:ring-zinc-100/5 ${
+          aberto
+            ? "border-zinc-400 dark:border-zinc-600"
+            : "border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700"
+        }`}
+      >
+        {escolhido ? (
+          <>
+            <Marca d={escolhido} />
+            <span className="min-w-0 flex-1 truncate font-medium text-zinc-950 dark:text-zinc-50">{escolhido.rotulo}</span>
+          </>
+        ) : (
+          <span className="min-w-0 flex-1 truncate px-0.5 text-zinc-400">Escolha para quem</span>
+        )}
+        <ChevronDown
+          className={`size-4 shrink-0 text-zinc-400 transition-transform ${aberto ? "rotate-180" : ""}`}
+          aria-hidden="true"
+        />
+      </button>
+
+      {aberto && (
+        <div className="surge absolute inset-x-0 top-full z-30 mt-1.5 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+          {comBusca && (
+            <div className="relative border-b border-zinc-100 dark:border-zinc-800">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400"
+                aria-hidden="true"
+              />
+              <input
+                autoFocus
+                value={busca}
+                onChange={(e) => {
+                  setBusca(e.target.value);
+                  setAtivo(0);
+                }}
+                placeholder="Buscar pessoa"
+                aria-label="Buscar pessoa"
+                aria-controls={idLista}
+                className="w-full bg-transparent py-2.5 pl-8 pr-3 text-[13px] text-zinc-950 outline-none placeholder:text-zinc-400 dark:text-zinc-50"
+              />
+            </div>
+          )}
+          <ul
+            ref={listaRef}
+            id={idLista}
+            role="listbox"
+            aria-labelledby={idRotulo}
+            tabIndex={-1}
+            className="max-h-64 overflow-y-auto p-1 outline-none"
+          >
+            {visiveis.length === 0 ? (
+              <li className="px-3 py-6 text-center text-[12px] text-zinc-400">Ninguém com “{busca.trim()}”</li>
+            ) : (
+              secoes.map((s) => (
+                <li key={s.titulo ?? "soltos"} role="presentation">
+                  {s.titulo && (
+                    <p className="px-2.5 pb-1 pt-2.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
+                      {s.titulo}
+                    </p>
+                  )}
+                  <ul role="presentation">
+                    {s.itens.map((d, j) => {
+                      const i = s.inicio + j;
+                      const marcado = d.valor === valor;
+                      const emFoco = i === ativo;
+                      return (
+                        <li
+                          key={d.valor}
+                          role="option"
+                          aria-selected={marcado}
+                          data-indice={i}
+                          onMouseEnter={() => setAtivo(i)}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => escolher(d)}
+                          className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
+                            emFoco ? "bg-zinc-100 dark:bg-zinc-800" : ""
+                          } ${marcado ? "font-medium text-zinc-950 dark:text-zinc-50" : "text-zinc-700 dark:text-zinc-300"}`}
+                        >
+                          <Marca d={d} />
+                          <span className="min-w-0 flex-1 truncate">{d.rotulo}</span>
+                          {marcado && <Check className="size-4 shrink-0 text-zinc-900 dark:text-zinc-100" aria-hidden="true" />}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
