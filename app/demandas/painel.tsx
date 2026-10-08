@@ -12,9 +12,14 @@
 //     todos" e a que criei para mim mesmo ficam em "Minhas", onde dou o check.
 //
 // AS COLUNAS SÃO AS MESMAS NOS DOIS (./colunas.ts): Atrasadas, Para hoje, A
-// fazer (ou Aguardando) e Feitas. Arrastar um cartão meu para Feitas dá o
+// fazer (ou Aguardando), Em andamento (o checklist começado, sem estado no
+// banco — escolha dele) e Feitas. Arrastar um cartão meu para Feitas dá o
 // check, e arrastar de volta tira — só se arrasta o cartão que eu posso marcar.
 // Clicar abre a gaveta (./detalhe.tsx) com o resto.
+//
+// QUADRO OU CALENDÁRIO (botão no topo, pedido dele de 2026-10-08): o
+// calendário (./calendario.tsx) põe as mesmas demandas — mesmas abas, mesmos
+// filtros — no dia do prazo. A escolha fica no aparelho, como a barra lateral.
 //
 // OS RECORTES FICAM NUMA LINHA SÓ, com o título e as abas:
 //   · quem — em "Minhas", para Admin e TI: todas, só os chamados ou uma
@@ -52,6 +57,7 @@ import {
 import {
   CalendarDays,
   CircleCheck,
+  Columns3,
   Inbox,
   ListChecks,
   Plus,
@@ -63,6 +69,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { SeletorMenu } from "../components/filtros-ui";
+import { criarPreferencia } from "../components/preferencia-local";
 import ModalDemanda, { type Destino } from "../components/modal-demanda";
 import {
   avisarQueDemandasMudaram,
@@ -79,12 +86,14 @@ import {
   excluirDemandas,
   marcarDemanda,
   marcarItemDemanda,
+  mudarPrazoDemanda,
   removerItemDemanda,
   renomearItemDemanda,
 } from "./acoes";
+import Calendario, { type ItemDoCalendario } from "./calendario";
 import type { MontarChecklist } from "./checklist";
 import Cartao, { CorpoCartao, ehMinha, type Eu, type Item } from "./cartao";
-import { COLUNAS, type ColunaId, type DefinicaoColuna, type Quadro } from "./colunas";
+import { COLUNAS, type ColunaId, type ColunaPendente, type DefinicaoColuna, type Quadro } from "./colunas";
 import DetalheDemanda from "./detalhe";
 import {
   colunaDoPrazo,
@@ -92,7 +101,6 @@ import {
   OPCOES_DIA,
   passaNoDia,
   rotuloDoDia,
-  type ColunaDePrazo,
   type FiltroDia,
 } from "./datas";
 
@@ -167,10 +175,19 @@ function ordemPendente(a: Item, b: Item) {
 /** O grupo da equipe no seletor de destino. */
 const EQUIPE = "Equipe — quem tem o módulo Demandas";
 
+/** Quadro ou calendário — do aparelho, não da conta (ver preferencia-local.ts). */
+const preferenciaCalendario = criarPreferencia("chroma:demandas-calendario");
+
+/** O checklist começado: é isso que põe a demanda "Em andamento" (ver colunas.ts). */
+function comecou(d: Demanda) {
+  return d.itens.some((i) => i.feitoEm !== null);
+}
+
 type Mudanca =
   | { tipo: "marcar"; id: string; feita: boolean }
   | { tipo: "remover"; ids: string[] }
-  | { tipo: "item"; itemId: string; feito: boolean };
+  | { tipo: "item"; itemId: string; feito: boolean }
+  | { tipo: "prazo"; ids: string[]; prazo: string | null };
 
 // Montar o checklist (acrescentar, renomear, tirar) é de quem criou a demanda e
 // não é otimista: espera o servidor, que aplica em todas as cópias de uma
@@ -217,12 +234,14 @@ export default function PainelDemandas({
   // ela passa para Feitas, e a gaveta tem de continuar aberta nela.
   const [aberta, setAberta] = useState<string | null>(null);
   const [arrastando, setArrastando] = useState<Arraste | null>(null);
+  const emCalendario = preferenciaCalendario.useValor();
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [, iniciar] = useTransition();
   const buscaRef = useRef<HTMLInputElement | null>(null);
 
   const [lista, mudarNaTela] = useOptimistic(demandas, (atual, m: Mudanca) => {
     if (m.tipo === "remover") return atual.filter((d) => !m.ids.includes(d.id));
+    if (m.tipo === "prazo") return atual.map((d) => (m.ids.includes(d.id) ? { ...d, prazo: m.prazo } : d));
     if (m.tipo === "item") {
       return atual.map((d) =>
         d.itens.some((i) => i.id === m.itemId)
@@ -281,14 +300,17 @@ export default function PainelDemandas({
       else lotes.set(k, [d]);
     }
 
-    const pendentes: Record<ColunaDePrazo, Item[]> = { atrasadas: [], hoje: [], fila: [] };
+    const pendentes: Record<ColunaPendente, Item[]> = { atrasadas: [], hoje: [], fila: [], andamento: [] };
     for (const [chave, lote] of lotes) {
       // A minha primeiro: é ela que o check do cartão marca.
       const falta = lote
         .filter((d) => !d.feitaEm)
         .sort((a, b) => Number(ehMinha(b, eu)) - Number(ehMinha(a, eu)));
       if (!falta.length) continue;
-      pendentes[colunaDoPrazo(falta[0].prazo, hoje)].push({ chave, demandas: falta, lote });
+      // Checklist começado vai para "Em andamento", seja qual for o prazo — o
+      // chip do cartão continua dizendo se atrasou.
+      const coluna = falta.some(comecou) ? "andamento" : colunaDoPrazo(falta[0].prazo, hoje);
+      pendentes[coluna].push({ chave, demandas: falta, lote });
     }
     for (const c of Object.values(pendentes)) c.sort(ordemPendente);
 
@@ -309,12 +331,24 @@ export default function PainelDemandas({
   }, [lista, recorte, dia, termo, eu, hoje]);
   const { pendentes, feitasPorDia, totalFeitas } = quadroMontado;
 
+  // O calendário mostra os mesmos cartões, cada um com a coluna em que está
+  // (é dela que sai a cor do ponto).
+  const itensDoCalendario = useMemo<ItemDoCalendario[]>(
+    () => [
+      ...(["atrasadas", "hoje", "fila", "andamento"] as const).flatMap((coluna) =>
+        pendentes[coluna].map((item) => ({ item, coluna })),
+      ),
+      ...feitasPorDia.flatMap((g) => g.itens.map((item) => ({ item, coluna: "feitas" as const }))),
+    ],
+    [pendentes, feitasPorDia],
+  );
+
   const totalDa = (c: ColunaId) => (c === "feitas" ? totalFeitas : pendentes[c].length);
   const vazio = COLUNAS.every((c) => totalDa(c.id) === 0);
 
   /** O cartão (e a coluna dele) de uma demanda — para a gaveta e o arraste. */
   function acharItem(achar: (item: Item) => boolean): { item: Item; coluna: ColunaId } | null {
-    for (const c of ["atrasadas", "hoje", "fila"] as const) {
+    for (const c of ["atrasadas", "hoje", "fila", "andamento"] as const) {
       const item = pendentes[c].find(achar);
       if (item) return { item, coluna: c };
     }
@@ -432,6 +466,16 @@ export default function PainelDemandas({
     });
   }
 
+  function mudarPrazo(ids: string[], prazo: string | null) {
+    setAviso(null);
+    iniciar(async () => {
+      mudarNaTela({ tipo: "prazo", ids, prazo });
+      const r = await mudarPrazoDemanda(ids, prazo);
+      setAviso({ ok: r.ok, texto: r.mensagem });
+      avisarQueDemandasMudaram();
+    });
+  }
+
   function excluir(ids: string[]) {
     setAberta(null);
     iniciar(async () => {
@@ -504,19 +548,51 @@ export default function PainelDemandas({
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2.5">
           {/* O título só aparece com folga: abaixo disso a barra lateral já diz
               onde a pessoa está, e a linha fica para as abas e os filtros. */}
-          <h1 className="sr-only text-[15px] font-semibold tracking-tight text-zinc-900 @6xl:not-sr-only @6xl:mr-1 @6xl:flex @6xl:items-center @6xl:gap-2 dark:text-zinc-50">
+          <h1 className="sr-only text-[15px] font-semibold tracking-tight text-zinc-900 @7xl:not-sr-only @7xl:mr-1 @7xl:flex @7xl:items-center @7xl:gap-2 dark:text-zinc-50">
             <ListChecks className="size-[18px]" aria-hidden="true" />
             Demandas
           </h1>
 
           {!faltaMigration && (
             <>
+              <div className="flex w-full items-center gap-2 @md:w-auto">
+              {/* Quadro ou calendário. */}
+              <div
+                role="radiogroup"
+                aria-label="Visão"
+                className="flex shrink-0 gap-0.5 rounded-[10px] bg-zinc-100 p-[3px] ring-1 ring-inset ring-zinc-200/80 dark:bg-zinc-900 dark:ring-zinc-800"
+              >
+                {(
+                  [
+                    [false, "Quadro", Columns3],
+                    [true, "Calendário", CalendarDays],
+                  ] as const
+                ).map(([valor, rotulo, Icone]) => (
+                  <button
+                    key={rotulo}
+                    type="button"
+                    role="radio"
+                    aria-checked={emCalendario === valor}
+                    aria-label={rotulo}
+                    title={rotulo}
+                    onClick={() => preferenciaCalendario.definir(valor)}
+                    className={`flex size-[30px] items-center justify-center rounded-[7px] transition ${
+                      emCalendario === valor
+                        ? "bg-white text-zinc-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)] dark:bg-zinc-800 dark:text-zinc-50 dark:shadow-none"
+                        : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                    }`}
+                  >
+                    <Icone className="size-4" aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+
               {/* Os dois quadros. O número é o que está A FAZER em cada um;
                   fica vermelho quando alguma já passou do prazo. */}
               <div
                 role="tablist"
                 aria-label="Quadro"
-                className="flex w-full gap-0.5 rounded-[10px] bg-zinc-100 p-[3px] ring-1 ring-inset ring-zinc-200/80 @md:w-auto dark:bg-zinc-900 dark:ring-zinc-800"
+                className="flex min-w-0 flex-1 gap-0.5 rounded-[10px] bg-zinc-100 p-[3px] ring-1 ring-inset ring-zinc-200/80 @md:flex-none dark:bg-zinc-900 dark:ring-zinc-800"
               >
                 {(
                   [
@@ -559,6 +635,8 @@ export default function PainelDemandas({
                     </button>
                   );
                 })}
+              </div>
+
               </div>
 
               {/* No celular os dois filtros dividem uma linha. */}
@@ -629,10 +707,12 @@ export default function PainelDemandas({
                 <button
                   type="button"
                   onClick={() => setCriando(true)}
+                  title="Nova demanda"
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 active:scale-[0.98] dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
                 >
-                  <Plus className="size-3.5" aria-hidden="true" />
-                  Nova demanda
+                  <Plus className="size-3.5 @4xl:@max-6xl:size-4" aria-hidden="true" />
+                  {/* No tablet deitado a linha do topo não cabe o texto: fica o +. */}
+                  <span className="@4xl:@max-6xl:sr-only">Nova demanda</span>
                 </button>
               </div>
             </>
@@ -647,8 +727,17 @@ export default function PainelDemandas({
             <code>migration-demandas.sql</code> e recarregue.
           </p>
         </div>
+      ) : emCalendario ? (
+        <Calendario
+          itens={itensDoCalendario}
+          quadro={quadro}
+          eu={eu}
+          hoje={hoje}
+          aoAbrir={setAberta}
+          aoMudarPrazo={mudarPrazo}
+        />
       ) : vazio ? (
-        // Quadro inteiro vazio: em vez de quatro colunas dizendo "nada", uma
+        // Quadro inteiro vazio: em vez de cinco colunas dizendo "nada", uma
         // frase só — com o caminho para sair dele.
         <div className="flex min-h-0 flex-1 items-center justify-center p-5">
           {filtrando ? (
@@ -680,7 +769,7 @@ export default function PainelDemandas({
           onDragEnd={aoSoltar}
           onDragCancel={() => setArrastando(null)}
         >
-          {/* Rola de lado quando as quatro não cabem (tablet, celular): no
+          {/* Rola de lado quando as cinco não cabem (tablet, celular): no
               celular cada coluna ocupa quase a tela e encaixa ao rolar. */}
           <main className="min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overscroll-x-contain @4xl:snap-none">
             <div className="flex h-full w-max gap-3 px-4 pb-5 pt-3 @md:px-5 @4xl:w-full">
@@ -837,8 +926,9 @@ function Coluna({
       ref={setNodeRef}
       aria-label={def.rotulo[quadro]}
       // Quase a tela no celular (e encaixa ao rolar); 18rem em tela média; as
-      // quatro dividindo a largura do tablet deitado para cima.
-      className={`relative flex h-full w-[85cqw] max-w-[22rem] shrink-0 snap-center flex-col rounded-xl transition-[background-color,box-shadow,opacity] duration-150 @2xl:w-72 @2xl:max-w-none @4xl:w-auto @4xl:min-w-0 @4xl:flex-1 ${
+      // cinco dividindo a largura do tablet deitado para cima, sem descer de
+      // 12,5rem (abaixo disso o cartão não se lê, e a linha rola de lado).
+      className={`relative flex h-full w-[85cqw] max-w-[22rem] shrink-0 snap-center flex-col rounded-xl transition-[background-color,box-shadow,opacity] duration-150 @2xl:w-72 @2xl:max-w-none @4xl:w-auto @4xl:min-w-[12.5rem] @4xl:flex-1 ${
         sobre
           ? "bg-emerald-50 ring-2 ring-inset ring-emerald-400/70 dark:bg-emerald-500/10 dark:ring-emerald-500/50"
           : realce === "aceita"

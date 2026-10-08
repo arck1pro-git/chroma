@@ -381,6 +381,31 @@ export async function atualizarDemandas(
   return linhas.length;
 }
 
+/**
+ * Muda SÓ o prazo — o arraste no calendário de Demandas (2026-10-08). Só quem
+ * criou, como editar; e vale para as cópias da demanda "para todos" (a mesma
+ * regra de `copiasDe`): no calendário de quem recebeu só a própria cópia está
+ * à vista, e o prazo de um lote não pode ficar diferente para cada pessoa.
+ */
+export async function mudarPrazo(
+  ids: string[],
+  prazo: string | null,
+  usuario: UsuarioLogado,
+): Promise<number> {
+  const linhas = await sql`
+    UPDATE demandas s
+       SET prazo = ${prazo}::date
+      FROM demandas d
+     WHERE d.id = ANY(string_to_array(${listaUuid(ids)}, ',')::uuid[])
+       AND d.criado_por = ${usuario.id}
+       AND (s.id = d.id
+            OR (d.responsavel_id IS NOT NULL AND s.responsavel_id IS NOT NULL
+                AND s.criado_por IS NOT DISTINCT FROM d.criado_por
+                AND s.data_criacao = d.data_criacao AND s.titulo = d.titulo))
+    RETURNING s.id`;
+  return linhas.length;
+}
+
 export async function apagarDemandas(
   ids: string[],
   usuario: UsuarioLogado,

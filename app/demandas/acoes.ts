@@ -15,6 +15,7 @@ import {
   inserirItens,
   marcarFeita,
   marcarItem,
+  mudarPrazo,
   podeCriarPara,
   removerItem,
   renomearItem,
@@ -205,6 +206,33 @@ export async function editarDemanda(ids: string[], dados: DadosDemanda): Promise
 
   revalidatePath("/demandas");
   return { ok: true, mensagem: "Demanda salva." };
+}
+
+/**
+ * Só o prazo, sem o resto do formulário: o arraste de um dia para outro no
+ * calendário (ou para "Sem prazo", com `prazo` nulo). Só quem criou.
+ */
+export async function mudarPrazoDemanda(ids: string[], prazo: string | null): Promise<ResultadoDemanda> {
+  const { usuario } = await exigirModulo("demandas");
+  const validos = idsValidos(ids);
+  if (!validos) return { ok: false, mensagem: "Demanda inválida." };
+  if (prazo !== null && (typeof prazo !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(prazo))) {
+    return { ok: false, mensagem: "Prazo inválido." };
+  }
+
+  let mudaram: number;
+  try {
+    mudaram = await mudarPrazo(validos, prazo, usuario);
+  } catch (e) {
+    return { ok: false, mensagem: mensagemDoErro(e) };
+  }
+  if (mudaram === 0) return { ok: false, mensagem: "Só quem criou a demanda pode mudar o prazo." };
+
+  revalidatePath("/demandas");
+  return {
+    ok: true,
+    mensagem: prazo ? `Prazo mudado para ${prazo.slice(8, 10)}/${prazo.slice(5, 7)}.` : "Prazo tirado.",
+  };
 }
 
 export async function excluirDemandas(ids: string[]): Promise<ResultadoDemanda> {

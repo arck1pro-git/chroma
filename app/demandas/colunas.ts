@@ -5,10 +5,18 @@
 // fazer e feita), e um quadro de duas colunas não responde a pergunta de quem
 // abre a tela — o que eu faço primeiro, quem está me devendo. O prazo responde.
 // A faixa colorida no topo é a mesma pista do quadro do Dashboard.
+//
+// "EM ANDAMENTO" (pedido dele de 2026-10-08) NÃO É UM ESTADO GRAVADO — ele
+// escolheu não mudar o banco: entra ali a demanda a fazer que já tem pelo
+// menos um passo do checklist marcado, seja qual for o prazo (o chip do
+// cartão continua dizendo se atrasou). Por isso ninguém arrasta PARA ela: o
+// cartão chega lá marcando um passo. Demanda sem checklist não passa por ela.
 import type { ColunaDePrazo } from "./datas";
 
 export type Quadro = "minhas" | "enviadas";
-export type ColunaId = ColunaDePrazo | "feitas";
+export type ColunaId = ColunaDePrazo | "andamento" | "feitas";
+/** As colunas do que ainda está a fazer. */
+export type ColunaPendente = Exclude<ColunaId, "feitas">;
 
 export type DefinicaoColuna = {
   id: ColunaId;
@@ -36,6 +44,15 @@ export const COLUNAS: readonly DefinicaoColuna[] = [
     rotulo: { minhas: "A fazer", enviadas: "Aguardando" },
     faixa: "bg-sky-500",
     vazio: { minhas: "Nada na fila.", enviadas: "Nada aguardando." },
+  },
+  {
+    id: "andamento",
+    rotulo: { minhas: "Em andamento", enviadas: "Em andamento" },
+    faixa: "bg-violet-500",
+    vazio: {
+      minhas: "Entra aqui o que já tem um passo do checklist marcado.",
+      enviadas: "Entra aqui quando a pessoa marca um passo do checklist.",
+    },
   },
   {
     id: "feitas",

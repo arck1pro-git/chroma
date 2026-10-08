@@ -22,6 +22,7 @@ const TOM_STATUS: Record<ColunaId, string> = {
   atrasadas: "text-red-600 dark:text-red-400",
   hoje: "text-amber-700 dark:text-amber-400",
   fila: "text-zinc-500 dark:text-zinc-400",
+  andamento: "text-violet-700 dark:text-violet-400",
   feitas: "text-emerald-700 dark:text-emerald-400",
 };
 
@@ -91,6 +92,12 @@ export default function DetalheDemanda({
     const dia = rotuloDoDia(diaDe(d.feitaEm!), hoje);
     const quando = dia === "Hoje" || dia === "Ontem" ? dia.toLowerCase() : `em ${dia}`;
     status = `Feita ${quando} às ${horaDe(d.feitaEm!)} · ${quemFez(d.feitaPor)}`;
+  } else if (coluna === "andamento") {
+    // Em andamento é o checklist começado (ver colunas.ts): diz quanto andou,
+    // e o prazo junto — começar não tira o atraso.
+    const base = alvo ?? d;
+    const feitos = base.itens.filter((i) => i.feitoEm).length;
+    status = `Em andamento · ${feitos} de ${base.itens.length} passos${d.prazo ? ` · ${prazoEmTexto(d.prazo, hoje, false).texto.toLowerCase()}` : ""}`;
   } else if (d.prazo) status = prazoEmTexto(d.prazo, hoje, false).texto;
   else status = quadro === "enviadas" ? "Aguardando · sem prazo" : "A fazer · sem prazo";
 

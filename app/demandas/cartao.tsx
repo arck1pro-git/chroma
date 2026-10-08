@@ -289,7 +289,11 @@ export function CorpoCartao({
           <span className="h-1 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800" aria-hidden="true">
             <span
               className={`block h-full rounded-full transition-[width] duration-300 ${
-                passos.feitos === passos.total ? "bg-emerald-500" : "bg-zinc-400 dark:bg-zinc-500"
+                passos.feitos === passos.total
+                  ? "bg-emerald-500"
+                  : passos.feitos > 0
+                    ? "bg-violet-500"
+                    : "bg-zinc-400 dark:bg-zinc-500"
               }`}
               style={{ width: `${(passos.feitos / passos.total) * 100}%` }}
             />
