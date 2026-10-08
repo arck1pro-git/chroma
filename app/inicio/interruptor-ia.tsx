@@ -61,7 +61,7 @@ export default function InterruptorIa({
             ? `A IA "${ia.nome}" responde no WhatsApp quem está nesta etapa. Clique para trocar ou desligar.`
             : "Escolher a IA que responde no WhatsApp quem está nesta etapa.")
         }
-        className={`mt-2 inline-flex min-w-0 max-w-[55%] shrink-0 items-center justify-center gap-1 rounded-lg border px-2 py-1 text-[12px] font-medium transition ${
+        className={`mt-2 tela-baixa:mt-1.5 inline-flex min-w-0 max-w-[55%] shrink-0 items-center justify-center gap-1 rounded-lg border px-2 py-1 text-[12px] font-medium transition ${
           ia
             ? realceDoTom(etapa.tom_funil)
             : "border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:bg-white hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"

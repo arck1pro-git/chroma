@@ -13,6 +13,16 @@
 // mexer na altura do quadro. Se empurrasse, escolher um filtro reflowaria as
 // colunas por baixo enquanto a pessoa ainda está escolhendo.
 //
+// O GATILHO MORA NA BARRA DO TOPO, ao lado do seletor de funil (2026-10-08):
+// numa linha própria ele custava ~50px de altura ao quadro, e no tablet deitado
+// isso é meio cartão por coluna. Por isso o componente não traz moldura nem
+// margem — quem o põe na linha é app/inicio/inicio.tsx.
+//
+// AS CAMPANHAS DA META moram aqui dentro desde o mesmo dia (`campanhas`), nas
+// mesmas pílulas de antes: eram três linhas de pílula sobre o quadro. O filtro
+// de campanha conta no número do botão e cai no "Limpar" junto com os outros —
+// escondido no painel, ele não pode valer sem dar sinal.
+//
 // O QUE ESTE ARQUIVO NÃO FAZ: mexer nos controles. Quem os desenha continua
 // sendo BarraFiltros — aqui só entram o gatilho, o véu e a moldura. Era o
 // caminho com menos risco: os controles seguem um componente só, usado por
@@ -38,7 +48,9 @@ export default function PainelFiltros({
   aoMudarFiltros,
   visiveis,
   total,
-  aDireita,
+  campanhas,
+  campanhaAtiva = false,
+  aoLimparCampanha,
 }: {
   aberto: boolean;
   aoAlternar: (aberto: boolean) => void;
@@ -53,10 +65,12 @@ export default function PainelFiltros({
   aoMudarFiltros: (f: Filtros) => void;
   visiveis: number;
   total: number;
-  // Encostado à direita da linha (a descrição do funil).
-  aDireita?: ReactNode;
+  // As pílulas de campanha (app/inicio/dashboard-meta-ads.tsx), no pé do painel.
+  campanhas?: ReactNode;
+  campanhaAtiva?: boolean;
+  aoLimparCampanha?: () => void;
 }) {
-  const ativos = contarFiltrosAtivos(filtros);
+  const ativos = contarFiltrosAtivos(filtros) + (campanhaAtiva ? 1 : 0);
   const painelRef = useRef<HTMLDivElement | null>(null);
 
   // Esc fecha. Só enquanto está aberto: um listener permanente no documento
@@ -78,7 +92,7 @@ export default function PainelFiltros({
 
   return (
     <>
-      <div className="surge mb-1 flex shrink-0 flex-wrap items-center gap-2 pr-6 xl:pr-16">
+      <div className="flex shrink-0 items-center gap-2">
         <button
           type="button"
           onClick={() => aoAlternar(!aberto)}
@@ -108,7 +122,10 @@ export default function PainelFiltros({
             </span>
             <button
               type="button"
-              onClick={() => aoMudarFiltros(filtrosVazios)}
+              onClick={() => {
+                aoMudarFiltros(filtrosVazios);
+                aoLimparCampanha?.();
+              }}
               className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[12px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
             >
               <X className="size-3 shrink-0" aria-hidden="true" />
@@ -116,16 +133,20 @@ export default function PainelFiltros({
             </button>
           </>
         )}
-
-        {aDireita && <div className="ml-auto min-w-0">{aDireita}</div>}
       </div>
 
       {/* No <body>, pela CamadaTopo, na camada das gavetas. Aqui dentro do
           cabeçalho o painel herdava o transform da animação de entrada: o
           `fixed` virava relativo ao cabeçalho, o véu não cobria a tela e as
-          colunas das etapas desenhavam POR CIMA do painel. */}
-      {aberto && (
-        <CamadaTopo>
+          colunas das etapas desenhavam POR CIMA do painel.
+
+          SEMPRE MONTADO, escondido com `hidden` quando fechado: as campanhas
+          vêm da Meta, e desmontar a cada fechada refaria as consultas (e o
+          "Carregando…") toda vez que alguém abrisse os filtros. Voltar do
+          display:none reinicia as animações de entrada, então abrir continua
+          igual. Os controles de BarraFiltros seguem montando só aberto. */}
+      <CamadaTopo>
+        <div hidden={!aberto}>
           {/* O véu. Clicar fora fecha — é o gesto que todo mundo tenta antes de
               procurar o X. */}
           <div
@@ -144,7 +165,7 @@ export default function PainelFiltros({
             // localização abrem dropdown posicionado em absolute (ver Menu, em
             // app/components/filtros-ui.tsx). Com overflow no painel, a lista
             // deles seria cortada na borda — e a de localização é a mais alta.
-            className="surge fixed left-1/2 top-24 z-[310] w-[min(52rem,calc(100vw-2rem))] -translate-x-1/2 overflow-visible rounded-2xl border border-zinc-200 bg-white shadow-xl outline-none dark:border-zinc-800 dark:bg-zinc-900"
+            className="surge fixed left-1/2 top-16 z-[310] w-[min(52rem,calc(100vw-2rem))] -translate-x-1/2 overflow-visible rounded-2xl border border-zinc-200 bg-white shadow-xl outline-none dark:border-zinc-800 dark:bg-zinc-900"
           >
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
               <h2 className="flex items-center gap-2 text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">
@@ -167,25 +188,36 @@ export default function PainelFiltros({
             {/* Os mesmos controles de sempre, só que numa caixa larga em vez de
                 numa faixa: aqui a quebra de linha é bem-vinda, porque não há
                 quadro embaixo para ser empurrado. */}
-            <BarraFiltros
-              mostrarFunil={false}
-              moldura="p-4"
-              linha="flex flex-wrap items-center gap-2"
-              funis={funis}
-              usuarios={usuarios}
-              segmentos={segmentos}
-              tags={tags}
-              contatos={contatos}
-              funilId={funilId}
-              aoTrocarFunil={aoTrocarFunil}
-              filtros={filtros}
-              aoMudarFiltros={aoMudarFiltros}
-              visiveis={visiveis}
-              total={total}
-            />
+            {aberto && (
+              <BarraFiltros
+                mostrarFunil={false}
+                moldura="p-4"
+                linha="flex flex-wrap items-center gap-2"
+                funis={funis}
+                usuarios={usuarios}
+                segmentos={segmentos}
+                tags={tags}
+                contatos={contatos}
+                funilId={funilId}
+                aoTrocarFunil={aoTrocarFunil}
+                filtros={filtros}
+                aoMudarFiltros={aoMudarFiltros}
+                visiveis={visiveis}
+                total={total}
+              />
+            )}
+
+            {/* Rola por conta própria: com as inativas abertas são várias
+                linhas de pílula, e o painel em si não pode ter overflow (ver
+                acima, os dropdowns dos filtros). */}
+            {campanhas && (
+              <div className="rolagem-oculta max-h-[40vh] overflow-y-auto border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
+                {campanhas}
+              </div>
+            )}
           </div>
-        </CamadaTopo>
-      )}
+        </div>
+      </CamadaTopo>
     </>
   );
 }

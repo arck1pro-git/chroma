@@ -19,6 +19,14 @@ export function brl(valor: number) {
   return "R$ " + valor.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
+/** "R$ 1,3 mi", "R$ 350 mil", "R$ 9.800" — para onde o valor cheio não cabe;
+ *  quem usa põe o `brl` cheio no title. */
+export function brlCurto(valor: number) {
+  if (valor >= 1_000_000) return `R$ ${(valor / 1_000_000).toFixed(1).replace(/\.0$/, "").replace(".", ",")} mi`;
+  if (valor >= 10_000) return `R$ ${Math.round(valor / 1_000)} mil`;
+  return `R$ ${Math.round(valor).toLocaleString("pt-BR")}`;
+}
+
 const MESES = [
   "jan", "fev", "mar", "abr", "mai", "jun",
   "jul", "ago", "set", "out", "nov", "dez",

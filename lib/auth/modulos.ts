@@ -49,10 +49,11 @@ export type Modulo = {
    * O módulo sabe filtrar por dono? Só quem é `escopavel` oferece a escolha
    * entre "próprio" e "todos" na tela de acessos.
    *
-   * Métricas e Dashboard. O Dashboard entrou depois, quando o filtro passou a
-   * existir de verdade: com escopo 'proprio', `carregarFunil` só traz as
+   * Hoje, só o Dashboard: com escopo 'proprio', `carregarFunil` só traz as
    * oportunidades em que a pessoa é a responsável (app/funil/dados.ts), e o
-   * quadro, os totais e a exportação saem todos dessa mesma consulta.
+   * quadro, os totais e a exportação saem todos dessa mesma consulta. A
+   * Métricas foi escopável até 2026-10-07; agora quem vê a equipe é o
+   * departamento (Admin e TI), como nas Demandas.
    *
    * A regra continua valendo para os próximos: só marque escopável o módulo que
    * FILTRA. Bandeira sem filtro promete na tela o que o dado não cumpre.
@@ -121,10 +122,14 @@ export const MODULOS: readonly Modulo[] = [
     chave: "metricas",
     rotulo: "Métricas",
     href: "/metricas",
-    escopavel: true,
+    // Não é mais escopável (2026-10-07): quem vê a equipe e filtra por pessoa
+    // é o DEPARTAMENTO — Admin e TI, a mesma regra das Demandas
+    // (administraDemandas em lib/demandas.ts). O escopo marcado em Acessos não
+    // muda nada aqui, e por isso a tela de Acessos deixa de oferecê-lo.
+    escopavel: false,
     naBarra: true,
     descricao:
-      "Carteira e atividade por pessoa. Com escopo 'próprio', cada um vê só os números dele.",
+      "Demandas geradas e entregues por dia, semana e mês. Admin e TI veem a equipe toda e filtram por pessoa; os demais veem só os próprios números.",
   },
   {
     chave: "emails",

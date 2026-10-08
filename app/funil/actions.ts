@@ -401,9 +401,13 @@ export async function retomarAutomacao(
 // torto viraria erro de sintaxe de uuid do Postgres, e um array gigante viraria
 // uma consulta que ninguém pediu.
 //
-// TETO de 500: é seleção de tela, não importação em massa. Acima disso o
-// caminho certo é o disparo por segmento, que não passa a lista pelo navegador.
-const TETO_LOTE = 500;
+// TETO de 2000: é seleção de tela, não importação em massa. Era 500, mas o
+// cabeçalho da etapa marca a coluna INTEIRA de uma vez, e a primeira etapa de
+// um funil com anúncio rodando passa disso — com 500, "612 selecionadas"
+// viraria "500 oportunidades movidas" e o resto ficaria para trás calado.
+// Acima de 2000 o caminho certo é o disparo por segmento, que não passa a lista
+// pelo navegador.
+const TETO_LOTE = 2000;
 
 function idsValidos(ids: unknown): string[] {
   if (!Array.isArray(ids)) return [];

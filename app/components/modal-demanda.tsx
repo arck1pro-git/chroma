@@ -9,14 +9,21 @@
 //   · "Editar demanda", em /demandas — abre preenchido (`inicial`) e sem "Para":
 //     editar não muda o destino.
 //
+// O CHECKLIST entra só na criação, atrás de um "+ Checklist" para não pesar o
+// formulário de quem não precisa. Depois de criada, o checklist se monta no
+// próprio cartão (app/demandas/checklist.tsx).
+//
 // Sai pelo <CamadaTopo>, no <body>: no Dashboard ele precisa ficar por cima do
 // quadro e de tudo que flutua sobre ele (ver a escala em camada-topo.tsx).
 import { useEffect, useId, useState, useTransition } from "react";
-import { CircleCheck, X } from "lucide-react";
+import { CircleCheck, ListChecks, Plus, X } from "lucide-react";
 import CamadaTopo from "./camada-topo";
 import {
+  avisarQueDemandasMudaram,
   PARA_O_TI,
   PRIORIDADES,
+  TETO_ITENS,
+  TETO_TEXTO_ITEM,
   type DadosDemanda,
   type Prioridade,
   type ResultadoDemanda,
@@ -85,6 +92,9 @@ export default function ModalDemanda({
   const [prazo, setPrazo] = useState(inicial?.prazo ?? "");
   const [prioridade, setPrioridade] = useState<Prioridade>(inicial?.prioridade ?? "normal");
   const [para, setPara] = useState(destinoInicial);
+  const [itens, setItens] = useState<string[]>([]);
+  const [novoItem, setNovoItem] = useState("");
+  const [comChecklist, setComChecklist] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [feito, setFeito] = useState<string | null>(null);
   const [enviando, iniciar] = useTransition();
@@ -114,9 +124,19 @@ export default function ModalDemanda({
     grupos.set(d.grupo, [...(grupos.get(d.grupo) ?? []), d]);
   }
 
+  function acrescentarItem() {
+    const t = novoItem.trim();
+    if (!t || itens.length >= TETO_ITENS) return;
+    setItens((atuais) => [...atuais, t]);
+    setNovoItem("");
+  }
+
   function mandar() {
     if (!podeEnviar) return;
     setErro(null);
+    // O passo digitado e ainda sem Enter vai junto: quem clicou em criar quis
+    // que ele entrasse.
+    const passos = [...itens, novoItem.trim()].filter(Boolean).slice(0, TETO_ITENS);
     iniciar(async () => {
       const r = await enviar({
         titulo: nome,
@@ -124,11 +144,15 @@ export default function ModalDemanda({
         prazo,
         prioridade,
         ...(destinos ? { para } : {}),
+        ...(passos.length ? { itens: passos } : {}),
       });
       if (!r.ok) {
         setErro(r.mensagem);
         return;
       }
+      // A barra lateral recontar: uma demanda nova pode ser da própria pessoa
+      // (ou do departamento dela, no chamado aberto pelo TI).
+      avisarQueDemandasMudaram();
       if (aoConcluir) aoConcluir(r.mensagem);
       else setFeito(r.mensagem);
     });
@@ -272,6 +296,69 @@ export default function ModalDemanda({
                   className={`${campo} resize-y`}
                 />
               </label>
+
+              {inicial === undefined &&
+                (comChecklist || itens.length > 0 ? (
+                  <div className="flex flex-col gap-1.5">
+                    <span className={`${rotulo} flex items-center gap-1.5`}>
+                      <ListChecks className="size-3.5" aria-hidden="true" />
+                      Checklist <span className="font-normal text-zinc-400">(opcional)</span>
+                    </span>
+                    {itens.length > 0 && (
+                      <ul className="flex flex-col gap-1">
+                        {itens.map((t, i) => (
+                          <li key={`${i}-${t}`} className="group flex items-center gap-2 rounded-lg px-1 py-0.5">
+                            <span className="size-3.5 shrink-0 rounded-[4px] border border-zinc-300 dark:border-zinc-600" aria-hidden="true" />
+                            <span className="min-w-0 flex-1 break-words text-[13px] text-zinc-800 dark:text-zinc-200">{t}</span>
+                            <button
+                              type="button"
+                              onClick={() => setItens((atuais) => atuais.filter((_, j) => j !== i))}
+                              aria-label={`Tirar “${t}”`}
+                              className="shrink-0 rounded p-0.5 text-zinc-300 opacity-0 transition hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:text-zinc-600"
+                            >
+                              <X className="size-3.5" aria-hidden="true" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {itens.length < TETO_ITENS && (
+                      <div className="flex items-center gap-2 rounded-xl border border-dashed border-zinc-300 px-3 py-1.5 focus-within:border-zinc-400 dark:border-zinc-700 dark:focus-within:border-zinc-600">
+                        <Plus className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+                        <input
+                          autoFocus={itens.length === 0}
+                          value={novoItem}
+                          maxLength={TETO_TEXTO_ITEM}
+                          onChange={(e) => setNovoItem(e.target.value)}
+                          onKeyDown={(e) => {
+                            // Enter acrescenta o passo, não envia o formulário.
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              acrescentarItem();
+                            }
+                          }}
+                          placeholder={itens.length ? "Mais um passo — Enter" : "Primeiro passo — Enter para o próximo"}
+                          aria-label="Novo passo do checklist"
+                          className="min-w-0 flex-1 bg-transparent text-[13px] text-zinc-950 outline-none placeholder:text-zinc-400 dark:text-zinc-50"
+                        />
+                      </div>
+                    )}
+                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                      {destinos && para !== PARA_O_TI
+                        ? "Quem receber marca cada passo; mudar os passos depois é com você."
+                        : "O TI marca cada passo; mudar os passos depois é com você."}
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setComChecklist(true)}
+                    className="-mt-1 inline-flex items-center gap-1.5 self-start rounded-lg px-1.5 py-1 text-[12px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+                  >
+                    <Plus className="size-3.5" aria-hidden="true" />
+                    Checklist
+                  </button>
+                ))}
 
               <div className="flex flex-wrap gap-4">
                 <label className="flex flex-col gap-1">

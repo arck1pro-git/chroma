@@ -49,13 +49,24 @@ import {
 import { SeletorMenu } from "../components/filtros-ui";
 import ModalDemanda, { type Destino } from "../components/modal-demanda";
 import {
+  avisarQueDemandasMudaram,
   PARA_O_TI,
   PARA_TODOS,
   type DadosDemanda,
   type Demanda,
   type Prioridade,
 } from "@/lib/demandas-tipos";
-import { criarDemanda, editarDemanda, excluirDemandas, marcarDemanda } from "./acoes";
+import {
+  adicionarItemDemanda,
+  criarDemanda,
+  editarDemanda,
+  excluirDemandas,
+  marcarDemanda,
+  marcarItemDemanda,
+  removerItemDemanda,
+  renomearItemDemanda,
+} from "./acoes";
+import type { MontarChecklist } from "./checklist";
 import Cartao, { ehMinha, type Eu, type Item } from "./cartao";
 import {
   diaDe,
@@ -122,7 +133,19 @@ function ordemPendente(a: Item, b: Item) {
 /** O grupo da equipe no seletor do Admin. */
 const EQUIPE = "Equipe — quem tem o módulo Demandas";
 
-type Mudanca = { tipo: "marcar"; id: string; feita: boolean } | { tipo: "remover"; ids: string[] };
+type Mudanca =
+  | { tipo: "marcar"; id: string; feita: boolean }
+  | { tipo: "remover"; ids: string[] }
+  | { tipo: "item"; itemId: string; feito: boolean };
+
+// Montar o checklist (acrescentar, renomear, tirar) é de quem criou a demanda e
+// não é otimista: espera o servidor, que aplica em todas as cópias de uma
+// demanda "para todos" de uma vez — e devolve a lista certa pelo revalidatePath.
+const MONTAR: MontarChecklist = {
+  adicionar: adicionarItemDemanda,
+  renomear: renomearItemDemanda,
+  remover: removerItemDemanda,
+};
 
 type Edicao = { ids: string[]; inicial: Omit<DadosDemanda, "para"> };
 
@@ -159,15 +182,28 @@ export default function PainelDemandas({
   const [, iniciar] = useTransition();
   const buscaRef = useRef<HTMLInputElement | null>(null);
 
-  const [lista, mudarNaTela] = useOptimistic(demandas, (atual, m: Mudanca) =>
-    m.tipo === "remover"
-      ? atual.filter((d) => !m.ids.includes(d.id))
-      : atual.map((d) =>
-          d.id === m.id
-            ? { ...d, feitaEm: m.feita ? new Date().toISOString() : null, feitaPor: m.feita ? eu.nome : null }
-            : d,
-        ),
-  );
+  const [lista, mudarNaTela] = useOptimistic(demandas, (atual, m: Mudanca) => {
+    if (m.tipo === "remover") return atual.filter((d) => !m.ids.includes(d.id));
+    if (m.tipo === "item") {
+      return atual.map((d) =>
+        d.itens.some((i) => i.id === m.itemId)
+          ? {
+              ...d,
+              itens: d.itens.map((i) =>
+                i.id === m.itemId
+                  ? { ...i, feitoEm: m.feito ? new Date().toISOString() : null, feitoPor: m.feito ? eu.nome : null }
+                  : i,
+              ),
+            }
+          : d,
+      );
+    }
+    return atual.map((d) =>
+      d.id === m.id
+        ? { ...d, feitaEm: m.feita ? new Date().toISOString() : null, feitaPor: m.feita ? eu.nome : null }
+        : d,
+    );
+  });
 
   // "/" leva à busca, como no resto da web; Esc dentro dela limpa.
   useEffect(() => {
@@ -307,6 +343,16 @@ export default function PainelDemandas({
       mudarNaTela({ tipo: "marcar", id, feita });
       const r = await marcarDemanda(id, feita);
       if (!r.ok) setAviso({ ok: false, texto: r.mensagem });
+      avisarQueDemandasMudaram();
+    });
+  }
+
+  function marcarItem(itemId: string, feito: boolean) {
+    setAviso(null);
+    iniciar(async () => {
+      mudarNaTela({ tipo: "item", itemId, feito });
+      const r = await marcarItemDemanda(itemId, feito);
+      if (!r.ok) setAviso({ ok: false, texto: r.mensagem });
     });
   }
 
@@ -315,6 +361,7 @@ export default function PainelDemandas({
       mudarNaTela({ tipo: "remover", ids });
       const r = await excluirDemandas(ids);
       setAviso({ ok: r.ok, texto: r.mensagem });
+      avisarQueDemandasMudaram();
     });
   }
 
@@ -336,12 +383,14 @@ export default function PainelDemandas({
       key={item.chave}
       item={item}
       eu={eu}
-      admin={admin}
       hoje={hoje}
       agora={agora}
       aoMarcar={marcar}
       aoEditar={editar}
       aoExcluir={excluir}
+      aoMarcarItem={marcarItem}
+      montar={MONTAR}
+      aoAvisar={(texto) => setAviso({ ok: false, texto })}
     />
   );
 

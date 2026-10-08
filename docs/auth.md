@@ -58,12 +58,17 @@ Dois 401 diferentes, e a diferença ajuda a depurar:
 
 ## Operação
 
-**Criar usuário ou trocar senha de alguém** (é o mesmo comando — ele atualiza
-quando o email já existe, então serve de "esqueci a senha" enquanto não houver
-redefinição na tela). O último argumento é o **slug do departamento**
-(`comercial`, `admin`, `ti`, …) e assume `ti` quando omitido. Conta que já existe
-mantém o departamento que tinha — trocar a senha de alguém não o reclassifica;
-mover é na tela de Acessos:
+**Criar usuário ou trocar senha de alguém, pela tela** (desde 2026-10-07):
+Configurações · Usuários. Admin e TI definem e-mail, senha (mínimo 12
+caracteres, com botão de gerar) e departamento — quem pode mexer em quê está em
+[acessos.md](acessos.md#quem-cria-contas).
+
+**Pelo script** — continua valendo, e é o caminho da primeira conta, quando
+ainda não há ninguém para abrir a tela. Ele atualiza quando o email já existe,
+então também serve de "esqueci a senha". O último argumento é o **slug do
+departamento** (`comercial`, `admin`, `ti`, …) e assume `ti` quando omitido.
+Conta que já existe mantém o departamento que tinha — trocar a senha de alguém
+não o reclassifica; mover é na tela de Acessos:
 
 ```bash
 # a senha vem de ARQUIVO: argumento de linha de comando fica no histórico do
@@ -89,7 +94,12 @@ chave invalida todas de uma vez.
 
 Coisas que faltam, ditas na cara em vez de descobertas depois:
 
-- **Sem redefinição de senha pela tela.** Só o script acima.
+- **Trocar a senha não derruba quem já está dentro.** Não há tabela de
+  sessão: o cookie aberto antes da troca vale até vencer (7 dias). Para cortar
+  o acesso na hora, ponha a pessoa em "Sem departamento" (Usuários ou Acessos)
+  — a DAL pega no próximo carregamento.
+- **Sem "esqueci a senha" pela própria pessoa.** Quem troca é o Admin/TI, na
+  tela de Usuários.
 - **Sem 2FA.**
 - **Freio de força bruta é em memória**, por instância (`app/login/acoes.ts`).
   Com várias instâncias a contagem se divide entre elas. Derruba dicionário

@@ -4,7 +4,8 @@ import { Inter } from "next/font/google";
 import Sidebar, { type ItemDeModulo } from "./components/sidebar";
 import ProvedorIaGlobal from "./components/ia-global";
 import { temIaCompleta } from "@/lib/ia/modo-completo";
-import { usuarioAtual } from "@/lib/auth/dal";
+import { gereUsuarios, usuarioAtual } from "@/lib/auth/dal";
+import { contarPendentes } from "@/lib/demandas";
 import { MODULOS } from "@/lib/auth/modulos";
 import "./globals.css";
 
@@ -46,15 +47,21 @@ export default async function RootLayout({
     (m) => m.naBarra && usuario?.modulos.has(m.chave),
   ).map((m) => ({ chave: m.chave, rotulo: m.rotulo, href: m.href }));
 
-  // Configurações tem lugar próprio no rodapé da barra, e duas portas: o módulo
-  // ou o direito de administrar acessos.
+  // Configurações tem lugar próprio no rodapé da barra, e três portas: o módulo,
+  // o direito de administrar acessos e — desde 2026-10-07 — gerir usuários
+  // (Admin e TI, ver gereUsuarios).
   // O TI tem a IA num painel FIXO, igual em todas as telas
   // (app/components/ia-global.tsx).
   const iaFixa = usuario ? temIaCompleta(usuario) : false;
 
+  // O número do item Demandas na barra, já na primeira pintura (sem piscar o
+  // zero). Daí em diante quem o mantém em dia é a própria barra.
+  const demandas = usuario?.modulos.has("demandas") ? await contarPendentes(usuario) : null;
+
   const temConfiguracoes =
     (usuario?.modulos.has("configuracoes") ?? false) ||
-    (usuario?.departamento?.gerenciaAcessos ?? false);
+    (usuario?.departamento?.gerenciaAcessos ?? false) ||
+    (usuario ? gereUsuarios(usuario) : false);
 
   return (
     <html
@@ -90,6 +97,7 @@ export default async function RootLayout({
               // exigirModulo("configuracoes").
               podeWhatsApp={usuario?.modulos.has("configuracoes") ?? false}
               iaFixa={iaFixa}
+              demandas={demandas}
             />
           </Suspense>
           <ProvedorIaGlobal ativa={iaFixa}>

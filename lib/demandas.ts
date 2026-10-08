@@ -16,7 +16,7 @@
 import "server-only";
 import { listaUuid, sql } from "@/lib/db";
 import type { UsuarioLogado } from "@/lib/auth/dal";
-import { PARA_O_TI, type Demanda, type Prioridade } from "@/lib/demandas-tipos";
+import { PARA_O_TI, type ContagemDemandas, type Demanda, type ItemDemanda, type Prioridade } from "@/lib/demandas-tipos";
 
 const ADMINISTRAM = new Set(["admin", "ti"]);
 
@@ -62,6 +62,7 @@ function paraDemanda(l: Record<string, unknown>): Demanda {
     dataCriacao: iso(l.data_criacao)!,
     feitaEm: iso(l.feita_em),
     feitaPor: (l.feita_por as string | null) ?? null,
+    itens: [],
   };
 }
 
@@ -99,7 +100,52 @@ export async function listarDemandas(
             OR d.departamento_id = ${departamento}
             OR d.criado_por      = ${usuario.id})
      ORDER BY d.data_criacao DESC`;
-  return linhas.map(paraDemanda);
+  const demandas = linhas.map(paraDemanda);
+  if (!demandas.length) return demandas;
+
+  // O checklist numa segunda consulta, de uma vez para a lista inteira. Sem a
+  // tabela (migration-demanda-itens.sql não rodou), a tela segue sem checklist.
+  const itens = await sql`
+    SELECT i.id, i.demanda_id, i.texto, i.ordem, i.feito_em, u.nome AS feito_por
+      FROM demanda_itens i
+      LEFT JOIN usuarios u ON u.id = i.feito_por
+     WHERE i.demanda_id = ANY(string_to_array(${listaUuid(demandas.map((d) => d.id))}, ',')::uuid[])
+     ORDER BY i.demanda_id, i.ordem`.catch((e: { code?: string }) => {
+    if (e?.code === "42P01") return [];
+    throw e;
+  });
+  const porDemanda = new Map(demandas.map((d) => [d.id, d.itens]));
+  for (const i of itens) {
+    porDemanda.get(i.demanda_id as string)?.push({
+      id: i.id as string,
+      texto: i.texto as string,
+      ordem: Number(i.ordem),
+      feitoEm: i.feito_em ? new Date(i.feito_em as string).toISOString() : null,
+      feitoPor: (i.feito_por as string | null) ?? null,
+    } satisfies ItemDemanda);
+  }
+  return demandas;
+}
+
+/**
+ * O número da barra lateral: as demandas A FAZER para a pessoa — as dela e as
+ * do departamento dela (os chamados chegam ao TI assim), a mesma regra do
+ * recorte "Para mim" — e quantas delas passaram do prazo. Sem a tabela
+ * (migration não rodou), zero: a barra não pode derrubar o layout.
+ */
+export async function contarPendentes(usuario: UsuarioLogado): Promise<ContagemDemandas> {
+  try {
+    const [c] = await sql`
+      SELECT count(*)::int AS pendentes,
+             count(*) FILTER (WHERE prazo < (now() AT TIME ZONE 'America/Sao_Paulo')::date)::int AS atrasadas
+        FROM demandas
+       WHERE feita_em IS NULL
+         AND (responsavel_id = ${usuario.id} OR departamento_id = ${usuario.departamento?.id ?? null})`;
+    return { pendentes: Number(c?.pendentes ?? 0), atrasadas: Number(c?.atrasadas ?? 0) };
+  } catch (e) {
+    if ((e as { code?: string })?.code === "42P01") return { pendentes: 0, atrasadas: 0 };
+    throw e;
+  }
 }
 
 /**
@@ -127,14 +173,14 @@ type Campos = {
 
 /**
  * Cria a demanda para uma pessoa, ou uma POR PESSOA quando `para` é "todos".
- * Devolve quantas nasceram — zero quer dizer que a pessoa escolhida não pode
- * recebê-la (ver pessoasParaDemanda, que é o mesmo filtro).
+ * Devolve os ids das que nasceram — nenhum quer dizer que a pessoa escolhida
+ * não pode recebê-la (ver pessoasParaDemanda, que é o mesmo filtro).
  */
 export async function inserirDemandas(
   campos: Campos,
   para: string,
   criadoPor: string,
-): Promise<number> {
+): Promise<string[]> {
   const todos = para === "todos";
   const linhas = await sql`
     INSERT INTO demandas (titulo, descricao, prazo, prioridade, responsavel_id, criado_por)
@@ -146,11 +192,11 @@ export async function inserirDemandas(
      WHERE u.ativo = true AND u.email IS NOT NULL
        AND (${todos}::boolean OR u.id::text = ${para})
     RETURNING id`;
-  return linhas.length;
+  return linhas.map((l) => l.id as string);
 }
 
-/** O chamado: uma demanda do departamento TI. false = o TI não existe no banco. */
-export async function inserirChamado(campos: Campos, criadoPor: string): Promise<boolean> {
+/** O chamado: uma demanda do departamento TI. null = o TI não existe no banco. */
+export async function inserirChamado(campos: Campos, criadoPor: string): Promise<string | null> {
   const linhas = await sql`
     INSERT INTO demandas (titulo, descricao, prazo, prioridade, departamento_id, criado_por)
     SELECT ${campos.titulo}, ${campos.descricao}, ${campos.prazo}::date,
@@ -158,6 +204,110 @@ export async function inserirChamado(campos: Campos, criadoPor: string): Promise
       FROM departamentos d
      WHERE d.slug = ${SLUG_DO_TI}
     RETURNING id`;
+  return (linhas[0]?.id as string | undefined) ?? null;
+}
+
+// ── Checklist ───────────────────────────────────────────────────────────────
+//
+// Regras dele (2026-10-07): quem CRIOU a demanda monta o checklist; quem
+// RECEBE marca os itens. Na demanda "para todos", cada pessoa tem a sua cópia
+// dos itens — e o que quem criou muda vale para todas as cópias. O "mesmo item"
+// em duas cópias é o da mesma posição (`ordem`): como só quem criou mexe, e
+// sempre em todas de uma vez, as posições andam juntas.
+
+/** Os passos de uma demanda nova, em cada uma das cópias, numa inserção só. */
+export async function inserirItens(demandaIds: string[], textos: string[]) {
+  if (!demandaIds.length || !textos.length) return;
+  const passos = sql.json(textos.map((texto, i) => ({ texto, ordem: i + 1 })) as never);
+  await sql`
+    INSERT INTO demanda_itens (demanda_id, texto, ordem)
+    SELECT d, p.texto, p.ordem
+      FROM unnest(string_to_array(${listaUuid(demandaIds)}, ',')::uuid[]) AS d
+     CROSS JOIN jsonb_to_recordset(${passos}::jsonb) AS p(texto text, ordem int)`;
+}
+
+/**
+ * A demanda e as irmãs dela — as cópias da mesma demanda "para todos", que
+ * nasceram no mesmo INSERT (mesmo autor, mesmo título, mesmo instante, até o
+ * microssegundo). Chamado e demanda avulsa voltam sozinhos.
+ */
+async function copiasDe(demandaId: string): Promise<{ ids: string[]; criadoPor: string | null } | null> {
+  const linhas = await sql`
+    SELECT s.id, d.criado_por
+      FROM demandas d
+      JOIN demandas s
+        ON s.id = d.id
+        OR (d.responsavel_id IS NOT NULL AND s.responsavel_id IS NOT NULL
+            AND s.criado_por IS NOT DISTINCT FROM d.criado_por
+            AND s.data_criacao = d.data_criacao AND s.titulo = d.titulo)
+     WHERE d.id = ${demandaId}`;
+  if (!linhas.length) return null;
+  return { ids: [...new Set(linhas.map((l) => l.id as string))], criadoPor: (linhas[0].criado_por as string | null) ?? null };
+}
+
+/** O item, a demanda dele e as cópias — o que montar o checklist precisa saber. */
+async function itemComCopias(itemId: string) {
+  const [i] = await sql`SELECT demanda_id, ordem FROM demanda_itens WHERE id = ${itemId}`;
+  if (!i) return null;
+  const copias = await copiasDe(i.demanda_id as string);
+  return copias ? { ...copias, ordem: Number(i.ordem) } : null;
+}
+
+/** Acrescenta um passo no fim do checklist (de cada cópia). Só quem criou a demanda. */
+export async function adicionarItem(demandaId: string, texto: string, usuario: UsuarioLogado): Promise<boolean> {
+  const copias = await copiasDe(demandaId);
+  if (!copias || copias.criadoPor !== usuario.id) return false;
+  const ids = listaUuid(copias.ids);
+  // A mesma posição em todas as cópias: o máximo entre elas, mais um.
+  await sql`
+    INSERT INTO demanda_itens (demanda_id, texto, ordem)
+    SELECT d, ${texto},
+           (SELECT coalesce(max(ordem), 0) + 1 FROM demanda_itens
+             WHERE demanda_id = ANY(string_to_array(${ids}, ',')::uuid[]))
+      FROM unnest(string_to_array(${ids}, ',')::uuid[]) AS d`;
+  return true;
+}
+
+/** Troca o texto de um passo (em cada cópia). Só quem criou a demanda. */
+export async function renomearItem(itemId: string, texto: string, usuario: UsuarioLogado): Promise<boolean> {
+  const alvo = await itemComCopias(itemId);
+  if (!alvo || alvo.criadoPor !== usuario.id) return false;
+  await sql`
+    UPDATE demanda_itens SET texto = ${texto}
+     WHERE ordem = ${alvo.ordem}
+       AND demanda_id = ANY(string_to_array(${listaUuid(alvo.ids)}, ',')::uuid[])`;
+  return true;
+}
+
+/** Tira um passo (de cada cópia). Só quem criou a demanda. */
+export async function removerItem(itemId: string, usuario: UsuarioLogado): Promise<boolean> {
+  const alvo = await itemComCopias(itemId);
+  if (!alvo || alvo.criadoPor !== usuario.id) return false;
+  await sql`
+    DELETE FROM demanda_itens
+     WHERE ordem = ${alvo.ordem}
+       AND demanda_id = ANY(string_to_array(${listaUuid(alvo.ids)}, ',')::uuid[])`;
+  return true;
+}
+
+/**
+ * O check de um passo. Marca quem marca a demanda: a pessoa dela, ou alguém do
+ * departamento do chamado. Como no check da demanda, marcar de novo o que já
+ * estava feito não troca a hora nem o autor (o SET lê o valor antigo).
+ */
+export async function marcarItem(itemId: string, feito: boolean, usuario: UsuarioLogado): Promise<boolean> {
+  const departamento = usuario.departamento?.id ?? null;
+  const linhas = await sql`
+    UPDATE demanda_itens i
+       SET feito_em  = CASE WHEN ${feito}::boolean THEN coalesce(i.feito_em, now()) ELSE NULL END,
+           feito_por = CASE WHEN NOT ${feito}::boolean THEN NULL
+                            WHEN i.feito_em IS NULL THEN ${usuario.id}::uuid
+                            ELSE i.feito_por END
+      FROM demandas d
+     WHERE i.id = ${itemId}
+       AND d.id = i.demanda_id
+       AND (d.responsavel_id = ${usuario.id} OR d.departamento_id = ${departamento})
+    RETURNING i.id`;
   return linhas.length > 0;
 }
 
@@ -192,8 +342,11 @@ export async function marcarFeita(
 }
 
 /**
- * Quem pode mexer numa demanda (editar ou excluir): Admin e TI em qualquer uma;
- * quem criou, na sua, enquanto ninguém deu o check (é o "desisti do chamado").
+ * Quem pode mexer numa demanda (editar ou excluir): SÓ QUEM CRIOU — regra dele
+ * de 2026-10-07 ("a única pessoa que pode editar uma demanda é quem a criou").
+ * Nem Admin nem TI mexem na demanda de outra pessoa: o chamado que alguém abriu
+ * para o TI é de quem abriu, e o TI só dá o check. Vale a qualquer momento,
+ * feita ou não — a demanda é de quem a criou.
  *
  * Recebem VÁRIOS ids porque a demanda "para todos" aparece num cartão só na
  * tela, e editar ou excluir ali vale para a de cada pessoa. A regra é conferida
@@ -204,14 +357,13 @@ export async function atualizarDemandas(
   ids: string[],
   campos: Campos,
   usuario: UsuarioLogado,
-  admin: boolean,
 ): Promise<number> {
   const linhas = await sql`
     UPDATE demandas
        SET titulo = ${campos.titulo}, descricao = ${campos.descricao},
            prazo = ${campos.prazo}::date, prioridade = ${campos.prioridade}
      WHERE id = ANY(string_to_array(${listaUuid(ids)}, ',')::uuid[])
-       AND (${admin}::boolean OR (criado_por = ${usuario.id} AND feita_em IS NULL))
+       AND criado_por = ${usuario.id}
     RETURNING id`;
   return linhas.length;
 }
@@ -219,12 +371,11 @@ export async function atualizarDemandas(
 export async function apagarDemandas(
   ids: string[],
   usuario: UsuarioLogado,
-  admin: boolean,
 ): Promise<number> {
   const linhas = await sql`
     DELETE FROM demandas
      WHERE id = ANY(string_to_array(${listaUuid(ids)}, ',')::uuid[])
-       AND (${admin}::boolean OR (criado_por = ${usuario.id} AND feita_em IS NULL))
+       AND criado_por = ${usuario.id}
     RETURNING id`;
   return linhas.length;
 }

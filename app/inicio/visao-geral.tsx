@@ -16,9 +16,21 @@
 //
 // Sem overflow-hidden no cartão: o gráfico é baixo e o tooltip passa da borda
 // de baixo.
-import { Bot, CalendarCheck2 } from "lucide-react";
+//
+// MINIMIZA (2026-10-08, pedido dele junto com o ajuste para tablet deitado):
+// recolhido, sobra só a linha dos totais — os dois números continuam à vista e
+// o quadro ganha a altura do gráfico. A escolha é do aparelho, e quem nunca
+// escolheu numa tela baixa (tablet deitado, notebook de 768) já abre
+// minimizado: ali o gráfico custava um cartão inteiro por coluna.
+import { Bot, CalendarCheck2, ChevronDown, ChevronUp } from "lucide-react";
 import { LinhasPorDia, type SerieLinha } from "../components/grafico-linhas";
+import { criarPreferencia, TELA_BAIXA } from "../components/preferencia-local";
 import type { DiaIa } from "./atendimentos-ia";
+
+const graficoRecolhido = criarPreferencia(
+  "chroma:grafico-ia-recolhido",
+  () => window.matchMedia(TELA_BAIXA).matches,
+);
 
 // Os ícones são os da agenda: Bot para a IA, CalendarCheck2 para reunião.
 const SERIES: SerieLinha<DiaIa>[] = [
@@ -37,10 +49,35 @@ const SERIES: SerieLinha<DiaIa>[] = [
 ];
 
 export default function VisaoGeral({ dias, tom }: { dias: DiaIa[]; tom: string }) {
+  const recolhido = graficoRecolhido.useValor();
+
   return (
     <section aria-label="Atendimentos de IA" className="surge mb-3 shrink-0 pr-6 xl:pr-16">
-      <div className="rounded-xl border border-zinc-200 px-4 pb-2 pt-3 dark:border-zinc-800">
+      <div
+        className={`rounded-xl border border-zinc-200 px-4 dark:border-zinc-800 ${
+          recolhido ? "py-2" : "pb-2 pt-3"
+        }`}
+      >
         <LinhasPorDia
+          recolhido={recolhido}
+          acao={
+            <button
+              type="button"
+              onClick={() => graficoRecolhido.definir(!recolhido)}
+              aria-expanded={!recolhido}
+              aria-label={recolhido ? "Mostrar o gráfico" : "Minimizar o gráfico"}
+              title={recolhido ? "Mostrar o gráfico" : "Minimizar o gráfico"}
+              // -my/-mr: o botão tem área de toque de 24px sem engordar a
+              // linha da legenda nem descolar do canto do cartão
+              className="-my-1 -mr-2 flex size-6 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+            >
+              {recolhido ? (
+                <ChevronDown className="size-4" aria-hidden="true" />
+              ) : (
+                <ChevronUp className="size-4" aria-hidden="true" />
+              )}
+            </button>
+          }
           dados={dias}
           series={SERIES}
           tom={tom}

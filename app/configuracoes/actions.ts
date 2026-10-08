@@ -3,7 +3,7 @@
 // Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
 // O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
 // pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
-import { exigirModulo } from "@/lib/auth/dal";
+import { exigirGestaoDeUsuarios, exigirModulo, type UsuarioLogado } from "@/lib/auth/dal";
 
 // Mutações das Configurações — de funil e etapa a instância de WhatsApp.
 //
@@ -13,7 +13,9 @@ import { exigirModulo } from "@/lib/auth/dal";
 // caminho literal invalidaria só a tela índice, que hoje nem existe mais.
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { z } from "zod";
 import { sql } from "@/lib/db";
+import { gerarHash } from "@/lib/auth/senha";
 import { corValida } from "@/lib/cores-funil";
 import { enderecoDoCrm } from "@/lib/endereco";
 import { NOME_EVENTO_META } from "@/lib/meta-eventos-nomes";
@@ -238,6 +240,11 @@ export async function deletarSegmento(id: string): Promise<void> {
 }
 
 // ── Usuários ─────────────────────────────────────────────────────────────────
+// Desde 2026-10-07 esta seção também cria e edita o LOGIN — e-mail, senha e
+// departamento (pedido dele: "o admin pode criar e editar um usuário"). Antes
+// só o scripts/criar-usuario.ts fazia isso. Quem abre a tela está em
+// gereUsuarios (lib/auth/dal.ts); o que cada um pode mexer, no teto abaixo.
+
 // Iniciais: usa as informadas ou deriva do nome (1ª letra das 2 primeiras palavras).
 function iniciaisDe(nome: string) {
   const p = nome.trim().split(/\s+/);
@@ -249,6 +256,14 @@ function revalidarUsuarios() {
   revalidatePath("/chat");
   revalidatePath("/");
 }
+
+/**
+ * Recusa que a pessoa precisa LER. Volta para a tela como `{ ok: false, erro }`
+ * e não como exceção: em produção o Next troca a mensagem de erro lançado numa
+ * Server Function por uma genérica — erro esperado é valor de retorno (guia
+ * "Error Handling" do Next).
+ */
+class Recusa extends Error {}
 
 /**
  * O WhatsApp de quem trabalha aqui, normalizado para o formato do banco: só
@@ -266,7 +281,7 @@ function whatsappOuNulo(bruto: string): string | null {
   // 10 = fixo com DDD sem DDI; 15 = teto do E.164. Fora disso é engano de
   // digitação, e um aviso indo para um número inexistente falha semanas depois.
   if (so.length < 10 || so.length > 15) {
-    throw new Error(
+    throw new Recusa(
       "WhatsApp inválido — use DDI, DDD e número (ex.: 5547921379 73)",
     );
   }
@@ -281,46 +296,192 @@ function whatsappOuNulo(bruto: string): string | null {
 async function instanciaOuNula(bruto: string): Promise<string | null> {
   const id = bruto.trim();
   if (!id) return null;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Número de envio inválido");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Recusa("Número de envio inválido");
   const [i] = await sql`SELECT id FROM instancias_uazapi WHERE id = ${id}`;
-  if (!i) throw new Error("Esse número de envio não existe mais em Integrações");
+  if (!i) throw new Recusa("Esse número de envio não existe mais em Integrações");
   return id;
 }
 
-export async function criarUsuario(
-  nome: string,
-  iniciais: string,
-  whatsapp = "",
-  instanciaId = "",
-): Promise<string> {
-  await exigirModulo("configuracoes");
-  const n = nome.trim();
-  if (!n) throw new Error("Nome é obrigatório");
-  const ini = (iniciais.trim() || iniciaisDe(n)).slice(0, 4).toUpperCase();
-  const [u] = await sql`
-    INSERT INTO usuarios (nome, iniciais, whatsapp, instancia_id)
-    VALUES (${n}, ${ini}, ${whatsappOuNulo(whatsapp)}, ${await instanciaOuNula(instanciaId)}) RETURNING id`;
-  revalidarUsuarios();
-  return u.id;
+// O e-mail como o login o lê (app/login/acoes.ts): sem espaço e minúsculo, e
+// validado DEPOIS de normalizado. Gravado de outro jeito, a pessoa não entraria.
+const EMAIL = z.string().trim().toLowerCase().pipe(z.email().max(200));
+
+/** O mesmo mínimo do scripts/criar-usuario.ts, que era a porta até aqui. */
+const SENHA_MINIMA = 12;
+
+function emailOuNulo(bruto: string): string | null {
+  if (!bruto.trim()) return null;
+  const lido = EMAIL.safeParse(bruto);
+  if (!lido.success) throw new Recusa("E-mail inválido");
+  return lido.data;
 }
 
-export async function editarUsuario(
-  id: string,
-  nome: string,
-  iniciais: string,
-  whatsapp = "",
-  instanciaId = "",
-): Promise<void> {
-  await exigirModulo("configuracoes");
-  const n = nome.trim();
-  if (!n) throw new Error("Nome é obrigatório");
-  const ini = (iniciais.trim() || iniciaisDe(n)).slice(0, 4).toUpperCase();
-  await sql`
-    UPDATE usuarios
-       SET nome = ${n}, iniciais = ${ini}, whatsapp = ${whatsappOuNulo(whatsapp)},
-           instancia_id = ${await instanciaOuNula(instanciaId)}
-     WHERE id = ${id}`;
-  revalidarUsuarios();
+/** null = não mexe na senha (o campo em branco da edição). */
+function senhaOuNula(bruta: string): string | null {
+  if (!bruta) return null;
+  if (bruta.length < SENHA_MINIMA) {
+    throw new Recusa(`A senha precisa de ao menos ${SENHA_MINIMA} caracteres`);
+  }
+  // O teto do login: senha maior que isto nunca conferiria lá.
+  if (bruta.length > 200) throw new Recusa("Senha longa demais (máximo 200 caracteres)");
+  return bruta;
+}
+
+type DepartamentoEscolhido = { id: string; nome: string; gerencia_acessos: boolean };
+
+async function departamentoOuNulo(bruto: string): Promise<DepartamentoEscolhido | null> {
+  const id = bruto.trim();
+  if (!id) return null;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Recusa("Departamento inválido");
+  const [d] = (await sql`
+    SELECT id, nome, gerencia_acessos FROM departamentos WHERE id = ${id}
+  `) as DepartamentoEscolhido[];
+  if (!d) throw new Recusa("Esse departamento não existe mais");
+  return d;
+}
+
+/**
+ * O TETO DA PORTARIA: quem não administra acessos não põe ninguém num
+ * departamento que administra. Sem ele, o Admin criaria uma conta no TI,
+ * entraria por ela em Acessos e de lá se daria qualquer módulo — o desenho de
+ * migration-departamentos.sql (gerencia_acessos separado de Configurações)
+ * cairia por uma porta lateral.
+ */
+function conferirTeto(eu: UsuarioLogado, destino: DepartamentoEscolhido | null) {
+  if (destino?.gerencia_acessos && !eu.departamento?.gerenciaAcessos) {
+    throw new Recusa(`Só quem administra acessos põe alguém no ${destino.nome}`);
+  }
+}
+
+/** O formulário de usuário — o mesmo para criar e para editar. */
+export type DadosUsuario = {
+  nome: string;
+  iniciais: string;
+  whatsapp: string;
+  instanciaId: string;
+  /** Vazio = sem login: a pessoa só aparece como responsável e autora. */
+  email: string;
+  /** Na edição, vazio mantém a senha atual. */
+  senha: string;
+  /** Vazio = sem departamento, que é não ver módulo nenhum. */
+  departamentoId: string;
+};
+
+export type ResultadoUsuario = { ok: true } | { ok: false; erro: string };
+
+async function comoResultado(fazer: () => Promise<void>): Promise<ResultadoUsuario> {
+  try {
+    await fazer();
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof Recusa) return { ok: false, erro: e.message };
+    // 23505 = o índice único de lower(email) (migration-auth.sql).
+    if (typeof e === "object" && e !== null && (e as { code?: string }).code === "23505") {
+      return { ok: false, erro: "Já existe uma conta com esse e-mail" };
+    }
+    throw e;
+  }
+}
+
+export async function criarUsuario(dados: DadosUsuario): Promise<ResultadoUsuario> {
+  const eu = await exigirGestaoDeUsuarios();
+  return comoResultado(async () => {
+    const n = dados.nome.trim();
+    if (!n) throw new Recusa("Nome é obrigatório");
+    const ini = (dados.iniciais.trim() || iniciaisDe(n)).slice(0, 4).toUpperCase();
+    const email = emailOuNulo(dados.email);
+    const senha = senhaOuNula(dados.senha);
+    const departamento = await departamentoOuNulo(dados.departamentoId);
+
+    if (email) {
+      if (!senha) throw new Recusa("Defina a senha — é com ela e o e-mail que a pessoa entra");
+      if (!departamento) throw new Recusa("Escolha o departamento — sem ele a pessoa entra e não vê nada");
+    } else if (senha || departamento) {
+      throw new Recusa("Senha e departamento são de quem entra no sistema: preencha o e-mail");
+    }
+    conferirTeto(eu, departamento);
+
+    const whatsapp = whatsappOuNulo(dados.whatsapp);
+    const instancia = await instanciaOuNula(dados.instanciaId);
+    const hash = senha ? await gerarHash(senha) : null;
+    await sql`
+      INSERT INTO usuarios (nome, iniciais, whatsapp, instancia_id, email, senha_hash, departamento_id)
+      VALUES (${n}, ${ini}, ${whatsapp}, ${instancia}, ${email}, ${hash}, ${departamento?.id ?? null})`;
+    revalidarUsuarios();
+  });
+}
+
+export async function editarUsuario(id: string, dados: DadosUsuario): Promise<ResultadoUsuario> {
+  const eu = await exigirGestaoDeUsuarios();
+  const administro = eu.departamento?.gerenciaAcessos ?? false;
+  return comoResultado(async () => {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Recusa("Usuário inválido");
+    const [alvo] = (await sql`
+      SELECT u.email, u.departamento_id, COALESCE(d.gerencia_acessos, false) AS gerencia
+        FROM usuarios u
+        LEFT JOIN departamentos d ON d.id = u.departamento_id
+       WHERE u.id = ${id}
+    `) as { email: string | null; departamento_id: string | null; gerencia: boolean }[];
+    if (!alvo) throw new Recusa("Esse usuário não existe mais");
+    // O teto, do outro lado: a conta de quem administra acessos só quem
+    // administra edita — trocar a senha dela seria entrar por ela.
+    if (alvo.gerencia && !administro) {
+      throw new Recusa("Esta conta é de quem administra acessos — só o TI a edita");
+    }
+
+    const n = dados.nome.trim();
+    if (!n) throw new Recusa("Nome é obrigatório");
+    const ini = (dados.iniciais.trim() || iniciaisDe(n)).slice(0, 4).toUpperCase();
+    const email = emailOuNulo(dados.email);
+    const senha = senhaOuNula(dados.senha);
+    const departamento = await departamentoOuNulo(dados.departamentoId);
+
+    if (!email) {
+      // Tirar o e-mail apagaria login e senha juntos. Para cortar o acesso sem
+      // perder a conta existe "Sem departamento".
+      if (alvo.email) {
+        throw new Recusa('O e-mail é o login desta pessoa e não fica vazio — para tirar o acesso, escolha "Sem departamento"');
+      }
+      if (senha || departamento) {
+        throw new Recusa("Senha e departamento são de quem entra no sistema: preencha o e-mail");
+      }
+    } else if (!alvo.email) {
+      // Ganhando login agora: as mesmas exigências da conta nova.
+      if (!senha) throw new Recusa("Defina a senha — é com ela e o e-mail que a pessoa vai entrar");
+      if (!departamento) throw new Recusa("Escolha o departamento — sem ele a pessoa entra e não vê nada");
+    }
+
+    // O próprio departamento não muda aqui: seria se trancar fora desta tela
+    // (ou, no TI, de Acessos). Quem muda é a tela de Acessos, com as travas
+    // dela (ver moverParticipante em ./acoes-acessos.ts).
+    if (id === eu.id && (departamento?.id ?? null) !== alvo.departamento_id) {
+      throw new Recusa("O seu próprio departamento não muda aqui — peça a quem administra acessos");
+    }
+    conferirTeto(eu, departamento);
+
+    const whatsapp = whatsappOuNulo(dados.whatsapp);
+    const instancia = await instanciaOuNula(dados.instanciaId);
+    const hash = senha ? await gerarHash(senha) : null;
+
+    // O teto vai TAMBÉM no WHERE: entre a leitura acima e este UPDATE alguém
+    // pode ter posto a pessoa num departamento que administra acessos.
+    const feitos = await sql`
+      UPDATE usuarios
+         SET nome = ${n}, iniciais = ${ini}, whatsapp = ${whatsapp},
+             instancia_id = ${instancia},
+             email = ${email},
+             senha_hash = COALESCE(${hash}::text, senha_hash),
+             departamento_id = ${departamento?.id ?? null}
+       WHERE id = ${id}
+         AND (${administro}::boolean
+              OR departamento_id IS NULL
+              OR departamento_id NOT IN (SELECT id FROM departamentos WHERE gerencia_acessos))
+      RETURNING id`;
+    if (feitos.length === 0) {
+      throw new Recusa("Esta conta mudou enquanto você editava — recarregue a página");
+    }
+    revalidarUsuarios();
+  });
 }
 
 // ── Campos personalizados ────────────────────────────────────────────────────

@@ -32,6 +32,8 @@ import {
 
 type Item = { href: string; rotulo: string; Icone: LucideIcon };
 
+const USUARIOS: Item = { href: "/configuracoes/usuarios", rotulo: "Usuários", Icone: Users };
+
 // Dois grupos, e a divisão não é decorativa: em cima está o que o CRM guarda
 // (linhas nossas, no nosso banco); embaixo, o que ele liga a um sistema de fora
 // — onde um clique errado tem consequência lá, não aqui.
@@ -42,7 +44,7 @@ const GRUPOS: { titulo: string; itens: Item[] }[] = [
       { href: "/configuracoes/funis", rotulo: "Funis e etapas", Icone: Layers },
       { href: "/configuracoes/tags", rotulo: "Tags", Icone: TagIcon },
       { href: "/configuracoes/segmentos", rotulo: "Segmentos", Icone: Boxes },
-      { href: "/configuracoes/usuarios", rotulo: "Usuários", Icone: Users },
+      USUARIOS,
       {
         href: "/configuracoes/campos",
         rotulo: "Campos personalizados",
@@ -80,11 +82,21 @@ function classesDoItem(ativo: boolean) {
 export default function NavConfiguracoes({
   temConfiguracoes,
   gerenciaAcessos,
+  gereUsuarios,
 }: {
   temConfiguracoes: boolean;
   gerenciaAcessos: boolean;
+  /** Admin e TI criam e editam contas mesmo sem o módulo (lib/auth/dal.ts). */
+  gereUsuarios: boolean;
 }) {
   const pathname = usePathname();
+  // Sem o módulo, quem gere usuários vê só Usuários — o resto das Entidades o
+  // mandaria para o mesmo redirecionamento.
+  const grupos = temConfiguracoes
+    ? GRUPOS
+    : gereUsuarios
+      ? [{ titulo: "Entidades", itens: [USUARIOS] }]
+      : [];
 
   return (
     <aside className="flex h-screen w-[200px] shrink-0 flex-col gap-1 overflow-y-auto border-r border-zinc-200 p-2 dark:border-zinc-800">
@@ -95,7 +107,7 @@ export default function NavConfiguracoes({
         </h1>
       </div>
 
-      {(temConfiguracoes ? GRUPOS : []).map(({ titulo, itens }) => (
+      {grupos.map(({ titulo, itens }) => (
         <nav key={titulo} className="flex flex-col gap-0.5" aria-label={titulo}>
           <h2 className="px-2.5 pb-1 pt-2 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">
             {titulo}

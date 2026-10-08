@@ -4,6 +4,11 @@ import { useState } from "react";
 import { useConsulta } from "../campanhas/use-consulta";
 import { filtroCampanhasVazio, type FiltroCampanhas } from "./filtro-campanhas";
 
+// As pílulas de campanha, conjunto, anúncio e disparo. Desde 2026-10-08 moram
+// DENTRO do painel de filtros (app/funil/painel-filtros.tsx), e não mais numa
+// faixa sobre o quadro: eram três linhas de pílula que, no tablet deitado,
+// custavam meio cartão por coluna. Quem dá a moldura é o painel.
+
 type Campanha = {id:string;name:string;effective_status:string};
 type Conjunto = {id:string;nome:string;anuncios:Array<{id:string;nome:string}>};
 
@@ -31,7 +36,7 @@ export default function DashboardMetaAds({corSelecionada, filtro, aoFiltrar}:{co
   const conjuntos=detalhes.dados?.grupos??[];
   const conjunto=conjuntos.find(c=>c.id===conjuntoId);
   const erro=status.erro||ads.erro||disparos.erro||detalhes.erro;
-  return <section className="surge mb-3 shrink-0 space-y-2 pr-6 xl:pr-16">
+  return <section aria-label="Campanhas" className="space-y-2">
     {(status.dados?.contasAds.length??0)>1&&<Nivel titulo="Conta"><select aria-label="Conta de anúncios" value={conta} onChange={e=>{setConta(e.target.value);aoFiltrar(filtroCampanhasVazio)}} className="rounded-lg bg-transparent text-xs">{status.dados?.contasAds.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Nivel>}
     {erro&&<p role="alert" className="text-xs text-amber-600">{erro} <button onClick={()=>{void status.atualizar();void ads.atualizar();void disparos.atualizar();void detalhes.atualizar()}}>Tentar novamente</button></p>}
     <Nivel titulo="Campanhas">{visiveis.map(c=><Pill key={c.id} campanhaAtiva={c.effective_status==="ACTIVE"} ativo={c.id===campanhaId} corSelecionada={corSelecionada} onClick={()=>{aoFiltrar({campanha:campanhaId===c.id?null:{id:c.id,nome:c.name},conjunto:null,anuncio:null})}}>{c.name}</Pill>)}{recolher&&<button type="button" onClick={()=>setVerInativas(v=>!v)} className="rounded-full px-2.5 py-1 text-[10px] text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50">{verInativas?"Ocultar inativas":`+${inativas} inativa${inativas===1?"":"s"}`}</button>}{(status.carregando||ads.carregando)?<span className="text-xs text-zinc-400">Carregando…</span>:!erro&&!ads.dados?.campanhas.length&&<span className="text-xs text-zinc-400">Nenhuma campanha.</span>}</Nivel>

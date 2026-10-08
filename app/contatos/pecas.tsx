@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import type { EtapaComTom } from "@/lib/contatos-ficha";
+import { brlCurto } from "../formato";
 
 const FUSO = "America/Sao_Paulo";
 
@@ -28,12 +29,9 @@ export function tempo(segundos: number) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${resto}` : `${m}:${resto}`;
 }
 
-/** "R$ 1,3 mi", "R$ 350 mil", "R$ 9.800". */
-export function dinheiro(valor: number) {
-  if (valor >= 1_000_000) return `R$ ${(valor / 1_000_000).toFixed(1).replace(/\.0$/, "").replace(".", ",")} mi`;
-  if (valor >= 10_000) return `R$ ${Math.round(valor / 1_000)} mil`;
-  return `R$ ${Math.round(valor).toLocaleString("pt-BR")}`;
-}
+/** "R$ 1,3 mi", "R$ 350 mil", "R$ 9.800". Mora em app/formato.ts desde que o
+ *  quadro também passou a usá-lo; o nome daqui ficou para a ficha. */
+export const dinheiro = brlCurto;
 
 /** 'YYYY-MM-DD' de um instante, no fuso de Brasília. */
 export function diaDe(iso: string) {

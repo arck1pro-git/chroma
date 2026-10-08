@@ -15,6 +15,9 @@
 // A DEMANDA "PARA TODOS" vira UM cartão (ver `Item`): sem isso, na visão do
 // Admin uma demanda para dez pessoas eram dez cartões iguais empurrando o resto
 // para baixo. O cartão diz quantas já fizeram e mostra quem falta.
+//
+// O CHECKLIST (./checklist.tsx) mora no cartão aberto; fechado, o cartão só
+// diz o progresso ("3/5") na linha de sinais.
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -22,6 +25,7 @@ import {
   Check,
   Flag,
   LifeBuoy,
+  ListChecks,
   Pencil,
   Trash2,
   Users,
@@ -29,6 +33,7 @@ import {
 import type { Demanda } from "@/lib/demandas-tipos";
 import { dataHora } from "../formato";
 import { diaComSemana, haQuanto, horaDe, prazoEmTexto, type TomDoPrazo } from "./datas";
+import Checklist, { type MontarChecklist } from "./checklist";
 
 export type Eu = { id: string; nome: string; departamentoId: string | null };
 
@@ -82,21 +87,25 @@ const botaoAcao =
 export default function Cartao({
   item,
   eu,
-  admin,
   hoje,
   agora,
   aoMarcar,
   aoEditar,
   aoExcluir,
+  aoMarcarItem,
+  montar,
+  aoAvisar,
 }: {
   item: Item;
   eu: Eu;
-  admin: boolean;
   hoje: string;
   agora: string;
   aoMarcar: (id: string, feita: boolean) => void;
   aoEditar: (item: Item) => void;
   aoExcluir: (ids: string[]) => void;
+  aoMarcarItem: (itemId: string, feito: boolean) => void;
+  montar: MontarChecklist;
+  aoAvisar: (texto: string) => void;
 }) {
   const [aberto, setAberto] = useState(false);
   // Segundo clique é que exclui, como em Documentos.
@@ -125,10 +134,27 @@ export default function Cartao({
   const alvo = item.demandas.find((x) => ehMinha(x, eu)) ?? null;
   // Só o desenho do check e do título: o resto do cartão segue o que está gravado.
   const marcada = feita || (concluindo !== null && concluindo === alvo?.id);
-  const podeMexer = admin || (d.criadoPor === eu.id && item.lote.every((x) => !x.feitaEm));
+  // Editar e excluir: só quem criou (regra dele, 2026-10-07) — o servidor
+  // confere de novo em lib/demandas.ts.
+  const podeMexer = d.criadoPor === eu.id;
   const prazo = d.prazo ? prazoEmTexto(d.prazo, hoje, feita) : null;
   const feitasNoLote = item.lote.filter((x) => x.feitaEm).length;
   const idsDoCartao = emLote ? item.lote.map((x) => x.id) : [d.id];
+
+  // O checklist que aparece: o da MINHA cópia quando a demanda é minha; no
+  // cartão "para todos" de quem não recebeu, a lista em si, sem o check de
+  // ninguém — o de cada pessoa aparece como "2/5" ao lado do passo.
+  const baseDoChecklist = alvo ?? (emLote ? { ...d, itens: d.itens.map((i) => ({ ...i, feitoEm: null, feitoPor: null })) } : d);
+  const passosFeitos = baseDoChecklist.itens.filter((i) => i.feitoEm).length;
+  // Montar o checklist é de quem criou a demanda (decisão dele, 2026-10-07).
+  const podeMontar = d.criadoPor === eu.id;
+
+  // Marcar como feita — pelo círculo ou pela sugestão do checklist completo.
+  function concluir() {
+    if (!alvo || marcada !== feita || feita) return;
+    setConcluindo(alvo.id);
+    espera.current = setTimeout(() => aoMarcar(alvo.id, true), 280);
+  }
 
   const autor = d.criadoPor === eu.id ? "você" : (d.autor ?? "alguém que saiu");
   const origem = chamado ? `aberto por ${autor}` : d.criadoPor === eu.id ? "criada por você" : `de ${autor}`;
@@ -159,8 +185,7 @@ export default function Cartao({
           onClick={() => {
             if (!alvo || marcada !== feita) return;
             if (feita) return aoMarcar(alvo.id, false);
-            setConcluindo(alvo.id);
-            espera.current = setTimeout(() => aoMarcar(alvo.id, true), 280);
+            concluir();
           }}
           aria-label={feita ? `Desmarcar “${d.titulo}”` : `Marcar “${d.titulo}” como feita`}
           title={alvo ? (feita ? "Desmarcar" : "Marcar como feita") : "Só quem recebeu dá o check"}
@@ -233,6 +258,17 @@ export default function Cartao({
                     {feitasNoLote} de {item.lote.length} feitas
                   </span>
                 )}
+                {baseDoChecklist.itens.length > 0 && (
+                  <span
+                    className={`inline-flex items-center gap-1 tabular-nums ${
+                      !emLote && passosFeitos === baseDoChecklist.itens.length ? "font-medium text-emerald-700 dark:text-emerald-400" : ""
+                    }`}
+                    title={emLote ? "Passos do checklist" : "Passos feitos do checklist"}
+                  >
+                    <ListChecks className="size-3" aria-hidden="true" />
+                    {emLote && !alvo ? `${baseDoChecklist.itens.length} passos` : `${passosFeitos}/${baseDoChecklist.itens.length}`}
+                  </span>
+                )}
                 <span className="text-zinc-400 dark:text-zinc-500">
                   {origem} · {haQuanto(d.dataCriacao, agora, hoje)}
                 </span>
@@ -275,6 +311,19 @@ export default function Cartao({
               {d.descricao}
             </p>
           )}
+
+          <Checklist
+            base={baseDoChecklist}
+            lote={item.lote}
+            podeMarcar={Boolean(alvo)}
+            podeMontar={podeMontar}
+            demandaPendente={baseDoChecklist.feitaEm === null}
+            eu={eu}
+            aoMarcarItem={aoMarcarItem}
+            montar={montar}
+            aoFecharDemanda={concluir}
+            aoAvisar={aoAvisar}
+          />
 
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
             <dt className="text-zinc-400 dark:text-zinc-500">Para</dt>
@@ -320,6 +369,13 @@ export default function Cartao({
                     <span className="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-300">
                       {x.responsavelId === eu.id ? "Você" : x.responsavel}
                     </span>
+                    {/* Até onde cada pessoa foi no checklist dela. */}
+                    {x.itens.length > 0 && (
+                      <span className="inline-flex items-center gap-1 tabular-nums text-zinc-400 dark:text-zinc-500" title="Passos feitos do checklist">
+                        <ListChecks className="size-3" aria-hidden="true" />
+                        {x.itens.filter((i) => i.feitoEm).length}/{x.itens.length}
+                      </span>
+                    )}
                     {x.feitaEm ? (
                       <span className="text-emerald-700 dark:text-emerald-400">feita · {dataHora(x.feitaEm)}</span>
                     ) : (

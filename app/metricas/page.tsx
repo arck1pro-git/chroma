@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { exigirModulo } from "@/lib/auth/dal";
-import { carregarMetricas, periodoValido } from "./dados";
-import TelaMetricas from "./tela";
+import { administraDemandas } from "@/lib/demandas";
+import { carregarMetricasDemandas } from "./demandas";
+import TelaMetricas, { type Visao } from "./tela";
 
 export const metadata: Metadata = {
   title: "Métricas · Chroma",
@@ -9,26 +10,51 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+// "Hoje" no fuso de Brasília, calculado no servidor: é dele que saem o dia, a
+// semana e o mês de cada número, e o navegador não pode discordar disso perto
+// da meia-noite.
+function hojeEmBrasilia() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
+
+const VISOES: readonly Visao[] = ["dia", "semana", "mes"];
+
 export default async function MetricasPage({
   searchParams,
 }: {
-  // ?dias=7|30|90 — o período. Vive na URL e não em estado de cliente: assim o
-  // recorte é um link que dá pra mandar no WhatsApp, e a tela continua inteira
-  // renderizada no servidor, que é onde o filtro por dono TEM que acontecer.
-  searchParams: Promise<{ dias?: string | string[] }>;
+  // ?pessoa=<id> — o usuário escolhido no filtro; ?ver=dia|semana|mes — o
+  // gráfico. Os dois vivem na URL para o link abrir no mesmo recorte; a tela
+  // troca sem ida ao servidor (ver tela.tsx).
+  searchParams: Promise<{ pessoa?: string | string[]; ver?: string | string[] }>;
 }) {
   // Checagem POR PÁGINA, e não no layout: com Partial Rendering o layout não
   // re-renderiza a cada navegação, então a checagem lá deixaria de rodar
   // justamente quando a pessoa troca de tela (guia de autenticação do Next,
   // "Layouts and auth checks"). Aqui ela roda antes de qualquer consulta.
-  //
-  // `escopo` sai daqui e vai DIRETO pra consulta: é ele que decide se o SELECT
-  // traz a carteira de todo mundo ou só a de quem está olhando.
-  const { usuario, escopo } = await exigirModulo("metricas");
+  const { usuario } = await exigirModulo("metricas");
 
-  const { dias } = await searchParams;
-  const periodo = periodoValido(typeof dias === "string" ? dias : undefined);
-  const dados = await carregarMetricas(escopo, usuario.id, periodo);
+  // Quem vê a equipe e filtra por pessoa: Admin e TI (pedido dele,
+  // 2026-10-07) — a mesma regra das Demandas, pelo departamento, e não pelo
+  // escopo de Acessos. Os demais veem só os próprios números, e é a consulta
+  // que corta: o resto nem sobe do banco.
+  const veEquipe = administraDemandas(usuario);
 
-  return <TelaMetricas dados={dados} escopo={escopo} nome={usuario.nome} />;
+  const { pessoa, ver } = await searchParams;
+  const metricas = await carregarMetricasDemandas(veEquipe, usuario.id, hojeEmBrasilia());
+
+  // ?pessoa só vale para quem vê a equipe, e para alguém da lista: um id
+  // qualquer da URL não pode abrir a tela num recorte vazio e mudo.
+  const pessoaInicial =
+    veEquipe && typeof pessoa === "string" && metricas.pessoas.some((p) => p.id === pessoa) ? pessoa : null;
+  const visaoInicial = VISOES.find((v) => v === ver) ?? "dia";
+
+  return (
+    <TelaMetricas
+      metricas={metricas}
+      veEquipe={veEquipe}
+      nome={usuario.nome}
+      pessoaInicial={pessoaInicial}
+      visaoInicial={visaoInicial}
+    />
+  );
 }

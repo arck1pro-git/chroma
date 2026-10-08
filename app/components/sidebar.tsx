@@ -25,7 +25,8 @@
 // · A barra RECOLHE, pelo botão no topo: 260px viram 60px e sobram os ícones.
 //   Quem trabalha no quadro do funil ou no chat recupera a largura sem perder a
 //   navegação. A escolha fica no localStorage — é preferência de quem está no
-//   aparelho, não dado de conta, e não vale uma ida ao banco.
+//   aparelho, não dado de conta, e não vale uma ida ao banco. Sem escolha
+//   feita, abaixo de 1280px de largura (tablet deitado) ela já abre recolhida.
 //
 // · Blog não navega mais: virou SANFONA. O clique abre os blogs existentes aqui
 //   mesmo, e cada um leva direto a /blog/<id>. No fim da lista, "+ Novo blog"
@@ -35,7 +36,7 @@
 //
 // A lista de conversas vem de TODOS os painéis de IA juntos, e cada uma sabe
 // voltar para a tela onde foi feita (lib/ia/navegacao.ts).
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -69,11 +70,13 @@ import {
 import { conversasDaBarra } from "./acoes-ia";
 import ModalNovoBlog, { type BlogCriado } from "./modal-novo-blog";
 import SeloWhatsApp from "./selo-whatsapp";
+import { criarPreferencia } from "./preferencia-local";
 import type { ConversaNaBarra } from "@/lib/ia/conversas";
 import { lugarDoEscopo, rotaDaConversa } from "@/lib/ia/navegacao";
 import { EVENTO_NOVA_ANALISE } from "./ia-global-contexto";
 import { sair } from "@/app/login/acoes";
 import type { ChaveModulo } from "@/lib/auth/modulos";
+import { EVENTO_DEMANDAS, type ContagemDemandas } from "@/lib/demandas-tipos";
 
 // A LISTA DE MÓDULOS NÃO MORA MAIS AQUI. Ela vem do servidor, já peneirada
 // pelo departamento de quem está logado (app/layout.tsx → lib/auth/dal.ts).
@@ -140,58 +143,14 @@ function BotaoNovaAnalise({
 /** O que o servidor manda desenhar. Ver `modulosDaBarra` em app/layout.tsx. */
 export type ItemDeModulo = { chave: ChaveModulo; rotulo: string; href: string };
 
-/** Onde a preferência de barra recolhida fica, no aparelho de quem usa. */
-const CHAVE_RECOLHIDA = "chroma:barra-recolhida";
-
-// ── A preferência como LOJA EXTERNA ─────────────────────────────────────────
-//
-// O localStorage é um sistema de fora do React, e é assim que o React quer que
-// se leia um: `useSyncExternalStore`, não `useState` + efeito que grava no
-// primeiro render. O caminho do efeito pinta uma vez errado e corrige na
-// segunda — é a cascata de render que o lint deste projeto barra
-// (react-hooks/set-state-in-effect).
-//
-// `snapshotNoServidor` devolve `false` porque no servidor não existe
-// localStorage: o HTML sai com a barra aberta e o cliente ajusta na primeira
-// leitura, sem divergência de hidratação.
-//
-// O cache existe porque `getSnapshot` tem que devolver o MESMO valor enquanto
-// nada muda. Ler o localStorage a cada chamada devolveria um booleano novo a
-// cada render e o React entraria em laço.
-let recolhidaEmCache: boolean | null = null;
-const ouvintesDaBarra = new Set<() => void>();
-
-function assinarRecolhida(ouvinte: () => void) {
-  ouvintesDaBarra.add(ouvinte);
-  return () => {
-    ouvintesDaBarra.delete(ouvinte);
-  };
-}
-
-function lerRecolhida() {
-  if (recolhidaEmCache === null) {
-    try {
-      recolhidaEmCache = localStorage.getItem(CHAVE_RECOLHIDA) === "1";
-    } catch {
-      // Navegador com armazenamento bloqueado. A barra abre e funciona; só não
-      // lembra da escolha.
-      recolhidaEmCache = false;
-    }
-  }
-  return recolhidaEmCache;
-}
-
-function snapshotNoServidor() {
-  return false;
-}
-
-function definirRecolhida(valor: boolean) {
-  recolhidaEmCache = valor;
-  try {
-    localStorage.setItem(CHAVE_RECOLHIDA, valor ? "1" : "0");
-  } catch {}
-  for (const ouvinte of ouvintesDaBarra) ouvinte();
-}
+// A barra recolhida é preferência do APARELHO (ver ./preferencia-local.ts, que
+// explica a loja externa). Quem nunca escolheu ganha a barra recolhida abaixo
+// de 1280px de largura: no tablet deitado (1024–1180) os 260px dela comiam um
+// quarto da tela e o quadro mostrava duas colunas e meia.
+const barraRecolhida = criarPreferencia(
+  "chroma:barra-recolhida",
+  () => window.innerWidth < 1280,
+);
 
 /** O mínimo que a barra precisa saber de um blog para listá-lo. */
 type BlogNaBarra = { id: number; nome: string };
@@ -277,6 +236,7 @@ export default function Sidebar({
   temConfiguracoes,
   podeWhatsApp = false,
   iaFixa = false,
+  demandas = null,
 }: {
   usuario: UsuarioDaBarra | null;
   /** Já peneirados pelo departamento, no servidor. */
@@ -291,6 +251,8 @@ export default function Sidebar({
    * tela onde a conversa nasceu.
    */
   iaFixa?: boolean;
+  /** O que está a fazer para a pessoa em Demandas; null sem o módulo. */
+  demandas?: ContagemDemandas | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -307,14 +269,56 @@ export default function Sidebar({
   const estaEm = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
+  // ── Contador de demandas ──────────────────────────────────────────────────
+  // Nasce com o número do servidor e se mantém em dia sozinho: de minuto em
+  // minuto com a aba à vista (é assim que o TI vê o chamado novo chegar), ao
+  // voltar para a aba, ao trocar de tela e na hora em que alguém mexe em
+  // Demandas (EVENTO_DEMANDAS). Aba escondida não pergunta nada.
+  const [contagem, setContagem] = useState<ContagemDemandas | null>(demandas ?? null);
+  const temDemandas = demandas !== null && demandas !== undefined;
+  useEffect(() => {
+    if (!temDemandas) return;
+    let vivo = true;
+    const buscar = () => {
+      if (document.visibilityState !== "visible") return;
+      fetch("/api/demandas/contagem", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((c: ContagemDemandas | null) => {
+          if (vivo && c) setContagem(c);
+        })
+        .catch(() => {});
+    };
+    const intervalo = setInterval(buscar, 60_000);
+    window.addEventListener(EVENTO_DEMANDAS, buscar);
+    window.addEventListener("focus", buscar);
+    document.addEventListener("visibilitychange", buscar);
+    return () => {
+      vivo = false;
+      clearInterval(intervalo);
+      window.removeEventListener(EVENTO_DEMANDAS, buscar);
+      window.removeEventListener("focus", buscar);
+      document.removeEventListener("visibilitychange", buscar);
+    };
+  }, [temDemandas]);
+  // Trocar de tela também confere — é quando a pessoa acaba de fazer algo.
+  useEffect(() => {
+    if (!temDemandas) return;
+    let vivo = true;
+    fetch("/api/demandas/contagem", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c: ContagemDemandas | null) => {
+        if (vivo && c) setContagem(c);
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [pathname, temDemandas]);
+
   // ── Recolher ──────────────────────────────────────────────────────────────
   // A largura da barra vem da loja externa lá de cima: o valor é do APARELHO e
   // não do render, e é por isso que ele não é `useState` aqui dentro.
-  const recolhida = useSyncExternalStore(
-    assinarRecolhida,
-    lerRecolhida,
-    snapshotNoServidor,
-  );
+  const recolhida = barraRecolhida.useValor();
 
   // ── Conversas ─────────────────────────────────────────────────────────────
   // Buscadas no cliente, depois da primeira pintura: a sidebar está em TODAS as
@@ -403,7 +407,7 @@ export default function Sidebar({
   // clique morto.
   function alternarBlogs() {
     if (recolhida) {
-      definirRecolhida(false);
+      barraRecolhida.definir(false);
       setSanfonaBlog(true);
       return;
     }
@@ -453,7 +457,7 @@ export default function Sidebar({
 
         <button
           type="button"
-          onClick={() => definirRecolhida(!recolhida)}
+          onClick={() => barraRecolhida.definir(!recolhida)}
           aria-label={recolhida ? "Expandir barra" : "Recolher barra"}
           aria-expanded={!recolhida}
           title={recolhida ? "Expandir barra" : "Recolher barra"}
@@ -469,7 +473,11 @@ export default function Sidebar({
         </button>
       </div>
 
-      <nav className="flex flex-col gap-0.5" aria-label="Módulos">
+      {/* min-h-0 + overflow: em tela baixa (768 de altura) os 17 módulos não
+          cabem, e sem isto a barra passava do pé da tela — a página inteira
+          rolava e "Análises" desenhava por cima dos números de WhatsApp. Agora
+          quem rola é a lista, por dentro. */}
+      <nav className="rolagem-oculta flex min-h-0 flex-col gap-0.5 overflow-y-auto" aria-label="Módulos">
         {modulos.map(({ chave, href, rotulo }) => {
           const Icone = ICONES[chave] ?? Grid2x2;
           const ativo = estaEm(href);
@@ -557,16 +565,23 @@ export default function Sidebar({
             );
           }
 
+          const contador = chave === "demandas" ? contagem : null;
+          const resumoDoContador = contador
+            ? `${contador.pendentes} a fazer${contador.atrasadas ? ` · ${contador.atrasadas} ${contador.atrasadas === 1 ? "atrasada" : "atrasadas"}` : ""}`
+            : null;
           return (
             <Link
               key={chave}
               href={href}
               aria-current={ativo ? "page" : undefined}
-              title={recolhida ? rotulo : undefined}
-              className={classesDoItem(ativo, recolhida)}
+              title={recolhida ? (resumoDoContador && contador?.pendentes ? `${rotulo} · ${resumoDoContador}` : rotulo) : resumoDoContador && contador?.pendentes ? resumoDoContador : undefined}
+              className={`${classesDoItem(ativo, recolhida)} relative`}
             >
               <Icone className="size-4 shrink-0" aria-hidden="true" />
               {!recolhida && <span className="truncate">{rotulo}</span>}
+              {contador && contador.pendentes > 0 && (
+                <Contador contagem={contador} recolhida={recolhida} />
+              )}
             </Link>
           );
         })}
@@ -580,7 +595,15 @@ export default function Sidebar({
           Recolhida, a lista sai inteira: título de conversa sem rótulo vira uma
           coluna de ícones iguais, indistinguíveis. Sobra o botão de nova
           análise, que continua sendo uma ação de um clique. */}
-      <div className="mt-2 flex min-h-0 flex-1 flex-col">
+      {/* O piso (min-h) é o que sobra das Análises quando a tela aperta: o
+          título e uma conversa, ou o "+" na barra recolhida. Abaixo dele quem
+          cede é a lista de módulos, acima. overflow-hidden para o conteúdo
+          nunca vazar por cima do rodapé. */}
+      <div
+        className={`mt-2 flex flex-1 flex-col overflow-hidden ${
+          recolhida ? "min-h-8" : "min-h-[4.5rem]"
+        }`}
+      >
         {recolhida ? (
           <BotaoNovaAnalise
             iaFixa={iaFixa}
@@ -652,9 +675,9 @@ export default function Sidebar({
             abre o painel dela ao lado da barra. */}
         <SeloWhatsApp podeCriar={podeWhatsApp} recolhida={recolhida} />
 
-        {/* Some pra quem não tem o módulo. `temConfiguracoes` já soma o caso
-            de quem administra acessos sem ter Configurações — senão a única
-            porta pra tela de Acessos seria digitar a URL. */}
+        {/* Some pra quem não tem o módulo. `temConfiguracoes` já soma quem
+            administra acessos sem ter Configurações e quem gere usuários (o
+            Admin) — senão a única porta pra essas telas seria digitar a URL. */}
         {temConfiguracoes && (
           <Link
             href="/configuracoes"
@@ -725,5 +748,29 @@ export default function Sidebar({
           document.body,
         )}
     </aside>
+  );
+}
+
+// A bolinha do item Demandas: quantas estão a fazer. Escura, como a tinta da
+// barra, quando é só trabalho na fila; vermelha quando alguma passou do prazo —
+// a cor só muda quando há o que cobrar. Na barra recolhida ela sobe para o
+// canto do ícone. Acima de 99 vira "99+": é um aviso, não um relatório.
+function Contador({ contagem, recolhida }: { contagem: ContagemDemandas; recolhida: boolean }) {
+  const texto = contagem.pendentes > 99 ? "99+" : String(contagem.pendentes);
+  const cor = contagem.atrasadas > 0
+    ? "bg-red-500 text-white dark:bg-red-500 dark:text-white"
+    : "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900";
+  const leitura = `${contagem.pendentes} a fazer${contagem.atrasadas ? `, ${contagem.atrasadas} ${contagem.atrasadas === 1 ? "atrasada" : "atrasadas"}` : ""}`;
+  return (
+    <span
+      className={`${cor} inline-flex shrink-0 items-center justify-center rounded-full font-medium tabular-nums leading-none ${
+        recolhida
+          ? "absolute right-1.5 top-1 h-4 min-w-4 px-1 text-[9px] ring-2 ring-[var(--background)]"
+          : "ml-auto h-[18px] min-w-[18px] px-1.5 text-[10px]"
+      }`}
+    >
+      <span aria-hidden="true">{texto}</span>
+      <span className="sr-only">{leitura}</span>
+    </span>
   );
 }

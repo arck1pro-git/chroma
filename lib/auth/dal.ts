@@ -237,6 +237,34 @@ export async function exigirGerenciaAcessos(): Promise<UsuarioLogado> {
   return usuario;
 }
 
+// Admin e TI pelo DEPARTAMENTO (slug), como nas Demandas: pedido dele de
+// 2026-10-07, "o admin pode criar e editar um usuário". Fixo no código de
+// propósito — nenhuma marcação em Acessos transforma outro departamento nisso.
+const GEREM_USUARIOS = new Set(["admin", "ti"]);
+
+/**
+ * Quem cria e edita contas (e-mail, senha e departamento) em Configurações ·
+ * Usuários: Admin e TI, e quem já tinha a tela pelo módulo Configurações.
+ *
+ * Isto abre a TELA. O que dá pra mexer lá dentro tem um teto, nas actions
+ * (app/configuracoes/actions.ts): quem não administra acessos não põe ninguém
+ * num departamento que administra, nem edita a conta de quem está num. Sem o
+ * teto, o Admin criaria uma conta no TI e entraria por ela em tudo o que o
+ * pedido de 2026-09-16 lhe tirou — inclusive a tela de Acessos.
+ */
+export function gereUsuarios(usuario: UsuarioLogado): boolean {
+  return (
+    usuario.modulos.has("configuracoes") ||
+    GEREM_USUARIOS.has(usuario.departamento?.slug ?? "")
+  );
+}
+
+export async function exigirGestaoDeUsuarios(): Promise<UsuarioLogado> {
+  const usuario = await exigirLogin();
+  if (!gereUsuarios(usuario)) redirect(destinoPossivel(usuario));
+  return usuario;
+}
+
 /**
  * Versão pra Route Handler. Devolve o usuário, ou a Response pronta —
  * quem chama decide, com `if (resposta instanceof Response) return resposta`.

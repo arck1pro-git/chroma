@@ -19,9 +19,20 @@
 //
 // Cores: variáveis --serie-* e --viz-* da classe .viz (globals.css),
 // validadas para daltonismo nos dois modos.
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { corDoCss, degrade, useGrafico, type Desenho } from "./grafico-canvas";
+
+/**
+ * Para série que não é por dia — por semana, por mês —: como escrever o ponto
+ * no eixo e no tooltip, e se o último ponto ainda está em andamento (o trecho
+ * até ele sai tracejado). Sem ela, a série é por dia, como sempre foi.
+ */
+export type EscalaLinha = {
+  eixo: (dia: string, i: number) => string;
+  dica: (dia: string) => string;
+  ultimoParcial: boolean;
+};
 
 export type SerieLinha<T> = {
   nome: string;
@@ -74,6 +85,9 @@ export function LinhasPorDia<T extends { dia: string }>({
   altura = "h-32",
   totais = false,
   tom,
+  escala,
+  recolhido = false,
+  acao,
 }: {
   dados: T[];
   series: SerieLinha<T>[];
@@ -93,13 +107,32 @@ export function LinhasPorDia<T extends { dia: string }>({
   titulo: string;
   /** Altura da área do gráfico (classe Tailwind). */
   altura?: string;
+  /** Semana ou mês no lugar do dia (ver EscalaLinha). */
+  escala?: EscalaLinha;
+  /** Só a linha da legenda, com os totais — o gráfico minimizado do
+   *  dashboard (app/inicio/visao-geral.tsx). A tabela sr-only continua. */
+  recolhido?: boolean;
+  /** Um controle no fim da linha da legenda (o botão de minimizar). */
+  acao?: ReactNode;
 }) {
   const maximo = Math.max(0, ...dados.flatMap((d) => series.map((s) => s.valor(d))));
   if (maximo === 0) {
-    return (
-      <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-8 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+    const aviso = (
+      <p
+        className={`flex-1 rounded-lg border border-dashed border-zinc-200 px-3 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500 ${
+          recolhido ? "py-1.5" : "py-8"
+        }`}
+      >
         {vazio}
       </p>
+    );
+    return acao ? (
+      <div className="flex items-start gap-2">
+        {aviso}
+        {acao}
+      </div>
+    ) : (
+      aviso
     );
   }
 
@@ -108,7 +141,7 @@ export function LinhasPorDia<T extends { dia: string }>({
       {/* Legenda sempre presente com 2 séries ou mais: identidade nunca
           depende só da cor. O texto usa token de tinta; quem carrega a
           identidade é o traço colorido ao lado. */}
-      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+      <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 ${recolhido ? "" : "mb-2"}`}>
         {series.map((s) => {
           const nota = s.nota?.(dados);
           return (
@@ -125,19 +158,23 @@ export function LinhasPorDia<T extends { dia: string }>({
           );
         })}
         <span className="ml-auto text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500">{resumo}</span>
+        {acao}
       </div>
 
       {/* Teto pela MAIOR série, não pela soma: são linhas, não pilha. A
           `key` pelo tom: o canvas não acompanha o CSS, então trocar de funil
           (e de tom) monta o gráfico de novo com as cores relidas. */}
-      <Linhas
-        key={tom}
-        dados={dados}
-        series={series}
-        teto={tetoLimpo(maximo)}
-        notaNoDia={notaNoDia}
-        altura={altura}
-      />
+      {!recolhido && (
+        <Linhas
+          key={tom}
+          dados={dados}
+          series={series}
+          teto={tetoLimpo(maximo)}
+          notaNoDia={notaNoDia}
+          altura={altura}
+          escala={escala}
+        />
+      )}
 
       <table className="sr-only">
         <caption>{titulo}</caption>
@@ -152,7 +189,7 @@ export function LinhasPorDia<T extends { dia: string }>({
         <tbody>
           {dados.map((d) => (
             <tr key={d.dia}>
-              <th scope="row">{mesCurto(d.dia)}</th>
+              <th scope="row">{escala ? escala.dica(d.dia) : mesCurto(d.dia)}</th>
               {series.map((s) => (
                 <td key={s.nome}>{s.valor(d)}</td>
               ))}
@@ -187,12 +224,14 @@ function Linhas<T extends { dia: string }>({
   teto,
   notaNoDia,
   altura,
+  escala,
 }: {
   dados: T[];
   series: SerieLinha<T>[];
   teto: number;
   notaNoDia?: (d: T) => string | null;
   altura: string;
+  escala?: EscalaLinha;
 }) {
   const [dica, setDica] = useState<Dica | null>(null);
 
@@ -202,10 +241,10 @@ function Linhas<T extends { dia: string }>({
       const eixo = { color: cor("var(--viz-eixo)"), font: { size: 10 } };
       const fundo = cor("var(--conteudo)");
       const ultimo = dados.length - 1;
-      const parcial = dados[ultimo]?.dia === hoje();
+      const parcial = escala ? escala.ultimoParcial : dados[ultimo]?.dia === hoje();
       return {
         data: {
-          labels: dados.map((d, i) => rotuloDoEixo(d.dia, i)),
+          labels: dados.map((d, i) => (escala ? escala.eixo(d.dia, i) : rotuloDoEixo(d.dia, i))),
           datasets: series.map((s, i) => {
             const c = cor(s.cor);
             return {
@@ -272,7 +311,7 @@ function Linhas<T extends { dia: string }>({
         },
       };
     },
-    [dados, series, teto],
+    [dados, series, teto, escala],
   );
   const canvas = useGrafico(desenhar);
 
@@ -294,8 +333,14 @@ function Linhas<T extends { dia: string }>({
           }}
         >
           <p className="mb-1 text-zinc-500 dark:text-zinc-400">
-            {mesCurto(d.dia)}
-            {d.dia === hoje() && " · hoje, até agora"}
+            {escala ? (
+              escala.dica(d.dia)
+            ) : (
+              <>
+                {mesCurto(d.dia)}
+                {d.dia === hoje() && " · hoje, até agora"}
+              </>
+            )}
           </p>
           {series.map((s) => (
             <p key={s.nome} className="flex items-center gap-2">

@@ -67,17 +67,22 @@ O escopo tem que entrar **na consulta**. `exigirModulo()` devolve
 `{ usuario, escopo }` e quem chama é obrigado a usar:
 
 ```ts
-const { usuario, escopo } = await exigirModulo("metricas");
-const dados = await carregarMetricas(escopo, usuario.id, periodo);
+const { usuario, escopo } = await exigirModulo("inicio");
+const dados = await carregarFunil(escopo === "proprio" ? usuario.id : null);
 ```
 
 Filtrar na renderização não serve: o dado viajaria pro navegador do mesmo jeito,
 e aí basta abrir o DevTools pra ler o número do colega.
 
-Só oferece escopo o módulo marcado `escopavel` no catálogo — hoje, só Métricas.
-O Dashboard **não** é escopável, e a razão é honesta: o quadro do funil mostra a
-oportunidade de todo mundo e a gaveta de contatos idem. Marcar como escopável sem
-filtrar de verdade prometeria na tela o que o dado não cumpre.
+Só oferece escopo o módulo marcado `escopavel` no catálogo — hoje, só o
+Dashboard, que filtra o funil pelo responsável (`carregarFunil` em
+app/funil/dados.ts). Marcar como escopável um módulo que não filtra de verdade
+prometeria na tela o que o dado não cumpre.
+
+Demandas e Métricas **não** usam o escopo: quem vê a equipe é o
+**departamento** — Admin e TI (`administraDemandas` em lib/demandas.ts). Os
+demais veem só as próprias demandas e os próprios números, e o corte também é
+na consulta.
 
 ## Por que a permissão não é conferida no proxy
 
@@ -98,6 +103,24 @@ Se a tela de Acessos fosse liberada por linha de `departamento_modulos`, quem
 tivesse Configurações poderia se dar qualquer módulo — inclusive os três que o
 Admin não tem. Separado assim, Configurações é uma coisa (funis, tags, usuários)
 e "mexer em quem vê o quê" é outra.
+
+### Quem cria contas
+
+Configurações · Usuários cria e edita a conta — e-mail, senha e departamento —
+e quem abre a tela é `gereUsuarios()` (lib/auth/dal.ts): **Admin e TI** pelo
+departamento, fixo no código como nas Demandas, e quem tem o módulo
+Configurações.
+
+Abrir a tela não é poder tudo lá dentro. Quem **não** administra acessos tem um
+teto, conferido nas actions (`app/configuracoes/actions.ts`) e repetido no
+`WHERE` do UPDATE:
+
+- não põe ninguém num departamento que administra acessos (o TI);
+- não edita a conta de quem está num — trocar a senha dela seria entrar por ela.
+
+Sem o teto, o Admin criaria uma conta no TI, entraria por ela em Acessos e de
+lá se daria os três módulos que não tem. E ninguém muda o **próprio**
+departamento por esta tela: é em Acessos, com as travas abaixo.
 
 ### As travas contra se trancar do lado de fora
 

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import NavConfiguracoes from "./nav";
-import { usuarioAtual } from "@/lib/auth/dal";
+import { gereUsuarios, usuarioAtual } from "@/lib/auth/dal";
 
 export const metadata: Metadata = {
   title: "Configurações · Chroma",
@@ -21,7 +21,9 @@ export const dynamic = "force-dynamic";
 // esta pessoa alcança. Quem NÃO tem o módulo 'configuracoes' mas administra
 // acessos (não é o caso hoje, e passa a ser no dia em que alguém montar um
 // departamento só de portaria) vê apenas Acessos, e não uma lista de links que
-// a levariam todos pro mesmo redirecionamento.
+// a levariam todos pro mesmo redirecionamento. Do mesmo jeito, o Admin — que
+// não tem Configurações, mas cria e edita contas desde 2026-10-07 — vê só
+// Usuários.
 //
 // A barra só DESENHA o que a pessoa alcança; quem BARRA é o page.tsx de cada
 // seção. Esconder item de menu não é controle de acesso — é cortesia.
@@ -37,6 +39,7 @@ export default async function ConfiguracoesLayout({
       <NavConfiguracoes
         temConfiguracoes={usuario?.modulos.has("configuracoes") ?? false}
         gerenciaAcessos={usuario?.departamento?.gerenciaAcessos ?? false}
+        gereUsuarios={usuario ? gereUsuarios(usuario) : false}
       />
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-6 xl:px-10">
         {/* max-w-3xl era a medida da página única e continua sendo a certa:

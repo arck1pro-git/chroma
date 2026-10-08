@@ -81,6 +81,39 @@ export type UsuarioConfig = Usuario & {
   instancia_id: string | null;
 };
 
+/**
+ * A pessoa como a tela de Usuários a vê: o de sempre e o LOGIN — e-mail e
+ * departamento. A senha não sai daqui, nem o hash: a tela só troca, nunca lê.
+ *
+ * Tipo à parte, e não UsuarioConfig alargado: a seção de WhatsApp também lê
+ * usuários e não tem por que receber o e-mail de ninguém.
+ */
+export type UsuarioComConta = UsuarioConfig & {
+  /** null = sem login: só aparece como responsável e autor. */
+  email: string | null;
+  departamento_id: string | null;
+  ativo: boolean;
+};
+
+export async function carregarUsuariosComConta(): Promise<UsuarioComConta[]> {
+  const usuarios = await sql`
+    SELECT id, nome, iniciais, whatsapp, instancia_id, email, departamento_id, ativo
+      FROM usuarios
+     ORDER BY nome`;
+  return usuarios as unknown as UsuarioComConta[];
+}
+
+/** O que o seletor de departamento da conta oferece. */
+export type DepartamentoDaConta = { id: string; nome: string; gerenciaAcessos: boolean };
+
+export async function carregarDepartamentosDaConta(): Promise<DepartamentoDaConta[]> {
+  const departamentos = await sql`
+    SELECT id, nome, gerencia_acessos AS "gerenciaAcessos"
+      FROM departamentos
+     ORDER BY nivel, nome`;
+  return departamentos as unknown as DepartamentoDaConta[];
+}
+
 /** Um número cadastrado em Integrações, como o seletor de "Envia por" o vê. */
 export type NumeroDeEnvio = { id: string; nome: string; numero: string | null };
 

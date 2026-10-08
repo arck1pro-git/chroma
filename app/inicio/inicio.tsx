@@ -31,11 +31,11 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bot, Check, Funnel, Layers, LifeBuoy, ListTree, Plus, Users } from "lucide-react";
+import { Bot, Check, Funnel, Layers, LifeBuoy, ListTree, Minus, Plus, Users } from "lucide-react";
 import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
 import type { DadosFunil } from "../funil/dados";
 import type { Ia } from "@/lib/ia/catalogo";
-import { brl } from "../formato";
+import { brl, brlCurto } from "../formato";
 import CartaoOportunidade from "../funil/cartao";
 import BarraSelecao, { type FluxoDisponivel } from "../funil/barra-selecao";
 import { corValida, tomEscuro } from "@/lib/cores-funil";
@@ -101,6 +101,29 @@ function etapaDe(id: UniqueIdentifier, mapa: Quadro) {
   );
 }
 
+// A caixa de marcar, UMA para o cartão e para o cabeçalho da etapa. Eram duas:
+// a da etapa saía num quadrado preto cheio e a do cartão vazada, e lado a lado
+// pareciam controles de coisas diferentes. Agora as duas são vazadas, com o
+// traço escuro quando marcadas — o "parcial" da etapa é o mesmo desenho com um
+// traço no lugar do check.
+function CaixaMarcar({ estado }: { estado: "vazia" | "parcial" | "cheia" }) {
+  const Icone = estado === "cheia" ? Check : estado === "parcial" ? Minus : null;
+  return (
+    <span
+      className={`flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border bg-white transition dark:bg-zinc-900 ${
+        estado === "vazia"
+          ? "border-zinc-300 dark:border-zinc-600"
+          : "border-zinc-900 dark:border-zinc-100"
+      }`}
+      aria-hidden="true"
+    >
+      {Icone && (
+        <Icone className="size-3.5 text-zinc-900 dark:text-zinc-100" strokeWidth={2.5} />
+      )}
+    </span>
+  );
+}
+
 // Card arrastável. O clique continua abrindo a ficha: o sensor só considera
 // arraste depois de 6px de movimento, então clicar não vira drag.
 function CartaoArrastavel({
@@ -113,6 +136,7 @@ function CartaoArrastavel({
   ia,
   aoAbrir,
   selecionado,
+  modoSelecao,
   aoSelecionar,
 }: {
   oportunidade: Oportunidade;
@@ -124,7 +148,9 @@ function CartaoArrastavel({
   ia: string | null;
   aoAbrir: (id: string) => void;
   selecionado: boolean;
-  aoSelecionar: (id: string, marcado: boolean) => void;
+  // há algum cartão marcado no quadro: as caixas de todos aparecem
+  modoSelecao: boolean;
+  aoSelecionar: (ids: string[], marcado: boolean) => void;
 }) {
   const {
     attributes,
@@ -157,12 +183,21 @@ function CartaoArrastavel({
       {/* A caixa fica DENTRO do article arrastável, então precisa parar tanto
           o clique (que abriria a ficha) quanto o pointerdown (que o dnd-kit
           interpreta como início de arraste). Sem os dois, marcar um cartão
-          abriria a ficha ou sairia arrastando. */}
+          abriria a ficha ou sairia arrastando.
+
+          No canto DIREITO, na altura do nome: à esquerda ela cobria a primeira
+          letra dele, e marcar a etapa inteira acende a caixa de todos os
+          cartões de uma vez. O nome reserva essa faixa (pr-6 em ../funil/cartao).
+
+          Escondida até o mouse passar — MENOS quando já há seleção no quadro:
+          no tablet não existe hover, e depois de marcar a etapa é ali que se
+          desmarca um ou outro cartão. O p-1 é área de toque em volta da caixa
+          de 18px. */}
       <label
-        className={`absolute left-2.5 top-2.5 z-10 flex size-5 cursor-pointer items-center justify-center rounded-md border bg-white transition dark:bg-zinc-900 ${
-          selecionado
-            ? "border-zinc-900 dark:border-zinc-100"
-            : "border-zinc-300 opacity-0 group-hover/cartao:opacity-100 dark:border-zinc-600"
+        className={`absolute right-2 top-3.5 z-10 cursor-pointer p-1 transition tela-baixa:right-1.5 tela-baixa:top-2.5 ${
+          selecionado || modoSelecao
+            ? ""
+            : "opacity-0 group-hover/cartao:opacity-100 has-[:focus-visible]:opacity-100"
         }`}
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
@@ -170,13 +205,11 @@ function CartaoArrastavel({
         <input
           type="checkbox"
           checked={selecionado}
-          onChange={(e) => aoSelecionar(oportunidade.id, e.target.checked)}
+          onChange={(e) => aoSelecionar([oportunidade.id], e.target.checked)}
           className="sr-only"
           aria-label={`Selecionar ${oportunidade.nome}`}
         />
-        {selecionado && (
-          <Check className="size-3.5 text-zinc-900 dark:text-zinc-100" aria-hidden="true" />
-        )}
+        <CaixaMarcar estado={selecionado ? "cheia" : "vazia"} />
       </label>
 
       <CartaoOportunidade
@@ -274,12 +307,20 @@ function ColunaResumo({
   cadencia: CadenciaDaEtapa | null;
   aoAbrirSubetapas: (etapa: Etapa) => void;
   selecionados: Set<string>;
-  aoSelecionar: (id: string, marcado: boolean) => void;
+  aoSelecionar: (ids: string[], marcado: boolean) => void;
   // as IAs para o seletor da etapa, e o atalho para a gaveta delas
   ias: Ia[];
   aoGerenciarIas: () => void;
 }) {
   const total = oportunidades.reduce((soma, o) => soma + o.valor, 0);
+  // Quantas da coluna estão marcadas. `oportunidades` é o que a coluna MOSTRA
+  // (já passou pelos filtros), então marcar a etapa com filtro ligado marca só
+  // o que está à vista — nunca um cartão escondido que a barra mandaria excluir.
+  const marcadas = oportunidades.reduce(
+    (n, o) => (selecionados.has(o.id) ? n + 1 : n),
+    0,
+  );
+  const etapaMarcada = marcadas > 0 && marcadas === oportunidades.length;
   // a área de cards é o alvo de soltura — inclusive quando a etapa está vazia
   const { setNodeRef, isOver } = useDroppable({ id: etapa.id });
   // O mesmo nó, guardado para a barra desenhada ler scrollTop/scrollHeight.
@@ -317,45 +358,78 @@ function ColunaResumo({
         aria-hidden="true"
       />
 
-      <div className="shrink-0 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
+      <div className="shrink-0 border-b border-zinc-200 px-3 py-2.5 tela-baixa:py-2 dark:border-zinc-800">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <h3 className="truncate text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
+            {/* Marca a coluna inteira e a barra de seleção aparece com as ações
+                de lote (responsável, segmento, automação…). Três estados, como
+                um checkbox de cabeçalho de tabela: vazio, parcial (traço) e
+                cheio. Parcial ou vazio, o clique marca tudo; cheio, desmarca.
+                Mesmo desenho da caixa do cartão (CaixaMarcar); o p-1 com -m-1
+                é área de toque sem empurrar o nome. */}
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={etapaMarcada ? true : marcadas > 0 ? "mixed" : false}
+              disabled={oportunidades.length === 0}
+              onClick={() =>
+                aoSelecionar(
+                  oportunidades.map((o) => o.id),
+                  !etapaMarcada,
+                )
+              }
+              aria-label={`${etapaMarcada ? "Desmarcar" : "Marcar"} todas de ${etapa.nome}`}
+              title={etapaMarcada ? "Desmarcar a etapa" : "Marcar a etapa"}
+              className="-m-1 shrink-0 rounded-md p-1 outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/20 disabled:cursor-default disabled:opacity-40 dark:focus-visible:ring-zinc-100/20"
+            >
+              <CaixaMarcar
+                estado={etapaMarcada ? "cheia" : marcadas > 0 ? "parcial" : "vazia"}
+              />
+            </button>
+            {/* title: com a caixa de marcar ao lado, nome de etapa mais longo
+                ("tentando contato") já sai cortado */}
+            <h3
+              title={etapa.nome}
+              className="truncate text-[15px] font-semibold text-zinc-900 dark:text-zinc-50"
+            >
               {etapa.nome}
             </h3>
             <span className="min-w-5 shrink-0 rounded-full bg-zinc-200 px-1.5 py-0.5 text-center text-[11px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
               {oportunidades.length}
             </span>
           </div>
-          <span className="shrink-0 text-[12px] font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
-            {brl(total)}
-          </span>
-          <button
-            type="button"
-            onClick={() => aoAdicionar(etapa.id)}
-            aria-label={`Adicionar oportunidade em ${etapa.nome}`}
-            title="Adicionar oportunidade"
-            className="flex size-5 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+          {/* Curto ("R$ 130 mil"), com o cheio no title: era o valor cheio que
+              deixava o nome da etapa sem espaço e cortado. */}
+          <span
+            title={brl(total)}
+            className="shrink-0 text-[12px] font-medium tabular-nums text-zinc-500 dark:text-zinc-400"
           >
-            <Plus className="size-3.5" aria-hidden="true" />
-          </button>
+            {brlCurto(total)}
+          </span>
         </div>
 
         {/* As duas médias da etapa, uma sob a outra e com rótulo: valor à
             direita, alinhado entre as linhas, para a coluna de números ler na
-            vertical. Antes era uma linha só de valores soltos. */}
-        <dl className="mt-1.5 flex flex-col gap-0.5 pl-4 text-[12px]">
-          <div className="flex items-baseline justify-between gap-2">
+            vertical. Antes era uma linha só de valores soltos. pl-[26px] = a
+            caixa de marcar (18px) + o gap (8px): os rótulos começam sob o nome.
+
+            Em tela baixa (tablet deitado) as duas dividem UMA linha, com o
+            rótulo encurtado: é uma linha a menos em cada coluna, e nessa tela
+            cada linha é cartão que deixa de aparecer. */}
+        <dl className="mt-1.5 flex flex-col gap-0.5 pl-[26px] text-[12px] tela-baixa:mt-1 tela-baixa:flex-row tela-baixa:gap-3">
+          <div className="flex min-w-0 items-baseline justify-between gap-2 tela-baixa:justify-start tela-baixa:gap-1">
             <dt className="truncate text-zinc-500 dark:text-zinc-400">
-              Tempo médio na etapa
+              <span className="tela-baixa:hidden">Tempo médio na etapa</span>
+              <span className="hidden tela-baixa:inline">Tempo médio</span>
             </dt>
             <dd className="shrink-0 font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
               {metrica.diasMedio} d
             </dd>
           </div>
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="flex min-w-0 items-baseline justify-between gap-2 tela-baixa:ml-auto tela-baixa:justify-start tela-baixa:gap-1">
             <dt className="truncate text-zinc-500 dark:text-zinc-400">
-              Ticket médio
+              <span className="tela-baixa:hidden">Ticket médio</span>
+              <span className="hidden tela-baixa:inline">Ticket</span>
             </dt>
             <dd className="shrink-0 font-medium tabular-nums text-zinc-700 dark:text-zinc-300">
               {brl(metrica.ticketMedio)}
@@ -379,7 +453,7 @@ function ColunaResumo({
         <button
           type="button"
           onClick={() => aoAbrirSubetapas(etapa)}
-          className="mt-2 flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 py-1 text-[12px] font-medium text-zinc-600 transition hover:border-zinc-400 hover:bg-white hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+          className="mt-2 flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 py-1 text-[12px] tela-baixa:mt-1.5 font-medium text-zinc-600 transition hover:border-zinc-400 hover:bg-white hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
         >
           <ListTree className="size-3.5 shrink-0" aria-hidden="true" />
           {cadencia ? "Cadência" : "Criar cadência"}
@@ -415,6 +489,20 @@ function ColunaResumo({
           ias={ias}
           aoGerenciarIas={aoGerenciarIas}
         />
+        {/* O "+" de nova oportunidade fecha a linha das AÇÕES da etapa. Morava
+            na linha do nome, e lá os 28px dele (com a caixa de marcar ao lado)
+            cortavam "tentando contato" e "reunião agendada". Assim a linha de
+            cima fica com o que a etapa É (nome, quantas, quanto) e a de baixo
+            com o que se FAZ nela. */}
+        <button
+          type="button"
+          onClick={() => aoAdicionar(etapa.id)}
+          aria-label={`Adicionar oportunidade em ${etapa.nome}`}
+          title="Adicionar oportunidade"
+          className="mt-2 flex w-7 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition hover:border-zinc-400 hover:bg-white hover:text-zinc-900 tela-baixa:mt-1.5 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+        >
+          <Plus className="size-3.5" aria-hidden="true" />
+        </button>
         </div>
       </div>
 
@@ -439,7 +527,7 @@ function ColunaResumo({
             setNodeRef(no);
             areaRolagemRef.current = no;
           }}
-          className={`rolagem-oculta flex min-h-0 flex-1 flex-col gap-3 overflow-y-scroll rounded-b-2xl p-3 transition ${
+          className={`rolagem-oculta flex min-h-0 flex-1 flex-col gap-3 overflow-y-scroll rounded-b-2xl p-3 transition tela-baixa:gap-2 tela-baixa:p-2 ${
             isOver ? "bg-zinc-200/60 dark:bg-zinc-800/50" : ""
           }`}
         >
@@ -467,6 +555,7 @@ function ColunaResumo({
                   ia={corDoRobo(contato, etapa)}
                   aoAbrir={aoAbrir}
                   selecionado={selecionados.has(o.id)}
+                  modoSelecao={selecionados.size > 0}
                   aoSelecionar={aoSelecionar}
                 />
               );
@@ -531,11 +620,15 @@ export default function Inicio({
   // selecionado?" a cada render, uma vez por cartão.
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
 
-  const aoSelecionar = useCallback((id: string, marcado: boolean) => {
+  // Uma LISTA de ids: o cartão manda um, o cabeçalho da etapa manda a coluna
+  // inteira — e as duas coisas são o mesmo gesto, marcar ou desmarcar.
+  const aoSelecionar = useCallback((ids: string[], marcado: boolean) => {
     setSelecionados((atual) => {
       const novo = new Set(atual);
-      if (marcado) novo.add(id);
-      else novo.delete(id);
+      for (const id of ids) {
+        if (marcado) novo.add(id);
+        else novo.delete(id);
+      }
       return novo;
     });
   }, []);
@@ -852,8 +945,9 @@ export default function Inicio({
     // que o painel de cadência usa como limite. Ver painel-subetapas.tsx.
     <div className="relative flex h-screen overflow-hidden bg-conteudo">
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Barra do topo: só o seletor de funil e o acesso aos contatos. Fica
-            fora da área que rola, então o funil escolhido continua à vista. */}
+        {/* Barra do topo: o seletor de funil, os filtros e o acesso aos
+            contatos. Fica fora da área que rola, então o funil escolhido
+            continua à vista. */}
         {/* Recuo da ESQUERDA fixo em px-6: o xl:px-16 abria uma faixa vazia de
             64px entre a barra lateral e o conteúdo. À direita o degrau fica —
             ali ele não separa nada da sidebar, só respira a borda da janela. */}
@@ -876,6 +970,53 @@ export default function Inicio({
               aoMudar={setFunilId}
               botao="w-56"
             />
+
+            {/* Os filtros moram AQUI, ao lado do funil, desde 2026-10-08: na
+                linha própria de antes eles custavam ~50px ao quadro, e no
+                tablet deitado isso é meio cartão por coluna. Funil e filtros
+                são o mesmo assunto — o recorte do quadro —, e a barra do topo
+                tinha espaço sobrando entre eles e os botões da direita. As
+                campanhas da Meta entram DENTRO do painel (ver
+                app/funil/painel-filtros.tsx). */}
+            {funil && (
+              <PainelFiltros
+                aberto={filtrosAbertos}
+                aoAlternar={setFiltrosAbertos}
+                funis={funis}
+                usuarios={usuarios}
+                segmentos={dados.segmentos}
+                tags={dados.tags}
+                contatos={contatos}
+                funilId={funilId}
+                aoTrocarFunil={setFunilId}
+                filtros={filtros}
+                aoMudarFiltros={setFiltros}
+                visiveis={visiveisDoFunil.length}
+                total={totalDoFunil}
+                campanhas={
+                  // As pílulas de sempre (ele pediu de volta depois de vê-las
+                  // em dropdown, 2026-10-05), agora dentro do painel.
+                  <DashboardMetaAds
+                    corSelecionada={tomEscuro(funil.cor)}
+                    filtro={filtroCampanhas}
+                    aoFiltrar={(filtro) => {
+                      setFiltroCampanhas(filtro);
+                      limparSelecao();
+                    }}
+                  />
+                }
+                campanhaAtiva={filtroCampanhas.campanha !== null}
+                aoLimparCampanha={() => setFiltroCampanhas(filtroCampanhasVazio)}
+              />
+            )}
+
+            {/* A descrição do funil, que morava na ponta da linha dos filtros.
+                Só em tela larga: no tablet o espaço é dos botões. */}
+            {funil?.descricao && (
+              <span className="hidden min-w-0 truncate text-[11px] text-zinc-400 lg:block dark:text-zinc-500">
+                {funil.descricao}
+              </span>
+            )}
 
             {/* Abrir chamado para o TI (vira uma demanda do departamento, ver
                 app/demandas). À esquerda das IAs: o de contatos fica no canto. */}
@@ -924,7 +1065,6 @@ export default function Inicio({
               <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{contatos.length}</span>
             </button>
           </div>
-
         </header>
 
         {/* O quadro ocupa TODA a altura que sobra e não rola junto com a página:
@@ -934,7 +1074,7 @@ export default function Inicio({
             na borda da janela. Com recuo dos dois lados, a última coluna ficava
             cortada por uma faixa de fundo vazia. À esquerda fica só o px-6, na
             mesma medida do cabeçalho — é o que mantém os dois alinhados. */}
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden pb-3 pl-6 pr-0 pt-4">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden pb-3 pl-6 pr-0 pt-4 tela-baixa:pb-2 tela-baixa:pt-3">
           {!funil ? (
             <div className="surge mx-auto flex max-w-md flex-col items-center justify-center gap-2 py-20 text-center">
               <Layers
@@ -955,47 +1095,11 @@ export default function Inicio({
                 className="flex min-h-0 flex-1 flex-col"
                 aria-label={`Quadro · ${funil.nome}`}
               >
-                {/* A IA nos últimos 30 dias, nas cores do funil aberto. */}
+                {/* A IA nos últimos 30 dias, nas cores do funil aberto.
+                    Minimizável — em tela baixa já abre minimizada (ver
+                    ./visao-geral.tsx). Campanhas e filtros, que vinham logo
+                    abaixo, subiram para a barra do topo. */}
                 <VisaoGeral dias={graficoIa} tom={corValida(funil?.cor)} />
-
-                {/* As campanhas da Meta em pílulas, como sempre foram (ele
-                    pediu de volta depois de vê-las em dropdown, 2026-10-05). */}
-                <DashboardMetaAds
-                  corSelecionada={tomEscuro(funil?.cor)}
-                  filtro={filtroCampanhas}
-                  aoFiltrar={(filtro) => {
-                    setFiltroCampanhas(filtro);
-                    limparSelecao();
-                  }}
-                />
-
-                {/* O botão de Filtros (o painel abre por cima, ver
-                    app/funil/painel-filtros.tsx) e, encostada à direita, a
-                    descrição do funil. O nome, a contagem e o total que moravam
-                    numa linha própria agora são o seletor do topo e as próprias
-                    colunas. */}
-                <PainelFiltros
-                  aberto={filtrosAbertos}
-                  aoAlternar={setFiltrosAbertos}
-                  funis={funis}
-                  usuarios={usuarios}
-                  segmentos={dados.segmentos}
-                  tags={dados.tags}
-                  contatos={contatos}
-                  funilId={funilId}
-                  aoTrocarFunil={setFunilId}
-                  filtros={filtros}
-                  aoMudarFiltros={setFiltros}
-                  visiveis={visiveisDoFunil.length}
-                  total={totalDoFunil}
-                  aDireita={
-                    funil.descricao ? (
-                      <span className="block truncate text-[11px] text-zinc-400 dark:text-zinc-500">
-                        {funil.descricao}
-                      </span>
-                    ) : undefined
-                  }
-                />
 
                 {colunas.length === 0 ? (
                   <p className="surge rounded-2xl border border-dashed border-zinc-200 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-700">
@@ -1029,7 +1133,7 @@ export default function Inicio({
                       // (z-40), a barra de seleção (z-30), os filtros. Isolado,
                       // o z delas só ordena uma coluna contra a outra, e o
                       // quadro inteiro fica numa camada só, embaixo.
-                      className="isolate flex min-h-0 flex-1 items-start gap-1 overflow-x-auto pb-2 pt-4"
+                      className="isolate flex min-h-0 flex-1 items-start gap-1 overflow-x-auto pb-2 pt-4 tela-baixa:pt-3"
                     >
                       {colunas.map(({ etapa, oportunidades: doEtapa, metrica, conversao }, i) => (
                         <ColunaResumo

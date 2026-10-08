@@ -24,15 +24,21 @@ export default function CartaoOportunidade({
   /** A IA atende este lead: a classe de cor do robô (a do funil). null = não atende. Ver ./ia.ts. */
   ia?: string | null;
 }) {
+  // tela-baixa: (app/globals.css) — no tablet deitado o cartão perde respiro,
+  // não conteúdo. Com p-3 e os vãos menores cabe quase um cartão a mais por
+  // coluna, e é isso que a tela baixa precisa.
   return (
     <div
-      className={`rounded-xl border bg-white p-4 dark:bg-zinc-900 ${
+      className={`rounded-xl border bg-white p-4 tela-baixa:p-3 dark:bg-zinc-900 ${
         arrastando
           ? "border-zinc-300 shadow-lg dark:border-zinc-600"
           : "border-zinc-200 transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/50"
       }`}
     >
-      <h3 className="text-sm font-semibold leading-5 text-zinc-900 dark:text-zinc-50">
+      {/* pr-6: o canto direito da primeira linha é da caixa de marcar do
+          quadro (app/inicio/inicio.tsx) — sem a folga, nome longo corre por
+          baixo dela. */}
+      <h3 className="pr-6 text-sm font-semibold leading-5 text-zinc-900 dark:text-zinc-50">
         {oportunidade.nome}
       </h3>
 
@@ -49,7 +55,7 @@ export default function CartaoOportunidade({
         </span>
       </p>
 
-      <p className="mt-3 text-base font-semibold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
+      <p className="mt-3 text-base font-semibold tabular-nums tracking-tight text-zinc-900 tela-baixa:mt-2 dark:text-zinc-50">
         {brl(oportunidade.valor)}
       </p>
 
@@ -71,7 +77,7 @@ export default function CartaoOportunidade({
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-between border-t border-zinc-100 pt-3 dark:border-zinc-800">
+      <div className="mt-3 flex items-center justify-between border-t border-zinc-100 pt-3 tela-baixa:mt-2 tela-baixa:pt-2 dark:border-zinc-800">
         <span className="inline-flex items-center gap-1 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
           <Clock className="size-3.5 shrink-0" aria-hidden="true" />
           {oportunidade.dias_na_etapa}{" "}
