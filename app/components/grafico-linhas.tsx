@@ -176,27 +176,32 @@ export function LinhasPorDia<T extends { dia: string }>({
         />
       )}
 
-      <table className="sr-only">
-        <caption>{titulo}</caption>
-        <thead>
-          <tr>
-            <th scope="col">Dia</th>
-            {series.map((s) => (
-              <th key={s.nome} scope="col">{s.nome}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {dados.map((d) => (
-            <tr key={d.dia}>
-              <th scope="row">{escala ? escala.dica(d.dia) : mesCurto(d.dia)}</th>
+      {/* O sr-only no <div>, e não na <table>: tabela não respeita o width de
+          1px do sr-only e cresce até caber o conteúdo — no celular ela
+          esticava a página e criava rolagem de lado. */}
+      <div className="sr-only">
+        <table>
+          <caption>{titulo}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Dia</th>
               {series.map((s) => (
-                <td key={s.nome}>{s.valor(d)}</td>
+                <th key={s.nome} scope="col">{s.nome}</th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {dados.map((d) => (
+              <tr key={d.dia}>
+                <th scope="row">{escala ? escala.dica(d.dia) : mesCurto(d.dia)}</th>
+                {series.map((s) => (
+                  <td key={s.nome}>{s.valor(d)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

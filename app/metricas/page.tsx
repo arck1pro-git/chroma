@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { exigirModulo } from "@/lib/auth/dal";
 import { administraDemandas } from "@/lib/demandas";
 import { carregarMetricasDemandas } from "./demandas";
-import TelaMetricas, { type Visao } from "./tela";
+import TelaMetricas, { type PeriodoId, type Visao } from "./tela";
 
 export const metadata: Metadata = {
   title: "Métricas · Chroma",
@@ -18,14 +18,15 @@ function hojeEmBrasilia() {
 }
 
 const VISOES: readonly Visao[] = ["dia", "semana", "mes"];
+const PERIODOS: readonly PeriodoId[] = ["hoje", "semana", "mes"];
 
 export default async function MetricasPage({
   searchParams,
 }: {
-  // ?pessoa=<id> — o usuário escolhido no filtro; ?ver=dia|semana|mes — o
-  // gráfico. Os dois vivem na URL para o link abrir no mesmo recorte; a tela
-  // troca sem ida ao servidor (ver tela.tsx).
-  searchParams: Promise<{ pessoa?: string | string[]; ver?: string | string[] }>;
+  // ?pessoa=<id> — a ficha aberta; ?ver=dia|semana|mes — o gráfico;
+  // ?periodo=hoje|semana|mes — a tabela por pessoa. Vivem na URL para o link
+  // abrir no mesmo lugar; a tela troca sem ida ao servidor (ver tela.tsx).
+  searchParams: Promise<{ pessoa?: string | string[]; ver?: string | string[]; periodo?: string | string[] }>;
 }) {
   // Checagem POR PÁGINA, e não no layout: com Partial Rendering o layout não
   // re-renderiza a cada navegação, então a checagem lá deixaria de rodar
@@ -39,7 +40,7 @@ export default async function MetricasPage({
   // que corta: o resto nem sobe do banco.
   const veEquipe = administraDemandas(usuario);
 
-  const { pessoa, ver } = await searchParams;
+  const { pessoa, ver, periodo } = await searchParams;
   const metricas = await carregarMetricasDemandas(veEquipe, usuario.id, hojeEmBrasilia());
 
   // ?pessoa só vale para quem vê a equipe, e para alguém da lista: um id
@@ -47,6 +48,9 @@ export default async function MetricasPage({
   const pessoaInicial =
     veEquipe && typeof pessoa === "string" && metricas.pessoas.some((p) => p.id === pessoa) ? pessoa : null;
   const visaoInicial = VISOES.find((v) => v === ver) ?? "dia";
+  // A semana é o padrão da tabela: hoje ainda está pela metade, e o mês
+  // esconde quem parou nos últimos dias.
+  const periodoInicial = PERIODOS.find((p) => p === periodo) ?? "semana";
 
   return (
     <TelaMetricas
@@ -55,6 +59,7 @@ export default async function MetricasPage({
       nome={usuario.nome}
       pessoaInicial={pessoaInicial}
       visaoInicial={visaoInicial}
+      periodoInicial={periodoInicial}
     />
   );
 }

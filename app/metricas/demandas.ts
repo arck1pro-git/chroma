@@ -34,13 +34,31 @@ export type Recorte = {
   porMes: Balde[];
 };
 
-export type PessoaDasMetricas = { id: string; nome: string; iniciais: string };
+export type PessoaDasMetricas = { id: string; nome: string; iniciais: string; departamento: string | null };
+
+/**
+ * Uma demanda ainda a fazer — o "na mesa agora" de cada pessoa (em aberto e
+ * atrasadas) e a lista da ficha dela. O chamado do TI fica sem pessoa: conta
+ * para a equipe, não para alguém.
+ */
+export type Aberta = {
+  id: string;
+  titulo: string;
+  /** "2026-10-12" ou nulo. */
+  prazo: string | null;
+  prioridade: "baixa" | "normal" | "alta";
+  responsavelId: string | null;
+  /** O departamento do chamado ("TI"); nulo na demanda de uma pessoa. */
+  departamento: string | null;
+};
 
 export type MetricasDemandas = {
   equipe: Recorte;
   /** Para quem vê a equipe, cada pessoa; para os demais, só a própria. */
   porPessoa: Record<string, Recorte>;
   pessoas: PessoaDasMetricas[];
+  /** O que está a fazer agora — de todos, para quem vê a equipe; senão, só o próprio. */
+  abertas: Aberta[];
   /** "2026-10-07", no fuso de Brasília. */
   hoje: string;
   /** migration-demandas.sql ainda não rodou. */
@@ -120,9 +138,9 @@ export async function carregarMetricasDemandas(
   // O mais antigo que alguma conta lê: o primeiro mês do gráfico mensal.
   const desde = primeiroDoMes(hoje, -(MESES - 1));
 
-  let linhas: Linha[], pessoas: PessoaDasMetricas[];
+  let linhas: Linha[], pessoas: PessoaDasMetricas[], abertas: Aberta[];
   try {
-    [linhas, pessoas] = (await Promise.all([
+    [linhas, pessoas, abertas] = (await Promise.all([
       sql`
         SELECT d.responsavel_id, d.departamento_id, d.feita_por,
                to_char(d.data_criacao AT TIME ZONE ${FUSO}, 'YYYY-MM-DD') AS dia_criada,
@@ -134,18 +152,29 @@ export async function carregarMetricasDemandas(
       // Quem aparece no filtro: quem pode receber demanda (ativo, com login e
       // com o módulo Demandas).
       sql`
-        SELECT u.id, u.nome, u.iniciais
+        SELECT u.id, u.nome, u.iniciais, dep.nome AS departamento
           FROM usuarios u
           JOIN departamento_modulos dm ON dm.departamento_id = u.departamento_id AND dm.modulo = 'demandas'
+          LEFT JOIN departamentos dep ON dep.id = u.departamento_id
          WHERE u.ativo = true AND u.email IS NOT NULL
            AND (${todos}::boolean OR u.id = ${usuarioId})
          ORDER BY u.nome`,
-    ])) as unknown as [Linha[], PessoaDasMetricas[]];
+      // O que está a fazer agora. Sem teto de data: uma demanda esquecida há
+      // três meses é justamente a que precisa aparecer.
+      sql`
+        SELECT d.id, d.titulo, to_char(d.prazo, 'YYYY-MM-DD') AS prazo, d.prioridade,
+               d.responsavel_id AS "responsavelId", dep.nome AS departamento
+          FROM demandas d
+          LEFT JOIN departamentos dep ON dep.id = d.departamento_id
+         WHERE d.feita_em IS NULL
+           AND (${todos}::boolean OR d.responsavel_id = ${usuarioId})
+         ORDER BY d.prazo NULLS LAST, d.data_criacao`,
+    ])) as unknown as [Linha[], PessoaDasMetricas[], Aberta[]];
   } catch (e) {
     // 42P01 = undefined_table: a tela segue de pé, sem números.
     if (typeof e === "object" && e !== null && (e as { code?: string }).code === "42P01") {
       const vazio = recortar([], () => false, () => false, hoje);
-      return { equipe: vazio, porPessoa: {}, pessoas: [], hoje, faltaTabela: true };
+      return { equipe: vazio, porPessoa: {}, pessoas: [], abertas: [], hoje, faltaTabela: true };
     }
     throw e;
   }
@@ -167,5 +196,5 @@ export async function carregarMetricasDemandas(
     ? recortar(linhas, () => true, (l) => l.dia_feita !== null, hoje)
     : recortar(linhas, eu.gerou, eu.entregou, hoje);
 
-  return { equipe, porPessoa, pessoas, hoje, faltaTabela: false };
+  return { equipe, porPessoa, pessoas, abertas, hoje, faltaTabela: false };
 }

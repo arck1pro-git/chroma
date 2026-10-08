@@ -57,6 +57,14 @@ export function diaComSemana(dia: string, hoje: string) {
 
 export type TomDoPrazo = "atrasada" | "hoje" | "perto" | "longe";
 
+/** O chip do prazo: vermelho atrasado, âmbar hoje, neutro o resto. */
+export const TOM_PRAZO: Record<TomDoPrazo, string> = {
+  atrasada: "bg-red-50 text-red-700 ring-red-200/70 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-500/20",
+  hoje: "bg-amber-50 text-amber-800 ring-amber-200/70 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20",
+  perto: "bg-zinc-50 text-zinc-700 ring-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-300 dark:ring-zinc-700/60",
+  longe: "bg-zinc-50 text-zinc-500 ring-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-400 dark:ring-zinc-700/60",
+};
+
 /**
  * O prazo como a pessoa pensa nele: "atrasada há 3 dias", "vence hoje",
  * "amanhã", "sex, 10 out". Feita, ele vira só a data — atraso de coisa já
