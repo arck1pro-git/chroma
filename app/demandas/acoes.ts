@@ -101,8 +101,8 @@ async function gravarChamado(campos: Campos, autorId: string, itens: string[]): 
 }
 
 /**
- * "Nova demanda", em /demandas. Todo mundo cria para si ou abre um chamado
- * para o TI; Admin e TI criam também para outra pessoa ou para todos (a regra
+ * "Nova demanda", em /demandas. Todo mundo cria para si, para qualquer pessoa
+ * da equipe ou abre um chamado para o TI; "para todos", só Admin e TI (a regra
  * é podeCriarPara, em lib/demandas.ts).
  */
 export async function criarDemanda(dados: DadosDemanda): Promise<ResultadoDemanda> {
@@ -118,7 +118,7 @@ export async function criarDemanda(dados: DadosDemanda): Promise<ResultadoDemand
   if (!podeCriarPara(usuario, para)) {
     return {
       ok: false,
-      mensagem: "Você cria demandas para você ou chamados para o TI. Para outras pessoas, só Admin e TI.",
+      mensagem: "Demanda para todos de uma vez, só Admin e TI. Escolha uma pessoa.",
     };
   }
 

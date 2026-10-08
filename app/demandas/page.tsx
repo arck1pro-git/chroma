@@ -33,7 +33,9 @@ export default async function DemandasPage() {
   try {
     [demandas, pessoas] = await Promise.all([
       listarDemandas(usuario, admin),
-      admin ? pessoasParaDemanda() : null,
+      // Para todo mundo desde 2026-10-08: qualquer um manda demanda para
+      // qualquer pessoa da equipe (podeCriarPara, em lib/demandas.ts).
+      pessoasParaDemanda(),
     ]);
   } catch (e) {
     // 42P01 = undefined_table: migration-demandas.sql ainda não rodou.

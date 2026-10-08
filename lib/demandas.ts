@@ -7,8 +7,10 @@
 //     que quem abriu um chamado acompanha);
 //   · Admin e TI veem as de todos.
 //
-// QUEM CRIA PARA ONDE (podeCriarPara): todo mundo cria para si mesmo ou abre um
-// chamado para o TI; Admin e TI criam também para qualquer pessoa ou para todos.
+// QUEM CRIA PARA ONDE (podeCriarPara): desde 2026-10-08 ("todo mundo poder
+// gerar demanda pra todo mundo") qualquer um cria para si, para qualquer pessoa
+// da equipe ou abre um chamado para o TI; "para todos" (uma por pessoa, de uma
+// vez) continua só de Admin e TI.
 //
 // "Admin e TI" é o DEPARTAMENTO, pelo slug, e não o escopo do módulo nem
 // `usuarios.papel` — decisão dele de 2026-10-07 ("fixo"). Mudar quem administra
@@ -16,7 +18,13 @@
 import "server-only";
 import { listaUuid, sql } from "@/lib/db";
 import type { UsuarioLogado } from "@/lib/auth/dal";
-import { PARA_O_TI, type ContagemDemandas, type Demanda, type ItemDemanda, type Prioridade } from "@/lib/demandas-tipos";
+import {
+  PARA_TODOS,
+  type ContagemDemandas,
+  type Demanda,
+  type ItemDemanda,
+  type Prioridade,
+} from "@/lib/demandas-tipos";
 
 const ADMINISTRAM = new Set(["admin", "ti"]);
 
@@ -31,17 +39,22 @@ export function administraDemandas(usuario: UsuarioLogado): boolean {
 }
 
 /**
- * Para onde esta pessoa pode mandar uma demanda nova (pedido dele de
- * 2026-10-07): para si mesma e para o TI, qualquer um; para outra pessoa ou
- * para todos, só Admin e TI.
+ * Para onde esta pessoa pode mandar uma demanda nova. Desde 2026-10-08 (pedido
+ * dele: "todo mundo poder gerar demanda pra todo mundo"): para si, para o TI ou
+ * para qualquer pessoa da equipe, qualquer um; "para todos" de uma vez, só
+ * Admin e TI — é a única que vira dez demandas num clique.
+ *
+ * Quem PODE RECEBER (ativo, com login e com o módulo) não é decidido aqui: é o
+ * próprio INSERT de inserirDemandas que filtra, e ninguém recebendo vira erro na
+ * ação.
  *
  * É a regra de verdade, conferida no servidor: a tela só oferece as opções que
  * esta função aceitaria, mas quem posta direto na ação passa por aqui do mesmo
  * jeito.
  */
 export function podeCriarPara(usuario: UsuarioLogado, para: string): boolean {
-  if (para === PARA_O_TI || para === usuario.id) return true;
-  return administraDemandas(usuario);
+  if (para === PARA_TODOS) return administraDemandas(usuario);
+  return true;
 }
 
 function paraDemanda(l: Record<string, unknown>): Demanda {

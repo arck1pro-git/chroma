@@ -11,18 +11,26 @@
 // sem prazo), que é a pergunta de quem abre a tela: o que eu faço primeiro.
 // FEITAS SE AGRUPA PELO DIA em que foi feita: o que eu fiz hoje, ontem.
 //
+// DOIS QUADROS, em abas no topo (pedido dele de 2026-10-08: "um outro kanban
+// de demandas geradas para outras pessoas"): "Minhas", o que é para eu fazer,
+// e "Geradas para outros", o que EU mandei para outra pessoa ou abri como
+// chamado — para acompanhar até a pessoa dar o check. Os dois têm as mesmas
+// colunas e os mesmos filtros; muda só de quem é a demanda. Substituiu o
+// recorte "Abertas por mim", que misturava as que a pessoa cria para si.
+//
 // OS RECORTES FICAM NUMA LINHA SÓ e valem para as duas colunas:
-//   · quem: "Para mim" (as minhas e as do meu departamento, que é como o TI
-//     recebe os chamados), "Abertas por mim" e, para Admin e TI, "Todas", só os
-//     chamados, ou uma pessoa;
+//   · quem, em "Minhas": "Para mim" (as minhas e as do meu departamento, que é
+//     como o TI recebe os chamados) e, para Admin e TI, "Todas", só os
+//     chamados, ou uma pessoa; em "Geradas para outros": todas, só os chamados
+//     ou uma das pessoas para quem eu mandei;
 //   · dia: o dia em que a demanda foi CRIADA;
 //   · prazo: vencido, vence hoje, próximos 7 dias, sem prazo;
 //   · busca, no título, na descrição e nos nomes ("/" leva até ela).
 //
-// QUEM CRIA O QUÊ ("Nova demanda", para todo mundo): qualquer um cria para si
-// ou abre um chamado para o TI; Admin e TI escolhem também qualquer pessoa da
-// equipe ou todos. A regra de verdade é podeCriarPara, no servidor — aqui só se
-// oferece o que ela aceitaria.
+// QUEM CRIA O QUÊ ("Nova demanda", para todo mundo): desde 2026-10-08 qualquer
+// um cria para si, para qualquer pessoa da equipe ou abre um chamado para o
+// TI; "Todos" de uma vez, só Admin e TI. A regra de verdade é podeCriarPara, no
+// servidor — aqui só se oferece o que ela aceitaria.
 //
 // O check e a exclusão são otimistas: o cartão muda na hora, e a ação no
 // servidor (revalidatePath) devolve a lista nova no mesmo ida-e-volta.
@@ -38,11 +46,11 @@ import {
   CalendarClock,
   CalendarDays,
   CircleCheck,
-  LifeBuoy,
   ListChecks,
   Plus,
   Search,
   SearchX,
+  Send,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -82,12 +90,34 @@ import {
   type GrupoDePrazo,
 } from "./datas";
 
-/** "minhas" | "abertas" | "todas" | "chamados" | "p:<id da pessoa>" */
+type Quadro = "minhas" | "geradas";
+
+/**
+ * Em "Minhas": "minhas" | "todas" | "chamados" | "p:<id da pessoa>".
+ * Em "Geradas para outros": "g:todas" | "g:chamados" | "g:p:<id da pessoa>".
+ */
 type Recorte = string;
 
+const RECORTE_INICIAL: Record<Quadro, Recorte> = { minhas: "minhas", geradas: "g:todas" };
+
+/**
+ * Gerada por mim para OUTRA pessoa — ou um chamado para outro departamento. A
+ * minha cópia de uma demanda "para todos" e a que criei para mim mesmo ficam no
+ * quadro "Minhas", que é onde eu dou o check.
+ */
+function geradaParaOutro(d: Demanda, eu: Eu) {
+  return d.criadoPor === eu.id && !ehMinha(d, eu);
+}
+
 function noRecorte(d: Demanda, r: Recorte, eu: Eu) {
+  if (r.startsWith("g:")) {
+    if (!geradaParaOutro(d, eu)) return false;
+    const s = r.slice(2);
+    if (s === "chamados") return d.departamentoId !== null;
+    if (s.startsWith("p:")) return d.responsavelId === s.slice(2);
+    return true;
+  }
   if (r === "todas") return true;
-  if (r === "abertas") return d.criadoPor === eu.id;
   if (r === "chamados") return d.departamentoId !== null;
   if (r.startsWith("p:")) return d.responsavelId === r.slice(2);
   return ehMinha(d, eu);
@@ -162,7 +192,7 @@ export default function PainelDemandas({
   faltaMigration,
 }: {
   demandas: Demanda[];
-  /** Quem pode receber. Só vem para Admin e TI. */
+  /** Quem pode receber — para todo mundo, desde 2026-10-08. */
   pessoas: { id: string; nome: string }[] | null;
   admin: boolean;
   eu: Eu;
@@ -171,7 +201,8 @@ export default function PainelDemandas({
   agora: string;
   faltaMigration: boolean;
 }) {
-  const [recorte, setRecorte] = useState<Recorte>("minhas");
+  const [quadro, setQuadro] = useState<Quadro>("minhas");
+  const [recorte, setRecorte] = useState<Recorte>(RECORTE_INICIAL.minhas);
   const [dia, setDia] = useState<FiltroDia>("qualquer");
   const [prazo, setPrazo] = useState<FiltroPrazo>("qualquer");
   const [busca, setBusca] = useState("");
@@ -288,33 +319,58 @@ export default function PainelDemandas({
   // procura ao abrir o menu.
   const contar = (r: Recorte) => lista.filter((d) => !d.feitaEm && noRecorte(d, r, eu)).length;
 
-  const opcoesRecorte = [
-    { valor: "minhas", rotulo: `Para mim · ${contar("minhas")}` },
-    { valor: "abertas", rotulo: `Abertas por mim · ${contar("abertas")}` },
-    ...(admin
-      ? [
-          { valor: "todas", rotulo: `Todas · ${contar("todas")}` },
-          { valor: "chamados", rotulo: `Chamados do TI · ${contar("chamados")}` },
-          ...(pessoas ?? []).map((p) => ({
-            valor: `p:${p.id}`,
-            rotulo: `${p.id === eu.id ? "Só as minhas" : p.nome} · ${contar(`p:${p.id}`)}`,
-          })),
-        ]
-      : []),
-  ];
+  // As pessoas para quem EU mandei alguma demanda — é o menu "Quem" do quadro
+  // "Geradas para outros". Sai da própria lista: quem saiu da equipe continua
+  // aparecendo enquanto houver demanda dele aqui.
+  const destinatarios = useMemo(() => {
+    const vistos = new Map<string, string>();
+    for (const d of lista) {
+      if (d.responsavelId && geradaParaOutro(d, eu)) vistos.set(d.responsavelId, d.responsavel ?? "Alguém que saiu");
+    }
+    return [...vistos].sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));
+  }, [lista, eu]);
+  const temChamado = lista.some((d) => geradaParaOutro(d, eu) && d.departamentoId !== null);
 
-  // Para onde a "Nova demanda" pode ir. Os dois primeiros valem para todo
-  // mundo; a equipe só aparece para Admin e TI (e o servidor confere de novo).
+  const opcoesRecorte =
+    quadro === "geradas"
+      ? [
+          { valor: "g:todas", rotulo: `Todas que gerei · ${contar("g:todas")}` },
+          ...(temChamado ? [{ valor: "g:chamados", rotulo: `Chamados abertos · ${contar("g:chamados")}` }] : []),
+          ...destinatarios.map(([id, nome]) => ({ valor: `g:p:${id}`, rotulo: `${nome} · ${contar(`g:p:${id}`)}` })),
+        ]
+      : [
+          { valor: "minhas", rotulo: `Para mim · ${contar("minhas")}` },
+          ...(admin
+            ? [
+                { valor: "todas", rotulo: `Todas · ${contar("todas")}` },
+                { valor: "chamados", rotulo: `Chamados do TI · ${contar("chamados")}` },
+                ...(pessoas ?? []).map((p) => ({
+                  valor: `p:${p.id}`,
+                  rotulo: `${p.id === eu.id ? "Só as minhas" : p.nome} · ${contar(`p:${p.id}`)}`,
+                })),
+              ]
+            : []),
+        ];
+
+  function trocarQuadro(q: Quadro) {
+    setQuadro(q);
+    setRecorte(RECORTE_INICIAL[q]);
+    setColunaMovel("fazer");
+  }
+
+  // Para onde a "Nova demanda" pode ir: para mim, chamado para o TI e qualquer
+  // pessoa da equipe valem para todo mundo; "Todos" só para Admin e TI (e o
+  // servidor confere de novo).
   const destinos: Destino[] = [
     { valor: eu.id, rotulo: "Para mim" },
     {
       valor: PARA_O_TI,
       rotulo: "Chamado para o TI",
-      dica: "Qualquer pessoa do TI vê e dá o check. Você acompanha em “Abertas por mim”.",
+      dica: "Qualquer pessoa do TI vê e dá o check. Você acompanha em “Geradas para outros”.",
     },
-    ...(admin && pessoas
+    ...(pessoas
       ? [
-          ...(pessoas.length > 1
+          ...(admin && pessoas.length > 1
             ? [
                 {
                   valor: PARA_TODOS,
@@ -398,11 +454,11 @@ export default function PainelDemandas({
     <Vazio Icone={SearchX} titulo="Nada encontrado" texto="Nenhuma demanda a fazer com esses filtros.">
       <BotaoLimpar aoClicar={limparFiltros} />
     </Vazio>
-  ) : recorte === "abertas" ? (
+  ) : quadro === "geradas" ? (
     <Vazio
-      Icone={LifeBuoy}
-      titulo="Nada aberto por você"
-      texto="O que você criar em “Nova demanda” — para você ou um chamado para o TI — aparece aqui."
+      Icone={Send}
+      titulo="Nada pendente com os outros"
+      texto="O que você mandar em “Nova demanda” para alguém da equipe — ou um chamado para o TI — aparece aqui até a pessoa dar o check."
     />
   ) : (
     <Vazio Icone={CircleCheck} titulo="Tudo em dia" texto="Nada a fazer por aqui." tom="ok" />
@@ -420,6 +476,38 @@ export default function PainelDemandas({
             Demandas
           </h1>
 
+          {/* Os dois quadros. O número é o que está A FAZER em cada um. */}
+          {!faltaMigration && (
+            <div
+              role="tablist"
+              aria-label="Quadro"
+              className="mr-1 flex gap-0.5 rounded-lg border border-zinc-200 bg-zinc-100/70 p-0.5 dark:border-zinc-800 dark:bg-zinc-900"
+            >
+              {(
+                [
+                  ["minhas", "Minhas", contar("minhas")],
+                  ["geradas", "Geradas para outros", contar("g:todas")],
+                ] as const
+              ).map(([valor, rotulo, n]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  role="tab"
+                  aria-selected={quadro === valor}
+                  onClick={() => trocarQuadro(valor)}
+                  className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium transition ${
+                    quadro === valor
+                      ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-800 dark:text-zinc-50 dark:ring-zinc-700"
+                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                  }`}
+                >
+                  {rotulo}
+                  <span className="tabular-nums text-zinc-400">{n}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {!faltaMigration && (
             <>
               <SeletorMenu
@@ -429,7 +517,7 @@ export default function PainelDemandas({
                 opcoes={opcoesRecorte}
                 aoMudar={setRecorte}
                 botao="w-52"
-                ativo={recorte !== "minhas"}
+                ativo={recorte !== RECORTE_INICIAL[quadro]}
               />
               <SeletorMenu
                 Icone={CalendarDays}
@@ -603,14 +691,14 @@ export default function PainelDemandas({
           subtitulo={
             admin
               ? "Para você, para alguém da equipe, para todos — ou um chamado para o TI."
-              : "Uma tarefa sua, ou um chamado para o TI."
+              : "Para você, para alguém da equipe — ou um chamado para o TI."
           }
           botao="Criar demanda"
           destinos={destinos}
-          // Quem só pode mandar para si ou para o TI já abre em "Para mim". O
-          // Admin escolhe: com "Todos" no menu, um padrão errado vira dez
-          // demandas de uma vez.
-          destinoInicial={admin ? "" : eu.id}
+          // No quadro "Minhas" abre em "Para mim"; no "Geradas para outros", sem
+          // escolha — quem está ali vai mandar para alguém. O Admin escolhe
+          // sempre: com "Todos" no menu, um padrão errado vira dez demandas.
+          destinoInicial={admin || quadro === "geradas" ? "" : eu.id}
           enviar={criarDemanda}
           aoFechar={() => setCriando(false)}
           aoConcluir={(mensagem) => {
