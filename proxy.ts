@@ -26,6 +26,9 @@ const PUBLICAS_EXATAS = new Set([
   // do próprio handler — quem chama é a uazapi, que não tem como ter cookie.
   "/api/uazapi/webhook",
   "/api/meta/whatsapp/webhook",
+  // Aviso de lead dos formulários instantâneos da Meta. A tranca é a
+  // assinatura X-Hub-Signature-256, conferida no próprio handler.
+  "/api/meta/leads/webhook",
 ]);
 
 const PUBLICAS_PREFIXO = [
@@ -57,6 +60,8 @@ const SERVICO_EXATAS = new Set([
   "/api/automacoes/enviar",
   // A rodada das retomadas da IA (lib/ia/retomada.ts), de 5 em 5 minutos.
   "/api/ia/retomar",
+  // A varredura dos formulários da Meta (lib/meta-leads.ts), de 5 em 5 minutos.
+  "/api/meta/leads/varrer",
 ]);
 
 function dispensaSessao(caminho: string): boolean {

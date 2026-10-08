@@ -8,6 +8,12 @@ export default async function FunisPage() {
   // justamente quando a pessoa troca de tela (guia de autenticação do Next,
   // "Layouts and auth checks"). Aqui ela roda antes de qualquer consulta.
   await exigirModulo("configuracoes");
-  const { funis, etapasPorFunil } = await carregarFunis();
-  return <SecaoFunis funis={funis} etapasPorFunil={etapasPorFunil} />;
+  const { funis, etapasPorFunil, oportunidadesPorEtapa } = await carregarFunis();
+  return (
+    <SecaoFunis
+      funis={funis}
+      etapasPorFunil={etapasPorFunil}
+      oportunidadesPorEtapa={oportunidadesPorEtapa}
+    />
+  );
 }

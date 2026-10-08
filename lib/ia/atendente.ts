@@ -1022,7 +1022,7 @@ const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL",
 // Campos que a captação grava mas não são resposta do lead: rastreio de
 // anúncio e de formulário. O resto (quanto quer investir, prazo, cidade…) é o
 // que ele respondeu, e a IA usa para não perguntar de novo.
-const CAMPO_TECNICO = /^(utm_|campaign|adset|ad_|ad$|fbclid|gclid|form_?(id|name)?$|lead_?id$|platform$|is_organic$|created_time$|page_?(id|name)$)/i;
+const CAMPO_TECNICO = /^(utm_|campaign|adset|ad_|ad$|fbclid|gclid|form_?(id|name)?$|(lead|leadgen)_?id$|platform$|is_organic$|created_time$|page_?(id|name)$)/i;
 
 /**
  * As respostas do formulário em uma linha ("Quanto pretende investir: R$ 100

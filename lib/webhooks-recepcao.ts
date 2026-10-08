@@ -330,8 +330,28 @@ export async function receberLead(
     await registrar(webhookId, {}, "recusado", "corpo não é um objeto JSON", null, null, null);
     return { status: 422, corpo: { erro: "o corpo precisa ser um objeto JSON" } };
   }
-  const dados = payload as Record<string, unknown>;
+  return processarLead(webhookId, payload as Record<string, unknown>);
+}
 
+/**
+ * Do payload já autenticado em diante: campos, contato, oportunidade, ações e
+ * o recebimento. É a mesma máquina para o formulário do site (receberLead,
+ * acima) e para o formulário instantâneo da Meta (lib/meta-leads.ts), que não
+ * tem segredo na URL — quem o autentica é a assinatura da Meta ou a própria
+ * leitura na API dela.
+ *
+ * `guardarNaoMapeados`: o que chegou e NÃO está declarado nos campos da
+ * webhook vai para os campos do contato, com a chave como veio. No site isso
+ * fica desligado (campo não declarado é descartado, ver o cabeçalho de
+ * criarCampo em app/webhooks/acoes.ts); na Meta é ligado, porque as perguntas
+ * do formulário mudam no Gerenciador de Anúncios sem passar por aqui, e uma
+ * resposta perdida é justamente o que a IA usaria na conversa.
+ */
+export async function processarLead(
+  webhookId: string,
+  dados: Record<string, unknown>,
+  opcoes: { guardarNaoMapeados?: boolean } = {},
+): Promise<ResultadoRecepcao> {
   const campos = (await sql`
     SELECT id, chave, rotulo, tipo, obrigatorio, destino, destino_chave, ordem
     FROM webhook_campos WHERE webhook_id = ${webhookId} ORDER BY ordem, chave`) as unknown as WebhookCampo[];
@@ -368,6 +388,16 @@ export async function receberLead(
   }
 
   const dist = distribuir(campos, dados);
+  if (opcoes.guardarNaoMapeados) {
+    const declaradas = new Set(campos.map((c) => c.chave));
+    const extras: Record<string, unknown> = {};
+    for (const [chave, valor] of Object.entries(dados)) {
+      if (declaradas.has(chave) || valor === undefined || valor === null || valor === "") continue;
+      extras[chave] = texto(valor);
+    }
+    // O mapeado vence: as chaves declaradas já estão em contatoCampos.
+    dist.contatoCampos = { ...extras, ...dist.contatoCampos };
+  }
   const resumo: string[] = [];
   let contatoId: string | null = null;
   let oportunidadeId: string | null = null;

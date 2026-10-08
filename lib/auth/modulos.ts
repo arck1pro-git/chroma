@@ -28,6 +28,7 @@ export type ChaveModulo =
   | "templates"
   | "blog"
   | "webhooks"
+  | "formularios"
   | "documentos"
   | "videos"
   | "contextos"
@@ -178,6 +179,15 @@ export const MODULOS: readonly Modulo[] = [
     escopavel: false,
     naBarra: true,
     descricao: "Captação de formulário de site e o que cada um faz ao chegar.",
+  },
+  {
+    chave: "formularios",
+    rotulo: "Formulários Meta",
+    href: "/formularios",
+    escopavel: false,
+    naBarra: true,
+    descricao:
+      "Formulários instantâneos dos anúncios da Meta: o que cada pergunta vira no lead e em que etapa e segmento ele entra.",
   },
   {
     chave: "documentos",

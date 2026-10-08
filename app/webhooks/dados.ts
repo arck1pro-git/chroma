@@ -79,6 +79,9 @@ export async function listarWebhooks(): Promise<Webhook[]> {
              WHERE r.webhook_id = w.id AND r.estado <> 'ok'
                AND r.data_criacao > now() - interval '7 days') AS erros_7d
     FROM webhooks w
+    -- As de formulário da Meta são do módulo Formulários Meta
+    -- (lib/meta-leads.ts, PREFIXO_FORMULARIO): mesma máquina, outra tela.
+    WHERE w.slug NOT LIKE 'formularios-meta-%'
     ORDER BY w.data_criacao DESC`) as unknown as Webhook[];
 }
 
@@ -87,7 +90,7 @@ export async function buscarWebhook(id: string): Promise<Webhook | null> {
     SELECT w.id, w.nome, w.descricao, w.slug, w.segredo, w.ativo,
            to_char(w.data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao,
            0 AS total_campos, 0 AS total_acoes, 0 AS recebidos_7d, 0 AS erros_7d
-    FROM webhooks w WHERE w.id = ${id}`;
+    FROM webhooks w WHERE w.id = ${id} AND w.slug NOT LIKE 'formularios-meta-%'`;
   return (w ?? null) as Webhook | null;
 }
 

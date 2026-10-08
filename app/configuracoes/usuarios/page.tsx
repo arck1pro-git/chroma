@@ -1,8 +1,4 @@
-import {
-  carregarDepartamentosDaConta,
-  carregarNumerosDeEnvio,
-  carregarUsuariosComConta,
-} from "../dados";
+import { carregarDepartamentosDaConta, carregarUsuariosComConta } from "../dados";
 import { UsuariosSection } from "../secoes/usuarios";
 import { exigirGestaoDeUsuarios } from "@/lib/auth/dal";
 
@@ -16,15 +12,13 @@ export default async function UsuariosPage() {
   // editam contas sem precisar do resto das Configurações (ver gereUsuarios
   // em lib/auth/dal.ts).
   const eu = await exigirGestaoDeUsuarios();
-  const [usuarios, numeros, departamentos] = await Promise.all([
+  const [usuarios, departamentos] = await Promise.all([
     carregarUsuariosComConta(),
-    carregarNumerosDeEnvio(),
     carregarDepartamentosDaConta(),
   ]);
   return (
     <UsuariosSection
       usuarios={usuarios}
-      numeros={numeros}
       departamentos={departamentos}
       euId={eu.id}
       administraAcessos={eu.departamento?.gerenciaAcessos ?? false}

@@ -245,7 +245,8 @@ export async function deletarSegmento(id: string): Promise<void> {
 // só o scripts/criar-usuario.ts fazia isso. Quem abre a tela está em
 // gereUsuarios (lib/auth/dal.ts); o que cada um pode mexer, no teto abaixo.
 
-// Iniciais: usa as informadas ou deriva do nome (1ª letra das 2 primeiras palavras).
+// Iniciais: sempre do nome (1ª letra das 2 primeiras palavras). Deixaram de ser
+// campo do formulário em 2026-10-08 ("sem inicial").
 function iniciaisDe(nome: string) {
   const p = nome.trim().split(/\s+/);
   return ((p[0]?.[0] ?? "") + (p[1]?.[0] ?? "")).toUpperCase();
@@ -289,7 +290,7 @@ function whatsappOuNulo(bruto: string): string | null {
 }
 
 /**
- * O número de envio escolhido na tela (usuarios.instancia_id). Só o id
+ * A instância de um vínculo usuário ↔ WhatsApp (usuarios.instancia_id). Só o id
  * atravessa, e precisa existir em Integrações: um id torto viraria erro de uuid
  * do Postgres, e um id de instância apagada, um "sem número" semanas depois.
  */
@@ -353,12 +354,17 @@ function conferirTeto(eu: UsuarioLogado, destino: DepartamentoEscolhido | null) 
   }
 }
 
-/** O formulário de usuário — o mesmo para criar e para editar. */
+/**
+ * O formulário de usuário — o mesmo para criar e para editar.
+ *
+ * Sem o número de ENVIO (usuarios.instancia_id) desde 2026-10-08: ele é
+ * definido ao criar a instância de WhatsApp (o "Usuário responsável") e trocado
+ * em Configurações · WhatsApp. Salvar o usuário não toca nesse vínculo — senão
+ * editar a senha de alguém apagaria o WhatsApp de onde ele envia.
+ */
 export type DadosUsuario = {
   nome: string;
-  iniciais: string;
   whatsapp: string;
-  instanciaId: string;
   /** Vazio = sem login: a pessoa só aparece como responsável e autora. */
   email: string;
   /** Na edição, vazio mantém a senha atual. */
@@ -388,7 +394,7 @@ export async function criarUsuario(dados: DadosUsuario): Promise<ResultadoUsuari
   return comoResultado(async () => {
     const n = dados.nome.trim();
     if (!n) throw new Recusa("Nome é obrigatório");
-    const ini = (dados.iniciais.trim() || iniciaisDe(n)).slice(0, 4).toUpperCase();
+    const ini = iniciaisDe(n);
     const email = emailOuNulo(dados.email);
     const senha = senhaOuNula(dados.senha);
     const departamento = await departamentoOuNulo(dados.departamentoId);
@@ -402,11 +408,10 @@ export async function criarUsuario(dados: DadosUsuario): Promise<ResultadoUsuari
     conferirTeto(eu, departamento);
 
     const whatsapp = whatsappOuNulo(dados.whatsapp);
-    const instancia = await instanciaOuNula(dados.instanciaId);
     const hash = senha ? await gerarHash(senha) : null;
     await sql`
-      INSERT INTO usuarios (nome, iniciais, whatsapp, instancia_id, email, senha_hash, departamento_id)
-      VALUES (${n}, ${ini}, ${whatsapp}, ${instancia}, ${email}, ${hash}, ${departamento?.id ?? null})`;
+      INSERT INTO usuarios (nome, iniciais, whatsapp, email, senha_hash, departamento_id)
+      VALUES (${n}, ${ini}, ${whatsapp}, ${email}, ${hash}, ${departamento?.id ?? null})`;
     revalidarUsuarios();
   });
 }
@@ -431,7 +436,7 @@ export async function editarUsuario(id: string, dados: DadosUsuario): Promise<Re
 
     const n = dados.nome.trim();
     if (!n) throw new Recusa("Nome é obrigatório");
-    const ini = (dados.iniciais.trim() || iniciaisDe(n)).slice(0, 4).toUpperCase();
+    const ini = iniciaisDe(n);
     const email = emailOuNulo(dados.email);
     const senha = senhaOuNula(dados.senha);
     const departamento = await departamentoOuNulo(dados.departamentoId);
@@ -460,7 +465,6 @@ export async function editarUsuario(id: string, dados: DadosUsuario): Promise<Re
     conferirTeto(eu, departamento);
 
     const whatsapp = whatsappOuNulo(dados.whatsapp);
-    const instancia = await instanciaOuNula(dados.instanciaId);
     const hash = senha ? await gerarHash(senha) : null;
 
     // O teto vai TAMBÉM no WHERE: entre a leitura acima e este UPDATE alguém
@@ -468,7 +472,6 @@ export async function editarUsuario(id: string, dados: DadosUsuario): Promise<Re
     const feitos = await sql`
       UPDATE usuarios
          SET nome = ${n}, iniciais = ${ini}, whatsapp = ${whatsapp},
-             instancia_id = ${instancia},
              email = ${email},
              senha_hash = COALESCE(${hash}::text, senha_hash),
              departamento_id = ${departamento?.id ?? null}

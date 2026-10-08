@@ -13,9 +13,10 @@ export const dynamic = "force-dynamic";
 // A casca das Configurações: a barra das entidades à esquerda (ao lado da barra
 // de módulos, que é do layout raiz) e a seção escolhida à direita.
 //
-// O título da tela mora na barra, não num header em cima do conteúdo: com a
-// barra dizendo "Configurações" e o item marcado dizendo qual seção, um header
-// repetiria as duas coisas e comeria altura útil.
+// O título de cada seção mora no conteúdo (Cabecalho, em ./secoes/pecas.tsx),
+// com a frase do que ela resolve e a ação principal ao lado. Era só a barra
+// que dizia onde se estava, e cada seção abria direto num formulário de criar
+// — a primeira coisa da tela era um campo vazio, não o que já existe.
 //
 // Assíncrono desde os departamentos: a barra das seções precisa saber o que
 // esta pessoa alcança. Quem NÃO tem o módulo 'configuracoes' mas administra
@@ -41,10 +42,12 @@ export default async function ConfiguracoesLayout({
         gerenciaAcessos={usuario?.departamento?.gerenciaAcessos ?? false}
         gereUsuarios={usuario ? gereUsuarios(usuario) : false}
       />
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-6 xl:px-10">
-        {/* max-w-3xl era a medida da página única e continua sendo a certa:
-            formulário de uma coluna não melhora ficando mais largo. */}
-        <div className="mx-auto flex max-w-3xl flex-col gap-6">{children}</div>
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-6 pb-16 pt-8 xl:px-10">
+        {/* max-w-4xl desde o redesenho de 2026-10-08: a de 3xl servia ao
+            formulário de uma coluna, mas Acessos virou uma grade (departamento
+            × módulo) e as listas ganharam colunas de contagem. Mais largo que
+            isso, linha de lista vira um corredor entre o nome e as ações. */}
+        <div className="mx-auto flex max-w-4xl flex-col gap-6">{children}</div>
       </main>
     </div>
   );

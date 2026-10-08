@@ -1,0 +1,45 @@
+{
+  "_sobre": "Formulários fictícios para ver /formularios?demo=1 em desenvolvimento, enquanto a página da AMAAN não tem formulário instantâneo. Não é lido em produção.",
+  "formularios": [
+    {
+      "id": "900000000000001",
+      "nome": "SCP · Investidor qualificado",
+      "status": "ACTIVE",
+      "leads": 37,
+      "criadoEm": "2026-10-02T14:10:00+0000",
+      "pagina": { "id": "675659308971866", "nome": "AMAAN Incorporadora" },
+      "perguntas": [
+        { "chave": "full_name", "rotulo": "Nome completo", "tipo": "FULL_NAME", "opcoes": [] },
+        { "chave": "phone_number", "rotulo": "Número de telefone", "tipo": "PHONE", "opcoes": [] },
+        { "chave": "email", "rotulo": "E-mail", "tipo": "EMAIL", "opcoes": [] },
+        {
+          "chave": "quanto_voce_pretende_investir",
+          "rotulo": "Quanto você pretende investir?",
+          "tipo": "CUSTOM",
+          "opcoes": ["Até R$ 50 mil", "De R$ 50 mil a R$ 100 mil", "De R$ 100 mil a R$ 300 mil", "Acima de R$ 300 mil"]
+        },
+        {
+          "chave": "em_quanto_tempo_pretende_investir",
+          "rotulo": "Em quanto tempo pretende investir?",
+          "tipo": "CUSTOM",
+          "opcoes": ["Nos próximos 30 dias", "Em até 3 meses", "Ainda estou pesquisando"]
+        },
+        { "chave": "voce_ja_investe_em_imoveis", "rotulo": "Você já investe em imóveis?", "tipo": "CUSTOM", "opcoes": ["Sim", "Não"] }
+      ]
+    },
+    {
+      "id": "900000000000002",
+      "nome": "Checklist do investidor (e-book)",
+      "status": "ARCHIVED",
+      "leads": 112,
+      "criadoEm": "2026-09-12T09:00:00+0000",
+      "pagina": { "id": "675659308971866", "nome": "AMAAN Incorporadora" },
+      "perguntas": [
+        { "chave": "full_name", "rotulo": "Nome completo", "tipo": "FULL_NAME", "opcoes": [] },
+        { "chave": "phone_number", "rotulo": "Número de telefone", "tipo": "PHONE", "opcoes": [] },
+        { "chave": "email", "rotulo": "E-mail", "tipo": "EMAIL", "opcoes": [] },
+        { "chave": "city", "rotulo": "Cidade", "tipo": "CITY", "opcoes": [] }
+      ]
+    }
+  ]
+}

@@ -37,14 +37,19 @@ export type CampoPersonalizado = {
 export type DadosFunis = {
   funis: Funil[];
   etapasPorFunil: Map<string, Etapa[]>;
+  /** Quantas oportunidades estão em cada etapa agora — todas, como o quadro. */
+  oportunidadesPorEtapa: Record<string, number>;
 };
 
 // Funis e etapas vêm juntos porque são a MESMA tela: o card do funil só existe
 // com as colunas dele dentro.
 export async function carregarFunis(): Promise<DadosFunis> {
-  const [funis, etapas] = await Promise.all([
+  const [funis, etapas, contagens] = await Promise.all([
     sql`SELECT id, nome, descricao, cor FROM funis ORDER BY data_criacao`,
     sql`SELECT id, nome, funil_id, ordem, cor, meta_evento FROM etapas ORDER BY funil_id, ordem`,
+    // Quantas oportunidades em cada etapa. É o número que diz se renomear ou
+    // reordenar uma etapa mexe com alguém — e a tela não tinha nenhum.
+    sql`SELECT etapa_id, count(*)::int AS n FROM oportunidades GROUP BY etapa_id`,
   ]);
 
   const etapasPorFunil = new Map<string, Etapa[]>();
@@ -54,17 +59,34 @@ export async function carregarFunis(): Promise<DadosFunis> {
     etapasPorFunil.set(e.funil_id, atual);
   }
 
-  return { funis: funis as Funil[], etapasPorFunil };
+  const oportunidadesPorEtapa: Record<string, number> = {};
+  for (const c of contagens) oportunidadesPorEtapa[c.etapa_id as string] = c.n as number;
+
+  return { funis: funis as Funil[], etapasPorFunil, oportunidadesPorEtapa };
 }
 
-export async function carregarTags(): Promise<Tag[]> {
-  const tags = await sql`SELECT id, nome FROM tags ORDER BY nome`;
-  return tags as unknown as Tag[];
+/** Tag ou segmento com quantos contatos o usam — o "sai de 12 contatos" de
+ *  quem vai excluir. */
+export type NomeComUso = (Tag | Segmento) & { contatos: number };
+
+export async function carregarTags(): Promise<NomeComUso[]> {
+  const tags = await sql`
+    SELECT t.id, t.nome, count(ct.contato_id)::int AS contatos
+      FROM tags t
+      LEFT JOIN contato_tags ct ON ct.tag_id = t.id
+     GROUP BY t.id, t.nome
+     ORDER BY t.nome`;
+  return tags as unknown as NomeComUso[];
 }
 
-export async function carregarSegmentos(): Promise<Segmento[]> {
-  const segmentos = await sql`SELECT id, nome FROM segmentos ORDER BY nome`;
-  return segmentos as unknown as Segmento[];
+export async function carregarSegmentos(): Promise<NomeComUso[]> {
+  const segmentos = await sql`
+    SELECT s.id, s.nome, count(cs.contato_id)::int AS contatos
+      FROM segmentos s
+      LEFT JOIN contato_segmentos cs ON cs.segmento_id = s.id
+     GROUP BY s.id, s.nome
+     ORDER BY s.nome`;
+  return segmentos as unknown as NomeComUso[];
 }
 
 /**
@@ -77,7 +99,8 @@ export async function carregarSegmentos(): Promise<Segmento[]> {
  */
 export type UsuarioConfig = Usuario & {
   whatsapp: string | null;
-  // Instância usada pela cadência ao enviar pelo responsável da oportunidade.
+  // O WhatsApp de onde a pessoa envia. Definido ao criar a instância (o
+  // "Usuário responsável") e trocado em Configurações · WhatsApp.
   instancia_id: string | null;
 };
 
@@ -114,20 +137,10 @@ export async function carregarDepartamentosDaConta(): Promise<DepartamentoDaCont
   return departamentos as unknown as DepartamentoDaConta[];
 }
 
-/** Um número cadastrado em Integrações, como o seletor de "Envia por" o vê. */
-export type NumeroDeEnvio = { id: string; nome: string; numero: string | null };
-
 export async function carregarUsuarios(): Promise<UsuarioConfig[]> {
   const usuarios = await sql`
     SELECT id, nome, iniciais, whatsapp, instancia_id FROM usuarios ORDER BY nome`;
   return usuarios as unknown as UsuarioConfig[];
-}
-
-/** Os números de WhatsApp que uma pessoa pode usar para enviar. Sem token. */
-export async function carregarNumerosDeEnvio(): Promise<NumeroDeEnvio[]> {
-  const numeros = await sql`
-    SELECT id, nome, numero FROM instancias_uazapi ORDER BY data_criacao`;
-  return numeros as unknown as NumeroDeEnvio[];
 }
 
 export async function carregarCampos(): Promise<CampoPersonalizado[]> {
