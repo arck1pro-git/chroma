@@ -6,11 +6,11 @@
 // abre a tela — o que eu faço primeiro, quem está me devendo. O prazo responde.
 // A faixa colorida no topo é a mesma pista do quadro do Dashboard.
 //
-// "EM ANDAMENTO" (pedido dele de 2026-10-08) NÃO É UM ESTADO GRAVADO — ele
-// escolheu não mudar o banco: entra ali a demanda a fazer que já tem pelo
-// menos um passo do checklist marcado, seja qual for o prazo (o chip do
-// cartão continua dizendo se atrasou). Por isso ninguém arrasta PARA ela: o
-// cartão chega lá marcando um passo. Demanda sem checklist não passa por ela.
+// "EM ANDAMENTO" (pedido dele de 2026-10-08) é a demanda a fazer que começou —
+// `iniciadaEm` preenchida (migration-demanda-iniciada.sql), seja qual for o
+// prazo; o chip do cartão continua dizendo se atrasou. Ela chega lá de dois
+// jeitos: arrastada (desde 2026-10-09) ou com o primeiro passo do checklist
+// marcado. Arrastar de volta para uma coluna de prazo tira de lá.
 import type { ColunaDePrazo } from "./datas";
 
 export type Quadro = "minhas" | "enviadas";
@@ -50,8 +50,8 @@ export const COLUNAS: readonly DefinicaoColuna[] = [
     rotulo: { minhas: "Em andamento", enviadas: "Em andamento" },
     faixa: "bg-violet-500",
     vazio: {
-      minhas: "Entra aqui o que já tem um passo do checklist marcado.",
-      enviadas: "Entra aqui quando a pessoa marca um passo do checklist.",
+      minhas: "Arraste para cá o que você começou — ou marque um passo do checklist.",
+      enviadas: "Entra aqui quando a pessoa começa a demanda.",
     },
   },
   {
@@ -64,4 +64,9 @@ export const COLUNAS: readonly DefinicaoColuna[] = [
 
 export function definicaoDe(id: ColunaId) {
   return COLUNAS.find((c) => c.id === id)!;
+}
+
+/** As colunas que só dizem o prazo — entre elas o arraste não muda nada. */
+export function ehColunaDePrazo(id: ColunaId): id is ColunaDePrazo {
+  return id === "atrasadas" || id === "hoje" || id === "fila";
 }

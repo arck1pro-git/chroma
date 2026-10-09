@@ -13,6 +13,7 @@ import {
   inserirChamado,
   inserirDemandas,
   inserirItens,
+  marcarEmAndamento,
   marcarFeita,
   marcarItem,
   mudarPrazo,
@@ -180,6 +181,18 @@ export async function marcarDemanda(id: string, feita: boolean): Promise<Resulta
 
   revalidatePath("/demandas");
   return { ok: true, mensagem: feita ? "Feita." : "Voltou para pendente." };
+}
+
+/** O arraste para "Em andamento" (ou de volta para a coluna do prazo). */
+export async function andamentoDemanda(id: string, sim: boolean): Promise<ResultadoDemanda> {
+  const { usuario } = await exigirModulo("demandas");
+  if (!idValido(id)) return { ok: false, mensagem: "Demanda inválida." };
+
+  const ok = await marcarEmAndamento(id, sim === true, usuario);
+  if (!ok) return { ok: false, mensagem: "Só quem recebeu a demanda a move de coluna." };
+
+  revalidatePath("/demandas");
+  return { ok: true, mensagem: sim ? "Em andamento." : "Voltou para a fila." };
 }
 
 /** Editar não muda PARA QUEM: isso é outra demanda. */

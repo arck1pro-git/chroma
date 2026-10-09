@@ -73,6 +73,8 @@ function paraDemanda(l: Record<string, unknown>): Demanda {
     criadoPor: (l.criado_por as string | null) ?? null,
     autor: (l.autor as string | null) ?? null,
     dataCriacao: iso(l.data_criacao)!,
+    iniciadaEm: iso(l.iniciada_em),
+    iniciadaPor: (l.iniciada_por as string | null) ?? null,
     feitaEm: iso(l.feita_em),
     feitaPor: (l.feita_por as string | null) ?? null,
     itens: [],
@@ -99,12 +101,15 @@ export async function listarDemandas(
            r.iniciais                 AS responsavel_iniciais,
            d.departamento_id, dep.nome AS departamento,
            d.criado_por, a.nome       AS autor,
-           d.data_criacao, d.feita_em,
+           d.data_criacao, d.iniciada_em,
+           i.nome                     AS iniciada_por,
+           d.feita_em,
            f.nome                     AS feita_por
       FROM demandas d
       LEFT JOIN usuarios r        ON r.id = d.responsavel_id
       LEFT JOIN departamentos dep ON dep.id = d.departamento_id
       LEFT JOIN usuarios a        ON a.id = d.criado_por
+      LEFT JOIN usuarios i        ON i.id = d.iniciada_por
       LEFT JOIN usuarios f        ON f.id = d.feita_por
      WHERE (d.feita_em IS NULL
             OR d.feita_em > now() - make_interval(days => ${DIAS_DE_FEITAS}))
@@ -307,20 +312,33 @@ export async function removerItem(itemId: string, usuario: UsuarioLogado): Promi
  * O check de um passo. Marca quem marca a demanda: a pessoa dela, ou alguém do
  * departamento do chamado. Como no check da demanda, marcar de novo o que já
  * estava feito não troca a hora nem o autor (o SET lê o valor antigo).
+ *
+ * Marcar um passo também põe a demanda "Em andamento" (decisão dele,
+ * 2026-10-09), se ela ainda não estava. Desmarcar NÃO a tira de lá: começou é
+ * começou — quem quiser devolvê-la arrasta para a coluna do prazo.
  */
 export async function marcarItem(itemId: string, feito: boolean, usuario: UsuarioLogado): Promise<boolean> {
   const departamento = usuario.departamento?.id ?? null;
   const linhas = await sql`
-    UPDATE demanda_itens i
-       SET feito_em  = CASE WHEN ${feito}::boolean THEN coalesce(i.feito_em, now()) ELSE NULL END,
-           feito_por = CASE WHEN NOT ${feito}::boolean THEN NULL
-                            WHEN i.feito_em IS NULL THEN ${usuario.id}::uuid
-                            ELSE i.feito_por END
-      FROM demandas d
-     WHERE i.id = ${itemId}
-       AND d.id = i.demanda_id
-       AND (d.responsavel_id = ${usuario.id} OR d.departamento_id = ${departamento})
-    RETURNING i.id`;
+    WITH marcado AS (
+      UPDATE demanda_itens i
+         SET feito_em  = CASE WHEN ${feito}::boolean THEN coalesce(i.feito_em, now()) ELSE NULL END,
+             feito_por = CASE WHEN NOT ${feito}::boolean THEN NULL
+                              WHEN i.feito_em IS NULL THEN ${usuario.id}::uuid
+                              ELSE i.feito_por END
+        FROM demandas d
+       WHERE i.id = ${itemId}
+         AND d.id = i.demanda_id
+         AND (d.responsavel_id = ${usuario.id} OR d.departamento_id = ${departamento})
+      RETURNING i.id, i.demanda_id
+    ), iniciada AS (
+      UPDATE demandas
+         SET iniciada_em = now(), iniciada_por = ${usuario.id}
+       WHERE ${feito}::boolean
+         AND iniciada_em IS NULL
+         AND id IN (SELECT demanda_id FROM marcado)
+    )
+    SELECT id FROM marcado`;
   return linhas.length > 0;
 }
 
@@ -351,6 +369,34 @@ export async function marcarFeita(
          WHERE id = ${id}
            AND (responsavel_id = ${usuario.id} OR departamento_id = ${departamento})
         RETURNING id`;
+  return linhas.length > 0;
+}
+
+/**
+ * O arraste para "Em andamento" (`sim`) ou de volta para a coluna do prazo
+ * (`não`) — pedido dele de 2026-10-09. Nos dois casos a demanda fica a fazer:
+ * vir de "Feitas" para uma dessas colunas tira o check. Marca quem marca a
+ * demanda, como marcarFeita.
+ *
+ * Arrastar para "Em andamento" o que já estava lá não troca a hora nem quem
+ * pôs (o SET lê o valor antigo).
+ */
+export async function marcarEmAndamento(
+  id: string,
+  sim: boolean,
+  usuario: UsuarioLogado,
+): Promise<boolean> {
+  const departamento = usuario.departamento?.id ?? null;
+  const linhas = await sql`
+    UPDATE demandas
+       SET feita_em = NULL, feita_por = NULL,
+           iniciada_em  = CASE WHEN ${sim}::boolean THEN coalesce(iniciada_em, now()) ELSE NULL END,
+           iniciada_por = CASE WHEN NOT ${sim}::boolean THEN NULL
+                               WHEN iniciada_em IS NULL THEN ${usuario.id}::uuid
+                               ELSE iniciada_por END
+     WHERE id = ${id}
+       AND (responsavel_id = ${usuario.id} OR departamento_id = ${departamento})
+    RETURNING id`;
   return linhas.length > 0;
 }
 

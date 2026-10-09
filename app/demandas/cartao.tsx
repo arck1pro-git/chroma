@@ -18,9 +18,10 @@
 // para dez pessoas eram dez cartões iguais empurrando o resto para baixo. O
 // cartão mostra quem ainda falta e o progresso somado do checklist.
 //
-// ARRASTAR: o cartão que eu posso marcar vai para "Feitas" arrastando, e volta
-// de lá do mesmo jeito — é o gesto do quadro do Dashboard. O círculo do check
-// continua sendo o caminho do teclado e do toque.
+// ARRASTAR: o cartão que eu posso marcar vai para "Feitas" ou para "Em
+// andamento" arrastando, e volta do mesmo jeito — é o gesto do quadro do
+// Dashboard (as regras ficam em painel.tsx). O círculo do check continua sendo
+// o caminho do teclado e do toque.
 import { useEffect, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { ArrowDown, CalendarClock, Check, Flag, LifeBuoy } from "lucide-react";

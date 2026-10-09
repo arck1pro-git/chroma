@@ -12,9 +12,11 @@
 //     todos" e a que criei para mim mesmo ficam em "Minhas", onde dou o check.
 //
 // AS COLUNAS SÃO AS MESMAS NOS DOIS (./colunas.ts): Atrasadas, Para hoje, A
-// fazer (ou Aguardando), Em andamento (o checklist começado, sem estado no
-// banco — escolha dele) e Feitas. Arrastar um cartão meu para Feitas dá o
-// check, e arrastar de volta tira — só se arrasta o cartão que eu posso marcar.
+// fazer (ou Aguardando), Em andamento e Feitas. Só se arrasta o cartão que eu
+// posso marcar: para Feitas dá o check; para Em andamento põe a demanda ali
+// (desde 2026-10-09, gravado em `iniciada_em`); de volta para uma coluna de
+// prazo a devolve à fila. Entre as colunas de prazo não se arrasta — o prazo
+// muda no calendário.
 // Clicar abre a gaveta (./detalhe.tsx) com o resto.
 //
 // QUADRO OU CALENDÁRIO (botão no topo, pedido dele de 2026-10-08): o
@@ -84,6 +86,7 @@ import {
   criarDemanda,
   editarDemanda,
   excluirDemandas,
+  andamentoDemanda,
   marcarDemanda,
   marcarItemDemanda,
   mudarPrazoDemanda,
@@ -93,7 +96,14 @@ import {
 import Calendario, { type ItemDoCalendario } from "./calendario";
 import type { MontarChecklist } from "./checklist";
 import Cartao, { CorpoCartao, ehMinha, type Eu, type Item } from "./cartao";
-import { COLUNAS, type ColunaId, type ColunaPendente, type DefinicaoColuna, type Quadro } from "./colunas";
+import {
+  COLUNAS,
+  ehColunaDePrazo,
+  type ColunaId,
+  type ColunaPendente,
+  type DefinicaoColuna,
+  type Quadro,
+} from "./colunas";
 import DetalheDemanda from "./detalhe";
 import {
   colunaDoPrazo,
@@ -178,13 +188,9 @@ const EQUIPE = "Equipe — quem tem o módulo Demandas";
 /** Quadro ou calendário — do aparelho, não da conta (ver preferencia-local.ts). */
 const preferenciaCalendario = criarPreferencia("chroma:demandas-calendario");
 
-/** O checklist começado: é isso que põe a demanda "Em andamento" (ver colunas.ts). */
-function comecou(d: Demanda) {
-  return d.itens.some((i) => i.feitoEm !== null);
-}
-
 type Mudanca =
   | { tipo: "marcar"; id: string; feita: boolean }
+  | { tipo: "andamento"; id: string; sim: boolean }
   | { tipo: "remover"; ids: string[] }
   | { tipo: "item"; itemId: string; feito: boolean }
   | { tipo: "prazo"; ids: string[]; prazo: string | null };
@@ -242,11 +248,27 @@ export default function PainelDemandas({
   const [lista, mudarNaTela] = useOptimistic(demandas, (atual, m: Mudanca) => {
     if (m.tipo === "remover") return atual.filter((d) => !m.ids.includes(d.id));
     if (m.tipo === "prazo") return atual.map((d) => (m.ids.includes(d.id) ? { ...d, prazo: m.prazo } : d));
+    if (m.tipo === "andamento") {
+      // As duas saídas deixam a demanda a fazer (ver marcarEmAndamento).
+      return atual.map((d) =>
+        d.id === m.id
+          ? {
+              ...d,
+              feitaEm: null,
+              feitaPor: null,
+              iniciadaEm: m.sim ? (d.iniciadaEm ?? new Date().toISOString()) : null,
+              iniciadaPor: m.sim ? (d.iniciadaEm ? d.iniciadaPor : eu.nome) : null,
+            }
+          : d,
+      );
+    }
     if (m.tipo === "item") {
       return atual.map((d) =>
         d.itens.some((i) => i.id === m.itemId)
           ? {
               ...d,
+              // Marcar um passo põe a demanda "Em andamento" (marcarItem).
+              ...(m.feito && !d.iniciadaEm ? { iniciadaEm: new Date().toISOString(), iniciadaPor: eu.nome } : {}),
               itens: d.itens.map((i) =>
                 i.id === m.itemId
                   ? { ...i, feitoEm: m.feito ? new Date().toISOString() : null, feitoPor: m.feito ? eu.nome : null }
@@ -307,9 +329,9 @@ export default function PainelDemandas({
         .filter((d) => !d.feitaEm)
         .sort((a, b) => Number(ehMinha(b, eu)) - Number(ehMinha(a, eu)));
       if (!falta.length) continue;
-      // Checklist começado vai para "Em andamento", seja qual for o prazo — o
-      // chip do cartão continua dizendo se atrasou.
-      const coluna = falta.some(comecou) ? "andamento" : colunaDoPrazo(falta[0].prazo, hoje);
+      // Começada vai para "Em andamento", seja qual for o prazo — o chip do
+      // cartão continua dizendo se atrasou.
+      const coluna = falta.some((d) => d.iniciadaEm) ? "andamento" : colunaDoPrazo(falta[0].prazo, hoje);
       pendentes[coluna].push({ chave, demandas: falta, lote });
     }
     for (const c of Object.values(pendentes)) c.sort(ordemPendente);
@@ -457,6 +479,16 @@ export default function PainelDemandas({
     });
   }
 
+  function moverAndamento(id: string, sim: boolean) {
+    setAviso(null);
+    iniciar(async () => {
+      mudarNaTela({ tipo: "andamento", id, sim });
+      const r = await andamentoDemanda(id, sim);
+      if (!r.ok) setAviso({ ok: false, texto: r.mensagem });
+      avisarQueDemandasMudaram();
+    });
+  }
+
   function marcarItem(itemId: string, feito: boolean) {
     setAviso(null);
     iniciar(async () => {
@@ -502,16 +534,21 @@ export default function PainelDemandas({
     });
   }
 
-  // ── Arrastar para Feitas (e de volta) ─────────────────────────────────────
+  // ── Arrastar entre Feitas, Em andamento e a fila ──────────────────────────
   const sensores = useSensors(
     // 6px de folga: sem isto todo clique viraria arraste e a gaveta nunca abria.
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  /** Onde o cartão em arraste pode cair: pendente → Feitas; feita → de volta. */
+  /**
+   * Onde o cartão em arraste pode cair: qualquer outra coluna, menos de uma
+   * coluna de prazo para outra — o prazo não muda arrastando aqui, e o cartão
+   * voltaria para onde estava.
+   */
   function aceita(c: ColunaId) {
     if (!arrastando) return false;
-    return arrastando.coluna === "feitas" ? c !== "feitas" : c === "feitas";
+    const de = arrastando.coluna;
+    return c !== de && !(ehColunaDePrazo(c) && ehColunaDePrazo(de));
   }
 
   function aoIniciarArraste({ active }: DragStartEvent) {
@@ -525,9 +562,10 @@ export default function PainelDemandas({
     const alvoId = (active.data.current as { alvo: string | null } | undefined)?.alvo;
     if (!over || !de || !alvoId) return;
     const para = over.id as ColunaId;
-    if (para === de) return;
+    if (para === de || (ehColunaDePrazo(para) && ehColunaDePrazo(de))) return;
     if (para === "feitas") marcar(alvoId, true);
-    else if (de === "feitas") marcar(alvoId, false);
+    // Para a fila, cai na coluna do PRÓPRIO prazo, seja qual for a solta.
+    else moverAndamento(alvoId, para === "andamento");
   }
 
   const propsDoCartao = {
@@ -901,6 +939,15 @@ export default function PainelDemandas({
 
 // ── Peças ───────────────────────────────────────────────────────────────────
 
+/** O que acontece ao soltar o cartão em cada coluna. */
+const SOLTAR: Record<ColunaId, string> = {
+  atrasadas: "para voltar a fazer",
+  hoje: "para voltar a fazer",
+  fila: "para voltar a fazer",
+  andamento: "para pôr em andamento",
+  feitas: "para marcar como feita",
+};
+
 function Coluna({
   def,
   quadro,
@@ -953,18 +1000,14 @@ function Coluna({
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 pb-2">
         {total === 0 ? (
           <p className="flex flex-1 flex-col items-center justify-center gap-1.5 px-4 pb-10 text-center text-[12px] text-zinc-400 dark:text-zinc-500">
-            {sobre || realce === "aceita"
-              ? def.id === "feitas"
-                ? "Solte aqui para marcar como feita"
-                : "Solte aqui para voltar a fazer"
-              : def.vazio[quadro]}
+            {sobre || realce === "aceita" ? `Solte aqui ${SOLTAR[def.id]}` : def.vazio[quadro]}
           </p>
         ) : (
           children
         )}
         {total > 0 && realce === "aceita" && (
           <p className="pointer-events-none rounded-lg border border-dashed border-emerald-400/70 py-3 text-center text-[12px] font-medium text-emerald-700 dark:border-emerald-500/40 dark:text-emerald-400">
-            {def.id === "feitas" ? "Solte para marcar como feita" : "Solte para voltar a fazer"}
+            Solte {SOLTAR[def.id]}
           </p>
         )}
       </div>

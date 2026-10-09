@@ -93,11 +93,18 @@ export default function DetalheDemanda({
     const quando = dia === "Hoje" || dia === "Ontem" ? dia.toLowerCase() : `em ${dia}`;
     status = `Feita ${quando} às ${horaDe(d.feitaEm!)} · ${quemFez(d.feitaPor)}`;
   } else if (coluna === "andamento") {
-    // Em andamento é o checklist começado (ver colunas.ts): diz quanto andou,
-    // e o prazo junto — começar não tira o atraso.
+    // Em andamento (ver colunas.ts): quanto o checklist andou — ou, sem
+    // checklist, desde quando — e o prazo junto, porque começar não tira o
+    // atraso.
     const base = alvo ?? d;
     const feitos = base.itens.filter((i) => i.feitoEm).length;
-    status = `Em andamento · ${feitos} de ${base.itens.length} passos${d.prazo ? ` · ${prazoEmTexto(d.prazo, hoje, false).texto.toLowerCase()}` : ""}`;
+    const quanto = base.itens.length
+      ? `${feitos} de ${base.itens.length} passos`
+      : base.iniciadaEm
+        ? `desde ${rotuloDoDia(diaDe(base.iniciadaEm), hoje).toLowerCase()}`
+        : null;
+    const prazo = d.prazo ? prazoEmTexto(d.prazo, hoje, false).texto.toLowerCase() : null;
+    status = ["Em andamento", quanto, prazo].filter(Boolean).join(" · ");
   } else if (d.prazo) status = prazoEmTexto(d.prazo, hoje, false).texto;
   else status = quadro === "enviadas" ? "Aguardando · sem prazo" : "A fazer · sem prazo";
 
@@ -252,6 +259,15 @@ export default function DetalheDemanda({
                 {d.prioridade === "baixa" && <ArrowDown className="size-3 text-zinc-400" aria-hidden="true" />}
                 {ROTULO_PRIORIDADE[d.prioridade]}
               </dd>
+
+              {!emLote && d.iniciadaEm && (
+                <>
+                  <dt className="text-zinc-400 dark:text-zinc-500">Começou em</dt>
+                  <dd className="text-zinc-800 dark:text-zinc-200">
+                    {dataHora(d.iniciadaEm)} · {quemFez(d.iniciadaPor)}
+                  </dd>
+                </>
+              )}
 
               {!emLote && d.feitaEm && (
                 <>

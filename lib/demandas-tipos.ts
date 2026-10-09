@@ -48,6 +48,12 @@ export type Demanda = {
   criadoPor: string | null;
   autor: string | null;
   dataCriacao: string;
+  /**
+   * Quando foi para "Em andamento" — arrastada para lá ou com o primeiro passo
+   * do checklist marcado — e quem a pôs lá. Nulo = não começou.
+   */
+  iniciadaEm: string | null;
+  iniciadaPor: string | null;
   /** Nulo = pendente. */
   feitaEm: string | null;
   feitaPor: string | null;
