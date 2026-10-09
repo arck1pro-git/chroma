@@ -16,8 +16,12 @@ function hojeEmBrasilia() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 }
 
-export default async function DemandasPage() {
+export default async function DemandasPage({ searchParams }: { searchParams: Promise<{ abrir?: string }> }) {
   const { usuario } = await exigirModulo("demandas");
+  // ?abrir=<id>: o clique na notificação de demanda nova (vigia-demandas.tsx)
+  // abre a tela já com a gaveta dela.
+  const { abrir } = await searchParams;
+  const abrirId = abrir && /^[0-9a-f-]{36}$/i.test(abrir) ? abrir : null;
   const admin = administraDemandas(usuario);
 
   const eu = {
@@ -54,6 +58,7 @@ export default async function DemandasPage() {
       hoje={hoje}
       agora={agora}
       faltaMigration={false}
+      abrir={abrirId}
     />
   );
 }

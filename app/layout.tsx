@@ -5,7 +5,7 @@ import Sidebar, { type ItemDeModulo } from "./components/sidebar";
 import ProvedorIaGlobal from "./components/ia-global";
 import { temIaCompleta } from "@/lib/ia/modo-completo";
 import { gereUsuarios, usuarioAtual } from "@/lib/auth/dal";
-import { contarPendentes } from "@/lib/demandas";
+import { conferirDemandas } from "@/lib/demandas";
 import { MODULOS } from "@/lib/auth/modulos";
 import "./globals.css";
 
@@ -55,8 +55,9 @@ export default async function RootLayout({
   const iaFixa = usuario ? temIaCompleta(usuario) : false;
 
   // O número do item Demandas na barra, já na primeira pintura (sem piscar o
-  // zero). Daí em diante quem o mantém em dia é a própria barra.
-  const demandas = usuario?.modulos.has("demandas") ? await contarPendentes(usuario) : null;
+  // zero), e o ponto de partida da vigia de demandas novas. Daí em diante quem
+  // o mantém em dia é a própria barra (app/components/vigia-demandas.tsx).
+  const demandas = usuario?.modulos.has("demandas") ? await conferirDemandas(usuario) : null;
 
   const temConfiguracoes =
     (usuario?.modulos.has("configuracoes") ?? false) ||

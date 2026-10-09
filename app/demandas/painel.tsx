@@ -75,6 +75,7 @@ import { criarPreferencia } from "../components/preferencia-local";
 import ModalDemanda, { type Destino } from "../components/modal-demanda";
 import {
   avisarQueDemandasMudaram,
+  EVENTO_ABRIR_DEMANDA,
   PARA_O_TI,
   PARA_TODOS,
   type DadosDemanda,
@@ -219,6 +220,7 @@ export default function PainelDemandas({
   hoje,
   agora,
   faltaMigration,
+  abrir = null,
 }: {
   demandas: Demanda[];
   /** Quem pode receber — para todo mundo, desde 2026-10-08. */
@@ -229,6 +231,8 @@ export default function PainelDemandas({
   hoje: string;
   agora: string;
   faltaMigration: boolean;
+  /** A demanda da notificação clicada (?abrir=): a tela já abre com a gaveta dela. */
+  abrir?: string | null;
 }) {
   const [quadro, setQuadro] = useState<Quadro>("minhas");
   const [recorte, setRecorte] = useState<Recorte>(RECORTE_INICIAL.minhas);
@@ -238,7 +242,7 @@ export default function PainelDemandas({
   const [editando, setEditando] = useState<Edicao | null>(null);
   // A gaveta guarda o id da DEMANDA, não a chave do cartão: a chave muda quando
   // ela passa para Feitas, e a gaveta tem de continuar aberta nela.
-  const [aberta, setAberta] = useState<string | null>(null);
+  const [aberta, setAberta] = useState<string | null>(abrir);
   const [arrastando, setArrastando] = useState<Arraste | null>(null);
   const emCalendario = preferenciaCalendario.useValor();
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
@@ -298,6 +302,25 @@ export default function PainelDemandas({
     window.addEventListener("keydown", aoTeclar);
     return () => window.removeEventListener("keydown", aoTeclar);
   }, []);
+
+  // A notificação de demanda nova clicada com esta tela já aberta
+  // (vigia-demandas.tsx): a demanda é da pessoa, então volta para "Minhas",
+  // sem filtro, e abre a gaveta. Se o cartão ainda não chegou, a gaveta abre
+  // assim que o quadro recarregar com ele. O ?abrir= da URL sai depois de
+  // usado: recarregar a página não abre a gaveta de novo.
+  useEffect(() => {
+    if (abrir) window.history.replaceState(null, "", "/demandas");
+    const aoAbrir = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail;
+      setQuadro("minhas");
+      setRecorte(RECORTE_INICIAL.minhas);
+      setDia("qualquer");
+      setBusca("");
+      setAberta(id);
+    };
+    window.addEventListener(EVENTO_ABRIR_DEMANDA, aoAbrir);
+    return () => window.removeEventListener(EVENTO_ABRIR_DEMANDA, aoAbrir);
+  }, [abrir]);
 
   // Aviso de sucesso some sozinho; o de problema fica até a pessoa fechar.
   useEffect(() => {

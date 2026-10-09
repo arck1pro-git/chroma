@@ -20,10 +20,10 @@ import { listaUuid, sql } from "@/lib/db";
 import type { UsuarioLogado } from "@/lib/auth/dal";
 import {
   PARA_TODOS,
-  type ContagemDemandas,
   type Demanda,
   type ItemDemanda,
   type Prioridade,
+  type SituacaoDemandas,
 } from "@/lib/demandas-tipos";
 
 const ADMINISTRAM = new Set(["admin", "ti"]);
@@ -146,22 +146,79 @@ export async function listarDemandas(
 }
 
 /**
- * O número da barra lateral: as demandas A FAZER para a pessoa — as dela e as
- * do departamento dela (os chamados chegam ao TI assim), a mesma regra do
- * recorte "Para mim" — e quantas delas passaram do prazo. Sem a tabela
- * (migration não rodou), zero: a barra não pode derrubar o layout.
+ * O que a barra lateral confere de minuto em minuto, numa consulta só — é a
+ * mesma ida ao banco que o número da barra já fazia (ver
+ * app/components/vigia-demandas.tsx):
+ *
+ *   · o número do item Demandas: as A FAZER para a pessoa — as dela e as do
+ *     departamento dela (os chamados chegam ao TI assim), a mesma regra do
+ *     recorte "Para mim" — e quantas passaram do prazo;
+ *   · a `versao` do quadro: um resumo das demandas que a pessoa vê em
+ *     Demandas (as mesmas de listarDemandas) e dos passos delas. Muda quando
+ *     uma chega, sai, é marcada, começada ou tem passo marcado — e é isso que
+ *     manda o quadro aberto se recarregar. Editar título ou prazo não muda a
+ *     versão (a tabela não guarda "editada em"): aparece na próxima abertura;
+ *   · as `novas`, quando vem `desde`: as que chegaram PARA a pessoa depois
+ *     daquele instante, mandadas por outra pessoa e ainda a fazer — o que
+ *     vira notificação. A janela volta 30 s para não perder a demanda gravada
+ *     no meio de uma conferência; quem repete, a tela descarta pelo id.
+ *
+ * Sem a tabela (migration não rodou), zeros: a barra não pode derrubar o layout.
  */
-export async function contarPendentes(usuario: UsuarioLogado): Promise<ContagemDemandas> {
+export async function conferirDemandas(
+  usuario: UsuarioLogado,
+  desde: string | null = null,
+): Promise<SituacaoDemandas> {
+  const departamento = usuario.departamento?.id ?? null;
   try {
     const [c] = await sql`
-      SELECT count(*)::int AS pendentes,
-             count(*) FILTER (WHERE prazo < (now() AT TIME ZONE 'America/Sao_Paulo')::date)::int AS atrasadas
-        FROM demandas
-       WHERE feita_em IS NULL
-         AND (responsavel_id = ${usuario.id} OR departamento_id = ${usuario.departamento?.id ?? null})`;
-    return { pendentes: Number(c?.pendentes ?? 0), atrasadas: Number(c?.atrasadas ?? 0) };
+      WITH vistas AS (
+        SELECT id, prazo, data_criacao, iniciada_em, feita_em,
+               coalesce(responsavel_id = ${usuario.id} OR departamento_id = ${departamento}, false) AS para_mim
+          FROM demandas
+         WHERE ${administraDemandas(usuario)}::boolean
+            OR responsavel_id = ${usuario.id}
+            OR departamento_id = ${departamento}
+            OR criado_por = ${usuario.id}
+      ), passos AS (
+        SELECT concat_ws('|', count(*), count(i.feito_em), max(i.feito_em)) AS resumo
+          FROM demanda_itens i
+          JOIN vistas v ON v.id = i.demanda_id
+      )
+      SELECT count(*) FILTER (WHERE para_mim AND feita_em IS NULL)::int AS pendentes,
+             count(*) FILTER (WHERE para_mim AND feita_em IS NULL
+                                AND prazo < (now() AT TIME ZONE 'America/Sao_Paulo')::date)::int AS atrasadas,
+             md5(concat_ws('|', count(*), max(data_criacao), count(feita_em), max(feita_em),
+                           count(iniciada_em), max(iniciada_em), (SELECT resumo FROM passos))) AS versao,
+             now() AS agora,
+             (SELECT coalesce(json_agg(n ORDER BY n.data_criacao), '[]')
+                FROM (SELECT d.id, d.titulo, a.nome AS autor,
+                             d.departamento_id IS NOT NULL AS chamado, d.data_criacao
+                        FROM demandas d
+                        LEFT JOIN usuarios a ON a.id = d.criado_por
+                       WHERE (d.responsavel_id = ${usuario.id} OR d.departamento_id = ${departamento})
+                         AND d.criado_por IS DISTINCT FROM ${usuario.id}
+                         AND d.feita_em IS NULL
+                         AND d.data_criacao > ${desde}::timestamptz - interval '30 seconds'
+                       ORDER BY d.data_criacao
+                       LIMIT 20) n) AS novas
+        FROM vistas`;
+    return {
+      pendentes: Number(c?.pendentes ?? 0),
+      atrasadas: Number(c?.atrasadas ?? 0),
+      versao: String(c?.versao ?? ""),
+      agora: new Date(c?.agora ?? Date.now()).toISOString(),
+      novas: ((c?.novas ?? []) as Record<string, unknown>[]).map((n) => ({
+        id: n.id as string,
+        titulo: n.titulo as string,
+        autor: (n.autor as string | null) ?? null,
+        chamado: n.chamado === true,
+      })),
+    };
   } catch (e) {
-    if ((e as { code?: string })?.code === "42P01") return { pendentes: 0, atrasadas: 0 };
+    if ((e as { code?: string })?.code === "42P01") {
+      return { pendentes: 0, atrasadas: 0, versao: "", agora: new Date().toISOString(), novas: [] };
+    }
     throw e;
   }
 }

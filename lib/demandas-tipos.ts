@@ -85,6 +85,26 @@ export type ResultadoDemanda = { ok: boolean; mensagem: string };
 /** O número da barra lateral: o que está a fazer PARA a pessoa, e quanto disso atrasou. */
 export type ContagemDemandas = { pendentes: number; atrasadas: number };
 
+/** Uma demanda que acabou de chegar para a pessoa — o que a notificação do Windows mostra. */
+export type DemandaNova = { id: string; titulo: string; autor: string | null; chamado: boolean };
+
+/**
+ * O que a barra lateral confere de minuto em minuto (/api/demandas/contagem):
+ * o número do item Demandas e, na mesma ida, o que a notificação e o quadro
+ * aberto precisam (ver app/components/vigia-demandas.tsx).
+ */
+export type SituacaoDemandas = ContagemDemandas & {
+  /** Muda quando muda alguma demanda que a pessoa vê no quadro. */
+  versao: string;
+  /** O instante da conferência, no relógio do banco — o `desde` da próxima. */
+  agora: string;
+  /** As que chegaram PARA a pessoa depois do `desde` pedido, mandadas por outra pessoa. */
+  novas: DemandaNova[];
+};
+
+/** Clique na notificação com o quadro já aberto: a gaveta abre nesta demanda (detail = id). */
+export const EVENTO_ABRIR_DEMANDA = "chroma:abrir-demanda";
+
 /**
  * Disparado na janela depois de qualquer mudança que mexe na contagem (criar,
  * dar o check, desmarcar, excluir): a barra lateral busca o número de novo na

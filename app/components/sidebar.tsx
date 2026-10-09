@@ -71,13 +71,14 @@ import {
 import { conversasDaBarra } from "./acoes-ia";
 import ModalNovoBlog, { type BlogCriado } from "./modal-novo-blog";
 import SeloWhatsApp from "./selo-whatsapp";
+import { LigarAvisos, useVigiaDemandas } from "./vigia-demandas";
 import { criarPreferencia } from "./preferencia-local";
 import type { ConversaNaBarra } from "@/lib/ia/conversas";
 import { lugarDoEscopo, rotaDaConversa } from "@/lib/ia/navegacao";
 import { EVENTO_NOVA_ANALISE } from "./ia-global-contexto";
 import { sair } from "@/app/login/acoes";
 import type { ChaveModulo } from "@/lib/auth/modulos";
-import { EVENTO_DEMANDAS, type ContagemDemandas } from "@/lib/demandas-tipos";
+import type { ContagemDemandas, SituacaoDemandas } from "@/lib/demandas-tipos";
 
 // A LISTA DE MÓDULOS NÃO MORA MAIS AQUI. Ela vem do servidor, já peneirada
 // pelo departamento de quem está logado (app/layout.tsx → lib/auth/dal.ts).
@@ -254,7 +255,7 @@ export default function Sidebar({
    */
   iaFixa?: boolean;
   /** O que está a fazer para a pessoa em Demandas; null sem o módulo. */
-  demandas?: ContagemDemandas | null;
+  demandas?: SituacaoDemandas | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -272,50 +273,11 @@ export default function Sidebar({
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
   // ── Contador de demandas ──────────────────────────────────────────────────
-  // Nasce com o número do servidor e se mantém em dia sozinho: de minuto em
-  // minuto com a aba à vista (é assim que o TI vê o chamado novo chegar), ao
-  // voltar para a aba, ao trocar de tela e na hora em que alguém mexe em
-  // Demandas (EVENTO_DEMANDAS). Aba escondida não pergunta nada.
-  const [contagem, setContagem] = useState<ContagemDemandas | null>(demandas ?? null);
+  // Nasce com o número do servidor e se mantém em dia sozinho — e, junto, avisa
+  // no Windows quando chega demanda e recarrega o quadro de Demandas aberto
+  // (app/components/vigia-demandas.tsx, que diz quando e quem confere).
+  const contagem = useVigiaDemandas(demandas ?? null);
   const temDemandas = demandas !== null && demandas !== undefined;
-  useEffect(() => {
-    if (!temDemandas) return;
-    let vivo = true;
-    const buscar = () => {
-      if (document.visibilityState !== "visible") return;
-      fetch("/api/demandas/contagem", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((c: ContagemDemandas | null) => {
-          if (vivo && c) setContagem(c);
-        })
-        .catch(() => {});
-    };
-    const intervalo = setInterval(buscar, 60_000);
-    window.addEventListener(EVENTO_DEMANDAS, buscar);
-    window.addEventListener("focus", buscar);
-    document.addEventListener("visibilitychange", buscar);
-    return () => {
-      vivo = false;
-      clearInterval(intervalo);
-      window.removeEventListener(EVENTO_DEMANDAS, buscar);
-      window.removeEventListener("focus", buscar);
-      document.removeEventListener("visibilitychange", buscar);
-    };
-  }, [temDemandas]);
-  // Trocar de tela também confere — é quando a pessoa acaba de fazer algo.
-  useEffect(() => {
-    if (!temDemandas) return;
-    let vivo = true;
-    fetch("/api/demandas/contagem", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((c: ContagemDemandas | null) => {
-        if (vivo && c) setContagem(c);
-      })
-      .catch(() => {});
-    return () => {
-      vivo = false;
-    };
-  }, [pathname, temDemandas]);
 
   // ── Recolher ──────────────────────────────────────────────────────────────
   // A largura da barra vem da loja externa lá de cima: o valor é do APARELHO e
@@ -675,6 +637,10 @@ export default function Sidebar({
             de número novo. Ficam ACIMA de Configurações porque são da mesma
             família que ela — estado do sistema, não navegação. Clicar numa foto
             abre o painel dela ao lado da barra. */}
+        {/* O convite para ligar os avisos de demanda no Windows; some quando
+            a pessoa responde ao navegador ou fecha no ×. */}
+        {temDemandas && <LigarAvisos recolhida={recolhida} classe={classesDoItem(false, recolhida)} />}
+
         <SeloWhatsApp podeCriar={podeWhatsApp} recolhida={recolhida} />
 
         {/* Some pra quem não tem o módulo. `temConfiguracoes` já soma quem
