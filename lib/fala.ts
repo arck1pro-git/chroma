@@ -92,6 +92,11 @@ export function paraFala(texto: string): string {
   t = t.replace(/https?:\/\/\S+/g, "");
   t = t.replace(/[*_~`]/g, "");
 
+  // Nomes que a voz lê errado, escritos como se falam. "Amaan" saía "Ama-an";
+  // "Amán" sai corrido, com a força no fim (escolhido por ouvido, 2026-10-14).
+  // Só a voz ouve isso: o texto no WhatsApp continua "Amaan".
+  t = t.replace(/\bamaan\b/gi, "Amán");
+
   // Abreviações do mercado, antes dos números (o "a.m." cola na porcentagem).
   t = t.replace(/\ba\.\s?m\./gi, "ao mês").replace(/\ba\.\s?a\./gi, "ao ano").replace(/\bp\.\s?p\./gi, "pontos percentuais");
 

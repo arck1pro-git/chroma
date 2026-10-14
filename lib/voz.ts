@@ -11,15 +11,27 @@
 //   baixados na hora e guardados por nós (lib/conversa-envio.ts).
 // É ASSÍNCRONA: pede, recebe uma tarefa e espera. Uma frase curta ficou pronta
 // em ~3s nos testes.
-//
-// A voz vem de MAGNIFIC_VOZ_ID (um voice_id da biblioteca da ElevenLabs).
 import "server-only";
 import { paraFala } from "@/lib/fala";
 
 const BASE = "https://api.magnific.com/v1/ai/voiceover/elevenlabs-turbo-v2-5";
-// Brian: nas amostras de 2026-09-29 foi a que leu valores com mais
-// naturalidade ("200 mil reais"). Troca-se pelo .env, sem deploy de código.
-const VOZ_PADRAO = "nPczCjzI2devNBz1zQrb";
+
+// A VOZ É FIXA NO CÓDIGO: Roberta, brasileira, "suave e confiante", da
+// biblioteca da ElevenLabs. Escolhida por ele em 2026-10-14 entre 14 amostras,
+// com o pedido de ser ela "sempre". Por isso não há mais MAGNIFIC_VOZ_ID: um
+// valor esquecido na Vercel trocaria a voz sem ninguém ver. A anterior, Brian
+// (nPczCjzI2devNBz1zQrb), era americana e soava estrangeira em português.
+const VOZ = "RGymW84CSmfVugnA5tvA";
+
+// Os ajustes da amostra que ele aprovou ("mais suave, mais natural": a 1 de 6
+// variações). Estabilidade baixa solta a entonação; 0,95 de velocidade acalma.
+// Sem ajuste nenhum a Magnific usa similarity_boost 0,2 (o padrão dela; o da
+// ElevenLabs é 0,75), a voz se afasta da gravação original e soa artificial.
+//
+// A voz não é a persona: o nome "Roberta" é só o da voz na biblioteca. Como a
+// IA se apresenta (ex.: "assistente virtual da Amaan") quem decide é o prompt.
+const AJUSTES = { stability: 0.35, similarity_boost: 0.75, speed: 0.95, use_speaker_boost: true };
+
 const ESPERA_MAXIMA_MS = 45_000;
 
 /** Sem a chave, a IA continua respondendo em texto. */
@@ -40,7 +52,8 @@ export async function sintetizarVoz(texto: string): Promise<{ bytes: Uint8Array;
     headers: cabecalho,
     body: JSON.stringify({
       text: paraFala(texto),
-      voice_id: process.env.MAGNIFIC_VOZ_ID?.trim() || VOZ_PADRAO,
+      voice_id: VOZ,
+      ...AJUSTES,
     }),
     cache: "no-store",
     signal: AbortSignal.timeout(20_000),
