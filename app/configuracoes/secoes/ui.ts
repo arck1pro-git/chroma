@@ -17,6 +17,10 @@ export const campoTexto =
 export const botao =
   "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 text-[13px] font-medium text-white shadow-sm transition hover:bg-zinc-700 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200";
 
+/** A confirmação de algo que não se desfaz: remover etapa. */
+export const botaoPerigo =
+  "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3.5 text-[13px] font-medium text-white shadow-sm transition hover:bg-red-700 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40";
+
 /** Ação secundária com moldura: Cancelar, Conexão, Desconectar. */
 export const botaoSecundario =
   "inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] font-medium text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-50";

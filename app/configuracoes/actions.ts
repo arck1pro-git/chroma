@@ -18,6 +18,7 @@ import { sql } from "@/lib/db";
 import { gerarHash } from "@/lib/auth/senha";
 import { corValida } from "@/lib/cores-funil";
 import { enderecoDoCrm } from "@/lib/endereco";
+import { removerEtapaNoBanco, type ResultadoRemocao } from "@/lib/etapas";
 import { NOME_EVENTO_META } from "@/lib/meta-eventos-nomes";
 
 export async function criarFunil(
@@ -152,6 +153,32 @@ export async function reordenarEtapas(etapaIds: string[]): Promise<void> {
   });
   revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Remove a etapa; as oportunidades dela (e as webhooks que criam lead nela)
+ * vão para `destinoId`. A regra inteira está em lib/etapas.ts.
+ *
+ * Devolve o erro em vez de lançar: em produção o Next troca a mensagem de um
+ * erro lançado numa action por uma genérica, e aqui o motivo ("a etapa tem a
+ * cadência X") é justamente o que a pessoa precisa ler.
+ */
+export async function removerEtapa(
+  etapaId: string,
+  destinoId: string | null,
+): Promise<ResultadoRemocao> {
+  await exigirModulo("configuracoes");
+  if (!UUID.test(etapaId) || (destinoId !== null && !UUID.test(destinoId))) {
+    return { erro: "Etapa inválida." };
+  }
+  const r = await removerEtapaNoBanco(etapaId, destinoId);
+  if (!r.erro) {
+    revalidatePath("/configuracoes", "layout");
+    revalidatePath("/");
+  }
+  return r;
 }
 
 // ── Tags ─────────────────────────────────────────────────────────────────────

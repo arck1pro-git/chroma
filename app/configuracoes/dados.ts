@@ -39,18 +39,36 @@ export type DadosFunis = {
   etapasPorFunil: Map<string, Etapa[]>;
   /** Quantas oportunidades estão em cada etapa agora — todas, como o quadro. */
   oportunidadesPorEtapa: Record<string, number>;
+  /** O que mais depende da etapa: o que remover ela leva junto (lib/etapas.ts). */
+  vinculosPorEtapa: Record<string, VinculosDaEtapa>;
+};
+
+export type VinculosDaEtapa = {
+  /** Webhooks que criam o lead nesta etapa: passam a criar no destino. */
+  webhooks: number;
+  /** Nome da cadência da etapa; com ela, a etapa não pode ser removida. */
+  cadencia: string | null;
 };
 
 // Funis e etapas vêm juntos porque são a MESMA tela: o card do funil só existe
 // com as colunas dele dentro.
 export async function carregarFunis(): Promise<DadosFunis> {
-  const [funis, etapas, contagens] = await Promise.all([
+  const [funis, etapas, contagens, webhooks, cadencias] = await Promise.all([
     sql`SELECT id, nome, descricao, cor FROM funis ORDER BY data_criacao`,
     sql`SELECT id, nome, funil_id, ordem, cor, meta_evento FROM etapas ORDER BY funil_id, ordem`,
     // Quantas oportunidades em cada etapa. É o número que diz se renomear ou
     // reordenar uma etapa mexe com alguém — e a tela não tinha nenhum.
     sql`SELECT etapa_id, count(*)::int AS n FROM oportunidades GROUP BY etapa_id`,
+    sql`
+      SELECT etapa_id, count(DISTINCT webhook_id)::int AS n
+        FROM webhook_acoes WHERE etapa_id IS NOT NULL GROUP BY etapa_id`,
+    sql`SELECT etapa_id, nome FROM fluxos WHERE etapa_id IS NOT NULL AND arquivado_em IS NULL`,
   ]);
+
+  const vinculosPorEtapa: Record<string, VinculosDaEtapa> = {};
+  const vinculo = (id: string) => (vinculosPorEtapa[id] ??= { webhooks: 0, cadencia: null });
+  for (const w of webhooks) vinculo(w.etapa_id as string).webhooks = w.n as number;
+  for (const f of cadencias) vinculo(f.etapa_id as string).cadencia = f.nome as string;
 
   const etapasPorFunil = new Map<string, Etapa[]>();
   for (const e of etapas as Etapa[]) {
@@ -62,7 +80,7 @@ export async function carregarFunis(): Promise<DadosFunis> {
   const oportunidadesPorEtapa: Record<string, number> = {};
   for (const c of contagens) oportunidadesPorEtapa[c.etapa_id as string] = c.n as number;
 
-  return { funis: funis as Funil[], etapasPorFunil, oportunidadesPorEtapa };
+  return { funis: funis as Funil[], etapasPorFunil, oportunidadesPorEtapa, vinculosPorEtapa };
 }
 
 /** Tag ou segmento com quantos contatos o usam — o "sai de 12 contatos" de

@@ -47,10 +47,12 @@ import {
   Megaphone,
   Pencil,
   Plus,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
 import type { Etapa, Funil } from "../../data";
+import type { VinculosDaEtapa } from "../dados";
 import { TOM_PADRAO, tomDaEtapa } from "@/lib/cores-funil";
 import { EVENTOS_META_PADRAO, ehEventoPadrao, NOME_EVENTO_META } from "@/lib/meta-eventos-nomes";
 import {
@@ -60,9 +62,10 @@ import {
   editarCorDoFunil,
   editarEtapa,
   editarFunil,
+  removerEtapa,
   reordenarEtapas,
 } from "../actions";
-import { botao, botaoFantasma, campoTexto, rotuloCampo } from "./ui";
+import { botao, botaoFantasma, botaoPerigo, campoTexto, rotuloCampo, textoAjuda } from "./ui";
 import {
   BotaoIcone,
   Cabecalho,
@@ -77,10 +80,12 @@ export function SecaoFunis({
   funis,
   etapasPorFunil,
   oportunidadesPorEtapa,
+  vinculosPorEtapa,
 }: {
   funis: Funil[];
   etapasPorFunil: Map<string, Etapa[]>;
   oportunidadesPorEtapa: Record<string, number>;
+  vinculosPorEtapa: Record<string, VinculosDaEtapa>;
 }) {
   // Sem funil nenhum, o formulário já vem aberto: não há o que mostrar além
   // dele, e um botão "Novo funil" sobre uma tela vazia seria um clique a mais.
@@ -115,6 +120,7 @@ export function SecaoFunis({
               funil={funil}
               etapas={etapasPorFunil.get(funil.id) ?? []}
               oportunidadesPorEtapa={oportunidadesPorEtapa}
+              vinculosPorEtapa={vinculosPorEtapa}
             />
           ))}
         </ul>
@@ -244,10 +250,12 @@ function FunilCard({
   funil,
   etapas,
   oportunidadesPorEtapa,
+  vinculosPorEtapa,
 }: {
   funil: Funil;
   etapas: Etapa[];
   oportunidadesPorEtapa: Record<string, number>;
+  vinculosPorEtapa: Record<string, VinculosDaEtapa>;
 }) {
   // Otimista: a cor é uma escolha visual, e esperar o servidor para repintar a
   // faixa faria o clique parecer engasgado. O revalidatePath da action traz o
@@ -396,6 +404,7 @@ function FunilCard({
               etapas={etapas}
               cor={cor}
               oportunidadesPorEtapa={oportunidadesPorEtapa}
+              vinculosPorEtapa={vinculosPorEtapa}
             />
           )}
           <NovaEtapa funilId={funil.id} />
@@ -473,10 +482,12 @@ function EtapasDoFunil({
   etapas,
   cor,
   oportunidadesPorEtapa,
+  vinculosPorEtapa,
 }: {
   etapas: Etapa[];
   cor: string;
   oportunidadesPorEtapa: Record<string, number>;
+  vinculosPorEtapa: Record<string, VinculosDaEtapa>;
 }) {
   const [ordem, setOrdem] = useState(etapas);
   const [, startTransition] = useTransition();
@@ -526,10 +537,19 @@ function EtapasDoFunil({
         <span className="flex-1 pl-[22px]">Etapa</span>
         <span className="w-24 shrink-0 text-right">Oportunidades</span>
         <span className="hidden w-52 shrink-0 @2xl:block">Evento na Meta</span>
-        <span className="w-8 shrink-0" aria-hidden="true" />
+        {/* Lápis + lixeira: dois botões de 32px com o gap-3 entre eles. */}
+        <span className="w-[76px] shrink-0" aria-hidden="true" />
       </div>
 
-      <DndContext sensors={sensores} collisionDetection={closestCenter} onDragEnd={aoSoltar}>
+      {/* id fixo por funil: sem ele o dnd-kit numera "DndDescribedBy-N" por um
+          contador que no servidor e no navegador não bate (um quadro por
+          funil), e o React acusava hidratação divergente nesta tela. */}
+      <DndContext
+        id={`etapas-${etapas[0]?.funil_id ?? "vazio"}`}
+        sensors={sensores}
+        collisionDetection={closestCenter}
+        onDragEnd={aoSoltar}
+      >
         <SortableContext items={ordem.map((e) => e.id)} strategy={verticalListSortingStrategy}>
           <ol className="pb-1">
             {ordem.map((e, i) => (
@@ -539,6 +559,8 @@ function EtapasDoFunil({
                 posicao={i}
                 tom={tomDaEtapa(cor, i, ordem.length)}
                 oportunidades={oportunidadesPorEtapa[e.id] ?? 0}
+                vinculos={vinculosPorEtapa[e.id]}
+                outras={ordem.filter((o) => o.id !== e.id)}
               />
             ))}
           </ol>
@@ -558,15 +580,21 @@ function EtapaLinha({
   posicao,
   tom,
   oportunidades,
+  vinculos,
+  outras,
 }: {
   etapa: Etapa;
   posicao: number;
   tom: string;
   oportunidades: number;
+  vinculos: VinculosDaEtapa | undefined;
+  /** As outras etapas do funil, na ordem do quadro: os destinos possíveis. */
+  outras: Etapa[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: etapa.id });
   const [editando, setEditando] = useState(false);
+  const [removendo, setRemovendo] = useState(false);
   const [nome, setNome] = useState(etapa.nome);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
@@ -662,9 +690,30 @@ function EtapaLinha({
             >
               <Pencil className="size-3.5" aria-hidden="true" />
             </BotaoIcone>
+            <BotaoIcone
+              rotulo={`Remover ${etapa.nome}`}
+              onClick={() => setRemovendo(true)}
+              perigo
+              className={
+                removendo
+                  ? "text-red-600! dark:text-red-400!"
+                  : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+              }
+            >
+              <Trash2 className="size-3.5" aria-hidden="true" />
+            </BotaoIcone>
           </>
         )}
       </div>
+      {removendo && !editando && (
+        <RemoverEtapa
+          etapa={etapa}
+          oportunidades={oportunidades}
+          vinculos={vinculos}
+          outras={outras}
+          aoCancelar={() => setRemovendo(false)}
+        />
+      )}
       {/* Em cartão estreito o evento da Meta desce para uma linha própria. */}
       {!editando && (
         <div className="mt-1 max-w-64 pl-[86px] @2xl:hidden">
@@ -677,6 +726,128 @@ function EtapaLinha({
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * A confirmação de remover a etapa, aberta sob a própria linha.
+ *
+ * Diz ANTES do clique tudo o que a remoção leva junto, e pede o destino só
+ * quando há o que mover: as oportunidades da etapa e as webhooks que criam
+ * lead nela vão para a etapa escolhida. Com cadência na etapa, nem oferece o
+ * botão — a regra (lib/etapas.ts) recusaria do mesmo jeito.
+ *
+ * O destino começa VAZIO de propósito: pré-escolher a vizinha faria um Enter
+ * distraído despejar as oportunidades numa etapa que ninguém escolheu.
+ */
+function RemoverEtapa({
+  etapa,
+  oportunidades,
+  vinculos,
+  outras,
+  aoCancelar,
+}: {
+  etapa: Etapa;
+  oportunidades: number;
+  vinculos: VinculosDaEtapa | undefined;
+  outras: Etapa[];
+  aoCancelar: () => void;
+}) {
+  const [destino, setDestino] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [removendo, iniciar] = useTransition();
+
+  const webhooks = vinculos?.webhooks ?? 0;
+  const cadencia = vinculos?.cadencia ?? null;
+  const precisaDestino = oportunidades + webhooks > 0;
+  const semDestino = precisaDestino && outras.length === 0;
+  const pronta = !cadencia && !semDestino && (!precisaDestino || destino !== "");
+
+  function remover() {
+    if (!pronta || removendo) return;
+    setErro(null);
+    iniciar(async () => {
+      const r = await removerEtapa(etapa.id, precisaDestino ? destino : null);
+      // Deu certo: o revalidate tira a linha da lista e este painel some junto.
+      if (r.erro) setErro(r.erro);
+    });
+  }
+
+  const contagem = [
+    oportunidades > 0 &&
+      `${oportunidades} ${oportunidades === 1 ? "oportunidade está" : "oportunidades estão"} nesta etapa`,
+    webhooks > 0 && `${webhooks} ${webhooks === 1 ? "webhook cria" : "webhooks criam"} leads nela`,
+  ]
+    .filter(Boolean)
+    .join(" e ");
+
+  return (
+    <div
+      role="group"
+      aria-label={`Remover a etapa ${etapa.nome}`}
+      className="mb-1.5 ml-[86px] mt-2 flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50/50 p-3.5 dark:border-red-900/50 dark:bg-red-950/20"
+      onKeyDown={(ev) => ev.key === "Escape" && aoCancelar()}
+    >
+      <p className="text-[13px] font-medium text-zinc-900 dark:text-zinc-50">
+        Remover &ldquo;{etapa.nome}&rdquo;?
+      </p>
+
+      {cadencia ? (
+        <p className={textoAjuda}>
+          Esta etapa tem a cadência &ldquo;{cadencia}&rdquo;. Exclua a cadência no quadro antes de remover a etapa.
+        </p>
+      ) : semDestino ? (
+        <p className={textoAjuda}>
+          {contagem}, e ela é a única etapa do funil. Crie outra etapa para receber as oportunidades antes de remover esta.
+        </p>
+      ) : precisaDestino ? (
+        <>
+          <label className="flex max-w-sm flex-col gap-1.5">
+            <span className={rotuloCampo}>{contagem}. Mover para:</span>
+            <span className="relative">
+              <select
+                value={destino}
+                onChange={(ev) => setDestino(ev.target.value)}
+                autoFocus
+                className={`${campoTexto} appearance-none pr-8`}
+              >
+                <option value="" disabled>
+                  Escolha a etapa…
+                </option>
+                {outras.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.nome}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400"
+                aria-hidden="true"
+              />
+            </span>
+          </label>
+          <p className={textoAjuda}>
+            O histórico de cada oportunidade registra a mudança. A cadência e o evento da Meta da etapa de destino não disparam
+            para elas.
+            {webhooks > 0 && " As webhooks passam a criar o lead na etapa escolhida."}
+          </p>
+        </>
+      ) : (
+        <p className={textoAjuda}>Nenhuma oportunidade nesta etapa. A remoção não pode ser desfeita.</p>
+      )}
+
+      {erro && <Erro>{erro}</Erro>}
+
+      <div className="flex items-center justify-end gap-2">
+        <button type="button" onClick={aoCancelar} className={botaoFantasma}>
+          Cancelar
+        </button>
+        <button type="button" onClick={remover} disabled={!pronta || removendo} className={botaoPerigo}>
+          <Trash2 className="size-4" aria-hidden="true" />
+          {removendo ? "Removendo…" : "Remover etapa"}
+        </button>
+      </div>
+    </div>
   );
 }
 
