@@ -533,6 +533,20 @@ export type ReuniaoMarcada = {
 };
 
 /**
+ * A marca no título da reunião, pelo NOME do funil da oportunidade.
+ *
+ * O CRM atende duas empresas desde 2026-10-14 (Amaan e Arck1Pro, cada uma com
+ * a sua IA) e o convite que o lead recebe diz de quem é a reunião: um lead da
+ * Arck1Pro recebendo "Reunião AMAAN" seria o erro mais visível possível. Pelo
+ * nome porque funil não tem campo de marca (coluna nova é decisão dele): funil
+ * com "arck" no nome é da Arck1Pro; qualquer outro, ou sem oportunidade,
+ * continua AMAAN, que era o título fixo de antes.
+ */
+export function marcaDoFunil(nomeDoFunil: string | null | undefined): string {
+  return /arck/i.test(nomeDoFunil ?? "") ? "ARCK1PRO" : "AMAAN";
+}
+
+/**
  * Cria a reunião no Google (com Meet), grava o vínculo e a linha do histórico.
  * Confere o horário de novo logo antes de criar: entre oferecer e o lead
  * escolher, alguém pode ter marcado outra coisa ali — aí lança HorarioOcupado.
@@ -550,10 +564,15 @@ export async function marcarReuniao(e: {
   const inicio = e.inicio;
   const fim = new Date(inicio.getTime() + (e.duracaoMin ?? REGRA_HORARIOS.duracaoMin) * 60_000);
 
-  const [c] = await sql`
-    SELECT c.nome, c.email, c.whatsapp
-      FROM contatos c
-     WHERE c.id = ${e.contatoId}`;
+  const [[c], [funil]] = await Promise.all([
+    sql`
+      SELECT c.nome, c.email, c.whatsapp
+        FROM contatos c
+       WHERE c.id = ${e.contatoId}`,
+    e.oportunidadeId
+      ? sql`SELECT f.nome FROM oportunidades o JOIN funis f ON f.id = o.funil_id WHERE o.id = ${e.oportunidadeId}`
+      : Promise.resolve([]),
+  ]);
   if (!c) throw new Error("Contato não encontrado.");
 
   const ocupados = await eventosEntre(inicio, fim);
@@ -583,9 +602,9 @@ export async function marcarReuniao(e: {
     // o convite por e-mail só sai quando há e-mail de verdade no cadastro.
     { conferenceDataVersion: "1", sendUpdates: email ? "all" : "none" },
     {
-      // Título lido dos dois lados: na agenda da AMAAN diz com quem é; no
-      // convite do lead diz de quem é.
-      summary: `Reunião AMAAN com ${nome}`,
+      // Título lido dos dois lados: na agenda diz com quem é; no convite do
+      // lead diz de quem é (AMAAN ou ARCK1PRO, pelo funil: marcaDoFunil).
+      summary: `Reunião ${marcaDoFunil(funil?.nome)} com ${nome}`,
       description: descricao,
       start: { dateTime: inicio.toISOString(), timeZone: FUSO },
       end: { dateTime: fim.toISOString(), timeZone: FUSO },
