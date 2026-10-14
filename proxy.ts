@@ -42,6 +42,9 @@ const PUBLICAS_PREFIXO = [
   // assistido ainda exigem o token da abertura (lib/videos.ts).
   "/v/",
   "/api/v/",
+  // Conector MCP do Claude (app/api/mcp/[segredo]), só leitura. A tranca é o
+  // MCP_SEGREDO na própria URL: o claude.ai não manda cookie nem cabeçalho.
+  "/api/mcp/",
 ];
 
 // Porta de serviço do n8n. Cada uma confere `Authorization: Bearer
