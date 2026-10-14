@@ -280,6 +280,11 @@ function exemploDoCampo(campo: WebhookCampo): string {
  *  · chamar do SERVIDOR, não do navegador. O segredo vai na URL (decisão
  *    registrada em migration-webhooks.sql); num fetch de página pública ele
  *    fica visível para qualquer visitante.
+ *  · a URL vai ESCRITA NO CÓDIGO, nunca em .env nem variável de ambiente
+ *    (pedido dele, 2026-10-14). Sem essa regra a IA do outro lado põe a URL
+ *    numa variável por hábito, o deploy do site sobe sem ela e o envio para
+ *    em silêncio. O custo aceito: o segredo fica no código do site, e ele só
+ *    serve para MANDAR lead (não lê nada do CRM).
  *  · os nomes das chaves são exatos. Campo não declarado é descartado em
  *    silêncio, e "e-mail" não é "email" — é o erro nº 1 dessa integração.
  *  · o que cada resposta significa, para o outro lado saber quando repetir.
@@ -317,6 +322,12 @@ Content-Type: application/json
 
 O segredo já está na URL acima. Não acrescente header de autenticação.
 
+Escreva essa URL inteira direto no código, como uma constante no próprio arquivo que faz o envio:
+
+\`\`\`js
+const CRM_WEBHOOK_URL = "${url}";
+\`\`\`
+
 ## Corpo da requisição
 
 Envie um JSON com estas chaves, escritas exatamente assim:
@@ -346,8 +357,9 @@ ${curl}
 ## Restrições importantes
 
 1. Chame do SERVIDOR (backend, função serverless, n8n, Zapier), nunca de JavaScript rodando no navegador do visitante. O segredo está na URL e ficaria exposto a qualquer pessoa que abrisse a página.
-2. Use os nomes de chave exatamente como listados acima. Chave que não está na lista é descartada em silêncio pelo CRM — acento, hífen e maiúscula importam (\`email\` não é \`e-mail\`).
-3. ${obrigatorios.length ? `Estes campos não podem ir vazios: ${obrigatorios.map((c) => `\`${c.chave}\``).join(", ")}. Valide antes de enviar.` : "Nenhum campo é obrigatório, mas envie ao menos nome e uma forma de contato (whatsapp ou e-mail) — sem isso o lead entra sem como ser respondido."}
-4. Envie o WhatsApp só com dígitos, com DDI e DDD: \`5547999346074\`.
-5. Se o envio falhar, não descarte o lead em silêncio — registre o erro para reenvio manual.`;
+2. A URL fica escrita no código, como no exemplo acima. NÃO use \`.env\`, variável de ambiente (\`process.env\`, \`import.meta.env\`, \`os.environ\`, \`getenv\`…), secrets do provedor de hospedagem nem arquivo de configuração separado — nem como alternativa ou "fallback". O deploy do site não leva o \`.env\` e o envio de leads para sem ninguém perceber.
+3. Use os nomes de chave exatamente como listados acima. Chave que não está na lista é descartada em silêncio pelo CRM — acento, hífen e maiúscula importam (\`email\` não é \`e-mail\`).
+4. ${obrigatorios.length ? `Estes campos não podem ir vazios: ${obrigatorios.map((c) => `\`${c.chave}\``).join(", ")}. Valide antes de enviar.` : "Nenhum campo é obrigatório, mas envie ao menos nome e uma forma de contato (whatsapp ou e-mail) — sem isso o lead entra sem como ser respondido."}
+5. Envie o WhatsApp só com dígitos, com DDI e DDD: \`5547999346074\`.
+6. Se o envio falhar, não descarte o lead em silêncio — registre o erro para reenvio manual.`;
 }
