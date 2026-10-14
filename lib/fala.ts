@@ -96,6 +96,9 @@ export function paraFala(texto: string): string {
   // "Amán" sai corrido, com a força no fim (escolhido por ouvido, 2026-10-14).
   // Só a voz ouve isso: o texto no WhatsApp continua "Amaan".
   t = t.replace(/\bamaan\b/gi, "Amán");
+  // "ARCK1PRO" saía soletrado ("Sikshumperó"); fala-se "arki 1 pró" (dele,
+  // 2026-10-14). O "Um" por extenso evita a voz ler "primeiro".
+  t = t.replace(/\barck\s?1\s?pro\b/gi, "Árqui Um Pró");
 
   // Abreviações do mercado, antes dos números (o "a.m." cola na porcentagem).
   t = t.replace(/\ba\.\s?m\./gi, "ao mês").replace(/\ba\.\s?a\./gi, "ao ano").replace(/\bp\.\s?p\./gi, "pontos percentuais");
