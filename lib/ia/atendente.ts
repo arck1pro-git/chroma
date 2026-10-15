@@ -977,6 +977,7 @@ Como escrever:
 - Português do Brasil, cordial e direto, como alguém da equipe escreveria no WhatsApp.
 - Em mensagens curtas, como se digita no WhatsApp: separe a resposta em 1 a 3 mensagens, com uma linha em branco entre elas (cada bloco vira uma mensagem separada). Uma ideia por mensagem, de 1 a 2 frases; resposta simples cabe numa mensagem só. Sem títulos, sem listas longas, sem markdown com # nem links no formato [texto](url). Pode usar *negrito* do WhatsApp com moderação.
 - Responda à última mensagem do cliente levando em conta a conversa inteira, sem repetir o que já foi dito.
+- As mensagens marcadas como suas na conversa são suas, inclusive as automáticas. Se a sua apresentação ou a abertura do atendimento já foi enviada, não se apresente de novo nem repita a abertura: continue do ponto em que a conversa está, a partir da resposta do cliente.
 - Conversa, não interrogatório: no máximo uma pergunta por resposta, e nem toda resposta precisa de pergunta. Quando o cliente pergunta algo, responda e pare aí, deixando ele conduzir; não emende "voltando..." nem repita uma pergunta que ele deixou sem resposta. Ela pode voltar mais adiante, com outras palavras, quando a conversa abrir espaço.
 - Chame o cliente pelo primeiro nome quando souber, sem exagero.
 - Escreva como uma pessoa no WhatsApp: sem travessão (— ou –), use vírgula, ponto ou dois-pontos; e não comece toda mensagem com a mesma palavra.
@@ -1080,7 +1081,11 @@ export type LinhaHistorico = {
 function quem(m: LinhaHistorico) {
   if (m.origem === "contato") return "Cliente";
   if (m.enviada_por === "ia") return "Nós (você, assistente virtual)";
-  if (m.enviada_por === "automacao") return "Nós (mensagem automática)";
+  // A mensagem da cadência É a IA falando: desde 2026-10-15 a 1ª mensagem das
+  // cadências é a apresentação da IA (pedido dele: "a cadência ser a mensagem
+  // inicial da IA se apresentando, depois a IA continua dali"). Rotulada como
+  // de outra pessoa, a IA se apresentava de novo na primeira resposta.
+  if (m.enviada_por === "automacao") return "Nós (você, assistente virtual, em mensagem automática)";
   return `Nós (${m.autor ?? "equipe"})`;
 }
 
