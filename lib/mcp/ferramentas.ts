@@ -16,6 +16,7 @@
 // e erra o dia de quem chegou depois das 21h.
 import { z } from "zod";
 import { sql } from "@/lib/db";
+import type { Ferramenta } from "@/lib/mcp/protocolo";
 
 // ── Máscara ─────────────────────────────────────────────────────────────────
 
@@ -615,14 +616,6 @@ async function movimentacaoFunil(a: z.output<typeof entradaMovimentacao>) {
 
 // ── Catálogo ────────────────────────────────────────────────────────────────
 
-type Ferramenta = {
-  nome: string;
-  titulo: string;
-  descricao: string;
-  entrada: z.ZodObject;
-  executar: (args: never) => Promise<unknown>;
-};
-
 export const FERRAMENTAS: Ferramenta[] = [
   {
     nome: "visao_geral_funis",
@@ -657,10 +650,3 @@ export const FERRAMENTAS: Ferramenta[] = [
     executar: movimentacaoFunil,
   },
 ];
-
-/** O JSON Schema de entrada que o tools/list anuncia (o que o modelo pode mandar). */
-export function esquemaDeEntrada(f: Ferramenta): Record<string, unknown> {
-  const esquema = z.toJSONSchema(f.entrada, { io: "input" }) as Record<string, unknown>;
-  delete esquema.$schema;
-  return esquema;
-}

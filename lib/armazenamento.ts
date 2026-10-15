@@ -192,6 +192,38 @@ export async function limiteDoBucket(bucket: string): Promise<number | null> {
 }
 
 /**
+ * Deixa o bucket PRIVADO existindo: cria na primeira vez, e depois só confere.
+ * Para os buckets que o próprio CRM cria em uso (os posts das redes,
+ * lib/social/midia.ts) — o `crm-documentos` e o `crm-videos` foram criados à
+ * mão. Nome sempre com o prefixo `crm-`: o projeto é compartilhado (topo deste
+ * arquivo) e o CRM só cria ao lado, nunca reaproveita bucket de outro sistema.
+ */
+export async function garantirBucket(bucket: string): Promise<void> {
+  if (!bucket.startsWith("crm-")) throw new Error(`Bucket do CRM precisa começar com "crm-": ${bucket}`);
+  const existe = await fetch(`${URL_BASE()}/storage/v1/bucket/${bucket}`, {
+    headers: cabecalhos(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (existe.ok) return;
+  const res = await fetch(`${URL_BASE()}/storage/v1/bucket`, {
+    method: "POST",
+    headers: { ...cabecalhos(), "Content-Type": "application/json" },
+    body: JSON.stringify({ id: bucket, name: bucket, public: false }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  // 409: outra instância criou entre a conferência e aqui.
+  if (!res.ok && res.status !== 409) {
+    const corpo = await res.text().catch(() => "");
+    // O Storage responde 400 com "already exists" em vez de 409 em algumas versões.
+    if (!/already exists/i.test(corpo)) {
+      throw new Error(`Supabase Storage não criou o bucket ${bucket} (${res.status}): ${corpo.slice(0, 300)}`);
+    }
+  }
+}
+
+/**
  * Apaga o objeto. NÃO lança quando o arquivo já não está lá: quem chama está
  * removendo um documento, e a linha do banco é a fonte da verdade — falhar
  * aqui só deixaria a linha viva apontando para o vazio.

@@ -45,6 +45,9 @@ const PUBLICAS_PREFIXO = [
   // Conector MCP do Claude (app/api/mcp/[segredo]), só leitura. A tranca é o
   // MCP_SEGREDO na própria URL: o claude.ai não manda cookie nem cabeçalho.
   "/api/mcp/",
+  // O conector de postar nas redes (app/api/mcp-postar/[segredo]): mesma
+  // tranca, com o MCP_SEGREDO_POSTAR, que é outro segredo.
+  "/api/mcp-postar/",
 ];
 
 // Porta de serviço do n8n. Cada uma confere `Authorization: Bearer
@@ -65,6 +68,8 @@ const SERVICO_EXATAS = new Set([
   "/api/ia/retomar",
   // A varredura dos formulários da Meta (lib/meta-leads.ts), de 5 em 5 minutos.
   "/api/meta/leads/varrer",
+  // Os posts agendados das redes (lib/social/posts.ts), a cada minuto.
+  "/api/social/publicar",
 ]);
 
 function dispensaSessao(caminho: string): boolean {
