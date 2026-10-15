@@ -106,7 +106,7 @@ export default function PainelEvento({ evento, agenda, sistema, aoFechar }: Prop
           {sistema && (
             <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white dark:bg-zinc-50 dark:text-zinc-900">
               {sistema.autor ? <CalendarCheck2 className="size-3.5" aria-hidden="true" /> : <Bot className="size-3.5" aria-hidden="true" />}
-              Agendada pelo Chroma {quemMarcou(sistema)} · {dataHora(sistema.marcadaEm)}
+              Agendada pelo AmaanOffice {quemMarcou(sistema)} · {dataHora(sistema.marcadaEm)}
             </p>
           )}
         </header>

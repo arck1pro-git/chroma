@@ -4,7 +4,7 @@ import PainelContextos from "./painel";
 import { exigirModulo } from "@/lib/auth/dal";
 
 export const metadata: Metadata = {
-  title: "Contextos · Chroma",
+  title: "Contextos · AmaanOffice",
 };
 
 export const dynamic = "force-dynamic";

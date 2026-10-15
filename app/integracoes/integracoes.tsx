@@ -440,12 +440,12 @@ function FormMeta({
         e.preventDefault();
         // No real, aqui abre o OAuth da Meta; ele devolve o token e a conta,
         // que é o que guardamos. O mock pula direto pro resultado.
-        aoConectar("WhatsApp Business · Chroma (verificado)");
+        aoConectar("WhatsApp Business · AmaanOffice (verificado)");
       }}
       className="flex flex-col gap-4"
     >
       <p className="text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-300">
-        Autorize o app da Chroma na sua conta Business para liberar os disparos
+        Autorize o app do AmaanOffice na sua conta Business para liberar os disparos
         pela API oficial. Você escolhe as contas na tela da Meta.
       </p>
       <AcoesForm rotulo="Autorizar com a Meta" Icone={LogoMeta} aoFechar={aoFechar} />
@@ -498,7 +498,7 @@ function FormEmail({
           type="text"
           value={dominio}
           onChange={(e) => setDominio(e.target.value)}
-          placeholder="chroma.com.br"
+          placeholder="amaan.com.br"
           autoFocus
           required
           className={campoTexto}
@@ -534,7 +534,7 @@ function FormGoogleCalendar({
       {!configurado && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
           Faltam GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no ambiente. Sem elas o
-          Google não tem como reconhecer o Chroma.
+          Google não tem como reconhecer o AmaanOffice.
         </p>
       )}
       <div className="mt-1 flex items-center justify-end gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800">

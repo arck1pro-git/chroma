@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Formulario from "./formulario";
 
 export const metadata: Metadata = {
-  title: "Entrar · Chroma",
+  title: "Entrar · AmaanOffice",
   // Tela de login não entra em índice de busca.
   robots: { index: false, follow: false },
 };
@@ -31,7 +31,7 @@ export default async function Login({
     <div className="pagina-surge flex min-h-screen flex-1 items-center justify-center px-6">
       <div className="w-full max-w-[20rem]">
         <h1 className="mb-1 text-[20px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Chroma
+          AmaanOffice
         </h1>
         <p className="mb-5 text-[13px] text-zinc-500 dark:text-zinc-400">
           Entre para continuar.

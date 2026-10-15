@@ -4,7 +4,7 @@ import { sql } from "@/lib/db";
 import { contasDeAnuncios } from "@/lib/meta";
 import PainelCampanhasMeta from "./painel-meta";
 
-export const metadata: Metadata = { title: "Campanhas · Chroma" };
+export const metadata: Metadata = { title: "Campanhas · AmaanOffice" };
 
 export const dynamic = "force-dynamic";
 

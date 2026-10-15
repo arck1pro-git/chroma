@@ -4,7 +4,7 @@ import { enderecoDoCrm } from "@/lib/endereco";
 import BlogArtigos from "./artigos";
 import { exigirModulo } from "@/lib/auth/dal";
 
-export const metadata: Metadata = { title: "Artigos · Chroma" };
+export const metadata: Metadata = { title: "Artigos · AmaanOffice" };
 
 // `params` é Promise nesta versão do Next — resolver aqui, no servidor, evita
 // um efeito no cliente só para descobrir de qual blog a tela é.

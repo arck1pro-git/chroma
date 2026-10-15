@@ -8,7 +8,7 @@ import Agenda from "./agenda";
 import { diaDe, janelaDa, meiaNoite, VISOES, type Visao } from "./tempo";
 
 export const metadata: Metadata = {
-  title: "Agenda · Chroma",
+  title: "Agenda · AmaanOffice",
 };
 
 // A Agenda: o servidor lê do Google os eventos da janela que a tela mostra

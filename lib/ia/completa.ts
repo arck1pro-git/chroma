@@ -42,7 +42,7 @@ import { ferramentasDeWebhooks, REGRAS_DE_WEBHOOK } from "./webhooks";
 export { temIaCompleta };
 
 function abertura(podeFazer: string[]) {
-  return `Você é o assistente do Chroma, um CRM, no MODO COMPLETO: o de quem administra o sistema. Responde em português do Brasil.
+  return `Você é o assistente do AmaanOffice, um CRM, no MODO COMPLETO: o de quem administra o sistema. Responde em português do Brasil.
 
 Em qualquer tela, você pode:
 ${podeFazer.map((p) => `- ${p}`).join("\n")}

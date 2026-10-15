@@ -1251,7 +1251,7 @@ export async function apagarWorkflow(id: string): Promise<void> {
 
   if (!nome.startsWith(PREFIXO_NOME)) {
     throw new Error(
-      `Recusado: o workflow ${id} chama-se "${nome}" e não foi criado pelo Chroma. Nada foi apagado.`,
+      `Recusado: o workflow ${id} chama-se "${nome}" e não foi criado pelo AmaanOffice. Nada foi apagado.`,
     );
   }
 

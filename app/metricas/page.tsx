@@ -5,7 +5,7 @@ import { carregarMetricasDemandas } from "./demandas";
 import TelaMetricas, { type PeriodoId, type Visao } from "./tela";
 
 export const metadata: Metadata = {
-  title: "Métricas · Chroma",
+  title: "Métricas · AmaanOffice",
 };
 
 export const dynamic = "force-dynamic";

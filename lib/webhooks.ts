@@ -313,7 +313,7 @@ export function promptDeImplementacao(
 
   const curl = `curl -X POST '${url}' \\\n  -H 'Content-Type: application/json' \\\n  -d '${exemploJson.replace(/\n\s*/g, " ")}'`;
 
-  return `Implemente o envio de leads para o CRM Chroma pela webhook "${webhook.nome}".
+  return `Implemente o envio de leads para o CRM AmaanOffice pela webhook "${webhook.nome}".
 ${webhook.descricao ? `\nContexto desta captação: ${webhook.descricao}\n` : ""}
 ## Endpoint
 

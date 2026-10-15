@@ -4,7 +4,7 @@ import { exigirModulo } from "@/lib/auth/dal";
 import PainelDocumentos from "./painel";
 
 export const metadata: Metadata = {
-  title: "Documentos · Chroma",
+  title: "Documentos · AmaanOffice",
 };
 
 export const dynamic = "force-dynamic";

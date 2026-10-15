@@ -9,7 +9,7 @@ import type { Ia } from "@/lib/ia/catalogo";
 import PainelContatos from "./painel";
 
 export const metadata: Metadata = {
-  title: "Contatos · Chroma",
+  title: "Contatos · AmaanOffice",
 };
 
 export const dynamic = "force-dynamic";

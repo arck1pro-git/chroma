@@ -28,7 +28,7 @@ export const dynamic = "force-dynamic";
 
 // Prefixo estável = prefixo cacheável. Nada de data/hora ou id aqui dentro,
 // senão o cache nunca acerta e cada pergunta paga o system inteiro de novo.
-const SISTEMA = `Você é o assistente do Chroma, um CRM. Responde em português do Brasil.
+const SISTEMA = `Você é o assistente do AmaanOffice, um CRM. Responde em português do Brasil.
 
 ${REGRAS_DE_ANALISE}
 

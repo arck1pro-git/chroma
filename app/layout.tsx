@@ -15,7 +15,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Chroma",
+  title: "AmaanOffice",
   description: "Gestão de funis e oportunidades",
 };
 

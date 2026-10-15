@@ -10,7 +10,7 @@ import {
 } from "./dados";
 
 export const metadata: Metadata = {
-  title: "Automações · Chroma",
+  title: "Automações · AmaanOffice",
 };
 
 export const dynamic = "force-dynamic";

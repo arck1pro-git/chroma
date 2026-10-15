@@ -237,7 +237,7 @@ function CartaoNaGrade({
     <button
       type="button"
       onClick={() => aoAbrir(e.id)}
-      aria-label={`${e.titulo}, ${intervalo(e.inicio, e.fim, false)}${agenda ? `, ${agenda.nome}` : ""}${sistema ? ", agendada pelo Chroma" : ""}`}
+      aria-label={`${e.titulo}, ${intervalo(e.inicio, e.fim, false)}${agenda ? `, ${agenda.nome}` : ""}${sistema ? ", agendada pelo AmaanOffice" : ""}`}
       style={{
         ...comCor(corDe(e, agenda)),
         top: (p.inicioMin / 60) * HORA + 1,

@@ -4,7 +4,7 @@ import { administraDemandas, listarDemandas, pessoasParaDemanda } from "@/lib/de
 import PainelDemandas from "./painel";
 
 export const metadata: Metadata = {
-  title: "Demandas · Chroma",
+  title: "Demandas · AmaanOffice",
 };
 
 export const dynamic = "force-dynamic";

@@ -89,7 +89,7 @@ function PainelFixo({ topo }: { topo: RegistroIa | null }) {
       // Conversa nova do painel fixo: escopo próprio. A barra mostra como
       // "CRM" (lib/ia/navegacao.ts) e, para o TI, reabre aqui mesmo.
       escopo="geral"
-      titulo="IA do Chroma"
+      titulo="IA do AmaanOffice"
       rotulo="Conversar com a IA"
       dica="Analisa os dados, monta cadência e automação, campanha e captação — de qualquer tela. A conversa continua aberta quando você troca de aba."
       sugestoes={[

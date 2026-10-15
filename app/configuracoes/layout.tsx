@@ -3,7 +3,7 @@ import NavConfiguracoes from "./nav";
 import { gereUsuarios, usuarioAtual } from "@/lib/auth/dal";
 
 export const metadata: Metadata = {
-  title: "Configurações · Chroma",
+  title: "Configurações · AmaanOffice",
 };
 
 // Cada seção lê o banco na hora: funil criado aqui tem que aparecer já, e no

@@ -13,7 +13,7 @@ import {
 } from "./dados";
 
 export const metadata: Metadata = {
-  title: "Webhooks · Chroma",
+  title: "Webhooks · AmaanOffice",
 };
 
 export const dynamic = "force-dynamic";

@@ -4,7 +4,7 @@ import { exigirModulo } from "@/lib/auth/dal";
 import { conexaoGoogle, googleConfigurado } from "@/lib/google-oauth";
 
 export const metadata: Metadata = {
-  title: "Integrações · Chroma",
+  title: "Integrações · AmaanOffice",
 };
 
 // Client por dentro (estado das conexões e do painel). O Google Calendar é a

@@ -221,7 +221,7 @@ export function montarEventoMeta(opcoes: {
   const custom_data: Record<string, string | number> = {
     // Os dois que a integração de CRM da Meta usa para reconhecer a origem.
     event_source: "crm",
-    lead_event_source: "Chroma",
+    lead_event_source: "AmaanOffice",
     funil: opcoes.funil,
     etapa: opcoes.etapa,
     // Valor sempre em BRL: é a moeda do CRM. Purchase exige os dois campos.

@@ -144,7 +144,7 @@ function MiniCalendario({
   );
 }
 
-// ── Agendados pelo Chroma ─────────────────────────────────────────────────────
+// ── Agendados pelo AmaanOffice ─────────────────────────────────────────────────────
 
 function Agendados({
   agendados,
@@ -169,7 +169,7 @@ function Agendados({
           className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
         >
           <Sparkles className="size-3.5" aria-hidden="true" />
-          Agendados pelo Chroma
+          Agendados pelo AmaanOffice
           {proximos.length > 0 && (
             <span className="rounded-full bg-zinc-900 px-1.5 text-[10px] tabular-nums text-white dark:bg-zinc-50 dark:text-zinc-900">
               {proximos.length}

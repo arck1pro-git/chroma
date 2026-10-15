@@ -446,8 +446,8 @@ export const emails: Email[] = [
   {
     id: "e-boas-vindas",
     nome: "Boas-vindas · trial",
-    assunto: "Bem-vindo à Chroma, {{nome}}",
-    remetente: "Chroma <ola@chroma.com.br>",
+    assunto: "Bem-vindo ao AmaanOffice, {{nome}}",
+    remetente: "AmaanOffice <ola@amaan.com.br>",
     status: "pronto",
     autor_id: "u-mk",
     data_criacao: "2026-06-02T10:00:00Z",
@@ -458,7 +458,7 @@ export const emails: Email[] = [
       <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden">
         <tr>
           <td style="padding:32px 40px 0">
-            <h1 style="margin:0;font-size:24px;color:#18181b">Bem-vindo à Chroma</h1>
+            <h1 style="margin:0;font-size:24px;color:#18181b">Bem-vindo ao AmaanOffice</h1>
             <p style="margin:16px 0 0;font-size:15px;line-height:24px;color:#52525b">
               Olá {{nome}}, sua conta está no ar. Você tem 14 dias para testar tudo —
               funil, contatos e automações — sem cartão.
@@ -483,7 +483,7 @@ export const emails: Email[] = [
     id: "e-proposta",
     nome: "Follow-up de proposta",
     assunto: "Sobre a proposta que enviamos",
-    remetente: "Renan Sampaio <renan@chroma.com.br>",
+    remetente: "Renan Sampaio <renan@amaan.com.br>",
     status: "pronto",
     autor_id: "u-rs",
     data_criacao: "2026-06-19T09:20:00Z",
@@ -503,7 +503,7 @@ export const emails: Email[] = [
             </p>
             <hr style="border:0;border-top:1px solid #e4e4e7;margin:28px 0" />
             <p style="margin:0;font-size:13px;color:#a1a1aa">
-              Renan Sampaio · Chroma
+              Renan Sampaio · AmaanOffice
             </p>
           </td>
         </tr>
@@ -516,7 +516,7 @@ export const emails: Email[] = [
     id: "e-evento",
     nome: "Convite · Construir 2026",
     assunto: "Te esperamos no Construir 2026 (estande 42)",
-    remetente: "Chroma Eventos <eventos@chroma.com.br>",
+    remetente: "AmaanOffice Eventos <eventos@amaan.com.br>",
     status: "rascunho",
     autor_id: "u-jp",
     data_criacao: "2026-07-05T16:45:00Z",
@@ -550,7 +550,7 @@ export const emails: Email[] = [
     id: "e-reengajar",
     nome: "Reengajamento · 60 dias",
     assunto: "Faz um tempo que a gente não se fala",
-    remetente: "Carla Lemos <carla@chroma.com.br>",
+    remetente: "Carla Lemos <carla@amaan.com.br>",
     status: "rascunho",
     autor_id: "u-cl",
     data_criacao: "2026-07-11T08:15:00Z",

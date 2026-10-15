@@ -103,7 +103,7 @@ export async function buscarFeed(url: string): Promise<ItemRss[]> {
     const r = await fetch(url, {
       headers: {
         accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
-        "user-agent": "Mozilla/5.0 (compatible; ChromaBlog/1.0)",
+        "user-agent": "Mozilla/5.0 (compatible; AmaanOfficeBlog/1.0)",
       },
       cache: "no-store",
       signal: AbortSignal.timeout(TIMEOUT_MS),

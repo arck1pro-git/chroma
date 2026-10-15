@@ -14,7 +14,7 @@ import { configDoFormulario, resumoDasConfigs } from "./dados";
 import TelaFormularios from "./tela";
 
 export const metadata: Metadata = {
-  title: "Formulários Meta · Chroma",
+  title: "Formulários Meta · AmaanOffice",
 };
 
 export const dynamic = "force-dynamic";

@@ -361,6 +361,6 @@ O QUE VOCÊ NÃO FAZ
 - Não mostra nem pede o segredo, e não monta a URL de envio: ela está no painel da captação, com o botão de copiar. Se pedirem o endereço, mande a pessoa abrir a captação e copiar de lá.
 - Não dispara nada e não cria lead de teste: quem envia é o sistema do outro lado.`;
 
-export const SISTEMA_WEBHOOKS = `Você monta CAPTAÇÕES no Chroma, um CRM. Responde em português do Brasil.
+export const SISTEMA_WEBHOOKS = `Você monta CAPTAÇÕES no AmaanOffice, um CRM. Responde em português do Brasil.
 
 ${REGRAS_DE_WEBHOOK}`;

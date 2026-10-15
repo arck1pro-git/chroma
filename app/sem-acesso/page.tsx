@@ -4,7 +4,7 @@ import { exigirLogin } from "@/lib/auth/dal";
 import { sair } from "@/app/login/acoes";
 
 export const metadata: Metadata = {
-  title: "Sem acesso · Chroma",
+  title: "Sem acesso · AmaanOffice",
 };
 
 export const dynamic = "force-dynamic";

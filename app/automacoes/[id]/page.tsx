@@ -14,7 +14,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const fluxo = await buscarFluxo(id);
-  return { title: `Editar ${fluxo?.nome ?? "automação"} · Chroma` };
+  return { title: `Editar ${fluxo?.nome ?? "automação"} · AmaanOffice` };
 }
 
 // Só o editor: carrega a definição, não as métricas. Trocar de aba não deve

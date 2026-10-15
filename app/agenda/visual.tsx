@@ -35,7 +35,7 @@ export function SeloSistema({ reuniao, className = "size-3" }: { reuniao: Reunia
   return (
     <Icone
       className={`shrink-0 ${className}`}
-      aria-label={`Agendada pelo Chroma ${quemMarcou(reuniao)}`}
+      aria-label={`Agendada pelo AmaanOffice ${quemMarcou(reuniao)}`}
       role="img"
     />
   );

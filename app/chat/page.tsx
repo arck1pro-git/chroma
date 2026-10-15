@@ -6,7 +6,7 @@ import { carregarChatDemo } from "./demo";
 import { exigirModulo } from "@/lib/auth/dal";
 
 export const metadata: Metadata = {
-  title: "Chat · Chroma",
+  title: "Chat · AmaanOffice",
 };
 
 // Sem cache: a lista tem que refletir a mensagem que o webhook acabou de gravar.

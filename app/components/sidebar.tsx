@@ -414,7 +414,7 @@ export default function Sidebar({
             className="flex min-w-0 flex-1 items-center rounded-lg px-2.5 py-1.5 transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800/60"
           >
             <span className="truncate text-[20px] font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-              Chroma
+              AmaanOffice
             </span>
           </Link>
         )}

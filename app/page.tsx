@@ -7,10 +7,10 @@ import { comCadenciaDeDemonstracao, FLUXO_DEMO } from "./inicio/demo-cadencia";
 import { fluxosParaInscricao } from "@/lib/automacoes/repositorio";
 import { exigirModulo } from "@/lib/auth/dal";
 
-// O título segue a forma dos outros módulos ("X · Chroma"); sem ele a raiz
+// O título segue a forma dos outros módulos ("X · AmaanOffice"); sem ele a raiz
 // herdava só "Chroma" do layout e era a única aba sem nome próprio.
 export const metadata: Metadata = {
-  title: "Dashboard · Chroma",
+  title: "Dashboard · AmaanOffice",
 };
 
 // A raiz concentra dashboard, funis/kanbans e contatos — /dashboard, /funil e

@@ -3,7 +3,7 @@ import ListaEmails from "./lista";
 import { exigirModulo } from "@/lib/auth/dal";
 
 export const metadata: Metadata = {
-  title: "E-mails · Chroma",
+  title: "E-mails · AmaanOffice",
 };
 
 // A lista é client (estado de busca, filtro e do construtor), mas a página segue

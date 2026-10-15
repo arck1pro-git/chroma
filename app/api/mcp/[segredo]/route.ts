@@ -28,7 +28,7 @@ export const maxDuration = 60;
 const VERSOES = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 const INSTRUCOES =
-  "CRM Chroma (Amaan e Arck1Pro), só leitura. Comece por visao_geral_funis para ver os funis, as etapas e os ids; " +
+  "CRM AmaanOffice (Amaan e Arck1Pro), só leitura. Comece por visao_geral_funis para ver os funis, as etapas e os ids; " +
   "depois use listar_leads (quem está em cada etapa), ficha_lead (um lead a fundo) e movimentacao_funil " +
   "(conversão entre etapas, tempo por etapa e resultado por campanha). Horários em Brasília. " +
   "Telefone e e-mail vêm mascarados e o texto das conversas do WhatsApp não é exposto, só contagens e datas.";
@@ -63,7 +63,7 @@ async function atender(bruta: unknown): Promise<object | null> {
       return ok(id, {
         protocolVersion: typeof pedida === "string" && VERSOES.includes(pedida) ? pedida : VERSOES[0],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "chroma-crm", title: "Chroma CRM", version: "1.0.0" },
+        serverInfo: { name: "chroma-crm", title: "AmaanOffice", version: "1.0.0" },
         instructions: INSTRUCOES,
       });
     }

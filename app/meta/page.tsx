@@ -4,7 +4,7 @@ import ModuloEmBreve from "../components/modulo-em-breve";
 import { exigirModulo } from "@/lib/auth/dal";
 
 export const metadata: Metadata = {
-  title: "Meta · Chroma",
+  title: "Meta · AmaanOffice",
 };
 
 export default async function MetaPage() {

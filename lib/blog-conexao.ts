@@ -34,7 +34,7 @@ export function promptDeImplementacao(
   const url = urlDeConexao(base, blog.chave);
   const caminho = caminhoDoBlog(blog.url_base);
 
-  return `Implemente as páginas do blog "${blog.nome}" no site, consumindo o CRM Chroma.
+  return `Implemente as páginas do blog "${blog.nome}" no site, consumindo o CRM AmaanOffice.
 ${blog.descricao ? `\nSobre o blog: ${blog.descricao}\n` : ""}
 Duas páginas: a LISTA de artigos e a página de UM artigo, cujo endereço termina
 no slug do artigo (ex.: ${caminho}/como-escolher-o-piso-certo).

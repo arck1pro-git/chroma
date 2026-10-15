@@ -457,7 +457,7 @@ Quando o fluxo é a cadência de uma etapa do funil, ele é lido como um QUADRO:
     __entrada__ → [esperar] → mensagem → esperar → mensagem → …
 Sem "se", sem "alternador", sem duas arestas saindo do mesmo bloco. Se o pedido exigir desvio, monte assim mesmo e avise que o quadro vai mostrar só o trecho reto e que a edição passa a ser pelo builder.`;
 
-export const SISTEMA_AUTOMACOES = `Você monta automações no Chroma, um CRM. Responde em português do Brasil.
+export const SISTEMA_AUTOMACOES = `Você monta automações no AmaanOffice, um CRM. Responde em português do Brasil.
 
 Uma automação é um grafo: a entidade inscrita entra pelo nó de entrada e caminha pelos blocos. O usuário está com UM fluxo aberto no editor, e suas ferramentas agem sobre esse fluxo — não há como escolher outro.
 

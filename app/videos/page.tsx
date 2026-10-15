@@ -7,7 +7,7 @@ import { BUCKET_VIDEOS, listarVideos, pessoasDoVideo } from "@/lib/videos";
 import PainelVideos from "./painel";
 
 export const metadata: Metadata = {
-  title: "Vídeos · Chroma",
+  title: "Vídeos · AmaanOffice",
 };
 
 export const dynamic = "force-dynamic";
