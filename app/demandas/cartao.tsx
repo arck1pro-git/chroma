@@ -24,7 +24,7 @@
 // o caminho do teclado e do toque.
 import { useEffect, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import { ArrowDown, CalendarClock, Check, Flag, LifeBuoy } from "lucide-react";
+import { ArrowDown, CalendarClock, Check, Flag, LifeBuoy, Paperclip } from "lucide-react";
 import type { Demanda } from "@/lib/demandas-tipos";
 import { tintaDe } from "../components/tinta";
 import type { ColunaId, Quadro } from "./colunas";
@@ -355,7 +355,16 @@ export function CorpoCartao({
                 {feitasNoLote}/{item.lote.length} feitas
               </span>
             )}
-            {!prazo && !chamado && !emLote && d.prioridade === "normal" && (
+            {d.anexos.length > 0 && (
+              <span
+                className="inline-flex shrink-0 items-center gap-0.5 tabular-nums"
+                title={`${d.anexos.length} ${d.anexos.length === 1 ? "anexo" : "anexos"}`}
+              >
+                <Paperclip className="size-3" aria-hidden="true" />
+                {d.anexos.length}
+              </span>
+            )}
+            {!prazo && !chamado && !emLote && d.prioridade === "normal" && d.anexos.length === 0 && (
               <span className="truncate text-zinc-400 dark:text-zinc-500">{haQuanto(d.dataCriacao, agora, hoje)}</span>
             )}
           </>

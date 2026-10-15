@@ -18,6 +18,7 @@
 import "server-only";
 import { listaUuid, sql } from "@/lib/db";
 import type { UsuarioLogado } from "@/lib/auth/dal";
+import { anexosDeQuemApaga, apagarObjetos } from "@/lib/demandas-anexos";
 import {
   PARA_TODOS,
   type Demanda,
@@ -78,6 +79,7 @@ function paraDemanda(l: Record<string, unknown>): Demanda {
     feitaEm: iso(l.feita_em),
     feitaPor: (l.feita_por as string | null) ?? null,
     itens: [],
+    anexos: [],
   };
 }
 
@@ -123,15 +125,29 @@ export async function listarDemandas(
 
   // O checklist numa segunda consulta, de uma vez para a lista inteira. Sem a
   // tabela (migration-demanda-itens.sql não rodou), a tela segue sem checklist.
-  const itens = await sql`
-    SELECT i.id, i.demanda_id, i.texto, i.ordem, i.feito_em, u.nome AS feito_por
-      FROM demanda_itens i
-      LEFT JOIN usuarios u ON u.id = i.feito_por
-     WHERE i.demanda_id = ANY(string_to_array(${listaUuid(demandas.map((d) => d.id))}, ',')::uuid[])
-     ORDER BY i.demanda_id, i.ordem`.catch((e: { code?: string }) => {
+  // Os anexos, idem (migration-demanda-anexos.sql) — só id e nome: o arquivo
+  // abre por /api/demandas/anexos/<id>.
+  const ids = listaUuid(demandas.map((d) => d.id));
+  const semTabela = (e: { code?: string }) => {
     if (e?.code === "42P01") return [];
     throw e;
-  });
+  };
+  const [itens, anexos] = await Promise.all([
+    sql`
+      SELECT i.id, i.demanda_id, i.texto, i.ordem, i.feito_em, u.nome AS feito_por
+        FROM demanda_itens i
+        LEFT JOIN usuarios u ON u.id = i.feito_por
+       WHERE i.demanda_id = ANY(string_to_array(${ids}, ',')::uuid[])
+       ORDER BY i.demanda_id, i.ordem`.catch(semTabela),
+    sql`
+      SELECT id, demanda_id, nome FROM demanda_anexos
+       WHERE demanda_id = ANY(string_to_array(${ids}, ',')::uuid[])
+       ORDER BY demanda_id, lower(nome)`.catch(semTabela),
+  ]);
+  const anexosPorDemanda = new Map(demandas.map((d) => [d.id, d.anexos]));
+  for (const a of anexos) {
+    anexosPorDemanda.get(a.demanda_id as string)?.push({ id: a.id as string, nome: a.nome as string });
+  }
   const porDemanda = new Map(demandas.map((d) => [d.id, d.itens]));
   for (const i of itens) {
     porDemanda.get(i.demanda_id as string)?.push({
@@ -184,12 +200,18 @@ export async function conferirDemandas(
         SELECT concat_ws('|', count(*), count(i.feito_em), max(i.feito_em)) AS resumo
           FROM demanda_itens i
           JOIN vistas v ON v.id = i.demanda_id
+      ), arquivos AS (
+        -- Anexo novo ou tirado também recarrega o quadro aberto.
+        SELECT concat_ws('|', count(*), md5(string_agg(a.id::text, ',' ORDER BY a.id))) AS resumo
+          FROM demanda_anexos a
+          JOIN vistas v ON v.id = a.demanda_id
       )
       SELECT count(*) FILTER (WHERE para_mim AND feita_em IS NULL)::int AS pendentes,
              count(*) FILTER (WHERE para_mim AND feita_em IS NULL
                                 AND prazo < (now() AT TIME ZONE 'America/Sao_Paulo')::date)::int AS atrasadas,
              md5(concat_ws('|', count(*), max(data_criacao), count(feita_em), max(feita_em),
-                           count(iniciada_em), max(iniciada_em), (SELECT resumo FROM passos))) AS versao,
+                           count(iniciada_em), max(iniciada_em), (SELECT resumo FROM passos),
+                           (SELECT resumo FROM arquivos))) AS versao,
              now() AS agora,
              (SELECT coalesce(json_agg(n ORDER BY n.data_criacao), '[]')
                 FROM (SELECT d.id, d.titulo, a.nome AS autor,
@@ -306,7 +328,7 @@ export async function inserirItens(demandaIds: string[], textos: string[]) {
  * nasceram no mesmo INSERT (mesmo autor, mesmo título, mesmo instante, até o
  * microssegundo). Chamado e demanda avulsa voltam sozinhos.
  */
-async function copiasDe(demandaId: string): Promise<{ ids: string[]; criadoPor: string | null } | null> {
+export async function copiasDe(demandaId: string): Promise<{ ids: string[]; criadoPor: string | null } | null> {
   const linhas = await sql`
     SELECT s.id, d.criado_por
       FROM demandas d
@@ -513,10 +535,14 @@ export async function apagarDemandas(
   ids: string[],
   usuario: UsuarioLogado,
 ): Promise<number> {
+  // Os arquivos dos anexos saem do bucket depois: o CASCADE leva as linhas, e
+  // sem elas não haveria como achá-los.
+  const arquivos = await anexosDeQuemApaga(ids, usuario);
   const linhas = await sql`
     DELETE FROM demandas
      WHERE id = ANY(string_to_array(${listaUuid(ids)}, ',')::uuid[])
        AND criado_por = ${usuario.id}
     RETURNING id`;
+  await apagarObjetos(arquivos);
   return linhas.length;
 }

@@ -13,6 +13,10 @@
 // formulário de quem não precisa. Depois de criada, o checklist se monta no
 // próprio cartão (app/demandas/checklist.tsx).
 //
+// Os ANEXOS também (2026-10-15): escolhidos aqui, sobem para o Storage quando a
+// pessoa envia — a foto já comprimida em WebP — e só então a demanda é criada
+// com eles. Depois, anexa-se pela gaveta (app/demandas/anexos.tsx).
+//
 // Sai pelo <CamadaTopo>, no <body>: no Dashboard ele precisa ficar por cima do
 // quadro e de tudo que flutua sobre ele (ver a escala em camada-topo.tsx).
 import { useEffect, useId, useMemo, useRef, useState, useTransition } from "react";
@@ -30,8 +34,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import CamadaTopo from "./camada-topo";
+import { EscolherAnexos } from "../demandas/anexos";
+import { subirAnexo } from "../demandas/anexos-envio";
 import {
   avisarQueDemandasMudaram,
+  type AnexoDemanda,
   PARA_O_TI,
   PARA_TODOS,
   PRIORIDADES,
@@ -115,6 +122,9 @@ export default function ModalDemanda({
   const [itens, setItens] = useState<string[]>([]);
   const [novoItem, setNovoItem] = useState("");
   const [comChecklist, setComChecklist] = useState(false);
+  const [arquivos, setArquivos] = useState<File[]>([]);
+  // "Enviando anexos 2 de 3…" no botão enquanto os arquivos sobem.
+  const [subindo, setSubindo] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [feito, setFeito] = useState<string | null>(null);
   const [enviando, iniciar] = useTransition();
@@ -158,6 +168,19 @@ export default function ModalDemanda({
     // que ele entrasse.
     const passos = [...itens, novoItem.trim()].filter(Boolean).slice(0, TETO_ITENS);
     iniciar(async () => {
+      // Os arquivos sobem antes: a demanda só nasce com eles já no Storage.
+      const anexos: AnexoDemanda[] = [];
+      try {
+        for (const [i, f] of arquivos.entries()) {
+          setSubindo(arquivos.length > 1 ? `Enviando anexos ${i + 1} de ${arquivos.length}…` : "Enviando anexo…");
+          anexos.push(await subirAnexo(f));
+        }
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Um anexo não subiu. Tente de novo.");
+        return;
+      } finally {
+        setSubindo(null);
+      }
       const r = await enviar({
         titulo: nome,
         descricao,
@@ -165,6 +188,7 @@ export default function ModalDemanda({
         prioridade,
         ...(destinos ? { para } : {}),
         ...(passos.length ? { itens: passos } : {}),
+        ...(anexos.length ? { anexos } : {}),
       });
       if (!r.ok) {
         setErro(r.mensagem);
@@ -300,6 +324,10 @@ export default function ModalDemanda({
                 />
               </label>
 
+              {inicial === undefined && (
+                <EscolherAnexos arquivos={arquivos} aoMudar={setArquivos} aoRecusar={setErro} desligado={enviando} />
+              )}
+
               {inicial === undefined &&
                 (comChecklist || itens.length > 0 ? (
                   <div className="flex flex-col gap-1.5">
@@ -412,7 +440,7 @@ export default function ModalDemanda({
                 disabled={!podeEnviar}
                 className="rounded-full bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
-                {enviando ? "Enviando…" : destinos && para === PARA_O_TI ? "Abrir chamado" : botao}
+                {enviando ? (subindo ?? "Enviando…") : destinos && para === PARA_O_TI ? "Abrir chamado" : botao}
               </button>
             </footer>
           </form>

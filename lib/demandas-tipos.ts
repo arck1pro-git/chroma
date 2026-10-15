@@ -31,6 +31,22 @@ export type ItemDemanda = {
 export const TETO_ITENS = 50;
 export const TETO_TEXTO_ITEM = 200;
 
+/**
+ * Um anexo da demanda (migration-demanda-anexos.sql): foto ou documento. O
+ * arquivo abre por /api/demandas/anexos/<id>, que confere quem pode ver.
+ */
+export type AnexoDemanda = { id: string; nome: string };
+
+/** Até 5 por demanda, de até 20 MB cada (escolha dele, 2026-10-15). */
+export const TETO_ANEXOS = 5;
+export const TETO_TAMANHO_ANEXO = 20 * 1024 * 1024;
+export const TETO_NOME_ANEXO = 200;
+
+/** Foto pela extensão: é o que decide miniatura ou linha de arquivo na tela. */
+export function anexoEhImagem(nome: string): boolean {
+  return /\.(webp|jpe?g|png|gif|avif|bmp)$/i.test(nome);
+}
+
 export type Demanda = {
   id: string;
   titulo: string;
@@ -59,6 +75,8 @@ export type Demanda = {
   feitaPor: string | null;
   /** O checklist, na ordem. Vazio quando não tem. */
   itens: ItemDemanda[];
+  /** Fotos e documentos, pelo nome. Vazio quando não tem. */
+  anexos: AnexoDemanda[];
 };
 
 /**
@@ -78,6 +96,11 @@ export type DadosDemanda = {
   para?: string;
   /** Os passos do checklist, na ordem — só na criação; depois, cada item tem a sua ação. */
   itens?: string[];
+  /**
+   * Os arquivos já enviados ao Storage antes de criar (o id é o que
+   * prepararAnexoDemanda sorteou) — só na criação; depois, pela gaveta.
+   */
+  anexos?: AnexoDemanda[];
 };
 
 export type ResultadoDemanda = { ok: boolean; mensagem: string };

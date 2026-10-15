@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDown, CalendarClock, Check, Flag, LifeBuoy, Pencil, Trash2, Users, X } from "lucide-react";
 import CamadaTopo from "../components/camada-topo";
 import { dataHora } from "../formato";
+import { AnexosDaDemanda } from "./anexos";
 import Checklist, { type MontarChecklist } from "./checklist";
 import { Avatar, alvoDo, ehMinha, siglaDe, type Eu, type Item } from "./cartao";
 import { definicaoDe, type ColunaId, type Quadro } from "./colunas";
@@ -208,6 +209,16 @@ export default function DetalheDemanda({
               </p>
             </Secao>
           )}
+
+          {/* A MINHA cópia quando a demanda é minha (cada cópia "para todos" tem
+              os seus arquivos); para quem criou, a primeira — anexar e tirar
+              valem para todas. */}
+          <AnexosDaDemanda
+            demandaId={d.id}
+            anexos={(alvo ?? d).anexos}
+            podeMexer={podeMexer}
+            aoAvisar={aoAvisar}
+          />
 
           <Checklist
             base={baseDoChecklist}

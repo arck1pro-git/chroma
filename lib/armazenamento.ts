@@ -198,7 +198,7 @@ export async function limiteDoBucket(bucket: string): Promise<number | null> {
  * mão. Nome sempre com o prefixo `crm-`: o projeto é compartilhado (topo deste
  * arquivo) e o CRM só cria ao lado, nunca reaproveita bucket de outro sistema.
  */
-export async function garantirBucket(bucket: string): Promise<void> {
+export async function garantirBucket(bucket: string, limiteBytes?: number): Promise<void> {
   if (!bucket.startsWith("crm-")) throw new Error(`Bucket do CRM precisa começar com "crm-": ${bucket}`);
   const existe = await fetch(`${URL_BASE()}/storage/v1/bucket/${bucket}`, {
     headers: cabecalhos(),
@@ -209,7 +209,14 @@ export async function garantirBucket(bucket: string): Promise<void> {
   const res = await fetch(`${URL_BASE()}/storage/v1/bucket`, {
     method: "POST",
     headers: { ...cabecalhos(), "Content-Type": "application/json" },
-    body: JSON.stringify({ id: bucket, name: bucket, public: false }),
+    // O teto por arquivo vale também para o upload direto do navegador, que
+    // não passa pelo CRM — é a única trava de tamanho que ele não contorna.
+    body: JSON.stringify({
+      id: bucket,
+      name: bucket,
+      public: false,
+      ...(limiteBytes ? { file_size_limit: limiteBytes } : {}),
+    }),
     cache: "no-store",
     signal: AbortSignal.timeout(15_000),
   });
@@ -220,6 +227,24 @@ export async function garantirBucket(bucket: string): Promise<void> {
     if (!/already exists/i.test(corpo)) {
       throw new Error(`Supabase Storage não criou o bucket ${bucket} (${res.status}): ${corpo.slice(0, 300)}`);
     }
+  }
+}
+
+/**
+ * Copia um objeto dentro do mesmo bucket, sem os bytes passarem pelo CRM. É o
+ * que dá a cada cópia da demanda "para todos" o seu próprio arquivo.
+ */
+export async function copiarObjeto(bucket: string, de: string, para: string): Promise<void> {
+  const res = await fetch(`${URL_BASE()}/storage/v1/object/copy`, {
+    method: "POST",
+    headers: { ...cabecalhos(), "Content-Type": "application/json" },
+    body: JSON.stringify({ bucketId: bucket, sourceKey: de, destinationKey: para }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) {
+    const corpo = await res.text().catch(() => "");
+    throw new Error(`Supabase Storage não copiou ${de} (${res.status}): ${corpo.slice(0, 300)}`);
   }
 }
 

@@ -7,9 +7,19 @@
 import { revalidatePath } from "next/cache";
 import { exigirLogin, exigirModulo } from "@/lib/auth/dal";
 import {
+  anexarDepois,
+  anexoPorId,
+  conferirEnviados,
+  descartarEnvios,
+  prepararEnvio,
+  tirarAnexo,
+  vincular,
+} from "@/lib/demandas-anexos";
+import {
   adicionarItem,
   apagarDemandas,
   atualizarDemandas,
+  copiasDe,
   inserirChamado,
   inserirDemandas,
   inserirItens,
@@ -27,6 +37,7 @@ import {
   PARA_TODOS,
   TETO_ITENS,
   TETO_TEXTO_ITEM,
+  type AnexoDemanda,
   type DadosDemanda,
   type Prioridade,
   type ResultadoDemanda,
@@ -89,12 +100,22 @@ function mensagemDoErro(e: unknown): string {
 }
 
 /** O chamado, venha do botão do Dashboard ou da "Nova demanda" do módulo. */
-async function gravarChamado(campos: Campos, autorId: string, itens: string[]): Promise<ResultadoDemanda> {
+async function gravarChamado(
+  campos: Campos,
+  autorId: string,
+  itens: string[],
+  anexos: AnexoDemanda[],
+): Promise<ResultadoDemanda> {
   try {
     const id = await inserirChamado(campos, autorId);
-    if (!id) return { ok: false, mensagem: "O departamento TI não existe no banco." };
+    if (!id) {
+      await descartarEnvios(anexos);
+      return { ok: false, mensagem: "O departamento TI não existe no banco." };
+    }
     await inserirItens([id], itens);
+    await vincular([id], anexos);
   } catch (e) {
+    await descartarEnvios(anexos);
     return { ok: false, mensagem: mensagemDoErro(e) };
   }
 
@@ -125,20 +146,26 @@ export async function criarDemanda(dados: DadosDemanda): Promise<ResultadoDemand
   }
 
   const itens = itensDe(dados);
-  if (para === PARA_O_TI) return gravarChamado(campos, usuario.id, itens);
+  const enviados = await conferirEnviados(dados?.anexos);
+  if ("erro" in enviados) return { ok: false, mensagem: enviados.erro };
+  const anexos = enviados.anexos;
+  if (para === PARA_O_TI) return gravarChamado(campos, usuario.id, itens, anexos);
 
   let criadas: number;
   try {
     const ids = await inserirDemandas(campos, para, usuario.id);
     // Uma cópia do checklist em cada demanda — na "para todos", cada pessoa
-    // marca os itens dela.
+    // marca os itens dela. Os anexos, idem: cada cópia com o seu arquivo.
     await inserirItens(ids, itens);
+    await vincular(ids, anexos);
     criadas = ids.length;
   } catch (e) {
+    await descartarEnvios(anexos);
     return { ok: false, mensagem: mensagemDoErro(e) };
   }
 
   if (criadas === 0) {
+    await descartarEnvios(anexos);
     return {
       ok: false,
       mensagem:
@@ -169,7 +196,53 @@ export async function abrirChamado(dados: DadosDemanda): Promise<ResultadoDemand
   const campos = camposDe(dados);
   if ("erro" in campos) return { ok: false, mensagem: campos.erro };
 
-  return gravarChamado(campos, usuario.id, itensDe(dados));
+  const enviados = await conferirEnviados(dados?.anexos);
+  if ("erro" in enviados) return { ok: false, mensagem: enviados.erro };
+  return gravarChamado(campos, usuario.id, itensDe(dados), enviados.anexos);
+}
+
+// ── Anexos ──────────────────────────────────────────────────────────────────
+// O arquivo vai do navegador direto para o Storage (lib/demandas-anexos.ts);
+// estas ações só assinam o envio e ligam o arquivo que chegou à demanda.
+
+export type ResultadoEnvio = { ok: true; id: string; url: string } | { ok: false; mensagem: string };
+
+/**
+ * Passo 1 do anexo: o id e a URL assinada para subir. Basta estar logado — o
+ * "Abrir chamado" do Dashboard também anexa, e ele não exige módulo. O que
+ * subir sem virar anexo de uma demanda não aparece para ninguém.
+ */
+export async function prepararAnexoDemanda(tamanho: number): Promise<ResultadoEnvio> {
+  await exigirLogin();
+  try {
+    const r = await prepararEnvio(tamanho);
+    return "erro" in r ? { ok: false, mensagem: r.erro } : { ok: true, ...r };
+  } catch (e) {
+    console.error("[demandas] preparar anexo:", e);
+    return { ok: false, mensagem: "Não consegui preparar o envio do arquivo. Tente de novo." };
+  }
+}
+
+/** Anexar depois de criada, pela gaveta. Só quem criou; vale para as cópias. */
+export async function adicionarAnexoDemanda(demandaId: string, anexo: AnexoDemanda): Promise<ResultadoDemanda> {
+  const { usuario } = await exigirModulo("demandas");
+  if (!idValido(demandaId)) return { ok: false, mensagem: "Demanda inválida." };
+  const r = await anexarDepois(demandaId, await copiasDe(demandaId), [anexo], usuario);
+  if ("erro" in r) return { ok: false, mensagem: r.erro };
+  revalidatePath("/demandas");
+  return { ok: true, mensagem: `“${r.anexos[0]?.nome}” anexado.` };
+}
+
+/** Tira o anexo (de todas as cópias). Só quem criou a demanda. */
+export async function removerAnexoDemanda(anexoId: string): Promise<ResultadoDemanda> {
+  const { usuario } = await exigirModulo("demandas");
+  const anexo = await anexoPorId(anexoId);
+  if (!anexo) return { ok: false, mensagem: "Anexo não encontrado." };
+  if (!(await tirarAnexo(anexo.nome, await copiasDe(anexo.demandaId), usuario))) {
+    return { ok: false, mensagem: "Só quem criou a demanda tira anexos." };
+  }
+  revalidatePath("/demandas");
+  return { ok: true, mensagem: `“${anexo.nome}” tirado.` };
 }
 
 export async function marcarDemanda(id: string, feita: boolean): Promise<ResultadoDemanda> {
