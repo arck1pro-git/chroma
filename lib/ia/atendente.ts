@@ -553,25 +553,35 @@ async function avisarResponsavel(atendimentoId: string, s: Situacao, valorDito: 
 }
 
 /**
- * Reunião marcada pela IA: avisa no WhatsApp quem é do departamento Admin
- * (usuarios.whatsapp), pelo mesmo número da conversa. Pedido dele
- * (2026-10-05): "assim que a reunião fechar, mandar mensagem para o admin, no
- * caso a Patricia". Admin sem WhatsApp no cadastro fica de fora, sem ruído no
- * histórico; nenhum com número também é registrado. Nunca lança: a reunião já
- * está marcada.
+ * Quem recebe o aviso de reunião marcada pela IA. Pedido dele (2026-10-15):
+ * "Fabrício e Fernanda (comercial)"; a Dieinnifer não precisa. Antes a regra
+ * era "todo o departamento Admin com WhatsApp", e o aviso ia para quem não
+ * acompanha a reunião (Dieinnifer, Patricia) e não ia para quem acompanha.
+ * Por id e não por nome: renomear a pessoa não pode desligar o aviso.
  */
-async function avisarAdmins(
+const AVISAR_REUNIAO = [
+  "79003fab-577d-467c-a71e-13f198d73a82", // Fabrício Arck
+  "9e937a7c-fc46-40b4-adcf-71d234799f4a", // Fernanda Datore (comercial)
+];
+
+/**
+ * Reunião marcada pela IA: avisa no WhatsApp quem está em AVISAR_REUNIAO
+ * (usuarios.whatsapp), pelo mesmo número da conversa. Quem está sem WhatsApp
+ * no cadastro aparece no histórico como "não avisado", para alguém notar e
+ * cadastrar. Nunca lança: a reunião já está marcada.
+ */
+async function avisarReuniao(
   atendimentoId: string,
   s: Situacao,
   reuniao: { inicio: Date; meet: string | null },
   valorDito: number | null,
 ): Promise<void> {
   try {
-    const admins = (await sql`
-      SELECT u.nome, u.whatsapp FROM usuarios u JOIN departamentos d ON d.id = u.departamento_id
-       WHERE d.slug = 'admin' AND u.ativo AND u.whatsapp IS NOT NULL
-       ORDER BY u.nome`) as unknown as Array<{ nome: string; whatsapp: string }>;
-    const c = admins.length ? await conversaDoAviso(atendimentoId, s) : null;
+    const equipe = (await sql`
+      SELECT nome, nullif(whatsapp, '') AS whatsapp FROM usuarios
+       WHERE id = ANY(string_to_array(${AVISAR_REUNIAO.join(",")}, ',')::uuid[]) AND ativo
+       ORDER BY nome`) as unknown as Array<{ nome: string; whatsapp: string | null }>;
+    const c = equipe.length ? await conversaDoAviso(atendimentoId, s) : null;
     const texto = c
       ? [
           "📅 Reunião marcada pela IA.",
@@ -582,13 +592,13 @@ async function avisarAdmins(
         ].join("\n")
       : "";
     const como = c
-      ? await Promise.all(admins.map((a) => avisarNoWhatsApp(c, a, texto)))
-      : ["nenhum admin com WhatsApp no cadastro"];
+      ? await Promise.all(equipe.map((a) => avisarNoWhatsApp(c, a, texto)))
+      : ["ninguém da lista de aviso encontrado"];
     await sql`
       INSERT INTO historico (contato_id, oportunidade_id, descricao)
-      VALUES (${s.contato_id}, ${s.op_id}, ${`Aviso da reunião ao Admin: ${como.join("; ")}`.slice(0, 1000)})`;
+      VALUES (${s.contato_id}, ${s.op_id}, ${`Aviso da reunião à equipe: ${como.join("; ")}`.slice(0, 1000)})`;
   } catch (e) {
-    console.error("[ia atendente] não avisou o Admin da reunião:", atendimentoId, e);
+    console.error("[ia atendente] não avisou a equipe da reunião:", atendimentoId, e);
   }
 }
 
@@ -907,7 +917,7 @@ async function agendarPelaIa(
         console.error("[ia atendente] não gravou o resumo:", s.contato_id, e);
       }
     }
-    await avisarAdmins(atendimentoId, s, { inicio: r.inicio, meet: r.meet }, valor);
+    await avisarReuniao(atendimentoId, s, { inicio: r.inicio, meet: r.meet }, valor);
     return {
       resultado:
         `Reunião reservada: ${rotuloDoHorario(r.inicio)} (horário de Brasília), ${REGRA_HORARIOS.duracaoMin} minutos. ` +
