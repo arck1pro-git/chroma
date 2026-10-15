@@ -10,11 +10,6 @@ import { sql } from "@/lib/db";
 import { LIMITE_BUSCA, prepararTermo } from "@/lib/contatos-termo";
 import type { Anotacao, Contato, Historico, Oportunidade, Segmento, Tag } from "@/app/data";
 
-// Sem acento dos dois lados, para "joao" achar "João". translate() e não a
-// extensão unaccent: não depende de nada instalado no banco.
-const COM_ACENTO = "áàâãäéèêëíìîïóòôõöúùûüçñ";
-const SEM_ACENTO = "aaaaaeeeeiiiiooooouuuucn";
-
 // % e _ digitados são texto, não curinga do LIKE.
 const literal = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
@@ -24,6 +19,17 @@ export type ContatoEncontrado = Contato & { tags: Tag[]; negocios: number };
  * Nome (sem acento, em qualquer parte, ou PARECIDO pelo trigrama do pg_trgm),
  * e-mail ou telefone (só os dígitos, em qualquer parte do número). Quem começa
  * com o termo vem primeiro, depois o mais parecido.
+ *
+ * CADA RAMO TEM ÍNDICE (migration-indice-contato-busca.sql e
+ * migration-indice-contato-whatsapp.sql), e é por isso que a consulta tem esta
+ * forma:
+ *  · o nome sem acento é escrito POR EXTENSO, com o texto fixo no SQL — o
+ *    Postgres só usa índice de expressão quando a consulta repete a expressão
+ *    igual, e um ${parâmetro} no translate() viraria $1 e não casaria;
+ *  · o "parecido" usa o operador % (limiar padrão 0,3), que o índice atende;
+ *    a função similarity() sozinha obrigava a varrer a tabela;
+ *  · telefone e parecido só entram quando o termo pede — um ramo que sempre
+ *    está lá e às vezes é falso ainda faz o plano desistir do índice.
  */
 export async function buscarContatosNoBanco(termo: string): Promise<ContatoEncontrado[]> {
   const t = prepararTermo(termo);
@@ -31,19 +37,23 @@ export async function buscarContatosNoBanco(termo: string): Promise<ContatoEncon
   const parte = `%${literal(t.texto)}%`;
   const inicio = `${literal(t.texto)}%`;
   const linhas = await sql`
-    WITH c AS (
+    WITH achados AS (
       SELECT id, nome, whatsapp, email, cidade, estado, pais, ia, ia_id, data_criacao,
-             translate(lower(nome), ${COM_ACENTO}, ${SEM_ACENTO}) AS nome_n
+             translate(lower(nome), 'áàâãäéèêëíìîïóòôõöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn') AS nome_n
         FROM contatos
-    ), achados AS (
-      SELECT * FROM c
-       WHERE c.nome_n LIKE ${parte}
-          OR lower(c.email) LIKE ${parte}
-          OR (${t.digitos} <> '' AND regexp_replace(c.whatsapp, '\\D', '', 'g') LIKE '%' || ${t.digitos} || '%')
-          -- parecido: "joao silav" ainda acha "João Silva". Só a partir de 4
-          -- letras, senão o trigrama casa com qualquer nome curto.
-          OR (length(${t.texto}) >= 4 AND similarity(c.nome_n, ${t.texto}) > 0.35)
-       ORDER BY (c.nome_n LIKE ${inicio}) DESC, similarity(c.nome_n, ${t.texto}) DESC, c.nome
+       WHERE translate(lower(nome), 'áàâãäéèêëíìîïóòôõöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn') LIKE ${parte}
+          OR lower(email) LIKE ${parte}
+          ${t.digitos ? sql`OR regexp_replace(whatsapp, '\\D', '', 'g') LIKE ${`%${t.digitos}%`}` : sql``}
+          ${
+            // parecido: "jose menesal" ainda acha "José Menescal". Só a partir
+            // de 4 letras, senão o trigrama casa com qualquer nome curto.
+            t.texto.length >= 4
+              ? sql`OR translate(lower(nome), 'áàâãäéèêëíìîïóòôõöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn') % ${t.texto}`
+              : sql``
+          }
+       ORDER BY (translate(lower(nome), 'áàâãäéèêëíìîïóòôõöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn') LIKE ${inicio}) DESC,
+                similarity(translate(lower(nome), 'áàâãäéèêëíìîïóòôõöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn'), ${t.texto}) DESC,
+                nome
        LIMIT ${LIMITE_BUSCA}
     )
     SELECT a.id, a.nome, a.whatsapp, a.email, a.cidade, a.estado, a.pais, a.ia, a.ia_id,
