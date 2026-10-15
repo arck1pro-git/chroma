@@ -16,7 +16,16 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 import { sql } from "@/lib/db";
-import { apagarCopias, copiarMidia, ErroPost, linkParaPublicar, type Midia } from "./midia";
+import {
+  apagarCopias,
+  apagarEnvio,
+  copiarMidia,
+  ehReferenciaDeEnvio,
+  ErroPost,
+  linkDoEnvio,
+  linkParaPublicar,
+  type Midia,
+} from "./midia";
 import {
   AindaProcessando,
   publicarNoFacebook,
@@ -114,12 +123,18 @@ function resumo(l: Linha) {
 
 // ── Criar ───────────────────────────────────────────────────────────────────
 
+/** O arquivo que o ChatGPT manda da conversa (`openai/fileParams`). */
+export type ArquivoDoChatGpt = { download_url: string; file_id: string; mime_type?: string; file_name?: string };
+
 export type NovoPost = {
   perfil: string;
   redes: Rede[];
   tipo: TipoPost;
   legenda: string;
+  /** Links https públicos ou referências `envio:` (lib/social/midia.ts, prepararEnvio). */
   midias: string[];
+  /** Arquivos da conversa no ChatGPT; entram depois das `midias`, na ordem. */
+  arquivos?: ArquivoDoChatGpt[];
   capaUrl?: string;
   primeiroComentario?: string;
   publicarEm?: string;
@@ -133,8 +148,16 @@ export async function criarPost(d: NovoPost) {
   const legenda = d.legenda.trim();
   const avisos: string[] = [];
 
+  // De onde vem cada mídia, na ordem: link público, envio (o arquivo já subiu
+  // para o nosso bucket) ou arquivo da conversa do ChatGPT.
+  type Fonte = { de: "envio" | "link"; valor: string } | { de: "chatgpt"; arquivo: ArquivoDoChatGpt };
+  const fontes: Fonte[] = [
+    ...d.midias.map((m): Fonte => ({ de: ehReferenciaDeEnvio(m) ? "envio" : "link", valor: m })),
+    ...(d.arquivos ?? []).map((arquivo): Fonte => ({ de: "chatgpt", arquivo })),
+  ];
+
   // A quantidade de mídia de cada tipo, antes de baixar qualquer coisa.
-  const n = d.midias.length;
+  const n = fontes.length;
   const soFacebook = redes.length === 1 && redes[0] === "facebook";
   if (d.tipo === "reels" && n !== 1) throw new ErroPost("Reels leva exatamente 1 vídeo.");
   if (d.tipo === "story" && n !== 1) throw new ErroPost("Story leva exatamente 1 imagem ou vídeo.");
@@ -151,9 +174,22 @@ export async function criarPost(d: NovoPost) {
   const id = randomUUID();
   const mes = new Date().toISOString().slice(0, 7);
   const midias: Midia[] = [];
+  // Envios já copiados para o post: saem do bucket só se o post nascer.
+  const enviosUsados: string[] = [];
   try {
-    for (const [i, link] of d.midias.entries()) {
-      const c = await copiarMidia(link, `${perfil.chave}/${mes}/${id}-${i + 1}`);
+    for (const [i, fonte] of fontes.entries()) {
+      const base = `${perfil.chave}/${mes}/${id}-${i + 1}`;
+      let c: Awaited<ReturnType<typeof copiarMidia>>;
+      if (fonte.de === "chatgpt") {
+        // O download_url é uma credencial temporária: baixa, mas grava só o id.
+        c = await copiarMidia(fonte.arquivo.download_url, base, `chatgpt:${fonte.arquivo.file_id}`);
+      } else if (fonte.de === "envio") {
+        const envio = await linkDoEnvio(fonte.valor);
+        c = await copiarMidia(envio.link, base, fonte.valor);
+        enviosUsados.push(envio.caminho);
+      } else {
+        c = await copiarMidia(fonte.valor, base);
+      }
       midias.push(c.midia);
       avisos.push(...c.avisos);
     }
@@ -178,6 +214,7 @@ export async function criarPost(d: NovoPost) {
             ${quando?.toISOString() ?? null}::timestamptz, 'mcp')
     RETURNING ${colunas()}`) as unknown as Linha[];
 
+  await Promise.all(enviosUsados.map(apagarEnvio));
   if (!quando) after(() => publicarPost(id));
   return { ...resumo(linha), avisos };
 }

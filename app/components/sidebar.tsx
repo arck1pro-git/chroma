@@ -294,7 +294,14 @@ export default function Sidebar({
   // uma conversa nova aparecer aqui sem F5.
   const [conversas, setConversas] = useState<ConversaNaBarra[]>([]);
 
+  // SEM NINGUÉM LOGADO, NÃO BUSCA (2026-10-15): a barra some nas telas
+  // públicas, mas os efeitos rodam do mesmo jeito — e a action respondia com
+  // o redirect para /login, que o Next segue no cliente. O lead que abria o
+  // vídeo da cadência (/v/…) ia parar na tela de login, e a página de envio
+  // do conector (/enviar-midia) também.
+  const logado = Boolean(usuario);
   useEffect(() => {
+    if (!logado) return;
     let vivo = true;
     conversasDaBarra().then((lista) => {
       if (vivo) setConversas(lista);
@@ -302,7 +309,7 @@ export default function Sidebar({
     return () => {
       vivo = false;
     };
-  }, [pathname]);
+  }, [pathname, logado]);
 
   // ── Blog: a sanfona ───────────────────────────────────────────────────────
   // O estado guarda a INTENÇÃO de quem clicou, e `null` é "ainda não opinei".
@@ -364,7 +371,8 @@ export default function Sidebar({
   //
   // A página do vídeo (/v/…) é do LEAD: sem barra mesmo para quem está logado
   // — é assim que o time confere o link vendo o que o lead vai ver.
-  if (!usuario || pathname.startsWith("/v/")) return null;
+  // A de envio de arquivo do conector (/enviar-midia), idem: é uma tela só.
+  if (!usuario || pathname.startsWith("/v/") || pathname === "/enviar-midia") return null;
 
   // Clicar em Blog com a barra recolhida ABRE a barra junto: a sanfona não cabe
   // num trilho de 60px, e abrir uma lista que ninguém consegue ler seria um

@@ -3,7 +3,7 @@
 // Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
 // O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
 // pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
-import { exigirLogin } from "@/lib/auth/dal";
+import { exigirLogin, usuarioAtual } from "@/lib/auth/dal";
 
 // `exigirLogin` e não `exigirModulo`: estas ações servem a lista de conversas da
 // barra lateral, que aparece em TODAS as telas e junta análises feitas em
@@ -215,9 +215,14 @@ export async function contextosDisponiveis(): Promise<ContextoDisponivel[]> {
  * Falha em silêncio (lista vazia) em vez de propagar: a sidebar aparece em
  * TODAS as telas, e um banco fora do ar não pode derrubar a navegação do app
  * inteiro por causa de uma lista acessória.
+ *
+ * SEM SESSÃO, LISTA VAZIA — e não o redirect de `exigirLogin`: o Next segue o
+ * redirect da action no cliente, e numa tela pública (o vídeo do lead, a
+ * página de envio do conector) isso jogava o visitante na tela de login.
  */
 export async function conversasDaBarra(): Promise<ConversaNaBarra[]> {
-  const usuario = await exigirLogin();
+  const usuario = await usuarioAtual();
+  if (!usuario) return [];
   try {
     return await listarTodasConversas(usuario.id);
   } catch {

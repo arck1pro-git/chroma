@@ -18,10 +18,31 @@
 // só https, e nunca endereço interno (nem pelo nome, nem depois do DNS, nem num
 // redirecionamento). Sem isso o conector viraria um jeito de o servidor ler a
 // rede onde ele roda.
+//
+// ARQUIVO QUE NÃO TEM LINK (2026-10-15, pedido dele: "subir as mídias do
+// próprio Claude"): a foto anexada na conversa, ou feita pelo próprio modelo,
+// não tem endereço público. Dois caminhos:
+//   · ENVIO (Claude, ou qualquer um): prepararEnvio dá um link de upload
+//     assinado e a referência `envio:<id>.<ext>`. O Claude sobe o arquivo do
+//     ambiente de código dele com curl — ou a pessoa sobe pela página
+//     /enviar-midia — e o criar_post recebe a referência no lugar do link;
+//   · ARQUIVO DO CHATGPT: o criar_post declara `openai/fileParams`, e o
+//     ChatGPT manda o arquivo da conversa com um download_url temporário, que
+//     entra aqui como um link qualquer (e não é guardado: vira `chatgpt:<id>`).
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { garantirBucket, limiteDoBucket, remover, subir, urlDeLeitura } from "@/lib/armazenamento";
+import {
+  garantirBucket,
+  infoDoObjeto,
+  limiteDoBucket,
+  listarObjetos,
+  remover,
+  subir,
+  urlDeEnvio,
+  urlDeLeitura,
+} from "@/lib/armazenamento";
 
 export const BUCKET_POSTS = "crm-posts-sociais";
 const TETO_PROJETO = 50 * 1024 * 1024;
@@ -131,12 +152,24 @@ let bucketPronto = false;
  * Baixa o link e guarda no bucket como `<base>.<ext>`. Devolve a mídia e os
  * avisos para quem pediu (não copiou, não converteu).
  */
-export async function copiarMidia(link: string, base: string): Promise<{ midia: Midia; avisos: string[] }> {
+async function garantirBucketDosPosts() {
+  if (bucketPronto) return;
+  await garantirBucket(BUCKET_POSTS);
+  bucketPronto = true;
+}
+
+/**
+ * `origem` é o que fica gravado no post como de onde a mídia veio — o próprio
+ * link, ou um rótulo quando o link é uma credencial temporária (envio,
+ * ChatGPT) que não deve parar no banco.
+ */
+export async function copiarMidia(
+  link: string,
+  base: string,
+  origem: string = link,
+): Promise<{ midia: Midia; avisos: string[] }> {
   const avisos: string[] = [];
-  if (!bucketPronto) {
-    await garantirBucket(BUCKET_POSTS);
-    bucketPronto = true;
-  }
+  await garantirBucketDosPosts();
   const teto = (await limiteDoBucket(BUCKET_POSTS).catch(() => null)) ?? TETO_PROJETO;
 
   const res = await buscar(link);
@@ -148,6 +181,10 @@ export async function copiarMidia(link: string, base: string): Promise<{ midia: 
     await res.body?.cancel();
     const tipo = tipoDoMime(mimeDeclarado);
     if (!tipo) throw new ErroPost(`Não reconheci o arquivo (${mimeDeclarado || "sem tipo"}): ${link.slice(0, 120)}`);
+    // Link temporário (envio, ChatGPT) não pode virar o link de publicação.
+    if (origem !== link) {
+      throw new ErroPost(`O arquivo passa de ${Math.round(teto / 1048576)} MB, o teto do nosso storage.`);
+    }
     avisos.push(
       `Arquivo de ${Math.round(declarado / 1048576)} MB passa do teto de ${Math.round(teto / 1048576)} MB do nosso storage: não foi copiado, e a publicação usa o link de origem — ele precisa continuar no ar até a hora do post.`,
     );
@@ -189,7 +226,59 @@ export async function copiarMidia(link: string, base: string): Promise<{ midia: 
 
   const extensao = mime === "image/jpeg" ? "jpg" : mime === "video/quicktime" ? "mov" : (mime.split("/")[1] ?? "bin");
   const caminho = await subir(BUCKET_POSTS, `${base}.${extensao}`, bytes, mime);
-  return { midia: { origem: link, caminho, mime, tipo, tamanho: bytes.byteLength }, avisos };
+  return { midia: { origem, caminho, mime, tipo, tamanho: bytes.byteLength }, avisos };
+}
+
+// ── Envio de arquivo sem link ───────────────────────────────────────────────
+
+const PASTA_ENVIOS = "envios";
+const REFERENCIA = /^envio:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\.[a-z0-9]{1,5})?$/i;
+/** Envio que não virou post em um dia sai do bucket. */
+const ENVIO_VALE_MS = 24 * 3600_000;
+
+export const ehReferenciaDeEnvio = (s: string) => REFERENCIA.test(s);
+
+const MIME_DA_EXTENSAO: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif",
+  heic: "image/heic", mp4: "video/mp4", mov: "video/quicktime", m4v: "video/mp4", webm: "video/webm",
+};
+
+/**
+ * O link de upload (assinado, 2 h, só para este arquivo) e a referência que o
+ * criar_post aceita. Aproveita para tirar do bucket os envios esquecidos.
+ */
+export async function prepararEnvio(nomeArquivo: string): Promise<{ referencia: string; url: string; mime: string }> {
+  await garantirBucketDosPosts();
+  const ext = (nomeArquivo.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "").toLowerCase();
+  const id = randomUUID();
+  const sufixo = ext ? `.${ext}` : "";
+  const url = await urlDeEnvio(BUCKET_POSTS, `${PASTA_ENVIOS}/${id}${sufixo}`);
+  limparEnviosVelhos().catch((e) => console.error("[social] limpeza dos envios:", e));
+  return { referencia: `envio:${id}${sufixo}`, url, mime: MIME_DA_EXTENSAO[ext] ?? "application/octet-stream" };
+}
+
+/** A referência vira um link de leitura curto, para copiarMidia baixar. */
+export async function linkDoEnvio(referencia: string): Promise<{ link: string; caminho: string }> {
+  const m = referencia.match(REFERENCIA);
+  if (!m) throw new ErroPost(`Referência de envio inválida: ${referencia.slice(0, 80)}`);
+  const caminho = `${PASTA_ENVIOS}/${m[1].toLowerCase()}${(m[2] ?? "").toLowerCase()}`;
+  if (!(await infoDoObjeto(BUCKET_POSTS, caminho))) {
+    throw new ErroPost(
+      `O arquivo de ${referencia} ainda não chegou. Suba o arquivo no link de envio (comando curl ou página de envio) antes de criar o post.`,
+    );
+  }
+  return { link: await urlDeLeitura(BUCKET_POSTS, caminho, 900), caminho };
+}
+
+/** Depois de copiado para o post, o envio sai do bucket. */
+export async function apagarEnvio(caminho: string): Promise<void> {
+  await remover(BUCKET_POSTS, caminho);
+}
+
+async function limparEnviosVelhos(): Promise<void> {
+  const limite = Date.now() - ENVIO_VALE_MS;
+  const velhos = (await listarObjetos(BUCKET_POSTS, PASTA_ENVIOS)).filter((o) => o.criadoEm && Date.parse(o.criadoEm) < limite);
+  await Promise.all(velhos.map((o) => remover(BUCKET_POSTS, `${PASTA_ENVIOS}/${o.nome}`)));
 }
 
 /** O link que a Meta busca: assinado por 6 h (o Instagram processa vídeo com calma). */

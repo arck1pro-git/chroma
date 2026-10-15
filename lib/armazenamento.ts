@@ -230,6 +230,25 @@ export async function garantirBucket(bucket: string, limiteBytes?: number): Prom
   }
 }
 
+/** Os objetos de uma "pasta" do bucket, do mais velho para o mais novo. */
+export async function listarObjetos(
+  bucket: string,
+  prefixo: string,
+  limite = 100,
+): Promise<Array<{ nome: string; criadoEm: string }>> {
+  const res = await fetch(`${URL_BASE()}/storage/v1/object/list/${bucket}`, {
+    method: "POST",
+    headers: { ...cabecalhos(), "Content-Type": "application/json" },
+    body: JSON.stringify({ prefix: prefixo, limit: limite, sortBy: { column: "created_at", order: "asc" } }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`Supabase Storage não listou ${bucket}/${prefixo} (${res.status})`);
+  const itens = (await res.json()) as Array<{ name: string; created_at?: string | null; id?: string | null }>;
+  // Sem id é "pasta" (prefixo), não arquivo.
+  return itens.filter((i) => i.id).map((i) => ({ nome: i.name, criadoEm: i.created_at ?? "" }));
+}
+
 /**
  * Copia um objeto dentro do mesmo bucket, sem os bytes passarem pelo CRM. É o
  * que dá a cada cópia da demanda "para todos" o seu próprio arquivo.

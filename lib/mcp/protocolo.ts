@@ -18,6 +18,12 @@ export type Ferramenta = {
   executar: (args: never) => Promise<unknown>;
   /** Sem anotações = só leitura (o conector de leitura inteiro). */
   anotacoes?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean };
+  /**
+   * O `_meta` da ferramenta no tools/list — extensão de cliente. Hoje só o
+   * `openai/fileParams` do ChatGPT (os campos que recebem arquivo da conversa);
+   * cliente que não conhece a chave ignora.
+   */
+  meta?: Record<string, unknown>;
 };
 
 export type ServidorMcp = {
@@ -88,6 +94,7 @@ async function atender(servidor: ServidorMcp, bruta: unknown): Promise<object | 
           description: f.descricao,
           inputSchema: esquemaDeEntrada(f),
           annotations: { title: f.titulo, ...(f.anotacoes ?? SO_LEITURA) },
+          ...(f.meta ? { _meta: f.meta } : {}),
         })),
       });
     case "tools/call": {
