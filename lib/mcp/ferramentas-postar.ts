@@ -1,6 +1,7 @@
-// As ferramentas do conector de POSTAR (app/api/mcp-postar): publicar e agendar
-// no Instagram e no Facebook dos perfis da empresa, no lugar do Metricool
-// (pedido dele, 2026-10-15). O trabalho de verdade mora em lib/social/.
+// As ferramentas de POSTAR do conector MCP (app/api/mcp/[segredo], o mesmo link
+// das de leitura): publicar e agendar no Instagram e no Facebook dos perfis da
+// empresa, no lugar do Metricool (pedido dele, 2026-10-15). O trabalho de
+// verdade mora em lib/social/.
 import "server-only";
 import { headers } from "next/headers";
 import { z } from "zod";
@@ -61,7 +62,7 @@ async function criar(a: z.infer<typeof entradaCriar>) {
   const endereco = enderecoDoCrm(await headers());
   if (endereco.publico) {
     await garantirAgendadorDePosts(endereco.url).catch((e) => {
-      console.error("[mcp-postar] agendador:", e);
+      console.error("[mcp] agendador dos posts:", e);
       r.avisos.push("Não consegui conferir o agendador no n8n; se o post agendado não sair na hora, avise o TI.");
     });
   }

@@ -1,8 +1,8 @@
 -- Posts do Instagram e do Facebook pelo conector MCP (2026-10-15).
 --
 -- PARA QUE SERVE: o Claude publica e agenda posts nos perfis da empresa pelo
--- link de postar do MCP (app/api/mcp-postar/[segredo]), no lugar do Metricool.
--- Os campos são os que ele aprovou em 2026-10-15.
+-- conector MCP do CRM (app/api/mcp/[segredo]), no lugar do Metricool. Os
+-- campos são os que ele aprovou em 2026-10-15.
 --
 -- POR QUE UMA TABELA: a API do Instagram não agenda. Quem segura o post até a
 -- hora e publica é o CRM: o agendador do n8n chama /api/social/publicar a cada
@@ -13,7 +13,7 @@
 -- até a publicação. Na hora de publicar sai uma URL assinada para a Meta
 -- buscar. Depois de publicado em todas as redes, a cópia é apagada.
 --
--- Rodar ANTES do deploy que traz o link de postar.
+-- Rodar ANTES do deploy que traz as ferramentas de postar no conector.
 
 CREATE TABLE IF NOT EXISTS posts_sociais (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),

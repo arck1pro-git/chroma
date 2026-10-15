@@ -3,9 +3,12 @@
 //
 //     POST /api/mcp/<MCP_SEGREDO>
 //
-// Só leitura. O protocolo (JSON-RPC sem sessão e sem stream) mora em
-// lib/mcp/protocolo.ts, junto do conector de postar (app/api/mcp-postar), que
-// tem link e segredo próprios.
+// Lê funis e leads (lib/mcp/ferramentas.ts) e, desde 2026-10-15, publica e
+// agenda posts no Instagram e no Facebook (lib/mcp/ferramentas-postar.ts). As
+// duas coisas no MESMO link foi escolha dele ("bota nesse aí essas permissões
+// novas"), no lugar de um link só para postar — quem tem este link lê os leads
+// E publica em nome da empresa. O protocolo (JSON-RPC sem sessão e sem stream)
+// mora em lib/mcp/protocolo.ts.
 //
 // A TRANCA É O SEGREDO NA URL, e não cabeçalho: o conector personalizado do
 // claude.ai não manda cabeçalho próprio, só URL ou OAuth (escolha dele,
@@ -13,24 +16,37 @@
 // Segredo errado responde 404, igual a rota inexistente. Para cortar o acesso
 // de quem tem o link, basta trocar o MCP_SEGREDO na Vercel.
 //
-// O que as ferramentas devolvem, e o que mascaram, está em lib/mcp/ferramentas.ts.
+// maxDuration de 300 s: o post "para agora" publica no after() desta mesma
+// invocação, e vídeo no Instagram espera a Meta processar.
 import type { NextRequest } from "next/server";
+import { ErroMeta } from "@/lib/meta";
 import { FERRAMENTAS } from "@/lib/mcp/ferramentas";
+import { FERRAMENTAS_POSTAR } from "@/lib/mcp/ferramentas-postar";
 import { responderMcp, segredoConfere, semCanal, type ServidorMcp } from "@/lib/mcp/protocolo";
+import { ErroPost } from "@/lib/social/posts";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const SERVIDOR: ServidorMcp = {
   nome: "chroma-crm",
   titulo: "AmaanOffice",
   instrucoes:
-    "CRM AmaanOffice (Amaan e Arck1Pro), só leitura. Comece por visao_geral_funis para ver os funis, as etapas e os ids; " +
+    "CRM AmaanOffice (Amaan e Arck1Pro). LEADS, só leitura: comece por visao_geral_funis para ver os funis, as etapas e os ids; " +
     "depois use listar_leads (quem está em cada etapa), ficha_lead (um lead a fundo) e movimentacao_funil " +
-    "(conversão entre etapas, tempo por etapa e resultado por campanha). Horários em Brasília. " +
-    "Telefone e e-mail vêm mascarados e o texto das conversas do WhatsApp não é exposto, só contagens e datas.",
-  ferramentas: FERRAMENTAS,
-  mensagemDeErro: () => "Erro ao consultar o CRM. Tente de novo.",
+    "(conversão entre etapas, tempo por etapa e resultado por campanha). " +
+    "Telefone e e-mail vêm mascarados e o texto das conversas do WhatsApp não é exposto, só contagens e datas. " +
+    "REDES SOCIAIS: criar_post publica agora ou agenda no Instagram e no Facebook dos perfis Fabhricio Ari, AMAAN e Arck1Pro " +
+    "(perfis_sociais lista os perfis); as mídias são links https públicos, que o CRM copia na hora. " +
+    "Acompanhe com listar_posts e ver_post; mude ou cancele o que ainda está agendado com editar_post e cancelar_post; " +
+    "o que terminou em erro, repetir_post tenta de novo só nas redes que falharam. " +
+    "Publicar é público: confirme com a pessoa o perfil, o texto, as mídias e o horário antes de criar o post. Horários em Brasília.",
+  ferramentas: [...FERRAMENTAS, ...FERRAMENTAS_POSTAR],
+  // O motivo de uma recusa de post (data no passado, Reels sem vídeo, erro da
+  // Meta) volta para o modelo corrigir; o resto, que pode trazer detalhe do
+  // banco, fica no log.
+  mensagemDeErro: (e) =>
+    e instanceof ErroPost || e instanceof ErroMeta ? e.message : "Erro no CRM. Tente de novo.",
 };
 
 export async function POST(req: NextRequest, ctx: RouteContext<"/api/mcp/[segredo]">) {

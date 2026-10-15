@@ -1,6 +1,6 @@
-// O protocolo MCP dos dois conectores do CRM: o de leitura (app/api/mcp) e o de
-// postar nas redes (app/api/mcp-postar). Cada um tem o seu segredo e as suas
-// ferramentas; o JSON-RPC é este.
+// O protocolo MCP do conector do CRM (app/api/mcp/[segredo]). As ferramentas
+// moram em lib/mcp/ferramentas.ts (leads, só leitura) e
+// lib/mcp/ferramentas-postar.ts (redes sociais); o JSON-RPC é este.
 //
 // Streamable HTTP na forma mais simples que a especificação permite: SEM SESSÃO
 // e SEM STREAM. Cada POST traz uma mensagem JSON-RPC e volta com a resposta em

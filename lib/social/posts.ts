@@ -16,7 +16,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 import { sql } from "@/lib/db";
-import { ErroMeta } from "@/lib/meta";
 import { apagarCopias, copiarMidia, ErroPost, linkParaPublicar, type Midia } from "./midia";
 import {
   AindaProcessando,
@@ -384,10 +383,4 @@ export async function publicarVencidos(): Promise<{ publicados: number; erros: n
     }
   }
   return soma;
-}
-
-/** O texto que o modelo lê quando uma ferramenta de post lança. */
-export function mensagemDeErroDoPost(e: unknown): string {
-  if (e instanceof ErroPost || e instanceof ErroMeta) return e.message;
-  return "Erro no CRM ao tratar o post. Tente de novo.";
 }
