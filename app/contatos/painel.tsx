@@ -10,10 +10,12 @@
 // history.replaceState, que o roteador do Next acompanha — para o link e o F5
 // abrirem o mesmo contato.
 //
-// A LISTA filtra aqui, sem ir ao banco a cada tecla: busca por nome, WhatsApp
-// (qualquer pedaço do número), e-mail ou cidade; recortes numa linha só, em
-// dropdown (a régua do app). Agrupada pelo QUANDO — Hoje, Ontem, Esta semana —
-// porque é assim que se procura alguém com quem se falou. Desenha 200 por vez.
+// A LISTA É A BUSCA (2026-10-15): o termo vai para a URL (?q=) e o servidor
+// devolve só os achados — nome (inclusive parecido), qualquer pedaço do número
+// ou e-mail (lib/contatos-busca.ts). A base inteira não viaja mais: com os ~27
+// mil leads do SprintHub, isso pesava a tela. Os recortes, a tag e a ordem
+// filtram os achados aqui mesmo. Agrupada pelo QUANDO — Hoje, Ontem, Esta
+// semana — porque é assim que se procura alguém com quem se falou.
 //
 // TECLADO: "/" vai para a busca, ↑ ↓ troca de contato, Enter na busca abre o
 // primeiro resultado. Quem atende o dia todo não tira a mão do teclado.
@@ -21,8 +23,8 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clapperboard, Plus, Search, UsersRound } from "lucide-react";
 import type { ContatoNaLista, EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
+import { MIN_DIGITOS, MIN_LETRAS, prepararTermo } from "@/lib/contatos-termo";
 import { iniciais } from "../formato";
-import { normalizar } from "../filtros-comuns";
 import CamadaTopo from "../components/camada-topo";
 import FormContato from "./form-contato";
 import { criarContato } from "./actions";
@@ -56,16 +58,37 @@ function grupoDe(iso: string, hoje: string) {
   return "Antes";
 }
 
+const ESPERA_DIGITACAO_MS = 350;
+
+/** A URL do módulo com a busca e o contato aberto (o link e o F5 voltam igual). */
+function urlDoModulo(busca: string, contatoId: string | null) {
+  const p = new URLSearchParams();
+  if (busca.trim()) p.set("q", busca.trim());
+  if (contatoId) p.set("contato", contatoId);
+  const s = p.toString();
+  return s ? `/contatos?${s}` : "/contatos";
+}
+
 export default function PainelContatos({
   contatos,
+  totalContatos,
+  buscaInicial,
   ficha: fichaDoServidor,
   ...contexto
-}: { contatos: ContatoNaLista[]; ficha: FichaContato | null } & ContextoDaFicha) {
+}: {
+  contatos: ContatoNaLista[];
+  /** Quantos contatos a base tem (contados no servidor). */
+  totalContatos: number;
+  /** O ?q= com que a página abriu: a lista que veio é a dele. */
+  buscaInicial: string;
+  ficha: FichaContato | null;
+} & ContextoDaFicha) {
   const router = useRouter();
   const buscaRef = useRef<HTMLInputElement>(null);
   const listaRef = useRef<HTMLUListElement>(null);
-  const [busca, setBusca] = useState("");
+  const [busca, setBusca] = useState(buscaInicial);
   const termo = useDeferredValue(busca);
+  const podeBuscar = prepararTermo(busca) !== null;
   const [recorte, setRecorte] = useState<Recorte>("todos");
   const [tag, setTag] = useState("");
   const [ordem, setOrdem] = useState<Ordem>("atividade");
@@ -100,9 +123,21 @@ export default function PainelContatos({
 
   function abrir(id: string) {
     setSelecionadoId(id);
-    window.history.replaceState(null, "", `/contatos?contato=${id}`);
+    window.history.replaceState(null, "", urlDoModulo(buscaInicial, id));
     buscar(id);
   }
+
+  // O termo vai para a URL depois de a pessoa parar de digitar: é o servidor
+  // que busca (e só a partir de MIN_LETRAS / MIN_DIGITOS). Apagar a busca
+  // também vai, para a lista esvaziar.
+  useEffect(() => {
+    const alvo = podeBuscar ? busca.trim() : "";
+    if (alvo === buscaInicial.trim()) return;
+    if (busca.trim() && !podeBuscar) return; // ainda digitando o mínimo
+    const t = setTimeout(() => router.replace(urlDoModulo(alvo, atualId), { scroll: false }), ESPERA_DIGITACAO_MS);
+    return () => clearTimeout(t);
+  }, [busca, podeBuscar, buscaInicial, atualId, router]);
+  const esperandoServidor = podeBuscar ? busca.trim() !== buscaInicial.trim() : false;
 
   /** Algo mudou na ficha aberta: a do servidor vem nova pelo refresh. */
   function recarregar() {
@@ -116,25 +151,10 @@ export default function PainelContatos({
     router.refresh();
   }
 
-  const indice = useMemo(
-    () =>
-      new Map(
-        contatos.map((c) => [
-          c.id,
-          `${normalizar(c.nome)} ${normalizar(c.cidade)} ${c.email.toLowerCase()} ${c.whatsapp.replace(/\D/g, "")}`,
-        ]),
-      ),
-    [contatos],
-  );
-
+  // O texto já foi filtrado no servidor (inclusive os parecidos, que um
+  // "contém" aqui descartaria). Aqui só os recortes, a tag e a ordem.
   const visiveis = useMemo(() => {
-    const t = normalizar(termo.trim());
-    const digitos = termo.replace(/\D/g, "");
     const lista = contatos.filter((c) => {
-      if (t) {
-        const alvo = indice.get(c.id) ?? "";
-        if (!alvo.includes(t) && !(digitos.length >= 4 && alvo.includes(digitos))) return false;
-      }
       if (tag && !c.tagIds.includes(tag)) return false;
       switch (recorte) {
         case "abertas":
@@ -158,7 +178,7 @@ export default function PainelContatos({
           ? b.dataCriacao.localeCompare(a.dataCriacao)
           : b.ultimaAtividade.localeCompare(a.ultimaAtividade),
     );
-  }, [contatos, indice, termo, recorte, tag, ordem]);
+  }, [contatos, recorte, tag, ordem]);
 
   const desenhados = visiveis.slice(0, quantos);
 
@@ -229,7 +249,9 @@ export default function PainelContatos({
                 Contatos
               </span>
               <span className="text-[12px] tabular-nums text-zinc-400 dark:text-zinc-500">
-                {filtrando ? `${visiveis.length} de ${contatos.length}` : contatos.length}
+                {filtrando
+                  ? `${visiveis.length} de ${totalContatos.toLocaleString("pt-BR")}`
+                  : totalContatos.toLocaleString("pt-BR")}
               </span>
             </h1>
             <button
@@ -390,10 +412,22 @@ export default function PainelContatos({
           {visiveis.length === 0 && (
             <li className="px-4 py-16 text-center">
               <p className="text-[13px] font-medium text-zinc-700 dark:text-zinc-300">
-                {contatos.length === 0 ? "A base está vazia" : "Ninguém com esse filtro"}
+                {totalContatos === 0
+                  ? "A base está vazia"
+                  : esperandoServidor
+                    ? "Procurando…"
+                    : !buscaInicial.trim()
+                      ? "Pesquise para ver contatos"
+                      : "Ninguém com esse filtro"}
               </p>
-              <p className="mt-1 text-[12px] text-zinc-400 dark:text-zinc-500">
-                {contatos.length === 0 ? "Crie o primeiro contato no botão Novo." : "Tente outro termo ou volte para Todos."}
+              <p className="mt-1 text-[12px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+                {totalContatos === 0
+                  ? "Crie o primeiro contato no botão Novo."
+                  : esperandoServidor
+                    ? ""
+                    : !buscaInicial.trim()
+                      ? `Nome, telefone ou e-mail — a partir de ${MIN_LETRAS} letras ou ${MIN_DIGITOS} números. Os ${totalContatos.toLocaleString("pt-BR")} contatos só aparecem quando pesquisados.`
+                      : "Tente outro termo ou volte para Todos."}
               </p>
             </li>
           )}

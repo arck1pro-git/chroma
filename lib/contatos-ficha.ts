@@ -12,7 +12,7 @@
 // personalizados moram no MESMO jsonb; o que não é campo personalizado
 // declarado é tratado como parâmetro de origem.
 import "server-only";
-import { sql } from "@/lib/db";
+import { listaUuid, sql } from "@/lib/db";
 import { tomDaEtapa } from "@/lib/cores-funil";
 import { unirTrechos } from "@/lib/videos";
 
@@ -68,7 +68,14 @@ export type ContatoNaLista = {
   tagIds: string[];
 };
 
-export async function listarContatos(): Promise<ContatoNaLista[]> {
+/**
+ * As linhas da lista para ESTES contatos — os achados pela busca
+ * (lib/contatos-busca.ts) e o que estiver aberto. Não lista mais a base
+ * inteira: eram seis subconsultas por contato, para os ~27 mil do SprintHub, a
+ * cada abertura de /contatos (2026-10-15).
+ */
+export async function listarContatos(ids: string[]): Promise<ContatoNaLista[]> {
+  if (ids.length === 0) return [];
   const linhas = await sql`
     SELECT c.id, c.nome, c.whatsapp, c.email, c.cidade, c.estado, c.data_criacao,
            op.etapa_id, coalesce(op.abertas, 0) AS abertas, coalesce(op.valor_aberto, 0) AS valor_aberto,
@@ -89,6 +96,7 @@ export async function listarContatos(): Promise<ContatoNaLista[]> {
         SELECT max(coalesce(a.data_atualizacao, a.data_criacao)) AS ultima
           FROM atendimentos a WHERE a.contato_id = c.id
       ) at ON true
+     WHERE c.id = ANY(string_to_array(${listaUuid(ids)}, ',')::uuid[])
      ORDER BY c.data_criacao DESC`;
 
   return linhas.map((l) => {

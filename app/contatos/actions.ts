@@ -13,6 +13,31 @@ import {
   registrarContatoCriado,
   registrarTag,
 } from "@/lib/historico";
+import {
+  buscarContatosNoBanco,
+  dadosDoContatoNoBanco,
+  type ContatoEncontrado,
+  type DadosDoContato,
+} from "@/lib/contatos-busca";
+
+/**
+ * A busca da gaveta de contatos e do seletor de contato: a base não viaja mais
+ * inteira para a tela (lib/contatos-busca.ts). No máximo LIMITE_BUSCA linhas.
+ */
+export async function buscarContatos(termo: string): Promise<ContatoEncontrado[]> {
+  await exigirAlgumModulo("inicio", "contatos");
+  return buscarContatosNoBanco(String(termo ?? "").slice(0, 120));
+}
+
+/**
+ * O que a ficha de um contato mostra, buscado quando ele é aberto. O escopo
+ * 'proprio' vale aqui como no quadro: as oportunidades dos colegas não saem.
+ */
+export async function dadosDoContato(id: string): Promise<DadosDoContato | null> {
+  const { usuario, escopo } = await exigirAlgumModulo("inicio", "contatos");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  return dadosDoContatoNoBanco(id, escopo === "proprio" ? usuario.id : null);
+}
 
 export type NovoContato = {
   nome: string;

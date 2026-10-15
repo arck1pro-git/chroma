@@ -1,7 +1,14 @@
 // Leitura do Funil direto do Neon. Só é importado por page.tsx (server).
-// Como a ficha da oportunidade também mostra os dados do cliente, aqui carrega
-// praticamente tudo — funis/etapas/oportunidades + os agregados por contato.
+// Funis/etapas/oportunidades inteiros + os contatos QUE O QUADRO USA e os dados
+// por contato deles.
+//
+// SÓ OS CONTATOS DO QUADRO (2026-10-15): os de alguma oportunidade e os com IA
+// ligada à mão (a gaveta das IAs conta esses). Antes vinha a base inteira, e
+// com os ~27 mil leads do SprintHub eram ~9 MB a cada abertura. O resto da
+// base aparece sob demanda, pela busca (lib/contatos-busca.ts); daqui sai só o
+// total, para o botão.
 import { sql } from "@/lib/db";
+import { totalDeContatos } from "@/lib/contatos-busca";
 import { tomDaEtapa } from "@/lib/cores-funil";
 import type { Ia } from "@/lib/ia/catalogo";
 import type {
@@ -22,7 +29,10 @@ export type DadosFunil = {
   funis: Funil[];
   etapas: Etapa[]; // já ordenadas por (funil_id, ordem)
   oportunidades: Oportunidade[];
+  /** Só os do quadro (ver o topo do arquivo); a base inteira não vem mais. */
   contatos: Contato[];
+  /** Quantos contatos a base tem — o número do botão de contatos. */
+  totalContatos: number;
   usuarios: Usuario[];
   segmentos: Segmento[];
   tags: Tag[];
@@ -80,6 +90,16 @@ export async function carregarFunil(
   // Postgres comparar sem inferir tipo de um parâmetro nulo.
   const dono = soDoResponsavel ?? null;
 
+  // Os contatos que o quadro usa: os das oportunidades que esta pessoa vê, e
+  // os com IA ligada à mão. Função e não constante: cada consulta abaixo
+  // embute o seu próprio fragmento.
+  const doQuadro = () => sql`(
+    SELECT contato_id FROM oportunidades
+     WHERE ${dono}::uuid IS NULL OR responsavel_id = ${dono}::uuid
+    UNION
+    SELECT id FROM contatos WHERE ia = true
+  )`;
+
   const [
     funis,
     etapas,
@@ -95,6 +115,7 @@ export async function carregarFunil(
     atendimentos,
     definicoesCampos,
     ias,
+    totalContatos,
   ] = await Promise.all([
     sql`SELECT id, nome, descricao, cor FROM funis ORDER BY data_criacao`,
     // Sem `cor`: ela é derivada abaixo, a partir da cor do FUNIL e da posição
@@ -120,27 +141,31 @@ export async function carregarFunil(
                            'adset_id', 'conjunto_id', 'adset_name', 'utm_term',
                            'ad_id', 'anuncio_id', 'ad_name', 'utm_content')) AS origem_campos,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
-      FROM contatos ORDER BY nome`,
+      FROM contatos WHERE id IN ${doQuadro()} ORDER BY nome`,
     sql`SELECT id, nome, iniciais FROM usuarios`,
     sql`SELECT id, nome FROM segmentos ORDER BY nome`,
     sql`SELECT id, nome FROM tags ORDER BY nome`,
-    sql`SELECT cs.contato_id, s.id, s.nome FROM contato_segmentos cs JOIN segmentos s ON s.id = cs.segmento_id`,
-    sql`SELECT ct.contato_id, t.id, t.nome FROM contato_tags ct JOIN tags t ON t.id = ct.tag_id`,
+    sql`
+      SELECT cs.contato_id, s.id, s.nome FROM contato_segmentos cs JOIN segmentos s ON s.id = cs.segmento_id
+       WHERE cs.contato_id IN ${doQuadro()}`,
+    sql`
+      SELECT ct.contato_id, t.id, t.nome FROM contato_tags ct JOIN tags t ON t.id = ct.tag_id
+       WHERE ct.contato_id IN ${doQuadro()}`,
     sql`
       SELECT id, contato_id, oportunidade_id, descricao, autor_id,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
-      FROM historico ORDER BY data_criacao DESC`,
+      FROM historico WHERE contato_id IN ${doQuadro()} ORDER BY data_criacao DESC`,
     sql`
       SELECT id, contato_id, texto, autor_id,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao,
              to_char(data_atualizacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_atualizacao
-      FROM anotacoes ORDER BY data_criacao DESC`,
+      FROM anotacoes WHERE contato_id IN ${doQuadro()} ORDER BY data_criacao DESC`,
     // Pra ficha da oportunidade listar canal/número; nao_lidas não entra aqui
     // (é o /chat que precisa dela, ver app/chat/dados.ts).
     sql`
       SELECT id, contato_id, responsavel_id, status, canal, numero_instancia,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
-      FROM atendimentos ORDER BY data_criacao DESC`,
+      FROM atendimentos WHERE contato_id IN ${doQuadro()} ORDER BY data_criacao DESC`,
     sql`
       SELECT id, entidade, chave, rotulo, tipo, ordem,
              COALESCE(to_jsonb(opcoes), '[]'::jsonb) AS opcoes
@@ -155,6 +180,7 @@ export async function carregarFunil(
              to_jsonb(retomar_apos) AS retomar_apos, retomar_das, retomar_ate,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
       FROM ias ORDER BY data_criacao`,
+    totalDeContatos(),
   ]);
 
   const defs = definicoesCampos as unknown as CampoPersonalizado[];
@@ -195,6 +221,7 @@ export async function carregarFunil(
     etapas: etapasT,
     oportunidades: oportunidadesT,
     contatos: contatosT,
+    totalContatos,
     usuarios: usuarios as Usuario[],
     segmentos: segmentos as Segmento[],
     tags: tags as Tag[],

@@ -3,6 +3,7 @@ import { exigirModulo } from "@/lib/auth/dal";
 import { sql } from "@/lib/db";
 import { tomDaEtapa } from "@/lib/cores-funil";
 import { etapasComTom, fichaDoContato, listarContatos } from "@/lib/contatos-ficha";
+import { buscarContatosNoBanco, totalDeContatos } from "@/lib/contatos-busca";
 import type { CampoPersonalizado, Etapa, Funil } from "../data";
 import type { Ia } from "@/lib/ia/catalogo";
 import PainelContatos from "./painel";
@@ -19,22 +20,31 @@ export const dynamic = "force-dynamic";
 // (lib/contatos-ficha.ts).
 //
 // A seleção mora na URL (?contato=<id>), como em /webhooks e /videos: o
-// servidor já traz a ficha do contato aberto, e o link leva direto a ele. Sem
-// seleção, abre o contato com atividade mais recente.
+// servidor já traz a ficha do contato aberto, e o link leva direto a ele.
+//
+// A LISTA É A BUSCA (?q=, 2026-10-15): contato só aparece quando é pesquisado
+// por nome, telefone ou e-mail — pedido dele, com os ~27 mil leads do
+// SprintHub. Sem termo, a lista fica vazia (e o que estiver aberto continua).
 //
 // Volta a existir como rota: em 2026-09-01 /contatos tinha saído e os contatos
 // ficaram só na gaveta do Dashboard. A gaveta continua — é o atalho de quem
-// está no quadro; aqui é a base inteira, com a ficha que a gaveta não cabe.
+// está no quadro; aqui é a base, com a ficha que a gaveta não cabe.
 export default async function ContatosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ contato?: string }>;
+  searchParams: Promise<{ contato?: string; q?: string }>;
 }) {
   await exigirModulo("contatos");
-  const { contato: escolhido } = await searchParams;
+  const { contato: escolhidoBruto, q } = await searchParams;
+  const escolhido = typeof escolhidoBruto === "string" && /^[0-9a-f-]{36}$/i.test(escolhidoBruto) ? escolhidoBruto : null;
+  const termo = typeof q === "string" ? q.slice(0, 120) : "";
 
-  const [contatos, tons, tags, segmentos, campos, usuarios, ias, funis, etapas] = await Promise.all([
-    listarContatos(),
+  const achados = termo ? await buscarContatosNoBanco(termo) : [];
+  const ids = [...new Set([...achados.map((c) => c.id), ...(escolhido ? [escolhido] : [])])];
+
+  const [contatos, totalContatos, tons, tags, segmentos, campos, usuarios, ias, funis, etapas] = await Promise.all([
+    listarContatos(ids),
+    totalDeContatos(),
     etapasComTom(),
     sql`SELECT id, nome FROM tags ORDER BY nome`,
     sql`SELECT id, nome FROM segmentos ORDER BY nome`,
@@ -53,10 +63,12 @@ export default async function ContatosPage({
           FROM etapas ORDER BY funil_id, ordem`,
   ]);
 
-  const selecionadoId =
-    contatos.find((c) => c.id === escolhido)?.id ??
-    [...contatos].sort((a, b) => (a.ultimaAtividade < b.ultimaAtividade ? 1 : -1))[0]?.id ??
-    null;
+  // Só abre o que foi pedido na URL: "o mais recente da base" exigiria a base.
+  const selecionadoId = contatos.find((c) => c.id === escolhido)?.id ?? null;
+  // A ordem da busca (quem começa com o termo, depois o mais parecido) vale
+  // mais que a de criação: a lista chega já nessa ordem.
+  const posicao = new Map(achados.map((c, i) => [c.id, i]));
+  contatos.sort((a, b) => (posicao.get(a.id) ?? -1) - (posicao.get(b.id) ?? -1));
 
   const camposPersonalizados = campos as unknown as CampoPersonalizado[];
   const chavesPersonalizadas = new Set(camposPersonalizados.map((c) => c.chave));
@@ -82,6 +94,8 @@ export default async function ContatosPage({
   return (
     <PainelContatos
       contatos={contatos}
+      totalContatos={totalContatos}
+      buscaInicial={termo}
       etapas={Object.fromEntries(tons)}
       etapasCompletas={etapasCompletas}
       funis={funis as unknown as Funil[]}

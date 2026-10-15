@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { User, Users, X } from "lucide-react";
+import { Users, X } from "lucide-react";
 import { SeletorMenu } from "../components/filtros-ui";
 import CamadaTopo from "../components/camada-topo";
-import type { Contato, Usuario } from "../data";
+import BuscaContato, { type ContatoEscolhido } from "../components/busca-contato";
+import type { Usuario } from "../data";
 
 // Estilo dos campos de texto — mesmo dos selects/filtros, só sem a seta.
 const campoTexto =
@@ -36,19 +37,19 @@ function Campo({
 
 export default function FormOportunidade({
   etapaNome,
-  contatos,
   usuarios,
   aoCriar,
   aoFechar,
 }: {
   etapaNome: string;
-  contatos: Contato[];
   usuarios: Usuario[];
   aoCriar: (dados: DadosOportunidade) => void;
   aoFechar: () => void;
 }) {
   const [nome, setNome] = useState("");
-  const [contatoId, setContatoId] = useState("");
+  // O contato vem da busca (a base não viaja mais para a tela); null = sem contato.
+  const [contato, setContato] = useState<ContatoEscolhido | null>(null);
+  const contatoId = contato?.id ?? "";
   const [valor, setValor] = useState("");
   const [responsavelId, setResponsavelId] = useState("");
 
@@ -122,20 +123,14 @@ export default function FormOportunidade({
             />
           </Campo>
 
-          <Campo rotulo="Contato">
-            <SeletorMenu
-              Icone={User}
-              rotulo="Selecionar contato"
-              valor={contatoId}
-              opcoes={[
-                { valor: "", rotulo: "Sem contato" },
-                ...contatos.map((c) => ({ valor: c.id, rotulo: c.nome })),
-              ]}
-              aoMudar={setContatoId}
-              botao="w-full"
-              ativo={contatoId !== ""}
-            />
-          </Campo>
+          {/* div e não o <label> do Campo: a busca tem campo E lista de botões,
+              e um label em volta faria o clique num resultado focar o campo. */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Contato
+            </span>
+            <BuscaContato valor={contato} aoMudar={setContato} />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Campo rotulo="Valor (R$)">

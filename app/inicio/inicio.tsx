@@ -1056,13 +1056,17 @@ export default function Inicio({
                 setGavetaAberta(true);
               }}
               aria-expanded={gavetaAberta}
-              aria-label={`Contatos (${contatos.length})`}
+              aria-label={`Contatos (${dados.totalContatos})`}
               title="Contatos"
               className={botaoTopo}
             >
               <Users className="size-4" aria-hidden="true" />
               <span className="hidden sm:inline">Contatos</span>
-              <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{contatos.length}</span>
+              {/* O total da base, contado no servidor: a lista em si não vem
+                  mais para a tela (ver app/inicio/gaveta-contatos.tsx). */}
+              <span className="tabular-nums text-zinc-400 dark:text-zinc-500">
+                {dados.totalContatos.toLocaleString("pt-BR")}
+              </span>
             </button>
           </div>
         </header>
@@ -1268,12 +1272,10 @@ export default function Inicio({
 
       {gavetaAberta && (
         <GavetaContatos
-          contatos={contatos}
-          segmentosDoContato={dados.segmentosDoContato}
-          tagsDoContato={tagsDoContato}
-          oportunidadesDoContato={dados.oportunidadesDoContato}
-          historicoDoContato={dados.historicoDoContato}
-          anotacoesDoContato={dados.anotacoesDoContato}
+          totalContatos={dados.totalContatos}
+          // `dados` é um objeto novo a cada router.refresh(): é o sinal para a
+          // gaveta buscar de novo a lista e a ficha que estão abertas.
+          versao={dados}
           etapaPorId={dados.etapaPorId}
           funilPorId={dados.funilPorId}
           usuarioPorId={usuarioPorId}
@@ -1319,7 +1321,6 @@ export default function Inicio({
       {etapaNova && (
         <FormOportunidade
           etapaNome={etapas.find((e) => e.id === etapaNova)?.nome ?? ""}
-          contatos={contatos}
           usuarios={usuarios}
           aoCriar={aoCriarOportunidade}
           aoFechar={() => setEtapaNova(null)}
