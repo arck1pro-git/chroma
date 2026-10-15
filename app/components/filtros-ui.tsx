@@ -187,7 +187,9 @@ export function SeletorMenu({
   Icone: LucideIcon;
   rotulo: string; // aria-label do controle
   valor: string;
-  opcoes: { valor: string; rotulo: string }[];
+  // `detalhe`: um número ao lado do nome (o total de leads do funil, no
+  // seletor do Dashboard), apagado e alinhado à direita.
+  opcoes: { valor: string; rotulo: string; detalhe?: string }[];
   aoMudar: (v: string) => void;
   botao: string;
   ativo?: boolean;
@@ -207,8 +209,15 @@ export function SeletorMenu({
       >
         <Icone className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
         <span className="truncate">{escolhida?.rotulo ?? rotulo}</span>
+        {escolhida?.detalhe && (
+          <span className="ml-auto shrink-0 tabular-nums text-zinc-400 dark:text-zinc-500">
+            {escolhida.detalhe}
+          </span>
+        )}
+        {/* Com detalhe, quem empurra para a direita é ele: duas margens auto
+            dividiriam a sobra e abririam um buraco entre o número e a seta. */}
         <ChevronDown
-          className="ml-auto size-3.5 shrink-0 text-zinc-400"
+          className={`${escolhida?.detalhe ? "" : "ml-auto "}size-3.5 shrink-0 text-zinc-400`}
           aria-hidden="true"
         />
       </button>
@@ -241,6 +250,11 @@ export function SeletorMenu({
                     aria-hidden="true"
                   />
                   <span className="truncate">{o.rotulo}</span>
+                  {o.detalhe && (
+                    <span className="ml-auto shrink-0 pl-2 text-[12px] tabular-nums text-zinc-400 dark:text-zinc-500">
+                      {o.detalhe}
+                    </span>
+                  )}
                 </button>
               </li>
             );

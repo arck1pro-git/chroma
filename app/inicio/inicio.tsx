@@ -818,6 +818,17 @@ export default function Inicio({
     [etapasDoFunil, quadro],
   );
 
+  // Quantos leads cada funil tem: o número ao lado do nome no seletor do topo
+  // (pedido dele, 2026-10-15). Sai do quadro sem filtro, como o denominador
+  // acima, então acompanha o arraste e o escopo de quem vê.
+  const leadsPorFunil = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const e of etapas) {
+      mapa.set(e.funil_id, (mapa.get(e.funil_id) ?? 0) + (quadro[e.id]?.length ?? 0));
+    }
+    return mapa;
+  }, [etapas, quadro]);
+
   // Conversão entre etapas, tempo médio e ticket médio por etapa. Saíram dos
   // gráficos do topo e agora alimentam o próprio quadro.
   const metricas = useMemo(
@@ -966,7 +977,11 @@ export default function Inicio({
               Icone={Funnel}
               rotulo="Funil"
               valor={funil?.id ?? ""}
-              opcoes={funis.map((f) => ({ valor: f.id, rotulo: f.nome }))}
+              opcoes={funis.map((f) => ({
+                valor: f.id,
+                rotulo: f.nome,
+                detalhe: (leadsPorFunil.get(f.id) ?? 0).toLocaleString("pt-BR"),
+              }))}
               aoMudar={setFunilId}
               botao="w-56"
             />
