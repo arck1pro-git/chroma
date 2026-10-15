@@ -20,6 +20,11 @@
 // grava a mensagem nela. Por isso o conserto vale sem republicar nenhuma
 // cadência. (O usuário do banco do n8n não pode mudar `status`, então reabrir
 // conversa encerrada só é possível daqui.)
+//
+// E O REGISTRO TAMBÉM MUDOU DE LADO (2026-10-15): mesmo com a conversa aberta,
+// o nó do n8n não gravava nada — recebia o texto numa lista separada por
+// vírgula, e a vírgula da mensagem deslocava os parâmetros. Agora quem grava a
+// mensagem é o CRM, antes do envio (registrarMensagemDaCadencia, abaixo).
 import "server-only";
 import { sql } from "@/lib/db";
 import { chaveTelefone } from "@/lib/telefone";
@@ -88,4 +93,34 @@ export async function abrirConversaDaCadencia(dados: {
           data_atualizacao = now()
     RETURNING id`;
   return (at?.id as string | null) ?? null;
+}
+
+/**
+ * A linha da mensagem da cadência, gravada ANTES do envio como 'pendente'.
+ * Quem envia passa o id como track_id (o eco do webhook casa com ela) e depois
+ * confirma com confirmarEnvio / marcarErro (lib/conversa-envio.ts), como o chat.
+ *
+ * `enviada_por = 'automacao'`: é o que a separa de mensagem do celular — que
+ * para a IA é gente da equipe assumindo a conversa — e é o que a guarda da
+ * cadência lê. O anexo vai na linha: o balão desenha anexo quando tipo <>
+ * 'texto'; sem documento, o LEFT JOIN não casa e fica mensagem de texto.
+ */
+export async function registrarMensagemDaCadencia(dados: {
+  atendimentoId: string;
+  texto: string;
+  documentoId: string;
+}): Promise<string | null> {
+  const [m] = await sql`
+    INSERT INTO mensagens
+      (atendimento_id, origem, autor_id, texto, status, enviada_por,
+       documento_id, tipo, midia_estado, midia_mime, midia_nome, midia_tamanho)
+    SELECT ${dados.atendimentoId}::uuid, 'agente', NULL, ${dados.texto}, 'pendente', 'automacao',
+           d.id, COALESCE(d.tipo, 'texto'),
+           CASE WHEN d.id IS NULL THEN 'ausente' ELSE 'salva' END,
+           d.mime, d.arquivo_nome, d.tamanho
+      FROM (SELECT 1) AS um
+      -- NULLIF: sem anexo o id chega '', e ''::uuid é erro no Postgres.
+      LEFT JOIN documentos d ON d.id = NULLIF(${dados.documentoId}, '')::uuid
+    RETURNING id`;
+  return (m?.id as string | null) ?? null;
 }

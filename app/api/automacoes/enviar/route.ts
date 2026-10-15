@@ -4,7 +4,8 @@ import { enviarMidia, enviarTexto, instanciaExataPorNumero, type Instancia } fro
 import { paraEnvio } from "@/lib/documentos";
 import { sql } from "@/lib/db";
 import { soDigitos } from "@/lib/telefone";
-import { abrirConversaDaCadencia } from "@/lib/automacoes/conversa-da-cadencia";
+import { abrirConversaDaCadencia, registrarMensagemDaCadencia } from "@/lib/automacoes/conversa-da-cadencia";
+import { confirmarEnvio, marcarErro } from "@/lib/conversa-envio";
 
 // O CRM NA FRENTE DO ENVIO. O motor não fala mais com a uazapi: ele diz "manda
 // este texto, por este número", e quem tem a credencial é quem sempre teve — o
@@ -155,6 +156,38 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // A MENSAGEM É GRAVADA AQUI, pelo CRM, ANTES de sair (2026-10-15). Quem
+  // gravava era um nó Postgres do workflow, que recebia o texto numa lista
+  // separada por vírgula (queryReplacement do n8n): toda mensagem com vírgula
+  // deslocava os parâmetros, o nó falhava — e desde 2026-09-18 nenhuma
+  // mensagem de cadência ficou no CRM, e as cadências paravam depois da 1ª
+  // (o nó quebrado encerrava o workflow). Gravando aqui, vale para os
+  // workflows já publicados sem republicar nada.
+  //
+  // Antes do envio, como o chat faz (lib/conversa-envio.ts): a linha nasce
+  // 'pendente' e o id dela vai como track_id; o eco do webhook casa com ela em
+  // vez de virar mensagem "do celular" — que para a IA é gente da equipe
+  // assumindo a conversa, e a calaria por uma hora.
+  //
+  // Notificação para o time (usuarioId) não é conversa com o lead: não grava.
+  let atendimentoId: string | null = null;
+  let mensagemId: string | null = null;
+  if (!usuarioId) {
+    try {
+      atendimentoId = await abrirConversaDaCadencia({
+        execucaoId: String(corpo.execucao_id ?? ""),
+        numeroLead: destino,
+        numeroInstancia: soDigitos(instancia.numero ?? "") || null,
+      });
+      if (atendimentoId) {
+        mensagemId = await registrarMensagemDaCadencia({ atendimentoId, texto, documentoId });
+      }
+    } catch (e) {
+      // Registro não derruba envio: a cadência manda do mesmo jeito.
+      console.error("[automacoes/enviar] a mensagem vai sair sem ficar registrada:", e);
+    }
+  }
+
   try {
     let r;
     if (documentoId) {
@@ -184,41 +217,34 @@ export async function POST(req: NextRequest) {
           mime: doc.mime,
         },
         instancia,
+        mensagemId ?? undefined,
       );
     } else {
-      r = await enviarTexto(destino, texto, instancia);
+      r = await enviarTexto(destino, texto, instancia, mensagemId ?? undefined);
     }
 
-    // A CONVERSA, quando a mensagem foi para o LEAD (aviso para alguém do time
-    // não abre conversa com o lead). Sem ela, o registro do workflow não tinha
-    // onde gravar e a mensagem sumia do CRM — ver
-    // lib/automacoes/conversa-da-cadencia.ts.
-    //
-    // Falhar aqui NÃO derruba a resposta: a mensagem já saiu. Um 502 agora
-    // faria o motor achar que não saiu e tentar de novo — o lead receberia em
-    // dobro por causa de um problema só de registro.
-    let atendimentoId: string | null = null;
-    if (!usuarioId) {
+    // Saiu: a linha recebe o id do WhatsApp e vira 'enviado'. Falhar aqui NÃO
+    // derruba a resposta — um 502 agora faria o motor achar que não saiu e
+    // tentar de novo, e o lead receberia em dobro por um problema de registro.
+    if (mensagemId) {
       try {
-        atendimentoId = await abrirConversaDaCadencia({
-          execucaoId: String(corpo.execucao_id ?? ""),
-          numeroLead: destino,
-          numeroInstancia: soDigitos(instancia.numero ?? "") || null,
-        });
+        await confirmarEnvio(mensagemId, r?.messageid ?? null);
+        await sql`UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${atendimentoId}`;
       } catch (e) {
-        console.error("[automacoes/enviar] mensagem saiu, mas a conversa não abriu:", e);
+        console.error("[automacoes/enviar] saiu, mas não confirmou a linha:", mensagemId, e);
       }
     }
 
-    // `text` vai no retorno porque o nó que registra a mensagem no motor lê o
-    // texto DAQUI, não do que ele mesmo mandou — é o que garante que o
-    // histórico guarde exatamente o que saiu. `atendimento_id` é a conversa
-    // onde ela deve ficar (o registro dos workflows publicados depois desta
-    // correção grava nela, e não "na mais recente aberta").
+    // SEM `text` NO RETORNO, de propósito. O nó de registro dos workflows já
+    // publicados lia o texto daqui e o passava ao Postgres numa lista separada
+    // por vírgula — era a vírgula da mensagem que quebrava tudo. Sem o texto, o
+    // nó antigo recebe '' (só ids, sem vírgula), grava o passo e a cadência
+    // segue para a próxima mensagem; a linha dele em `mensagens` esbarra no
+    // id_externo desta (ON CONFLICT DO NOTHING) e não duplica.
     return Response.json({
       ...r,
-      text: texto,
       atendimento_id: atendimentoId,
+      mensagem_id: mensagemId,
       documento_id: documentoId || null,
       // Quem foi avisado, quando é notificação. O nó que registra lê daqui
       // para escrever no histórico do lead.
@@ -227,6 +253,9 @@ export async function POST(req: NextRequest) {
       instancia: instancia.nome,
     });
   } catch (e) {
+    // A linha fica na conversa como 'erro', com o motivo: quem abre o chat vê
+    // que a cadência tentou e não saiu.
+    if (mensagemId) await marcarErro(mensagemId, e).catch(() => {});
     // 502 e não 200: o nó tem que FALHAR no motor para o ramo morrer ali e o
     // workflow de erros marcar a execução. Responder 200 com `{ erro }` faria a
     // cadência seguir para a próxima mensagem como se esta tivesse saído.

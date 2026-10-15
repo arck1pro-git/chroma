@@ -620,24 +620,24 @@ export function paraWorkflow(
         },
       });
 
-      // O atendimento é resolvido no próprio INSERT: ON CONFLICT não serve
-      // aqui (não há chave única de "conversa aberta"), então a subconsulta
-      // pega a mais recente não encerrada. Sem ela, uma cadência de 18
-      // mensagens criaria 18 conversas na tela do chat.
+      // ESTE NÓ MARCA O PASSO — e só isso, desde 2026-10-15. É o que põe o
+      // card na coluna certa da cadência: a tela pergunta "qual foi o último
+      // bloco executado para esta oportunidade?" a fluxo_execucao_passos.
       //
-      // ESTE NÓ TAMBÉM MARCA O PASSO, e é o que conserta o card parado na
-      // última coluna. A tela pergunta "qual foi o último bloco executado para
-      // esta oportunidade?" a fluxo_execucao_passos; quem alimentava essa
-      // tabela era o executor do CRM, que deixou de existir quando o n8n passou
-      // a falar direto com a uazapi (ver lib/automacoes/servico.ts). Desde
-      // então ninguém escrevia ali, a posição vinha vazia, e TODO card caía na
-      // régua de dias — que, para uma oportunidade antiga, aponta sempre a
-      // última mensagem. Daí "todo mundo na mensagem 5".
+      // A MENSAGEM NÃO É MAIS GRAVADA AQUI: quem grava é o CRM, no envio
+      // (app/api/automacoes/enviar). Este nó recebia o texto numa lista
+      // separada por vírgula (queryReplacement), e a vírgula de qualquer
+      // mensagem deslocava os parâmetros: o nó falhava, nada era gravado e o
+      // workflow morria depois da 1ª mensagem — de 2026-09-18 a 2026-10-15
+      // nenhuma mensagem de cadência ficou no CRM. Daqui só passam valores que
+      // não têm vírgula (ids e o tipo do bloco). Não volte a pôr texto livre
+      // nesta lista.
       //
-      // Vai DEPOIS do envio, na mesma instrução, porque é o envio que faz o
-      // passo existir: falhou o envio, o ramo morre aqui e nada é marcado.
-      // `enviada_por` nasce 'automacao' — é o que distingue esta mensagem da
-      // que o atendente manda pelo celular, e é o que a guarda lê.
+      // No envio direto pela uazapi (localhost, sem CRM público) a mensagem
+      // não fica registrada: ali não há quem grave.
+      //
+      // Vai DEPOIS do envio porque é o envio que faz o passo existir: falhou o
+      // envio, o ramo morre aqui e nada é marcado.
       nodes.push({
         id: `${passo.id}__reg`,
         name: registro,
@@ -647,65 +647,17 @@ export function paraWorkflow(
         parameters: {
           operation: "executeQuery",
           query: `
-            WITH msg AS (
-              INSERT INTO mensagens
-                (atendimento_id, origem, autor_id, texto, status, id_externo,
-                 enviada_por,
-                 -- O ANEXO, quando a mensagem leva um. Sem estas colunas a
-                 -- conversa guardava a legenda e perdia o arquivo: o balão
-                 -- desenha anexo quando tipo <> 'texto', então ela aparecia
-                 -- como texto puro e o PDF que o lead recebeu não existia no
-                 -- histórico do CRM.
-                 documento_id, tipo, midia_estado,
-                 midia_mime, midia_nome, midia_tamanho)
-              SELECT a.id, 'agente', NULL, $2, 'enviado', $3, 'automacao',
-                     d.id,
-                     -- Sem documento o LEFT JOIN não casa e tudo cai no
-                     -- default de mensagem de texto, que é o caso comum.
-                     COALESCE(d.tipo, 'texto'),
-                     CASE WHEN d.id IS NULL THEN 'ausente' ELSE 'salva' END,
-                     d.mime, d.arquivo_nome, d.tamanho
-              FROM atendimentos a
-              -- NULLIF porque o parâmetro chega '' quando o bloco não tem
-              -- anexo, e ''::uuid é erro de sintaxe no Postgres.
-              LEFT JOIN documentos d ON d.id = NULLIF($7, '')::uuid
-              -- A CONVERSA que o CRM abriu no envio ($8, ver
-              -- lib/automacoes/conversa-da-cadencia.ts). Antes era "a mais
-              -- recente aberta do contato" — e lead novo não tinha nenhuma, então
-              -- nada era gravado: a mensagem saía e sumia do CRM. Sem $8 (envio
-              -- direto na uazapi, só no dev) fica a regra antiga.
-              WHERE a.contato_id = $1::uuid
-                AND (a.id::text = $8 OR ($8 = '' AND a.status <> 'encerrado'))
-              ORDER BY (a.id::text = $8) DESC, a.data_criacao DESC
-              LIMIT 1
-              -- Reenvio do mesmo passo (retentativa do motor) não pode virar
-              -- erro: estourar aqui mataria a cadência depois de a mensagem já
-              -- ter saído.
-              ON CONFLICT (id_externo) WHERE id_externo IS NOT NULL DO NOTHING
-              RETURNING id
-            )
             INSERT INTO fluxo_execucao_passos
               (execucao_id, no_id, no_tipo, ordem, estado)
-            SELECT $4::uuid, $5, $6,
+            SELECT $1::uuid, $2, $3,
                    -- Ordem = quantos passos esta execução já tem + 1. Sai do
                    -- banco e não de um contador do workflow: com ramos e
                    -- reentradas, o motor não tem esse número.
                    (SELECT count(*) + 1 FROM fluxo_execucao_passos p
-                     WHERE p.execucao_id = $4::uuid)::smallint,
+                     WHERE p.execucao_id = $1::uuid)::smallint,
                    'sucesso'`,
           options: {
-            queryReplacement: expr(
-              [
-                `{{ $('${NOME_LEAD}').first().json.contato_id }}`,
-                `{{ $('${envio}').first().json.text ?? '' }}`,
-                `{{ $('${envio}').first().json.messageid ?? '' }}`,
-                EXECUCAO_ID,
-                passo.id,
-                passo.tipo,
-                documentoId,
-                `{{ $('${envio}').first().json.atendimento_id ?? '' }}`,
-              ].join(","),
-            ),
+            queryReplacement: expr([EXECUCAO_ID, passo.id, passo.tipo].join(",")),
           },
         },
         credentials: credPostgres(cred),
