@@ -54,7 +54,7 @@ export async function abrirConversaDaCadencia(dados: {
     if (fim8.length !== 8) return null;
     const [c] = await sql`
       SELECT id FROM contatos
-       WHERE regexp_replace(whatsapp, '\D', '', 'g') LIKE ${"%" + fim8}
+       WHERE regexp_replace(whatsapp, '\\D', '', 'g') LIKE ${"%" + fim8}
        LIMIT 1`;
     contatoId = (c?.id as string | null) ?? null;
   }

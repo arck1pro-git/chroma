@@ -156,7 +156,7 @@ async function acharContato(
     if (fim8.length === 8) {
       const [c] = await sql`
         SELECT id FROM contatos
-        WHERE regexp_replace(whatsapp, '\D', '', 'g') LIKE ${"%" + fim8}
+        WHERE regexp_replace(whatsapp, '\\D', '', 'g') LIKE ${"%" + fim8}
         LIMIT 1`;
       if (c) return c.id as string;
     }

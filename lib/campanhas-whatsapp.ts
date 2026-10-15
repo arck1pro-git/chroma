@@ -160,7 +160,7 @@ export async function registrarResposta(numero: string, mensagemId?: string) {
     UPDATE campanha_whatsapp_execucoes e SET estado='respondeu', respondeu_em=now(), finalizado_em=now()
      WHERE e.id IN (
        SELECT e2.id FROM campanha_whatsapp_execucoes e2 JOIN contatos c ON c.id=e2.contato_id
-        WHERE e2.estado='aguardando_resposta' AND regexp_replace(c.whatsapp,'\D','','g') LIKE ${"%"+fim})
+        WHERE e2.estado='aguardando_resposta' AND regexp_replace(c.whatsapp,'\\D','','g') LIKE ${"%"+fim})
      RETURNING e.id,e.campanha_id,e.contato_id` as unknown as Array<{id:string;campanha_id:string;contato_id:string}>;
   for (const linha of linhas) {
     const [e] = await sql`SELECT e.id,e.campanha_id,e.contato_id,c.nome AS contato_nome,c.whatsapp,cw.definicao FROM campanha_whatsapp_execucoes e JOIN contatos c ON c.id=e.contato_id JOIN campanhas_whatsapp cw ON cw.id=e.campanha_id WHERE e.id=${linha.id}::uuid` as unknown as Execucao[];

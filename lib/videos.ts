@@ -289,7 +289,7 @@ async function contatoPorWhatsapp(digitos: string): Promise<{ id: string; nome: 
   if (fim8.length !== 8) return null;
   const [c] = await sql`
     SELECT id, nome FROM contatos
-     WHERE regexp_replace(whatsapp, '\D', '', 'g') LIKE ${"%" + fim8}
+     WHERE regexp_replace(whatsapp, '\\D', '', 'g') LIKE ${"%" + fim8}
      ORDER BY data_criacao
      LIMIT 1`;
   return c ? { id: c.id as string, nome: c.nome as string } : null;

@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
 
     const [contatoExistente] = await sql`
       SELECT id FROM contatos
-      WHERE regexp_replace(whatsapp, '\D', '', 'g') LIKE ${"%" + fim8}
+      WHERE regexp_replace(whatsapp, '\\D', '', 'g') LIKE ${"%" + fim8}
       LIMIT 1`;
 
     let contatoId: string;

@@ -738,7 +738,7 @@ export async function contatosParaInscrever(
     WHERE (
       c.nome ILIKE ${like}
       OR (${termo.replace(/\D/g, "")} <> ''
-          AND regexp_replace(c.whatsapp, '\D', '', 'g') LIKE ${digitos})
+          AND regexp_replace(c.whatsapp, '\\D', '', 'g') LIKE ${digitos})
     )
       AND NOT EXISTS (
         SELECT 1 FROM fluxo_execucoes e
