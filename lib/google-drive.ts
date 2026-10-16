@@ -37,26 +37,76 @@ export function idDoDrive(texto: string): string | null {
 
 export type ArquivoDrive = { id: string; nome: string; mime: string; tamanho: number };
 
-async function token() {
-  return tokenDeAcesso(ESCOPO_DRIVE);
-}
-
 /** Erro com o motivo para quem pediu (o modelo, no conector). */
 export class ErroDrive extends Error {}
 
-const SEM_ACESSO = (id: string) =>
-  `O CRM não enxerga o arquivo ${id} no Drive. No Drive compartilhado, adicione ${process.env.GOOGLE_SA_EMAIL ?? "a conta de serviço do CRM"} como membro (Gerenciar membros → Leitor).`;
+const conta = () => process.env.GOOGLE_SA_EMAIL ?? "a conta de serviço do CRM";
 
-/** Nome, tipo e tamanho — sem baixar o arquivo. */
-export async function arquivoDoDrive(id: string): Promise<ArquivoDrive> {
-  const res = await fetch(`${API}/${encodeURIComponent(id)}?fields=id,name,mimeType,size&supportsAllDrives=true`, {
-    headers: { Authorization: `Bearer ${await token()}` },
-    cache: "no-store",
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (res.status === 404 || res.status === 403) throw new ErroDrive(SEM_ACESSO(id));
-  if (!res.ok) throw new ErroDrive(`O Drive respondeu ${res.status} para o arquivo ${id}.`);
-  const j = (await res.json()) as { id: string; name: string; mimeType: string; size?: string };
+// Sem isso, a falha ao entrar no Google chegava ao conector como "Erro no CRM"
+// e o modelo chutava a causa (2026-10-16). Agora o erro diz o que falhou.
+async function token() {
+  try {
+    return await tokenDeAcesso(ESCOPO_DRIVE);
+  } catch (e) {
+    console.error("[drive] token:", e);
+    const faltam = ["GOOGLE_SA_EMAIL", "GOOGLE_SA_PRIVATE_KEY"].filter((v) => !process.env[v]);
+    throw new ErroDrive(
+      faltam.length
+        ? `O servidor do CRM está sem a conta de serviço do Google: falta ${faltam.join(" e ")} nas variáveis do servidor (Vercel).`
+        : `O Google recusou a conta de serviço ${conta()} (${e instanceof Error ? e.message : String(e)}). Confira GOOGLE_SA_EMAIL e GOOGLE_SA_PRIVATE_KEY nas variáveis do servidor (Vercel).`,
+    );
+  }
+}
+
+/** Os Drives compartilhados de que a conta é membro — só para explicar a recusa. */
+async function drivesDaConta(): Promise<string> {
+  try {
+    const res = await fetch("https://www.googleapis.com/drive/v3/drives?pageSize=50&fields=drives(name)", {
+      headers: { Authorization: `Bearer ${await token()}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+    const nomes = ((await res.json()) as { drives?: { name: string }[] }).drives?.map((d) => `"${d.name}"`) ?? [];
+    return nomes.length ? `Hoje ela é membro de: ${nomes.join(", ")}.` : "Hoje ela não é membro de nenhum Drive compartilhado.";
+  } catch {
+    return "";
+  }
+}
+
+/** A recusa do Drive traduzida pelo motivo que o Google manda no corpo. */
+async function recusa(res: Response, id: string): Promise<never> {
+  const corpo = (await res.json().catch(() => null)) as {
+    error?: { message?: string; errors?: { reason?: string }[]; details?: { reason?: string }[] };
+  } | null;
+  const motivo = corpo?.error?.errors?.[0]?.reason ?? corpo?.error?.details?.find((d) => d.reason)?.reason;
+  console.error(`[drive] ${id}: ${res.status} ${motivo ?? ""} ${corpo?.error?.message ?? ""}`);
+  if (motivo === "accessNotConfigured" || motivo === "SERVICE_DISABLED") {
+    throw new ErroDrive(`A API do Google Drive está desligada no projeto da conta ${conta()} (Google Cloud → APIs e serviços → Google Drive API → Ativar).`);
+  }
+  if (res.status === 404 || res.status === 403) {
+    throw new ErroDrive(
+      `A conta ${conta()} não enxerga o arquivo ${id}: ele não está num Drive compartilhado de que ela seja membro (arquivo do "Meu Drive" de uma pessoa não serve). ` +
+        `${await drivesDaConta()} Mova o arquivo para um deles ou adicione a conta como membro do Drive dele (Gerenciar membros → Leitor).`,
+    );
+  }
+  throw new ErroDrive(`O Drive respondeu ${res.status} para o arquivo ${id}${corpo?.error?.message ? `: ${corpo.error.message}` : ""}.`);
+}
+
+const ATALHO = "application/vnd.google-apps.shortcut";
+
+/** Nome, tipo e tamanho — sem baixar o arquivo. Atalho do Drive vira o arquivo para onde aponta. */
+export async function arquivoDoDrive(id: string, saltos = 0): Promise<ArquivoDrive> {
+  const res = await fetch(
+    `${API}/${encodeURIComponent(id)}?fields=id,name,mimeType,size,shortcutDetails(targetId)&supportsAllDrives=true`,
+    {
+      headers: { Authorization: `Bearer ${await token()}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  if (!res.ok) return recusa(res, id);
+  const j = (await res.json()) as { id: string; name: string; mimeType: string; size?: string; shortcutDetails?: { targetId?: string } };
+  if (j.mimeType === ATALHO && j.shortcutDetails?.targetId && saltos === 0) return arquivoDoDrive(j.shortcutDetails.targetId, 1);
   return { id: j.id, nome: j.name, mime: j.mimeType, tamanho: Number(j.size ?? 0) };
 }
 
@@ -67,7 +117,6 @@ export async function baixarDoDrive(id: string): Promise<Response> {
     cache: "no-store",
     signal: AbortSignal.timeout(180_000),
   });
-  if (res.status === 404 || res.status === 403) throw new ErroDrive(SEM_ACESSO(id));
-  if (!res.ok) throw new ErroDrive(`O Drive não entregou o arquivo ${id} (${res.status}).`);
+  if (!res.ok) return recusa(res, id);
   return res;
 }
