@@ -42,6 +42,16 @@ export default function CartaoOportunidade({
           quadro (app/inicio/inicio.tsx) — sem a folga, nome longo corre por
           baixo dela. */}
       <h3 className="pr-6 text-sm font-semibold leading-5 text-zinc-900 dark:text-zinc-50">
+        {/* Bolinha vermelha = oportunidade perdida. Só aparece com o botão
+            "Perdidos" do topo ligado: fora dele, perdida não vai ao quadro. */}
+        {oportunidade.status === "perdida" && (
+          <span
+            role="img"
+            aria-label="Perdida"
+            title="Oportunidade perdida"
+            className="mr-1.5 inline-block size-2 rounded-full bg-red-500 align-[1px]"
+          />
+        )}
         {oportunidade.nome}
       </h3>
 

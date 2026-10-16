@@ -196,6 +196,15 @@ export async function definirIaDaEtapa(etapaId: string, iaId: string | null): Pr
   return {};
 }
 
+/** Esconde (ou volta a mostrar) os cards da etapa no quadro — o olho da coluna. */
+export async function definirOcultarLeads(etapaId: string, ocultar: boolean): Promise<{ erro?: string }> {
+  await exigirModulo("inicio");
+  if (!UUID.test(etapaId)) return { erro: "Etapa inválida." };
+  await sql`UPDATE etapas SET ocultar_leads = ${ocultar === true} WHERE id = ${etapaId}`;
+  revalidatePath("/");
+  return {};
+}
+
 /**
  * `true` ligada à mão (com a IA `iaId`), `false` desligada à mão, `null` volta
  * a seguir a etapa.

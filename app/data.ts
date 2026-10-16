@@ -50,6 +50,10 @@ export type Etapa = {
   // A IA que responde no WhatsApp quem tem oportunidade aberta aqui
   // (migration-ias.sql); null = nenhuma.
   ia_id?: string | null;
+  // Os cards desta etapa ficam escondidos no quadro (o olho do cabeçalho da
+  // coluna; migration-etapa-ocultar-leads.sql). A coluna segue com contagem e
+  // valor, e o botão "Ocultos" do topo mostra tudo.
+  ocultar_leads?: boolean;
   // A cor do FUNIL (o nome do tom, 'blue'), para o robô dos cards sair nela.
   // Derivada no carregamento, como `cor`.
   tom_funil?: string;

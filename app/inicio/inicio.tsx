@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useOptimistic,
   useRef,
   useState,
   useTransition,
@@ -31,7 +32,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bot, Check, Funnel, Layers, LifeBuoy, ListTree, Minus, Plus, Users } from "lucide-react";
+import { Bot, Check, EyeOff, Funnel, Layers, LifeBuoy, ListTree, Minus, Plus, Users } from "lucide-react";
+import { definirOcultarLeads } from "./acoes-ia";
 import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
 import type { DadosFunil } from "../funil/dados";
 import type { Ia } from "@/lib/ia/catalogo";
@@ -293,6 +295,7 @@ function ColunaResumo({
   ias,
   aoGerenciarIas,
   pediramAtendimento,
+  mostrarOcultos,
 }: {
   // posição da coluna no quadro; serve só ao escalonamento da entrada
   ordem: number;
@@ -317,16 +320,38 @@ function ColunaResumo({
   aoGerenciarIas: () => void;
   /** Contatos que pediram atendimento humano e esperam resposta (a pill do card). */
   pediramAtendimento: Set<string>;
+  /** O botão "Ocultos" do topo: mostra os cards mesmo com a etapa oculta. */
+  mostrarOcultos: boolean;
 }) {
   const total = oportunidades.reduce((soma, o) => soma + o.valor, 0);
-  // Quantas da coluna estão marcadas. `oportunidades` é o que a coluna MOSTRA
+
+  // OCULTAR LEADS (pedido dele, 2026-10-16): o olho do cabeçalho esconde os
+  // cards da coluna. Contagem e valor continuam valendo — os leads estão lá,
+  // só não ocupam a tela. Otimista: a coluna fecha no clique, e o
+  // revalidatePath da action confirma.
+  const [, iniciarOcultar] = useTransition();
+  const [oculta, setOculta] = useOptimistic(etapa.ocultar_leads ?? false);
+  const esconder = oculta && !mostrarOcultos;
+  function alternarOculta() {
+    const nova = !oculta;
+    iniciarOcultar(async () => {
+      setOculta(nova);
+      const r = await definirOcultarLeads(etapa.id, nova);
+      if (r.erro) alert(r.erro);
+    });
+  }
+  // O que a coluna DESENHA. Com a etapa oculta, nada: nem card, nem caixa de
+  // marcar a etapa (marcar o que não se vê mandaria lote às cegas).
+  const mostradas = esconder ? [] : oportunidades;
+
+  // Quantas da coluna estão marcadas. `mostradas` é o que a coluna MOSTRA
   // (já passou pelos filtros), então marcar a etapa com filtro ligado marca só
   // o que está à vista — nunca um cartão escondido que a barra mandaria excluir.
-  const marcadas = oportunidades.reduce(
+  const marcadas = mostradas.reduce(
     (n, o) => (selecionados.has(o.id) ? n + 1 : n),
     0,
   );
-  const etapaMarcada = marcadas > 0 && marcadas === oportunidades.length;
+  const etapaMarcada = marcadas > 0 && marcadas === mostradas.length;
   // a área de cards é o alvo de soltura — inclusive quando a etapa está vazia
   const { setNodeRef, isOver } = useDroppable({ id: etapa.id });
   // O mesmo nó, guardado para a barra desenhada ler scrollTop/scrollHeight.
@@ -377,10 +402,10 @@ function ColunaResumo({
               type="button"
               role="checkbox"
               aria-checked={etapaMarcada ? true : marcadas > 0 ? "mixed" : false}
-              disabled={oportunidades.length === 0}
+              disabled={mostradas.length === 0}
               onClick={() =>
                 aoSelecionar(
-                  oportunidades.map((o) => o.id),
+                  mostradas.map((o) => o.id),
                   !etapaMarcada,
                 )
               }
@@ -495,6 +520,27 @@ function ColunaResumo({
           ias={ias}
           aoGerenciarIas={aoGerenciarIas}
         />
+        {/* Ocultar os leads da etapa: a configuração mora aqui, no quadro, ao
+            lado das outras coisas que valem para a etapa inteira. Escuro =
+            ligado, como o botão de Filtros com filtro ativo. */}
+        <button
+          type="button"
+          onClick={alternarOculta}
+          aria-pressed={oculta}
+          aria-label={`Ocultar os leads de ${etapa.nome}`}
+          title={
+            oculta
+              ? "Leads desta etapa ocultos no quadro. Clique para voltar a mostrar."
+              : "Ocultar os leads desta etapa no quadro"
+          }
+          className={`mt-2 flex w-7 shrink-0 items-center justify-center rounded-lg border transition tela-baixa:mt-1.5 ${
+            oculta
+              ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+              : "border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:bg-white hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+          }`}
+        >
+          <EyeOff className="size-3.5" aria-hidden="true" />
+        </button>
         {/* O "+" de nova oportunidade fecha a linha das AÇÕES da etapa. Morava
             na linha do nome, e lá os 28px dele (com a caixa de marcar ao lado)
             cortavam "tentando contato" e "reunião agendada". Assim a linha de
@@ -520,7 +566,7 @@ function ColunaResumo({
           não há o que rolar, e navegador nenhum desenha polegar sem transbordo.
           Ver app/inicio/barra-rolagem.tsx. */}
       <SortableContext
-        items={oportunidades.map((o) => o.id)}
+        items={mostradas.map((o) => o.id)}
         strategy={verticalListSortingStrategy}
       >
         <div className="flex min-h-0 flex-1 gap-0.5 pr-1">
@@ -537,12 +583,21 @@ function ColunaResumo({
             isOver ? "bg-zinc-200/60 dark:bg-zinc-800/50" : ""
           }`}
         >
-          {oportunidades.length === 0 ? (
+          {esconder ? (
+            // Continua sendo área de solta: arrastar para cá move o card, que
+            // some junto com os outros.
+            <p className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-zinc-200 px-3 py-5 text-center text-xs text-zinc-400 dark:border-zinc-700">
+              <EyeOff className="size-4" aria-hidden="true" />
+              {oportunidades.length === 0
+                ? "Etapa com leads ocultos"
+                : `${oportunidades.length.toLocaleString("pt-BR")} ${oportunidades.length === 1 ? "lead oculto" : "leads ocultos"}`}
+            </p>
+          ) : mostradas.length === 0 ? (
             <p className="rounded-xl border border-dashed border-zinc-200 px-3 py-5 text-center text-xs text-zinc-400 dark:border-zinc-700">
               Solte uma oportunidade aqui
             </p>
           ) : (
-            oportunidades.map((o) => {
+            mostradas.map((o) => {
               const contato = contatoPorId.get(o.contato_id);
 
               return (
@@ -572,7 +627,7 @@ function ColunaResumo({
 
         <BarraRolagem
           alvoRef={areaRolagemRef}
-          dependencia={oportunidades.length}
+          dependencia={mostradas.length}
         />
         </div>
       </SortableContext>
@@ -797,22 +852,30 @@ export default function Inicio({
   // painel ser fechado de fora quando fizer falta — hoje ninguém fecha.
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
 
+  // Os dois botões ao lado de Filtros (pedido dele, 2026-10-16). PERDIDA NÃO
+  // VAI AO QUADRO: só com "Perdidos" ligado, e aí com a bolinha vermelha no
+  // card. "Ocultos" abre as etapas com os leads ocultos (o olho da coluna).
+  // Nascem desligados a cada visita, de propósito.
+  const [mostrarPerdidos, setMostrarPerdidos] = useState(false);
+  const [mostrarOcultos, setMostrarOcultos] = useState(false);
+  const entraNoQuadro = useCallback(
+    (o: Oportunidade) => mostrarPerdidos || o.status !== "perdida",
+    [mostrarPerdidos],
+  );
+
   const quadroVisivel = useMemo(() => {
-    if (!temFiltro) return quadro;
+    if (!temFiltro && mostrarPerdidos) return quadro;
     const mapa: Quadro = {};
     for (const etapaId of Object.keys(quadro)) {
       mapa[etapaId] = quadro[etapaId].filter((o) =>
-        passaNoFiltroCampanhas(filtroCampanhas, o.campos, contatoPorId.get(o.contato_id)?.origem_campos) && passaNoFiltro(
-          o,
-          filtros,
-          contatoPorId,
-          dados.segmentosDoContato,
-          tagsDoContato,
-        ),
+        entraNoQuadro(o) &&
+        (!temFiltro ||
+          (passaNoFiltroCampanhas(filtroCampanhas, o.campos, contatoPorId.get(o.contato_id)?.origem_campos) &&
+            passaNoFiltro(o, filtros, contatoPorId, dados.segmentosDoContato, tagsDoContato))),
       );
     }
     return mapa;
-  }, [quadro, temFiltro, filtros, filtroCampanhas, contatoPorId, dados.segmentosDoContato, tagsDoContato]);
+  }, [quadro, temFiltro, mostrarPerdidos, entraNoQuadro, filtros, filtroCampanhas, contatoPorId, dados.segmentosDoContato, tagsDoContato]);
 
   // As oportunidades que o quadro mostra AGORA. É delas que saem as métricas —
   // com um filtro ligado, um ticket médio calculado sobre as 173 enquanto a
@@ -822,10 +885,11 @@ export default function Inicio({
     [etapasDoFunil, quadroVisivel],
   );
 
-  // Denominador do "N de M": o funil inteiro, sem filtro.
+  // Denominador do "N de M": o funil inteiro, sem filtro (perdidas só com o
+  // botão "Perdidos" ligado, como no quadro).
   const totalDoFunil = useMemo(
-    () => etapasDoFunil.reduce((s, e) => s + (quadro[e.id]?.length ?? 0), 0),
-    [etapasDoFunil, quadro],
+    () => etapasDoFunil.reduce((s, e) => s + (quadro[e.id]?.filter(entraNoQuadro).length ?? 0), 0),
+    [etapasDoFunil, quadro, entraNoQuadro],
   );
 
   // Quantos leads cada funil tem: o número ao lado do nome no seletor do topo
@@ -834,10 +898,19 @@ export default function Inicio({
   const leadsPorFunil = useMemo(() => {
     const mapa = new Map<string, number>();
     for (const e of etapas) {
-      mapa.set(e.funil_id, (mapa.get(e.funil_id) ?? 0) + (quadro[e.id]?.length ?? 0));
+      mapa.set(e.funil_id, (mapa.get(e.funil_id) ?? 0) + (quadro[e.id]?.filter(entraNoQuadro).length ?? 0));
     }
     return mapa;
-  }, [etapas, quadro]);
+  }, [etapas, quadro, entraNoQuadro]);
+
+  // Os números dos dois botões: perdidas do funil (com ou sem o botão ligado)
+  // e os leads à vista nas etapas ocultas.
+  const perdidasDoFunil = useMemo(
+    () => etapasDoFunil.reduce((s, e) => s + (quadro[e.id]?.filter((o) => o.status === "perdida").length ?? 0), 0),
+    [etapasDoFunil, quadro],
+  );
+  const etapasOcultas = etapasDoFunil.filter((e) => e.ocultar_leads);
+  const leadsOcultos = etapasOcultas.reduce((s, e) => s + (quadroVisivel[e.id]?.length ?? 0), 0);
 
   // Conversão entre etapas, tempo médio e ticket médio por etapa. Saíram dos
   // gráficos do topo e agora alimentam o próprio quadro.
@@ -1035,6 +1108,56 @@ export default function Inicio({
               />
             )}
 
+            {/* Perdidos e Ocultos: o que o quadro esconde de propósito, um
+                clique para ver. Mesma moldura do botão de Filtros; ligado, o
+                de perdidos fica vermelho (a cor da bolinha nos cards). */}
+            <button
+              type="button"
+              onClick={() => {
+                setMostrarPerdidos((v) => !v);
+                limparSelecao();
+              }}
+              aria-pressed={mostrarPerdidos}
+              title={mostrarPerdidos ? "Mostrando as oportunidades perdidas. Clique para esconder." : "Mostrar as oportunidades perdidas"}
+              className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] outline-none transition focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:focus-visible:ring-zinc-100/10 ${
+                mostrarPerdidos
+                  ? "border-red-300 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300"
+                  : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              }`}
+            >
+              <span className="size-2 shrink-0 rounded-full bg-red-500" aria-hidden="true" />
+              {/* Nome só a partir de 1280px: no tablet deitado, com ele, IAs e
+                  Contatos saíam da barra. Abaixo disso, ícone + número. */}
+              <span className="sr-only xl:not-sr-only">Perdidos</span>
+              <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{perdidasDoFunil.toLocaleString("pt-BR")}</span>
+            </button>
+            {etapasOcultas.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarOcultos((v) => !v);
+                  limparSelecao();
+                }}
+                aria-pressed={mostrarOcultos}
+                title={
+                  mostrarOcultos
+                    ? "Mostrando os leads das etapas ocultas. Clique para esconder."
+                    : `Mostrar os leads das etapas ocultas (${etapasOcultas.map((e) => e.nome).join(", ")})`
+                }
+                className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] outline-none transition focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:focus-visible:ring-zinc-100/10 ${
+                  mostrarOcultos
+                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                    : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <EyeOff className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="sr-only xl:not-sr-only">Ocultos</span>
+                <span className={`tabular-nums ${mostrarOcultos ? "opacity-70" : "text-zinc-400 dark:text-zinc-500"}`}>
+                  {leadsOcultos.toLocaleString("pt-BR")}
+                </span>
+              </button>
+            )}
+
             {/* A descrição do funil, que morava na ponta da linha dos filtros.
                 Só em tela larga: no tablet o espaço é dos botões. */}
             {funil?.descricao && (
@@ -1185,6 +1308,7 @@ export default function Inicio({
                           ias={dados.ias}
                           aoGerenciarIas={abrirGavetaIas}
                           pediramAtendimento={pediramAtendimento}
+                          mostrarOcultos={mostrarOcultos}
                         />
                       ))}
                     </div>
