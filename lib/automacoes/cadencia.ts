@@ -120,8 +120,12 @@ export function duracaoEmTexto(minutos: number): string {
     const resto = minutos % 60;
     return resto ? `${h} h ${resto} min` : `${h} h`;
   }
-  const d = Math.round(minutos / MINUTOS_POR_DIA);
-  return `${d} ${d === 1 ? "dia" : "dias"}`;
+  // Dia cheio e o que sobra: "1 dia 2 h", não "1 dia" — com a mensagem 2 em
+  // 24h e a 3 duas horas depois, arredondar mostraria as duas no mesmo dia.
+  const d = Math.floor(minutos / MINUTOS_POR_DIA);
+  const resto = minutos % MINUTOS_POR_DIA;
+  const dias = `${d} ${d === 1 ? "dia" : "dias"}`;
+  return resto ? `${dias} ${duracaoEmTexto(resto)}` : dias;
 }
 
 function minutosDe(no: No): number {
