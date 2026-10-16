@@ -5,7 +5,7 @@
 // exceção vale a IA da ETAPA em que a oportunidade está. Por card, e não por
 // contato, porque o card é de UMA etapa: o mesmo contato pode ter o robô numa
 // oportunidade e não na outra.
-import { textoDoTom } from "@/lib/cores-funil";
+import { bordaDoTom, textoDoTom } from "@/lib/cores-funil";
 import type { Contato, Etapa } from "../data";
 
 /** O id da IA que responde este card, ou null. */
@@ -18,4 +18,9 @@ export function iaDoCard(contato: Contato | undefined, etapa: Etapa | undefined)
 /** A cor do robô no card (a do funil), ou null quando a IA não atende. */
 export function corDoRobo(contato: Contato | undefined, etapa: Etapa | undefined): string | null {
   return iaDoCard(contato, etapa) ? textoDoTom(etapa?.tom_funil) : null;
+}
+
+/** A borda destacada do card que a IA atende (a cor do funil), ou null. */
+export function bordaDaIa(contato: Contato | undefined, etapa: Etapa | undefined): string | null {
+  return iaDoCard(contato, etapa) ? bordaDoTom(etapa?.tom_funil) : null;
 }

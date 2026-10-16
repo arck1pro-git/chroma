@@ -33,7 +33,7 @@ import {
 import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
 import { brl } from "../formato";
 import CartaoOportunidade from "../funil/cartao";
-import { corDoRobo } from "../funil/ia";
+import { bordaDaIa, corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
 import {
   proximoIdDeMensagem,
@@ -60,8 +60,8 @@ import {
   type Subetapa,
 } from "./subetapas";
 
-/** A cor do robô da IA no card deste contato NESTA etapa (null = sem IA). */
-type Robo = (contato: Contato | undefined) => string | null;
+/** A cor do robô da IA e a borda destacada no card deste contato NESTA etapa (null = sem IA). */
+type Robo = (contato: Contato | undefined) => { cor: string | null; borda: string | null };
 
 // Painel da cadência de UMA etapa, sobreposto ao quadro com o fundo desfocado.
 // Cada coluna é uma mensagem — e uma mensagem é um BLOCO de uma automação de
@@ -434,6 +434,7 @@ function CartaoNaCadencia({
   responsavel,
   tags,
   ia,
+  bordaIa,
   noFluxo,
   removendo,
   aoRemover,
@@ -443,6 +444,7 @@ function CartaoNaCadencia({
   responsavel: Usuario | undefined;
   tags: Tag[];
   ia: string | null;
+  bordaIa: string | null;
   noFluxo: boolean;
   removendo: boolean;
   aoRemover: (() => void) | null;
@@ -455,6 +457,7 @@ function CartaoNaCadencia({
         responsavel={responsavel}
         tags={tags}
         ia={ia}
+        bordaIa={bordaIa}
       />
 
       {noFluxo && aoRemover && (
@@ -693,7 +696,8 @@ function Coluna({
                 contato={contato}
                 responsavel={o.responsavel_id ? usuarioPorId.get(o.responsavel_id) : undefined}
                 tags={contato ? (tagsDoContato.get(contato.id) ?? []) : []}
-                ia={robo(contato)}
+                ia={robo(contato).cor}
+                bordaIa={robo(contato).borda}
                 noFluxo={emCadencia.has(o.id)}
                 removendo={removendoId === o.id}
                 aoRemover={aoRemover ? () => aoRemover(o) : null}
@@ -758,7 +762,7 @@ export default function PainelSubetapas({
   const hoje = useMemo(() => new Date(), []);
   const cor = etapa.cor;
   // O painel é de UMA etapa: o robô de cada card depende só do contato.
-  const robo: Robo = (contato) => corDoRobo(contato, etapa);
+  const robo: Robo = (contato) => ({ cor: corDoRobo(contato, etapa), borda: bordaDaIa(contato, etapa) });
 
   // Edição local. O que está aqui é o rascunho da tela; só vai ao banco no
   // Publicar. `chave` reseta o estado quando o servidor devolve outra versão —

@@ -58,7 +58,7 @@ import {
 import GavetaContatos from "./gaveta-contatos";
 import GavetaIas from "./gaveta-ias";
 import InterruptorIa from "./interruptor-ia";
-import { corDoRobo } from "../funil/ia";
+import { bordaDaIa, corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
 import ModalDemanda from "../components/modal-demanda";
 import { abrirChamado } from "../demandas/acoes";
@@ -134,6 +134,7 @@ function CartaoArrastavel({
   responsavel,
   tags,
   ia,
+  bordaIa,
   aoAbrir,
   selecionado,
   modoSelecao,
@@ -146,6 +147,7 @@ function CartaoArrastavel({
   responsavel?: Usuario;
   tags: Tag[];
   ia: string | null;
+  bordaIa: string | null;
   aoAbrir: (id: string) => void;
   selecionado: boolean;
   // há algum cartão marcado no quadro: as caixas de todos aparecem
@@ -218,6 +220,7 @@ function CartaoArrastavel({
         responsavel={responsavel}
         tags={tags}
         ia={ia}
+        bordaIa={bordaIa}
       />
     </article>
   );
@@ -553,6 +556,7 @@ function ColunaResumo({
                   }
                   tags={contato ? (tagsDoContato.get(contato.id) ?? []) : []}
                   ia={corDoRobo(contato, etapa)}
+                  bordaIa={bordaDaIa(contato, etapa)}
                   aoAbrir={aoAbrir}
                   selecionado={selecionados.has(o.id)}
                   modoSelecao={selecionados.size > 0}
@@ -1196,6 +1200,7 @@ export default function Inicio({
                                 : []
                             }
                             ia={corDoRobo(contatoEmArraste, dados.etapaPorId.get(emArraste.etapa_id))}
+                            bordaIa={bordaDaIa(contatoEmArraste, dados.etapaPorId.get(emArraste.etapa_id))}
                             arrastando
                           />
                         </div>
