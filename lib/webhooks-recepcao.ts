@@ -30,7 +30,7 @@ import { inscreverNaCadenciaDaEtapa } from "@/lib/automacoes/repositorio";
 import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 import { carimbarCampanhaDoLead } from "@/lib/campanha-do-lead";
 import { enviarTexto, instanciaExataPorNumero, instanciasPorId } from "@/lib/uazapi";
-import { linkDaOportunidade } from "@/lib/link-do-crm";
+import { linkDaConversa, linkDaOportunidade } from "@/lib/link-do-crm";
 
 export type ResultadoRecepcao = {
   status: number;
@@ -582,7 +582,11 @@ async function avisarQueVoltou(webhookId: string, oportunidadeId: string): Promi
            u.nome AS responsavel, nullif(u.whatsapp, '') AS responsavel_whatsapp,
            (SELECT a.numero_instancia FROM atendimentos a
              WHERE a.contato_id = c.id AND a.numero_instancia IS NOT NULL
-             ORDER BY a.data_atualizacao DESC NULLS LAST LIMIT 1) AS numero_da_conversa
+             ORDER BY a.data_atualizacao DESC NULLS LAST LIMIT 1) AS numero_da_conversa,
+           (SELECT a.id FROM atendimentos a
+             WHERE a.contato_id = c.id
+             ORDER BY a.data_atualizacao DESC NULLS LAST, a.data_criacao DESC LIMIT 1) AS conversa_id,
+           nullif(COALESCE(o.campos->>'valor_inicial', c.campos->>'valor_inicial'), '') AS valor_do_formulario
       FROM oportunidades o
       JOIN contatos c ON c.id = o.contato_id
       JOIN funis f ON f.id = o.funil_id
@@ -606,9 +610,14 @@ async function avisarQueVoltou(webhookId: string, oportunidadeId: string): Promi
     "",
     `*Nome:* ${l.lead}`,
     `*WhatsApp:* ${l.lead_whatsapp ? `+${soDigitos(l.lead_whatsapp as string)}` : "não informado"}`,
-    ...(valor > 0 ? [`*Valor:* ${valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}`] : []),
-    `*Está em:* ${l.funil} › ${l.etapa}`,
-    `*Oportunidade:* ${linkDaOportunidade(oportunidadeId)}`,
+    `*Valor:* ${valor > 0 ? valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }) : l.valor_do_formulario ? `${l.valor_do_formulario} (formulário)` : "não informado"}`,
+    `*Funil:* ${l.funil}`,
+    `*Etapa:* ${l.etapa}`,
+    // O chat do cliente (pedido dele, 2026-10-16) e, sem conversa ainda, a
+    // oportunidade no quadro.
+    l.conversa_id
+      ? `*Conversa:* ${linkDaConversa(l.conversa_id as string)}`
+      : `*Oportunidade:* ${linkDaOportunidade(oportunidadeId)}`,
   ].join("\n");
   try {
     await enviarTexto(soDigitos(l.responsavel_whatsapp as string), texto, instancia, "aviso-lead-voltou");

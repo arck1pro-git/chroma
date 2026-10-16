@@ -469,27 +469,36 @@ async function moverPelaIa(s: Situacao, mover: Movimento) {
 const RASTREIO_AVISO = "aviso-responsavel";
 
 type ConversaDoAviso = {
+  atendimento_id: string;
   canal: string;
   numero_instancia: string | null;
   contato_whatsapp: string | null;
   op_valor: string | number | null;
+  funil: string | null;
+  etapa: string | null;
+  valor_do_formulario: string | null;
 };
 
 /** Canal, número e dados do lead para os avisos à equipe. */
 export async function conversaDoAviso(atendimentoId: string, s: Situacao): Promise<ConversaDoAviso | null> {
   const [l] = await sql`
-    SELECT a.canal, a.numero_instancia, c.whatsapp AS contato_whatsapp, o.valor AS op_valor
+    SELECT a.id AS atendimento_id, a.canal, a.numero_instancia, c.whatsapp AS contato_whatsapp, o.valor AS op_valor,
+           f.nome AS funil, et.nome AS etapa,
+           nullif(COALESCE(o.campos->>'valor_inicial', c.campos->>'valor_inicial'), '') AS valor_do_formulario
       FROM atendimentos a
       JOIN contatos c ON c.id = a.contato_id
       LEFT JOIN oportunidades o ON o.id = ${s.op_id}::uuid
+      LEFT JOIN funis f ON f.id = o.funil_id
+      LEFT JOIN etapas et ON et.id = o.etapa_id
      WHERE a.id = ${atendimentoId}`;
   return (l as unknown as ConversaDoAviso) ?? null;
 }
 
 /**
- * Nome, WhatsApp e valor do lead, as linhas que todo aviso à equipe leva.
- * Valor: o que o cliente disse na conversa (vem da IA) e, sem ele, o da
- * oportunidade.
+ * As linhas que todo aviso à equipe leva: nome, WhatsApp, valor, funil, etapa
+ * e o LINK DA CONVERSA (pedido dele, 2026-10-16: "tem que ir o link pro chat
+ * do cliente e os dados"). Valor: o que o cliente disse na conversa (vem da
+ * IA); sem ele, o da oportunidade; sem os dois, a faixa do formulário.
  */
 export function dadosDoLead(s: Situacao, c: ConversaDoAviso, valorDito: number | null): string[] {
   // numeric chega como texto (fetch_types:false, lib/db.ts).
@@ -497,7 +506,10 @@ export function dadosDoLead(s: Situacao, c: ConversaDoAviso, valorDito: number |
   return [
     `*Nome:* ${s.contato_nome}`,
     `*WhatsApp:* ${c.contato_whatsapp ? `+${soDigitos(c.contato_whatsapp)}` : "não informado"}`,
-    `*Valor:* ${valor > 0 ? brl.format(valor) : "não informado"}`,
+    `*Valor:* ${valor > 0 ? brl.format(valor) : c.valor_do_formulario ? `${c.valor_do_formulario} (formulário)` : "não informado"}`,
+    ...(c.funil ? [`*Funil:* ${c.funil}`] : []),
+    ...(c.etapa ? [`*Etapa:* ${c.etapa}`] : []),
+    `*Conversa:* ${linkDaConversa(c.atendimento_id)}`,
   ];
 }
 
@@ -590,8 +602,7 @@ async function avisarReuniao(
           ...dadosDoLead(s, c, valorDito),
           `*Quando:* ${rotuloDoHorario(reuniao.inicio)}`,
           ...(reuniao.meet ? [`*Meet:* ${reuniao.meet}`] : []),
-          // A conversa da IA com o lead, aberta direto no chat do CRM.
-          `*Conversa:* ${linkDaConversa(atendimentoId)}`,
+          // O link da conversa já vem em dadosDoLead.
         ].join("\n")
       : "";
     const como = c
