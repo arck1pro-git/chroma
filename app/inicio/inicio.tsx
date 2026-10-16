@@ -295,7 +295,6 @@ function ColunaResumo({
   ias,
   aoGerenciarIas,
   pediramAtendimento,
-  mostrarOcultos,
 }: {
   // posição da coluna no quadro; serve só ao escalonamento da entrada
   ordem: number;
@@ -320,18 +319,17 @@ function ColunaResumo({
   aoGerenciarIas: () => void;
   /** Contatos que pediram atendimento humano e esperam resposta (a pill do card). */
   pediramAtendimento: Set<string>;
-  /** O botão "Ocultos" do topo: mostra os cards mesmo com a etapa oculta. */
-  mostrarOcultos: boolean;
 }) {
   const total = oportunidades.reduce((soma, o) => soma + o.valor, 0);
 
   // OCULTAR LEADS (pedido dele, 2026-10-16): o olho do cabeçalho esconde os
-  // cards da coluna. Contagem e valor continuam valendo — os leads estão lá,
-  // só não ocupam a tela. Otimista: a coluna fecha no clique, e o
-  // revalidatePath da action confirma.
+  // cards da coluna e GRAVA na etapa a cada clique — marcou salva, desmarcou
+  // salva. Contagem e valor continuam valendo: os leads estão lá, só não
+  // ocupam a tela. Otimista: a coluna fecha no clique, e o revalidatePath da
+  // action confirma.
   const [, iniciarOcultar] = useTransition();
   const [oculta, setOculta] = useOptimistic(etapa.ocultar_leads ?? false);
-  const esconder = oculta && !mostrarOcultos;
+  const esconder = oculta;
   function alternarOculta() {
     const nova = !oculta;
     iniciarOcultar(async () => {
@@ -852,12 +850,11 @@ export default function Inicio({
   // painel ser fechado de fora quando fizer falta — hoje ninguém fecha.
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
 
-  // Os dois botões ao lado de Filtros (pedido dele, 2026-10-16). PERDIDA NÃO
-  // VAI AO QUADRO: só com "Perdidos" ligado, e aí com a bolinha vermelha no
-  // card. "Ocultos" abre as etapas com os leads ocultos (o olho da coluna).
-  // Nascem desligados a cada visita, de propósito.
+  // O botão ao lado de Filtros (pedido dele, 2026-10-16). PERDIDA NÃO VAI AO
+  // QUADRO: só com "Perdidos" ligado, e aí com a bolinha vermelha no card.
+  // Nasce desligado a cada visita, de propósito. (As etapas ocultas não têm
+  // botão aqui: o olho de cada coluna é a configuração, salva no banco.)
   const [mostrarPerdidos, setMostrarPerdidos] = useState(false);
-  const [mostrarOcultos, setMostrarOcultos] = useState(false);
   const entraNoQuadro = useCallback(
     (o: Oportunidade) => mostrarPerdidos || o.status !== "perdida",
     [mostrarPerdidos],
@@ -903,14 +900,11 @@ export default function Inicio({
     return mapa;
   }, [etapas, quadro, entraNoQuadro]);
 
-  // Os números dos dois botões: perdidas do funil (com ou sem o botão ligado)
-  // e os leads à vista nas etapas ocultas.
+  // O número do botão Perdidos: as perdidas do funil, com ou sem ele ligado.
   const perdidasDoFunil = useMemo(
     () => etapasDoFunil.reduce((s, e) => s + (quadro[e.id]?.filter((o) => o.status === "perdida").length ?? 0), 0),
     [etapasDoFunil, quadro],
   );
-  const etapasOcultas = etapasDoFunil.filter((e) => e.ocultar_leads);
-  const leadsOcultos = etapasOcultas.reduce((s, e) => s + (quadroVisivel[e.id]?.length ?? 0), 0);
 
   // Conversão entre etapas, tempo médio e ticket médio por etapa. Saíram dos
   // gráficos do topo e agora alimentam o próprio quadro.
@@ -1108,9 +1102,9 @@ export default function Inicio({
               />
             )}
 
-            {/* Perdidos e Ocultos: o que o quadro esconde de propósito, um
-                clique para ver. Mesma moldura do botão de Filtros; ligado, o
-                de perdidos fica vermelho (a cor da bolinha nos cards). */}
+            {/* Perdidos: o quadro esconde as perdidas de propósito, um clique
+                para ver. Mesma moldura do botão de Filtros; ligado, fica
+                vermelho (a cor da bolinha nos cards). */}
             <button
               type="button"
               onClick={() => {
@@ -1131,32 +1125,6 @@ export default function Inicio({
               <span className="sr-only xl:not-sr-only">Perdidos</span>
               <span className="tabular-nums text-zinc-400 dark:text-zinc-500">{perdidasDoFunil.toLocaleString("pt-BR")}</span>
             </button>
-            {etapasOcultas.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setMostrarOcultos((v) => !v);
-                  limparSelecao();
-                }}
-                aria-pressed={mostrarOcultos}
-                title={
-                  mostrarOcultos
-                    ? "Mostrando os leads das etapas ocultas. Clique para esconder."
-                    : `Mostrar os leads das etapas ocultas (${etapasOcultas.map((e) => e.nome).join(", ")})`
-                }
-                className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] outline-none transition focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:focus-visible:ring-zinc-100/10 ${
-                  mostrarOcultos
-                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                    : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                }`}
-              >
-                <EyeOff className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="sr-only xl:not-sr-only">Ocultos</span>
-                <span className={`tabular-nums ${mostrarOcultos ? "opacity-70" : "text-zinc-400 dark:text-zinc-500"}`}>
-                  {leadsOcultos.toLocaleString("pt-BR")}
-                </span>
-              </button>
-            )}
 
             {/* A descrição do funil, que morava na ponta da linha dos filtros.
                 Só em tela larga: no tablet o espaço é dos botões. */}
@@ -1308,7 +1276,6 @@ export default function Inicio({
                           ias={dados.ias}
                           aoGerenciarIas={abrirGavetaIas}
                           pediramAtendimento={pediramAtendimento}
-                          mostrarOcultos={mostrarOcultos}
                         />
                       ))}
                     </div>
