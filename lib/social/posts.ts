@@ -49,6 +49,8 @@ type Linha = {
   primeiro_comentario: string | null;
   /** @ do Instagram do colab (migration-posts-colaboradores.sql). */
   colaboradores: string[];
+  /** Selo "Informações de IA" no Instagram (migration-posts-feito-com-ia.sql). */
+  feito_com_ia: boolean;
   publicar_em: Date | null;
   estado: Estado;
   resultado: Record<string, Record<string, unknown>>;
@@ -60,7 +62,7 @@ type Linha = {
 // do módulo roda no import e quebra o build.
 const colunas = () => sql`
   id, perfil, to_jsonb(redes) AS redes, tipo, legenda, midias, capa_url, primeiro_comentario,
-  to_jsonb(colaboradores) AS colaboradores, publicar_em, estado, resultado, data_criacao`;
+  to_jsonb(colaboradores) AS colaboradores, feito_com_ia, publicar_em, estado, resultado, data_criacao`;
 
 const MAX_TENTATIVAS = 3;
 const PARADO_HA = "6 minutes";
@@ -117,6 +119,7 @@ function resumo(l: Linha) {
     legenda: l.legenda.length > 160 ? `${l.legenda.slice(0, 160)}…` : l.legenda,
     midias: l.midias.length,
     ...(l.colaboradores?.length ? { colab: l.colaboradores.map((c) => `@${c}`) } : {}),
+    ...(l.feito_com_ia ? { feito_com_ia: true } : {}),
     redes,
     criado_em: br(l.data_criacao),
   };
@@ -140,6 +143,8 @@ export type NovoPost = {
   primeiroComentario?: string;
   /** @ do Instagram para o colab (até 3); nossos perfis aceitam sozinhos. */
   colaboradores?: string[];
+  /** Selo "Informações de IA" no Instagram. */
+  feitoComIa?: boolean;
   publicarEm?: string;
 };
 
@@ -190,6 +195,7 @@ export async function criarPost(d: NovoPost) {
   if (colaboradores.length && !redes.includes("instagram")) avisos.push("Colab só existe no Instagram: no Facebook o post sai normal.");
   const deFora = colaboradores.filter((c) => !perfilPorInstagram(c));
   if (deFora.length) avisos.push(`@${deFora.join(", @")} recebe o convite e precisa aceitar no app do Instagram.`);
+  if (d.feitoComIa && redes.includes("facebook")) avisos.push("O selo de IA sai só no Instagram: o Facebook não tem esse selo pela API.");
 
   // Só confere cada fonte (o que é, se abre) — o arquivo fica onde está.
   const midias = await Promise.all(fontes.map((f) => inspecionar(f)));
@@ -208,12 +214,12 @@ export async function criarPost(d: NovoPost) {
   const id = randomUUID();
   const [linha] = (await sql`
     INSERT INTO posts_sociais
-      (id, perfil, redes, tipo, legenda, midias, capa_url, primeiro_comentario, colaboradores, publicar_em, criado_por)
+      (id, perfil, redes, tipo, legenda, midias, capa_url, primeiro_comentario, colaboradores, feito_com_ia, publicar_em, criado_por)
     -- As listas vão como texto e o Postgres monta o array (mesma razão de
     -- listaUuid, lib/db.ts); redes e @ já passaram pela peneira, sem vírgula.
     VALUES (${id}, ${perfil.chave}, string_to_array(${redes.join(",")}, ',')::text[], ${d.tipo}, ${legenda},
             ${sql.json(midias)}, ${d.capaUrl?.trim() || null}, ${d.primeiroComentario?.trim() || null},
-            string_to_array(${colaboradores.join(",")}, ',')::text[],
+            string_to_array(${colaboradores.join(",")}, ',')::text[], ${d.feitoComIa === true},
             ${quando?.toISOString() ?? null}::timestamptz, 'mcp')
     RETURNING ${colunas()}`) as unknown as Linha[];
 
@@ -260,7 +266,10 @@ async function exigirAgendado(id: string): Promise<void> {
   if (l.estado !== "agendado") throw new ErroPost(`O post está "${l.estado}": só dá para mexer enquanto está agendado.`);
 }
 
-export async function editarPost(id: string, d: { legenda?: string; publicarEm?: string; primeiroComentario?: string }) {
+export async function editarPost(
+  id: string,
+  d: { legenda?: string; publicarEm?: string; primeiroComentario?: string; feitoComIa?: boolean },
+) {
   await exigirAgendado(id);
   const novaData = d.publicarEm !== undefined;
   const quando = novaData ? interpretarData(d.publicarEm) : null;
@@ -268,6 +277,7 @@ export async function editarPost(id: string, d: { legenda?: string; publicarEm?:
     UPDATE posts_sociais SET
       legenda = COALESCE(${d.legenda?.trim() ?? null}, legenda),
       primeiro_comentario = CASE WHEN ${d.primeiroComentario !== undefined} THEN ${d.primeiroComentario?.trim() || null} ELSE primeiro_comentario END,
+      feito_com_ia = COALESCE(${d.feitoComIa ?? null}::boolean, feito_com_ia),
       publicar_em = CASE WHEN ${novaData} THEN ${quando?.toISOString() ?? null}::timestamptz ELSE publicar_em END,
       data_atualizacao = now()
      WHERE id = ${id} AND estado = 'agendado'
@@ -362,6 +372,7 @@ async function executar(l: Linha, ate: number): Promise<Estado> {
     capaUrl: l.capa_url,
     primeiroComentario: l.primeiro_comentario,
     colaboradores: l.colaboradores ?? [],
+    feitoComIa: l.feito_com_ia === true,
   };
   const pendentes = l.redes.filter((r) => !l.resultado[r]?.id);
 

@@ -76,6 +76,10 @@ const entradaCriar = z.object({
     .describe(
       "Colab do Instagram: até 3 @ convidados (ex.: [\"fabhricioari\"]). Quando é um dos nossos perfis (perfis_sociais), o CRM aceita o convite sozinho e o post sai nos dois perfis; conta de fora aceita no app. Reels, feed e carrossel — story não aceita.",
     ),
+  feito_com_ia: z
+    .boolean()
+    .default(false)
+    .describe("Selo \"Informações de IA\" no Instagram: ligue quando o post for feito com avatar ou conteúdo gerado por IA. Só no Instagram (o Facebook não tem pela API)."),
   capa_url: z.url().optional().describe("Capa do Reels no Instagram (link https de uma imagem). Opcional."),
   primeiro_comentario: z.string().max(2200).optional().describe("Comentário publicado logo depois do post. Opcional; não vale para story."),
   publicar_em: DATA.optional(),
@@ -90,6 +94,7 @@ async function criar(a: z.infer<typeof entradaCriar>) {
     midias: a.midias,
     arquivos: a.arquivos,
     colaboradores: a.colab,
+    feitoComIa: a.feito_com_ia,
     capaUrl: a.capa_url,
     primeiroComentario: a.primeiro_comentario,
     publicarEm: a.publicar_em,
@@ -124,6 +129,7 @@ const entradaEditar = z.object({
   legenda: z.string().max(5000).optional(),
   publicar_em: DATA.optional(),
   primeiro_comentario: z.string().max(2200).optional().describe('Texto novo; "" tira o comentário.'),
+  feito_com_ia: z.boolean().optional().describe("Liga ou desliga o selo \"Informações de IA\" do Instagram."),
 });
 
 const ESCREVE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
@@ -143,6 +149,7 @@ export const FERRAMENTAS_POSTAR: Ferramenta[] = [
     descricao:
       "Publica agora ou agenda um post no Instagram e/ou no Facebook de um perfil. Tipos: reels (1 vídeo; no Facebook vai como vídeo da página), story (1 imagem ou vídeo), feed (1 imagem) e carrossel (2 a 10; no Facebook só imagens). " +
       "Colab no Instagram: ponha o @ da outra conta em colab (ex.: post no arck1pro com colab [\"fabhricioari\"]) — entre os nossos perfis o convite é aceito sozinho. " +
+      "Post feito com avatar ou conteúdo de IA: feito_com_ia = true, e o Instagram mostra o selo \"Informações de IA\". " +
       "A mídia vem do Google Drive da empresa: ache o arquivo com o conector do Drive e passe o link ou drive:<id> em midias (o CRM lê o Drive pela conta de serviço dele). Link https público também serve. No ChatGPT, o arquivo anexado pode ir em arquivos (só para post na hora). " +
       "O CRM não guarda cópia: na hora de publicar, busca o arquivo na fonte e manda direto para a Meta (vídeo até 1 GB). Arquivo que não está no Drive nem tem link público: peça à pessoa para salvar no Drive. " +
       "Sem publicar_em, publica em seguida; com data, o CRM publica no horário (Brasília) — o arquivo precisa continuar no Drive até lá. Devolve o id para acompanhar com ver_post. " +
@@ -172,7 +179,12 @@ export const FERRAMENTAS_POSTAR: Ferramenta[] = [
     descricao: "Muda a legenda, o horário ou o primeiro comentário de um post que ainda está agendado. publicar_em vazio (\"\") publica agora. Para trocar mídia, cancele e crie de novo.",
     entrada: entradaEditar,
     executar: (a: z.infer<typeof entradaEditar>) =>
-      editarPost(a.id, { legenda: a.legenda, publicarEm: a.publicar_em, primeiroComentario: a.primeiro_comentario }),
+      editarPost(a.id, {
+        legenda: a.legenda,
+        publicarEm: a.publicar_em,
+        primeiroComentario: a.primeiro_comentario,
+        feitoComIa: a.feito_com_ia,
+      }),
     anotacoes: ESCREVE,
   },
   {

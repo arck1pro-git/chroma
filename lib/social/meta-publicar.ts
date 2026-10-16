@@ -44,6 +44,8 @@ export type PostParaPublicar = {
   primeiroComentario: string | null;
   /** @ do Instagram convidados para o colab (até 3). */
   colaboradores: string[];
+  /** Selo "Informações de IA" do Instagram (is_ai_generated). */
+  feitoComIa: boolean;
 };
 /** A foto já na página do Facebook (não publicada), pelo índice da mídia. */
 export type FotosNaPagina = Map<number, { id: string; url: string }>;
@@ -219,11 +221,14 @@ export async function publicarNoInstagram(
   // Story não aceita colab (criarPost já recusa); nos outros, vai no contêiner
   // do post (no carrossel, no pai).
   const colab = post.colaboradores.length ? { collaborators: post.colaboradores } : {};
+  // O selo "Informações de IA" (2026-10-16): no contêiner do post — no
+  // carrossel, só no pai (a Meta recusa nos itens).
+  const ia = post.feitoComIa ? { is_ai_generated: true } : {};
 
   if (!conteiner) {
     const [m] = post.midias;
     if (post.tipo === "feed") {
-      conteiner = await criarConteiner(ig, token, { image_url: linkDa(0), caption: post.legenda, ...colab });
+      conteiner = await criarConteiner(ig, token, { image_url: linkDa(0), caption: post.legenda, ...colab, ...ia });
     } else if (post.tipo === "reels") {
       conteiner = await conteinerDeVideo(ig, token, {
         media_type: "REELS",
@@ -231,12 +236,13 @@ export async function publicarNoInstagram(
         share_to_feed: true,
         ...(post.capaUrl ? { cover_url: post.capaUrl } : {}),
         ...colab,
+        ...ia,
       }, m);
     } else if (post.tipo === "story") {
       conteiner =
         m.tipo === "video"
-          ? await conteinerDeVideo(ig, token, { media_type: "STORIES" }, m)
-          : await criarConteiner(ig, token, { media_type: "STORIES", image_url: linkDa(0) });
+          ? await conteinerDeVideo(ig, token, { media_type: "STORIES", ...ia }, m)
+          : await criarConteiner(ig, token, { media_type: "STORIES", image_url: linkDa(0), ...ia });
     } else {
       // Carrossel: um contêiner por item, cada um pronto antes do contêiner pai.
       const filhos: string[] = [];
@@ -249,7 +255,7 @@ export async function publicarNoInstagram(
           filhos.push(await criarConteiner(ig, token, { is_carousel_item: true, image_url: linkDa(i) }));
         }
       }
-      conteiner = await criarConteiner(ig, token, { media_type: "CAROUSEL", children: filhos.join(","), caption: post.legenda, ...colab });
+      conteiner = await criarConteiner(ig, token, { media_type: "CAROUSEL", children: filhos.join(","), caption: post.legenda, ...colab, ...ia });
     }
     await salvar({ conteiner });
   }
