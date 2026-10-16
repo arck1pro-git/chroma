@@ -15,6 +15,7 @@ import Link from "next/link";
 import {
   AlertTriangle,
   Check,
+  ChevronRight,
   Clock,
   Loader2,
   Mail,
@@ -27,6 +28,7 @@ import {
   Sparkles,
   Trash2,
   UserMinus,
+  UserRound,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -551,10 +553,13 @@ function Intervalo({
   acoes,
   porAcao,
   contatoPorId,
+  seNaoResponder = false,
 }: {
   acoes: AcaoCadencia[];
   porAcao: Map<string, Oportunidade[]>;
   contatoPorId: Map<string, Contato>;
+  /** O passo seguinte só sai se o lead não respondeu (mensagem, ou aviso com a trava). */
+  seNaoResponder?: boolean;
 }) {
   if (acoes.length === 0) {
     // Mensagens no mesmo dia: um traço curto, sem etiqueta, só para a
@@ -567,18 +572,27 @@ function Intervalo({
       {acoes.map((a) => {
         const Icone = ICONES[a.tipo] ?? ICONE_PADRAO;
         const parados = porAcao.get(a.id) ?? [];
+        const espera = a.tipo === "esperar";
         return (
           <div key={a.id} className="flex flex-col items-center gap-1.5">
+            {/* A seta da sequência: mensagem → espera → próxima. Lida da
+                esquerda para a direita como o fluxo anda (pedido dele,
+                2026-10-16: ver as esperas e as mensagens de um jeito
+                intuitivo). */}
             <div className="relative flex w-full items-center justify-center">
               <span className="absolute inset-x-0 top-1/2 h-px bg-zinc-300 dark:bg-zinc-700" aria-hidden="true" />
+              <ChevronRight className="absolute -right-1.5 top-1/2 size-4 -translate-y-1/2 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
               <span
                 title={a.detalhe ? `${a.rotulo} · ${a.detalhe}` : a.rotulo}
                 className="relative inline-flex max-w-full items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
               >
                 <Icone className="size-3 shrink-0 text-zinc-400" aria-hidden="true" />
-                <span className="truncate">{a.detalhe || a.rotulo}</span>
+                <span className="truncate">{espera ? `Espera ${a.detalhe}` : a.detalhe || a.rotulo}</span>
               </span>
             </div>
+            {espera && seNaoResponder && (
+              <span className="-mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">se não responder</span>
+            )}
             {parados.length > 0 && (
               <ul className="flex w-full flex-col gap-1" aria-label={`Esperando: ${parados.length}`}>
                 {parados.map((o) => (
@@ -717,6 +731,29 @@ function Coluna({
             <Paperclip className="size-3 shrink-0" aria-hidden="true" />
             <span className={`truncate ${anexo === "documento removido" ? "font-medium text-amber-700 dark:text-amber-400" : ""}`}>
               {anexo}
+            </span>
+          </p>
+        )}
+
+        {/* QUEM O AVISO AVISA, à vista na coluna: é a pergunta de quem lê a
+            cadência ("e se ele não responder, quem fica sabendo?"). */}
+        {subetapa.canal === "ligacao" && (
+          <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+            <UserRound className="size-3 shrink-0" aria-hidden="true" />
+            <span
+              title={
+                subetapa.soSemResposta
+                  ? "O aviso só sai se o lead não tiver respondido desde que entrou na cadência"
+                  : "O aviso sai mesmo que o lead tenha respondido"
+              }
+              className={`truncate ${subetapa.usuarioId ? "" : "font-medium text-amber-700 dark:text-amber-400"}`}
+            >
+              {subetapa.usuarioId === USUARIO_RESPONSAVEL
+                ? "Para o responsável"
+                : subetapa.usuarioId
+                  ? `Para ${usuarioPorId.get(subetapa.usuarioId)?.nome ?? "pessoa removida"}`
+                  : "escolha quem recebe"}
+              {subetapa.soSemResposta ? " · só se não respondeu" : ""}
             </span>
           </p>
         )}
@@ -1279,7 +1316,15 @@ export default function PainelSubetapas({
                       primeira coluna só tem intervalo se o fluxo esperar antes
                       dela. */}
                   {(i > 0 || coluna.subetapa.acoes.length > 0) && (
-                    <Intervalo acoes={coluna.subetapa.acoes} porAcao={porAcao} contatoPorId={contatoPorId} />
+                    <Intervalo
+                      acoes={coluna.subetapa.acoes}
+                      porAcao={porAcao}
+                      contatoPorId={contatoPorId}
+                      seNaoResponder={
+                        coluna.subetapa.canal === "whatsapp" ||
+                        (coluna.subetapa.canal === "ligacao" && coluna.subetapa.soSemResposta === true)
+                      }
+                    />
                   )}
 
                   {editando === coluna.subetapa.id ? (
