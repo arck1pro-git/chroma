@@ -673,13 +673,21 @@ export function paraWorkflow(
       // fluxo o atravessava sem efeito, e a coluna "Ligação" da cadência
       // prometia avisar uma pessoa e não avisava ninguém.
       //
-      // DOIS NÓS, e não três como o envio ao lead: não há guarda de inscrição.
-      // A guarda existe para parar de importunar um lead que saiu da cadência;
-      // aqui o destinatário é do time, e o aviso é justamente o que faz alguém
-      // agir. Segurá-lo por causa do estado do lead inverteria o propósito —
-      // quem saiu do fluxo é exatamente sobre quem o time precisa saber.
+      // DOIS NÓS, e não três como o envio ao lead: por padrão, não há guarda
+      // de inscrição. A guarda existe para parar de importunar um lead que
+      // saiu da cadência; aqui o destinatário é do time, e o aviso é
+      // justamente o que faz alguém agir. Segurá-lo por causa do estado do
+      // lead inverteria o propósito — quem saiu do fluxo é exatamente sobre
+      // quem o time precisa saber.
+      //
+      // A EXCEÇÃO É PEDIDA NO BLOCO (`so_sem_resposta`, 2026-10-16): "avise a
+      // Fernanda se ele não respondeu às mensagens". Aí a pergunta do aviso é
+      // a mesma da guarda — a última conversa ainda é da cadência? — e ela
+      // entra na frente, como nas mensagens: respondeu, o ramo morre aqui.
       const envio = nomeDoNo(passo);
       const registro = `Registrar aviso [${passo.id}]`;
+      const soSemResposta = passo.config.so_sem_resposta === true;
+      const guarda = `Ainda sem resposta? [${passo.id}]`;
 
       const usuarioId =
         typeof passo.config.usuario_id === "string" ? passo.config.usuario_id : "";
@@ -719,6 +727,24 @@ export function paraWorkflow(
         throw new Error(
           `O bloco "${passo.rotulo}" avisa alguém do time, e isso exige que o motor alcance o CRM por um endereço público. Em localhost isso não acontece: publique a partir do CRM publicado, ou tire o bloco.`,
         );
+      }
+
+      if (soSemResposta) {
+        nodes.push({
+          id: `${passo.id}__guarda`,
+          name: guarda,
+          type: "n8n-nodes-base.postgres",
+          typeVersion: 2.4,
+          position: [passo.posicao.x - 190, passo.posicao.y],
+          parameters: {
+            operation: "executeQuery",
+            query: GUARDA_INSCRITO,
+            options: { queryReplacement: expr(EXECUCAO_ID) },
+          },
+          // Sem linha, sem item: o lead respondeu e ninguém é avisado.
+          alwaysOutputData: false,
+          credentials: credPostgres(cred),
+        });
       }
 
       nodes.push({
@@ -806,7 +832,8 @@ export function paraWorkflow(
         credentials: credPostgres(cred),
       });
 
-      cadeiaDoBloco.set(passo.id, [envio, registro]);
+      cadeiaDoBloco.set(passo.id, soSemResposta ? [guarda, envio, registro] : [envio, registro]);
+      if (soSemResposta) comGuarda.add(passo.id);
       continue;
     }
 

@@ -6,6 +6,8 @@ import { sql } from "@/lib/db";
 import { soDigitos } from "@/lib/telefone";
 import { abrirConversaDaCadencia, registrarMensagemDaCadencia } from "@/lib/automacoes/conversa-da-cadencia";
 import { confirmarEnvio, marcarErro } from "@/lib/conversa-envio";
+import { USUARIO_RESPONSAVEL } from "@/lib/automacoes/saida";
+import { dadosDoLeadDaExecucao, responsavelDaExecucao } from "@/lib/automacoes/aviso-equipe";
 
 // O CRM NA FRENTE DO ENVIO. O motor não fala mais com a uazapi: ele diz "manda
 // este texto, por este número", e quem tem a credencial é quem sempre teve — o
@@ -64,7 +66,23 @@ export async function POST(req: NextRequest) {
   // errado semanas depois, sem nada no CRM dizendo isso.
   let destino = para;
   let avisado: string | null = null;
-  if (usuarioId) {
+  // O texto que sai: para o lead, o da coluna; para o time, o da coluna MAIS os
+  // dados do lead (nome, WhatsApp, valor, funil, etapa, link da conversa) — o
+  // mesmo padrão do aviso de "lead quer contato" da IA. Ver aviso-equipe.ts.
+  let textoFinal = texto;
+  if (usuarioId === USUARIO_RESPONSAVEL) {
+    // O responsável da oportunidade NESTE instante, resolvido pela execução.
+    const r = await responsavelDaExecucao(String(corpo.execucao_id ?? ""));
+    if ("erro" in r) return Response.json({ erro: `${r.erro} — nada foi enviado` }, { status: 400 });
+    if (!r.whatsapp) {
+      return Response.json(
+        { erro: `${r.nome} (responsável) não tem WhatsApp cadastrado em Configurações → Usuários — nada foi enviado` },
+        { status: 400 },
+      );
+    }
+    destino = soDigitos(r.whatsapp);
+    avisado = r.nome;
+  } else if (usuarioId) {
     if (!/^[0-9a-f-]{36}$/i.test(usuarioId)) {
       return Response.json({ erro: "usuário inválido" }, { status: 400 });
     }
@@ -89,6 +107,14 @@ export async function POST(req: NextRequest) {
     // avisando o vazio. Quem não deve mais ser avisado sai do bloco.
     destino = soDigitos(u.whatsapp as string);
     avisado = u.nome as string;
+  }
+  if (usuarioId) {
+    // Falhar aqui não segura o aviso: sai só o texto da coluna.
+    const dados = await dadosDoLeadDaExecucao(String(corpo.execucao_id ?? "")).catch((e) => {
+      console.error("[automacoes/enviar] aviso sem os dados do lead:", e);
+      return [] as string[];
+    });
+    if (dados.length) textoFinal = [texto, "", ...dados].join("\n").trim();
   }
 
   if (!destino) return Response.json({ erro: "destinatário sem número" }, { status: 400 });
@@ -220,7 +246,7 @@ export async function POST(req: NextRequest) {
         mensagemId ?? undefined,
       );
     } else {
-      r = await enviarTexto(destino, texto, instancia, mensagemId ?? undefined);
+      r = await enviarTexto(destino, textoFinal, instancia, mensagemId ?? undefined);
     }
 
     // Saiu: a linha recebe o id do WhatsApp e vira 'enviado'. Falhar aqui NÃO

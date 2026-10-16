@@ -66,6 +66,7 @@ import { vozConfigurada } from "@/lib/voz";
 import { gravarIaDoContato } from "@/lib/ia/contato-ia";
 import { LIMITE_PALAVRA_IA } from "@/lib/ia/catalogo";
 import { conexaoGoogle } from "@/lib/google-oauth";
+import { linkDaConversa } from "@/lib/link-do-crm";
 import {
   horariosLivres,
   horariosPorDia,
@@ -565,14 +566,6 @@ const AVISAR_REUNIAO = [
 ];
 
 /**
- * O endereço do CRM no link do chat que vai no aviso de reunião (pedido dele,
- * 2026-10-16: "com o domínio amaanoffice.amaan.com.br"). Fixo no código: o
- * aviso sai de dentro da resposta da IA, sem request de navegador de onde
- * tirar o domínio (lib/endereco.ts).
- */
-const ENDERECO_DO_CRM = "https://amaanoffice.amaan.com.br";
-
-/**
  * Reunião marcada pela IA: avisa no WhatsApp quem está em AVISAR_REUNIAO
  * (usuarios.whatsapp), pelo mesmo número da conversa. Quem está sem WhatsApp
  * no cadastro aparece no histórico como "não avisado", para alguém notar e
@@ -598,7 +591,7 @@ async function avisarReuniao(
           `*Quando:* ${rotuloDoHorario(reuniao.inicio)}`,
           ...(reuniao.meet ? [`*Meet:* ${reuniao.meet}`] : []),
           // A conversa da IA com o lead, aberta direto no chat do CRM.
-          `*Conversa:* ${ENDERECO_DO_CRM}/chat?atendimento=${atendimentoId}`,
+          `*Conversa:* ${linkDaConversa(atendimentoId)}`,
         ].join("\n")
       : "";
     const como = c

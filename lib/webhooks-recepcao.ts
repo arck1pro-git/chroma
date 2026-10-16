@@ -30,6 +30,7 @@ import { inscreverNaCadenciaDaEtapa } from "@/lib/automacoes/repositorio";
 import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 import { carimbarCampanhaDoLead } from "@/lib/campanha-do-lead";
 import { enviarTexto, instanciaExataPorNumero, instanciasPorId } from "@/lib/uazapi";
+import { linkDaOportunidade } from "@/lib/link-do-crm";
 
 export type ResultadoRecepcao = {
   status: number;
@@ -567,9 +568,6 @@ export async function processarLead(
   };
 }
 
-/** O endereço do CRM no link da oportunidade que vai no aviso (o mesmo do aviso de reunião). */
-const ENDERECO_DO_CRM = "https://amaanoffice.amaan.com.br";
-
 /**
  * Avisa no WhatsApp o RESPONSÁVEL da oportunidade que o lead entrou de novo
  * por uma captação (pedido dele, 2026-10-16). Sai pelo número da última
@@ -610,7 +608,7 @@ async function avisarQueVoltou(webhookId: string, oportunidadeId: string): Promi
     `*WhatsApp:* ${l.lead_whatsapp ? `+${soDigitos(l.lead_whatsapp as string)}` : "não informado"}`,
     ...(valor > 0 ? [`*Valor:* ${valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}`] : []),
     `*Está em:* ${l.funil} › ${l.etapa}`,
-    `*Oportunidade:* ${ENDERECO_DO_CRM}/?op=${oportunidadeId}`,
+    `*Oportunidade:* ${linkDaOportunidade(oportunidadeId)}`,
   ].join("\n");
   try {
     await enviarTexto(soDigitos(l.responsavel_whatsapp as string), texto, instancia, "aviso-lead-voltou");

@@ -34,6 +34,7 @@ import {
   salvarRascunho,
 } from "@/lib/automacoes/repositorio";
 import type { DefinicaoFluxo } from "@/lib/automacoes/tipos";
+import { USUARIO_RESPONSAVEL } from "@/lib/automacoes/saida";
 import { pausar, publicar, retomar } from "../automacoes/acoes";
 
 export type Resultado =
@@ -72,6 +73,10 @@ export async function criarCadencia(
 // Teto de colunas. Uma cadência de 18 mensagens é normal aqui; 200 não é, e
 // sem teto um POST forjado gravaria uma versão de megabytes.
 const MAX_COLUNAS = 200;
+// 730 dias = 2 anos. Acima disso é engano de digitação, e cada espera vira um
+// Wait node de verdade segurando execução no motor.
+const MAX_DIAS = 730;
+const MINUTOS_POR_DIA = 1440;
 
 function texto(v: unknown, max: number) {
   return typeof v === "string" ? v.slice(0, max).trim() : "";
@@ -96,7 +101,18 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
   const vistos = new Set<string>();
 
   return bruto.slice(0, MAX_COLUNAS).map((s, i) => {
-    const dia = Number((s as { dia?: unknown }).dia);
+    // O INSTANTE vem em minutos desde 2026-10-16 (a tela edita em min, h ou
+    // dias — pedido dele: mensagem 2h e 4h depois, aviso 20 min depois). Um
+    // número inteiro limitado, nada mais: é seguro aceitar do navegador. Sem
+    // ele (tela antiga), vale o dia.
+    const diaBruto = Number((s as { dia?: unknown }).dia);
+    const minutosBrutos = Number((s as { minutos?: unknown }).minutos);
+    const minutos = Number.isFinite(minutosBrutos) && minutosBrutos >= 0
+      ? Math.min(Math.round(minutosBrutos), MAX_DIAS * MINUTOS_POR_DIA)
+      : Number.isFinite(diaBruto)
+        ? Math.min(Math.max(Math.round(diaBruto), 0), MAX_DIAS) * MINUTOS_POR_DIA
+        : 0;
+    const dia = Math.round(minutos / MINUTOS_POR_DIA);
     const id = texto(s.id, 64);
     // Id repetido viraria uma chave só no mapa de nós — duas colunas, um bloco.
     // Zerar manda escreverCadencia escolher um livre.
@@ -112,12 +128,10 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
         : "whatsapp",
       mensagem: texto(s.mensagem, 4000),
       assunto: texto(s.assunto, 200) || undefined,
-      // 730 dias = 2 anos. Acima disso é engano de digitação, e cada dia vira
-      // um Wait node de verdade segurando execução no motor.
-      dia: Number.isFinite(dia) ? Math.min(Math.max(Math.round(dia), 0), 730) : 0,
-      // Tempo e ações NÃO vêm do navegador: são reescritos logo abaixo, a
-      // partir do fluxo que está no banco. Aqui só ocupam o formato.
-      minutos: 0,
+      dia,
+      minutos,
+      // As ações NÃO vêm do navegador: são reescritas logo abaixo, a partir do
+      // fluxo que está no banco. Aqui só ocupam o formato.
       acoes: [],
       // Só o id: quem resolve base_url e token é o executor, no servidor, e é
       // ele também que recusa instância apagada em vez de cair no .env — que,
@@ -135,9 +149,14 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
       // Quem é avisado no canal "ligação". Mesmo tratamento do anexo: só o
       // uuid atravessa, e o número de quem recebe é lido de `usuarios` no
       // instante do envio — nunca vem do navegador.
-      usuarioId: /^[0-9a-f-]{36}$/i.test(texto(s.usuarioId, 36))
-        ? texto(s.usuarioId, 36)
-        : null,
+      // USUARIO_RESPONSAVEL também passa: é resolvido no envio, como a
+      // instância do responsável.
+      usuarioId:
+        texto(s.usuarioId, 36) === USUARIO_RESPONSAVEL ||
+        /^[0-9a-f-]{36}$/i.test(texto(s.usuarioId, 36))
+          ? texto(s.usuarioId, 36)
+          : null,
+      soSemResposta: s.soSemResposta === true,
     };
   });
 }
@@ -166,9 +185,10 @@ export async function salvarCadencia(
     return { ok: false, erro: "Uma cadência precisa de pelo menos uma mensagem." };
   }
 
-  // O que a tela edita é mensagem. As esperas e as ações (tag, segmento,
-  // requisição…) vêm do FLUXO GRAVADO, relido agora e reancorado na mensagem
-  // que cada uma precede — ver `escreverCadencia`.
+  // O que a tela edita é mensagem e instante. As ações (espera, tag,
+  // segmento, requisição…) vêm do FLUXO GRAVADO, relidas agora e reancoradas
+  // na mensagem que cada uma precede — ver `escreverCadencia`. Se o instante
+  // não mudou, as esperas voltam intactas; se mudou, viram uma espera só.
   //
   // Vem do banco e não do POST por duas razões, e a segunda é a que importa:
   // o navegador não tem por que devolver o que não mostra, e `config` de bloco
@@ -179,7 +199,7 @@ export async function salvarCadencia(
 
   const colunas = limpar(subetapas).map((s) => {
     const antes = acoesPorMensagem.get(s.id);
-    return antes ? { ...s, minutos: antes.minutos, acoes: antes.acoes } : s;
+    return antes ? { ...s, acoes: antes.acoes } : s;
   });
 
   const parcial = escreverCadencia(colunas, atual.acoesFinais);

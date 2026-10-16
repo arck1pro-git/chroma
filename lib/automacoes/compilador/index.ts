@@ -38,8 +38,12 @@ import { NO_ENTRADA, type DefinicaoFluxo } from "../tipos";
  * para a pessoa escolhida (usuarios.whatsapp). Fluxo publicado antes atravessa
  * o bloco sem avisar ninguém — era o que acontecia com toda coluna "Ligação" da
  * cadência. Republicar é o que liga.
+ *
+ * 1.5.0: o aviso à equipe aceita `usuario_id: "responsavel"` (o responsável da
+ * oportunidade na hora) e `so_sem_resposta` (a guarda das mensagens na frente
+ * do aviso). Fluxo publicado antes não tem nenhum dos dois.
  */
-export const VERSAO_COMPILADOR = "1.4.0";
+export const VERSAO_COMPILADOR = "1.5.0";
 
 // Passo já resolvido: posição, tipo, config e para onde vai cada saída.
 export type PassoCompilado = {

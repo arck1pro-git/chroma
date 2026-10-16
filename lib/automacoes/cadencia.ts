@@ -74,8 +74,13 @@ export type Subetapa = {
   documentoId: string | null;
   // Quem é AVISADO, no canal "ligação". Id em `usuarios`, e o aviso sai por
   // WhatsApp para o número dele (usuarios.whatsapp). Nulo nos outros canais:
-  // só a notificação tem destinatário do time.
+  // só a notificação tem destinatário do time. USUARIO_RESPONSAVEL
+  // (lib/automacoes/saida.ts) = o responsável da oportunidade na hora.
   usuarioId: string | null;
+  // Só no aviso: avisa SÓ se o lead não respondeu desde a entrada na cadência
+  // (a mesma guarda das mensagens). Desligado, avisa sempre — que é o padrão
+  // do bloco, ver o adaptador do n8n.
+  soSemResposta?: boolean;
 };
 
 /**
@@ -105,12 +110,15 @@ export type Cadencia = {
   acoesFinais: AcaoCadencia[];
 };
 
-/** "45 min", "3 h", "2 dias" — a espera dita como gente fala. */
+/** "45 min", "3 h", "4 h 20 min", "2 dias" — a espera dita como gente fala. */
 export function duracaoEmTexto(minutos: number): string {
   if (minutos < 60) return `${minutos} min`;
   if (minutos < MINUTOS_POR_DIA) {
-    const h = Math.round(minutos / 60);
-    return `${h} h`;
+    // Sem arredondar a hora: "4 h 20 min" virava "4 h", e a cadência de
+    // horas (2h, 4h, aviso 20 min depois) mostraria dois passos iguais.
+    const h = Math.floor(minutos / 60);
+    const resto = minutos % 60;
+    return resto ? `${h} h ${resto} min` : `${h} h`;
   }
   const d = Math.round(minutos / MINUTOS_POR_DIA);
   return `${d} ${d === 1 ? "dia" : "dias"}`;
@@ -207,6 +215,7 @@ export function lerCadencia(definicao: DefinicaoFluxo): Cadencia {
         instanciaId: texto(no.config.instancia_id) || null,
         documentoId: texto(no.config.documento_id) || null,
         usuarioId: texto(no.config.usuario_id) || null,
+        soSemResposta: no.config.so_sem_resposta === true,
       });
       pendentes = [];
     } else if ((blocoPorTipo(no.tipo)?.saidas.length ?? 0) <= 1) {
@@ -300,23 +309,31 @@ export function escreverCadencia(
     });
   };
 
+  // Minutos exatos só valem se ainda descreverem o mesmo dia: quem mexe só no
+  // `dia` (a IA, uma tela antiga) não atualiza `minutos`, e é justamente essa
+  // divergência que diz que o tempo mudou.
+  const instante = (s: Subetapa) => {
+    const dia = Math.max(0, Math.round(s.dia));
+    return Number.isFinite(s.minutos) &&
+      s.minutos >= 0 &&
+      Math.round(s.minutos / MINUTOS_POR_DIA) === dia
+      ? s.minutos
+      : dia * MINUTOS_POR_DIA;
+  };
+
+  // PELO INSTANTE, não pelo dia: com mensagens de horas (2h, 4h) no mesmo
+  // dia, ordenar pelo dia deixaria a ordem da coluna decidir, e uma de 4h
+  // antes de uma de 2h viraria espera negativa — zero — e as duas sairiam
+  // juntas.
   const ordenadas = [...subetapas].sort((a, b) =>
-    a.dia === b.dia ? a.ordem - b.ordem : a.dia - b.dia,
+    instante(a) === instante(b) ? a.ordem - b.ordem : instante(a) - instante(b),
   );
 
   for (const s of ordenadas) {
-    const dia = Math.max(0, Math.round(s.dia));
     const msgId = s.id || idLivre(usados, "msg");
     const acoes = s.acoes ?? [];
 
-    // Minutos exatos só valem se ainda descreverem o mesmo dia: editar o dia
-    // na tela não atualiza `minutos`, e é justamente essa divergência que diz
-    // que o tempo mudou.
-    const minutosAgora =
-      Number.isFinite(s.minutos) &&
-      Math.round(s.minutos / MINUTOS_POR_DIA) === dia
-        ? s.minutos
-        : dia * MINUTOS_POR_DIA;
+    const minutosAgora = instante(s);
     const espera = Math.max(0, minutosAgora - minutosAnterior);
 
     const somaOriginal = acoes
@@ -358,6 +375,7 @@ export function escreverCadencia(
     if (tipo === TIPO_POR_CANAL.ligacao) {
       if (s.instanciaId) config.instancia_id = s.instanciaId;
       if (s.usuarioId) config.usuario_id = s.usuarioId;
+      if (s.soSemResposta) config.so_sem_resposta = true;
     }
 
     emendar(msgId, { tipo, config });
