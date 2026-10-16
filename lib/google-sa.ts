@@ -62,7 +62,10 @@ function credencial(): { email: string; chave: string } {
     );
   }
 
-  return { email, chave: chave.replace(/\n/g, "\n") };
+  // `\\n` na regex: o "\n" LITERAL (barra + n). Era `/\n/g`, que trocava quebra
+  // de linha por quebra de linha e só funcionava porque o .env local já
+  // desfaz o "\n" entre aspas; na Vercel, a chave colada assim não abria.
+  return { email, chave: chave.trim().replace(/^"|"$/g, "").replace(/\\n/g, "\n") };
 }
 
 /**
