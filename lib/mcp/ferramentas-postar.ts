@@ -2,25 +2,21 @@
 // das de leitura): publicar e agendar no Instagram e no Facebook dos perfis da
 // empresa, no lugar do Metricool (pedido dele, 2026-10-15). O trabalho de
 // verdade mora em lib/social/.
+//
+// A MÍDIA VEM DO DRIVE (ou de link público) e vai direto para a Meta — o CRM
+// não guarda o arquivo (2026-10-16). O modelo acha o arquivo com o conector do
+// Google Drive dele e passa o link ou o id; quem baixa é o CRM, pela conta de
+// serviço (lib/google-drive.ts).
 import "server-only";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { enderecoDoCrm } from "@/lib/endereco";
+import { idDoDrive } from "@/lib/google-drive";
 import type { Ferramenta } from "@/lib/mcp/protocolo";
 import { garantirAgendadorDePosts } from "@/lib/social/agendador";
 import { cotaDoInstagram } from "@/lib/social/meta-publicar";
-import { ehReferenciaDeEnvio, prepararEnvio } from "@/lib/social/midia";
 import { CHAVES_PERFIS, PERFIS } from "@/lib/social/perfis";
 import { cancelarPost, criarPost, editarPost, listarPosts, repetirPost, verPost } from "@/lib/social/posts";
-
-/** O domínio do Storage, que o ambiente de código do Claude precisa alcançar para subir o arquivo. */
-const DOMINIO_ENVIO = (() => {
-  try {
-    return new URL(process.env.SUPABASE_URL ?? "").host;
-  } catch {
-    return "o domínio do Supabase";
-  }
-})();
 
 const PERFIL = z.enum(CHAVES_PERFIS).describe("Chave do perfil (veja perfis_sociais).");
 const ID = z.uuid().describe("Id do post (vem de criar_post ou listar_posts).");
@@ -49,12 +45,12 @@ const entradaCriar = z.object({
     .array(
       z
         .string()
-        .refine((m) => /^https:\/\//i.test(m) || ehReferenciaDeEnvio(m), "use um link https público ou a referência envio:… de preparar_envio_midia"),
+        .refine((m) => /^https:\/\//i.test(m) || idDoDrive(m) !== null, 'use o link do arquivo no Google Drive, "drive:<id do arquivo>" ou um link https público'),
     )
     .max(10)
     .default([])
     .describe(
-      "As mídias, na ordem: link https público (ex.: imagem ou vídeo gerado no Kairogen ou no Magnific) OU a referência \"envio:…\" que preparar_envio_midia devolve, para arquivo que está na conversa ou no seu ambiente e não tem link. O CRM guarda uma cópia na hora.",
+      'As mídias, na ordem: o link do arquivo no Google Drive (ou "drive:<id>", o id que o conector do Drive mostra) OU um link https público (ex.: imagem ou vídeo gerado no Kairogen ou no Magnific). O arquivo fica onde está: o CRM busca na hora de publicar.',
     ),
   // O formato que o ChatGPT exige para mandar o arquivo da conversa
   // (`openai/fileParams` no _meta da ferramenta): os quatro campos declarados,
@@ -72,7 +68,7 @@ const entradaCriar = z.object({
     )
     .max(10)
     .optional()
-    .describe("Arquivos anexados na conversa (ChatGPT). Entram depois de `midias`, na ordem."),
+    .describe("Arquivos anexados na conversa (ChatGPT). Entram depois de `midias`, na ordem. Só para post na hora: o link deles vence."),
   capa_url: z.url().optional().describe("Capa do Reels no Instagram (link https de uma imagem). Opcional."),
   primeiro_comentario: z.string().max(2200).optional().describe("Comentário publicado logo depois do post. Opcional; não vale para story."),
   publicar_em: DATA.optional(),
@@ -109,39 +105,6 @@ async function criar(a: z.infer<typeof entradaCriar>) {
   };
 }
 
-const entradaEnvio = z.object({
-  nome_arquivo: z
-    .string()
-    .min(1)
-    .max(200)
-    .describe('Nome do arquivo com a extensão, ex.: "foto.jpg" ou "video.mp4" — a extensão diz o tipo.'),
-});
-
-/**
- * Para arquivo sem link público: a foto anexada na conversa do Claude, ou a
- * que o próprio modelo gerou no ambiente de código. Devolve o link de upload,
- * o comando pronto e a página de envio para a pessoa, se o comando não der.
- */
-async function prepararEnvioMidia(a: z.infer<typeof entradaEnvio>) {
-  const envio = await prepararEnvio(a.nome_arquivo);
-  const endereco = enderecoDoCrm(await headers());
-  // A página lê o link do fragmento (#), que nunca vai ao servidor nem a log.
-  const fragmento = Buffer.from(JSON.stringify({ u: envio.url, n: a.nome_arquivo, t: envio.mime })).toString("base64url");
-  return {
-    midia: envio.referencia,
-    url_envio: envio.url,
-    comando: `curl -sS --fail -X PUT -H "Content-Type: ${envio.mime}" -H "x-upsert: false" --data-binary @"CAMINHO_DO_ARQUIVO" "${envio.url}"`,
-    pagina_de_envio: `${endereco.url}/enviar-midia#${fragmento}`,
-    como_usar: [
-      "1. Se o arquivo está no seu ambiente de código (o anexo da conversa costuma estar em /mnt/user-data/uploads/), rode o comando trocando CAMINHO_DO_ARQUIVO pelo caminho dele.",
-      `2. Se o comando falhar por rede (403, domínio bloqueado), a pessoa precisa liberar ${DOMINIO_ENVIO} (ou "Todos os domínios") em Configurações → Capacidades → Execução de código; ou siga o passo 3.`,
-      "3. Sem execução de código: mande à pessoa o link pagina_de_envio, para ela escolher o arquivo e enviar pelo navegador.",
-      `4. Depois do envio, chame criar_post com "${envio.referencia}" em midias.`,
-      "O link de envio vale 2 horas e serve para um arquivo só (até 50 MB).",
-    ],
-  };
-}
-
 const entradaListar = z.object({
   perfil: PERFIL.optional(),
   estado: z.enum(["agendado", "publicando", "publicado", "erro", "cancelado"]).optional(),
@@ -171,23 +134,14 @@ export const FERRAMENTAS_POSTAR: Ferramenta[] = [
     titulo: "Criar post",
     descricao:
       "Publica agora ou agenda um post no Instagram e/ou no Facebook de um perfil. Tipos: reels (1 vídeo; no Facebook vai como vídeo da página), story (1 imagem ou vídeo), feed (1 imagem) e carrossel (2 a 10; no Facebook só imagens). " +
-      "Mídia com link https público vai direto em midias. Arquivo SEM link (anexado na conversa, ou gerado por você) passa antes por preparar_envio_midia, e a referência envio:… que ela devolve vai em midias. No ChatGPT, o arquivo anexado pode ir em arquivos. " +
-      "O CRM copia cada arquivo na hora (até 50 MB; imagem vira JPEG, que é o que o Instagram aceita). " +
-      "Sem publicar_em, publica em seguida; com data, o CRM publica no horário (Brasília). Devolve o id para acompanhar com ver_post. " +
+      "A mídia vem do Google Drive da empresa: ache o arquivo com o conector do Drive e passe o link ou drive:<id> em midias (o CRM lê o Drive pela conta de serviço dele). Link https público também serve. No ChatGPT, o arquivo anexado pode ir em arquivos (só para post na hora). " +
+      "O CRM não guarda cópia: na hora de publicar, busca o arquivo na fonte e manda direto para a Meta (vídeo até 1 GB). Arquivo que não está no Drive nem tem link público: peça à pessoa para salvar no Drive. " +
+      "Sem publicar_em, publica em seguida; com data, o CRM publica no horário (Brasília) — o arquivo precisa continuar no Drive até lá. Devolve o id para acompanhar com ver_post. " +
       "Confirme com a pessoa o texto, as mídias, o perfil e o horário antes de chamar: publicar é público.",
     entrada: entradaCriar,
     executar: criar,
     anotacoes: ESCREVE,
     meta: { "openai/fileParams": ["arquivos"] },
-  },
-  {
-    nome: "preparar_envio_midia",
-    titulo: "Enviar arquivo sem link",
-    descricao:
-      "Para usar num post uma foto ou vídeo que NÃO tem link público — o anexo da conversa, ou um arquivo que você gerou. Devolve um link de upload, o comando curl pronto para o seu ambiente de código, uma página de envio para a pessoa (se você não puder rodar o comando) e a referência envio:… para pôr em midias no criar_post. Um arquivo por chamada.",
-    entrada: entradaEnvio,
-    executar: prepararEnvioMidia,
-    anotacoes: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   {
     nome: "listar_posts",

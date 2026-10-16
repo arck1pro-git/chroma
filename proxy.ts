@@ -29,9 +29,6 @@ const PUBLICAS_EXATAS = new Set([
   // Aviso de lead dos formulários instantâneos da Meta. A tranca é a
   // assinatura X-Hub-Signature-256, conferida no próprio handler.
   "/api/meta/leads/webhook",
-  // A página de envio de arquivo do conector MCP (app/enviar-midia): a tranca
-  // é o link de upload assinado que vem no fragmento da URL.
-  "/enviar-midia",
 ]);
 
 const PUBLICAS_PREFIXO = [

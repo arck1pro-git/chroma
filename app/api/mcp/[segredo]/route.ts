@@ -19,6 +19,7 @@
 // maxDuration de 300 s: o post "para agora" publica no after() desta mesma
 // invocação, e vídeo no Instagram espera a Meta processar.
 import type { NextRequest } from "next/server";
+import { ErroDrive } from "@/lib/google-drive";
 import { ErroMeta } from "@/lib/meta";
 import { FERRAMENTAS } from "@/lib/mcp/ferramentas";
 import { FERRAMENTAS_POSTAR } from "@/lib/mcp/ferramentas-postar";
@@ -37,17 +38,17 @@ const SERVIDOR: ServidorMcp = {
     "(conversão entre etapas, tempo por etapa e resultado por campanha). " +
     "Telefone e e-mail vêm mascarados e o texto das conversas do WhatsApp não é exposto, só contagens e datas. " +
     "REDES SOCIAIS: criar_post publica agora ou agenda no Instagram e no Facebook dos perfis Fabhricio Ari, AMAAN e Arck1Pro " +
-    "(perfis_sociais lista os perfis). Mídia com link https público vai direto; arquivo sem link (o anexo da conversa, ou um que você gerou) " +
-    "passa antes por preparar_envio_midia, que devolve o comando de upload e a referência envio:… para o criar_post. " +
+    "(perfis_sociais lista os perfis). A mídia vem do Google Drive da empresa: ache o arquivo com o conector do Drive e passe o link " +
+    "ou drive:<id> ao criar_post (link https público também serve). O CRM não guarda cópia: busca na fonte e manda direto para a Meta. " +
     "Acompanhe com listar_posts e ver_post; mude ou cancele o que ainda está agendado com editar_post e cancelar_post; " +
     "o que terminou em erro, repetir_post tenta de novo só nas redes que falharam. " +
     "Publicar é público: confirme com a pessoa o perfil, o texto, as mídias e o horário antes de criar o post. Horários em Brasília.",
   ferramentas: [...FERRAMENTAS, ...FERRAMENTAS_POSTAR],
-  // O motivo de uma recusa de post (data no passado, Reels sem vídeo, erro da
-  // Meta) volta para o modelo corrigir; o resto, que pode trazer detalhe do
-  // banco, fica no log.
+  // O motivo de uma recusa de post (data no passado, Reels sem vídeo, arquivo
+  // do Drive sem acesso, erro da Meta) volta para o modelo corrigir; o resto,
+  // que pode trazer detalhe do banco, fica no log.
   mensagemDeErro: (e) =>
-    e instanceof ErroPost || e instanceof ErroMeta ? e.message : "Erro no CRM. Tente de novo.",
+    e instanceof ErroPost || e instanceof ErroMeta || e instanceof ErroDrive ? e.message : "Erro no CRM. Tente de novo.",
 };
 
 export async function POST(req: NextRequest, ctx: RouteContext<"/api/mcp/[segredo]">) {

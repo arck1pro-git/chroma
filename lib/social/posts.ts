@@ -1,9 +1,12 @@
 // Os posts das redes: criar, consultar, editar, cancelar e publicar.
 //
-// O CICLO: criarPost copia a mídia e grava a linha em `posts_sociais`
-// (migration-posts-sociais.sql) como 'agendado'. Post "para agora" começa a
+// O CICLO: criarPost confere de onde vem cada mídia (Drive, link público ou
+// anexo do ChatGPT — lib/social/midia.ts) e grava a linha em `posts_sociais`
+// (migration-posts-sociais.sql) como 'agendado', SÓ COM A REFERÊNCIA: o CRM
+// não guarda o arquivo (pedido dele, 2026-10-16). Post "para agora" começa a
 // publicar logo depois da resposta (after); o agendado espera o agendador do
-// n8n, que chama publicarVencidos a cada minuto (lib/social/agendador.ts).
+// n8n, que chama publicarVencidos a cada minuto (lib/social/agendador.ts). Na
+// hora, os bytes são buscados na fonte e vão direto para a Meta.
 //
 // QUEM PUBLICA PEGA O POST ANTES (UPDATE … estado = 'publicando' com SKIP
 // LOCKED): o after e o agendador podem chegar ao mesmo post ao mesmo tempo, e
@@ -16,26 +19,21 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 import { sql } from "@/lib/db";
-import {
-  apagarCopias,
-  apagarEnvio,
-  copiarMidia,
-  ehReferenciaDeEnvio,
-  ErroPost,
-  linkDoEnvio,
-  linkParaPublicar,
-  type Midia,
-} from "./midia";
+import { baixarMidia, ErroPost, inspecionar, type ArquivoDoChatGpt, type Midia } from "./midia";
 import {
   AindaProcessando,
+  apagarFotos,
+  prepararFotos,
   publicarNoFacebook,
   publicarNoInstagram,
+  type FotosNaPagina,
   type PostParaPublicar,
   type TipoPost,
 } from "./meta-publicar";
 import { perfilPorChave } from "./perfis";
 
 export { ErroPost };
+export type { ArquivoDoChatGpt };
 
 export type Rede = "instagram" | "facebook";
 type Estado = "agendado" | "publicando" | "publicado" | "erro" | "cancelado";
@@ -121,19 +119,19 @@ function resumo(l: Linha) {
   };
 }
 
-// ── Criar ───────────────────────────────────────────────────────────────────
+/** De onde a mídia vem, para mostrar — o link do anexo do ChatGPT é credencial e não aparece. */
+const origemDa = (m: Midia) => (m.fonte === "drive" ? `drive:${m.ref}` : m.fonte === "chatgpt" ? "anexo do ChatGPT" : m.ref);
 
-/** O arquivo que o ChatGPT manda da conversa (`openai/fileParams`). */
-export type ArquivoDoChatGpt = { download_url: string; file_id: string; mime_type?: string; file_name?: string };
+// ── Criar ───────────────────────────────────────────────────────────────────
 
 export type NovoPost = {
   perfil: string;
   redes: Rede[];
   tipo: TipoPost;
   legenda: string;
-  /** Links https públicos ou referências `envio:` (lib/social/midia.ts, prepararEnvio). */
+  /** Links do Drive (ou drive:<id>) e links https públicos, na ordem. */
   midias: string[];
-  /** Arquivos da conversa no ChatGPT; entram depois das `midias`, na ordem. */
+  /** Arquivos da conversa no ChatGPT; entram depois das `midias`. Só para post "agora". */
   arquivos?: ArquivoDoChatGpt[];
   capaUrl?: string;
   primeiroComentario?: string;
@@ -147,16 +145,15 @@ export async function criarPost(d: NovoPost) {
   const quando = interpretarData(d.publicarEm);
   const legenda = d.legenda.trim();
   const avisos: string[] = [];
+  const fontes: Array<string | ArquivoDoChatGpt> = [...d.midias, ...(d.arquivos ?? [])];
 
-  // De onde vem cada mídia, na ordem: link público, envio (o arquivo já subiu
-  // para o nosso bucket) ou arquivo da conversa do ChatGPT.
-  type Fonte = { de: "envio" | "link"; valor: string } | { de: "chatgpt"; arquivo: ArquivoDoChatGpt };
-  const fontes: Fonte[] = [
-    ...d.midias.map((m): Fonte => ({ de: ehReferenciaDeEnvio(m) ? "envio" : "link", valor: m })),
-    ...(d.arquivos ?? []).map((arquivo): Fonte => ({ de: "chatgpt", arquivo })),
-  ];
+  // O link do anexo do ChatGPT vence em pouco tempo: na hora do agendamento já
+  // não abriria — e o CRM não guarda cópia.
+  if (quando && d.arquivos?.length) {
+    throw new ErroPost("Arquivo anexado no ChatGPT só serve para post na hora (o link dele vence). Para agendar, salve no Drive e mande o link do Drive.");
+  }
 
-  // A quantidade de mídia de cada tipo, antes de baixar qualquer coisa.
+  // A quantidade de mídia de cada tipo, antes de olhar qualquer arquivo.
   const n = fontes.length;
   const soFacebook = redes.length === 1 && redes[0] === "facebook";
   if (d.tipo === "reels" && n !== 1) throw new ErroPost("Reels leva exatamente 1 vídeo.");
@@ -171,39 +168,21 @@ export async function criarPost(d: NovoPost) {
   if (d.tipo === "story" && legenda) avisos.push("Story não tem legenda pela API: o texto foi guardado, mas não aparece no story.");
   if (d.tipo === "story" && d.primeiroComentario) avisos.push("Story não aceita comentário: o primeiro comentário foi ignorado.");
 
-  const id = randomUUID();
-  const mes = new Date().toISOString().slice(0, 7);
-  const midias: Midia[] = [];
-  // Envios já copiados para o post: saem do bucket só se o post nascer.
-  const enviosUsados: string[] = [];
-  try {
-    for (const [i, fonte] of fontes.entries()) {
-      const base = `${perfil.chave}/${mes}/${id}-${i + 1}`;
-      let c: Awaited<ReturnType<typeof copiarMidia>>;
-      if (fonte.de === "chatgpt") {
-        // O download_url é uma credencial temporária: baixa, mas grava só o id.
-        c = await copiarMidia(fonte.arquivo.download_url, base, `chatgpt:${fonte.arquivo.file_id}`);
-      } else if (fonte.de === "envio") {
-        const envio = await linkDoEnvio(fonte.valor);
-        c = await copiarMidia(envio.link, base, fonte.valor);
-        enviosUsados.push(envio.caminho);
-      } else {
-        c = await copiarMidia(fonte.valor, base);
-      }
-      midias.push(c.midia);
-      avisos.push(...c.avisos);
-    }
-    // O tipo de cada arquivo só se sabe depois de baixar.
-    if (d.tipo === "reels" && midias[0].tipo !== "video") throw new ErroPost("Reels precisa de vídeo; para imagem, use feed.");
-    if (d.tipo === "feed" && midias[0] && midias[0].tipo !== "imagem") throw new ErroPost("Feed leva imagem; para vídeo, use reels.");
-    if (d.tipo === "carrossel" && redes.includes("facebook") && midias.some((m) => m.tipo === "video")) {
-      throw new ErroPost("O carrossel do Facebook só aceita imagens: tire o vídeo ou publique só no Instagram.");
-    }
-  } catch (e) {
-    await apagarCopias(midias);
-    throw e;
+  // Só confere cada fonte (o que é, se abre) — o arquivo fica onde está.
+  const midias = await Promise.all(fontes.map((f) => inspecionar(f)));
+  if (d.tipo === "reels" && midias[0].tipo !== "video") throw new ErroPost("Reels precisa de vídeo; para imagem, use feed.");
+  if (d.tipo === "feed" && midias[0] && midias[0].tipo !== "imagem") throw new ErroPost("Feed leva imagem; para vídeo, use reels.");
+  if (d.tipo === "carrossel" && redes.includes("facebook") && midias.some((m) => m.tipo === "video")) {
+    throw new ErroPost("O carrossel do Facebook só aceita imagens: tire o vídeo ou publique só no Instagram.");
+  }
+  if (quando && midias.some((m) => m.fonte === "drive")) {
+    avisos.push("O arquivo é buscado no Drive na hora do post: não mova nem apague até lá.");
+  }
+  if (quando && midias.some((m) => m.fonte === "link")) {
+    avisos.push("O link é buscado na hora do post: ele precisa continuar no ar até lá.");
   }
 
+  const id = randomUUID();
   const [linha] = (await sql`
     INSERT INTO posts_sociais
       (id, perfil, redes, tipo, legenda, midias, capa_url, primeiro_comentario, publicar_em, criado_por)
@@ -214,7 +193,6 @@ export async function criarPost(d: NovoPost) {
             ${quando?.toISOString() ?? null}::timestamptz, 'mcp')
     RETURNING ${colunas()}`) as unknown as Linha[];
 
-  await Promise.all(enviosUsados.map(apagarEnvio));
   if (!quando) after(() => publicarPost(id));
   return { ...resumo(linha), avisos };
 }
@@ -238,7 +216,13 @@ export async function verPost(id: string) {
     ...resumo(l),
     legenda: l.legenda,
     redes_pedidas: l.redes,
-    midias: l.midias.map((m) => ({ tipo: m.tipo, mime: m.mime, tamanho_mb: Math.round((m.tamanho / 1048576) * 10) / 10, origem: m.origem })),
+    midias: l.midias.map((m) => ({
+      tipo: m.tipo,
+      nome: m.nome,
+      mime: m.mime,
+      tamanho_mb: Math.round((m.tamanho / 1048576) * 10) / 10,
+      origem: origemDa(m),
+    })),
     capa_url: l.capa_url,
     primeiro_comentario: l.primeiro_comentario,
   };
@@ -277,7 +261,6 @@ export async function cancelarPost(id: string) {
      WHERE id = ${id} AND estado = 'agendado'
     RETURNING ${colunas()}`) as unknown as Linha[];
   if (!l) throw new ErroPost("O post começou a publicar agora há pouco e não pode mais ser cancelado.");
-  await apagarCopias(l.midias);
   return resumo(l);
 }
 
@@ -314,38 +297,76 @@ async function salvarRede(id: string, rede: Rede, parcial: Record<string, unknow
      WHERE id = ${id}`;
 }
 
+/** A foto que subiu para a página (não publicada), pelo índice — resultado._fotos. */
+async function salvarFoto(id: string, indice: number, fotoId: string) {
+  await sql`
+    UPDATE posts_sociais
+       SET resultado = jsonb_set(resultado, '{_fotos}', COALESCE(resultado -> '_fotos', '{}'::jsonb) || jsonb_build_object(${String(indice)}::text, ${fotoId}::text)),
+           data_atualizacao = now()
+     WHERE id = ${id}`;
+}
+
 const textoDoErro = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 500);
 
 /** Publica um post já pego (estado 'publicando'). `ate` é o relógio da rodada. */
 async function executar(l: Linha, ate: number): Promise<Estado> {
   const tentativas = Number(l.resultado._tentativas ?? 0);
   const perfil = perfilPorChave(l.perfil);
-  if (!perfil || tentativas > MAX_TENTATIVAS) {
-    const motivo = perfil ? `desisti depois de ${MAX_TENTATIVAS} tentativas` : `perfil ${l.perfil} saiu da lista`;
+  const formatoAntigo = l.midias.some((m) => !("fonte" in m));
+  if (!perfil || tentativas > MAX_TENTATIVAS || formatoAntigo) {
+    const motivo = !perfil
+      ? `perfil ${l.perfil} saiu da lista`
+      : formatoAntigo
+        ? "post do formato antigo (com cópia no storage): crie de novo"
+        : `desisti depois de ${MAX_TENTATIVAS} tentativas`;
     await sql`UPDATE posts_sociais SET estado = 'erro', resultado = resultado || ${sql.json({ _erro: motivo })}, data_atualizacao = now() WHERE id = ${l.id}`;
     return "erro";
   }
 
+  // Os bytes de cada mídia são buscados na fonte UMA vez por rodada e servem
+  // às duas redes — e só se alguém pedir (o post do Facebook só de texto não
+  // baixa nada).
+  const baixados = new Map<number, Promise<Uint8Array>>();
+  const bytesDa = (i: number) => {
+    if (!baixados.has(i)) baixados.set(i, baixarMidia(l.midias[i]));
+    return baixados.get(i)!;
+  };
   const post: PostParaPublicar = {
     tipo: l.tipo,
     legenda: l.legenda,
-    midias: await Promise.all(l.midias.map(async (m) => ({ url: await linkParaPublicar(m), tipo: m.tipo }))),
+    midias: l.midias.map((m, i) => ({ tipo: m.tipo, nome: m.nome, mime: m.mime, bytes: () => bytesDa(i) })),
     capaUrl: l.capa_url,
     primeiroComentario: l.primeiro_comentario,
   };
+  const pendentes = l.redes.filter((r) => !l.resultado[r]?.id);
+
+  // As fotos sobem uma vez para a página do perfil, não publicadas, e servem
+  // às duas redes (ver o topo de meta-publicar.ts).
+  let fotos: FotosNaPagina = new Map();
+  let falhaDasFotos: string | null = null;
+  if (pendentes.length) {
+    try {
+      fotos = await prepararFotos(perfil, post, (l.resultado._fotos ?? {}) as Record<string, string>, (i, fotoId) =>
+        salvarFoto(l.id, i, fotoId),
+      );
+    } catch (e) {
+      console.error(`[social] fotos do post ${l.id}:`, e);
+      falhaDasFotos = textoDoErro(e);
+    }
+  }
 
   await Promise.all(
-    l.redes.map(async (rede) => {
+    pendentes.map(async (rede) => {
       const feito = l.resultado[rede] ?? {};
-      if (feito.id) return;
       const salvar = (parcial: Record<string, unknown>) => salvarRede(l.id, rede, parcial);
       try {
+        if (falhaDasFotos) throw new Error(falhaDasFotos);
         if (rede === "facebook") {
           if (feito.iniciado) throw new Error("A publicação foi interrompida no meio e pode ter saído: confira a página antes de repetir.");
-          const r = await publicarNoFacebook(perfil, post, salvar);
+          const r = await publicarNoFacebook(perfil, post, fotos, salvar);
           await salvar({ id: r.id, link: r.link, em: new Date().toISOString(), ...(r.aviso ? { aviso: r.aviso } : {}) });
         } else {
-          const r = await publicarNoInstagram(perfil, post, { conteiner: feito.conteiner as string | undefined }, salvar, ate);
+          const r = await publicarNoInstagram(perfil, post, fotos, { conteiner: feito.conteiner as string | undefined }, salvar, ate);
           await salvar({ id: r.id, link: r.link, em: new Date().toISOString(), ...(r.aviso ? { aviso: r.aviso } : {}) });
         }
       } catch (e) {
@@ -358,16 +379,23 @@ async function executar(l: Linha, ate: number): Promise<Estado> {
   );
 
   const [{ resultado }] = await sql`SELECT resultado FROM posts_sociais WHERE id = ${l.id}`;
-  const porRede = l.redes.map((r) => (resultado as Linha["resultado"])[r] ?? {});
+  const r = resultado as Linha["resultado"];
+  const porRede = l.redes.map((rede) => r[rede] ?? {});
   const estado: Estado = porRede.every((x) => x.id)
     ? "publicado"
     : porRede.some((x) => !x.id && !x.erro)
       ? "publicando"
       : "erro";
   await sql`UPDATE posts_sociais SET estado = ${estado}, data_atualizacao = now() WHERE id = ${l.id}`;
-  // A cópia só sai quando todas as redes publicaram: com erro, ela fica para
-  // uma nova tentativa.
-  if (estado === "publicado") await apagarCopias(l.midias);
+
+  // As fotos não publicadas que NÃO viraram post no Facebook saem da página.
+  // Com o Facebook publicado, elas são o próprio post e ficam (e servem ao
+  // Instagram numa repetição). Enquanto algum vídeo processa, esperam.
+  const fotosNaPagina = Object.values((r._fotos ?? {}) as Record<string, string>);
+  if (estado !== "publicando" && fotosNaPagina.length && !r.facebook?.id) {
+    await apagarFotos(perfil, fotosNaPagina);
+    await sql`UPDATE posts_sociais SET resultado = resultado - '_fotos' WHERE id = ${l.id}`;
+  }
   return estado;
 }
 

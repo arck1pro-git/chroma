@@ -1,16 +1,27 @@
 // As chamadas de publicação na Meta (Graph API), uma por rede e por tipo.
 //
-// INSTAGRAM publica em dois passos: cria o "contêiner" com o link da mídia, a
-// Meta baixa e processa (vídeo leva de segundos a minutos), e só então
-// media_publish põe no ar. O id do contêiner é salvo assim que nasce
-// (`salvar`): se a função cair no meio do processamento, a próxima rodada
-// retoma do contêiner em vez de criar outro — e publicar o mesmo contêiner
-// duas vezes a Meta recusa, então retomar não duplica post.
+// OS BYTES VÃO DIRETO PARA A META (2026-10-16, pedido dele: "não salvar nada
+// no nosso supabase"). Quem busca o arquivo na fonte é lib/social/midia.ts; o
+// que sai daqui:
+//   · VÍDEO: os bytes no envio direto — no Instagram, o contêiner "resumable"
+//     e o POST no rupload; no Facebook, o upload do vídeo da página (ou do
+//     story, também pelo rupload). Sem link público no meio.
+//   · FOTO: o Instagram só aceita foto POR LINK. A foto sobe como NÃO
+//     PUBLICADA na página do Facebook do próprio perfil (prepararFotos), e o
+//     link da Meta para ela (fbcdn) é o que vai ao Instagram. O post do
+//     Facebook usa a mesma foto (attached_media / photo_stories). A que não
+//     virar post no Facebook é apagada no fim (apagarFotos, em posts.ts).
 //
-// FACEBOOK publica numa chamada só, com o token DA PÁGINA (tirado do token do
-// system user). Antes dela grava `iniciado`: se a função cair depois da chamada
-// e antes de guardar o id, não há como saber se o post saiu, e a rodada
-// seguinte marca erro em vez de arriscar um post duplicado na página.
+// INSTAGRAM publica em dois passos: o contêiner, que a Meta processa (vídeo
+// leva de segundos a minutos), e o media_publish. O id do contêiner é salvo
+// assim que ele fica pronto para processar (`salvar`): se a função cair, a
+// rodada seguinte retoma dele — e publicar o mesmo contêiner duas vezes a Meta
+// recusa, então retomar não duplica post.
+//
+// FACEBOOK publica numa chamada só, com o token DA PÁGINA. Antes dela grava
+// `iniciado`: se a função cair depois da chamada e antes de guardar o id, não
+// há como saber se o post saiu, e a rodada seguinte marca erro em vez de
+// arriscar um post duplicado na página.
 import "server-only";
 import { ErroMeta } from "@/lib/meta";
 import type { Perfil } from "./perfis";
@@ -18,7 +29,8 @@ import type { Perfil } from "./perfis";
 const VERSAO = process.env.META_GRAPH_VERSION?.trim() || "v26.0";
 
 export type TipoPost = "reels" | "story" | "feed" | "carrossel";
-export type MidiaParaPublicar = { url: string; tipo: "imagem" | "video" };
+/** A mídia na hora de publicar: os bytes vêm da fonte quando alguém pede (e uma vez só). */
+export type MidiaParaPublicar = { tipo: "imagem" | "video"; nome: string; mime: string; bytes: () => Promise<Uint8Array> };
 export type PostParaPublicar = {
   tipo: TipoPost;
   legenda: string;
@@ -26,8 +38,10 @@ export type PostParaPublicar = {
   capaUrl: string | null;
   primeiroComentario: string | null;
 };
+/** A foto já na página do Facebook (não publicada), pelo índice da mídia. */
+export type FotosNaPagina = Map<number, { id: string; url: string }>;
 export type Publicado = { id: string; link: string | null; aviso?: string };
-/** Grava o progresso da rede no post (resultado.<rede>), antes do passo seguinte. */
+/** Grava o progresso no post (resultado.<rede>), antes do passo seguinte. */
 export type Salvar = (parcial: Record<string, unknown>) => Promise<void>;
 
 /** O vídeo do Instagram ainda processava quando o tempo da rodada acabou. */
@@ -39,23 +53,31 @@ function tokenDoSistema(): string {
   return t;
 }
 
+const comoCorpo = (bytes: Uint8Array) => bytes as unknown as BodyInit;
+
 async function graph<T>(
   caminho: string,
-  opcoes: { metodo?: "GET" | "POST"; corpo?: Record<string, unknown>; token: string; host?: string; campos?: string },
+  opcoes: {
+    metodo?: "GET" | "POST" | "DELETE";
+    corpo?: Record<string, unknown>;
+    formulario?: FormData;
+    token: string;
+    host?: string;
+    campos?: string;
+  },
 ): Promise<T> {
   const url = new URL(`https://${opcoes.host ?? "graph.facebook.com"}/${VERSAO}/${caminho.replace(/^\//, "")}`);
   if (opcoes.campos) url.searchParams.set("fields", opcoes.campos);
   const res = await fetch(url, {
-    method: opcoes.metodo ?? "GET",
+    method: opcoes.metodo ?? (opcoes.corpo || opcoes.formulario ? "POST" : "GET"),
     headers: {
       Authorization: `Bearer ${opcoes.token}`,
       ...(opcoes.corpo ? { "Content-Type": "application/json" } : {}),
     },
-    body: opcoes.corpo ? JSON.stringify(opcoes.corpo) : undefined,
+    body: opcoes.formulario ?? (opcoes.corpo ? JSON.stringify(opcoes.corpo) : undefined),
     cache: "no-store",
-    // Publicar vídeo no Facebook pode demorar a responder: a Meta baixa o
-    // arquivo antes de devolver o id.
-    signal: AbortSignal.timeout(120_000),
+    // Upload de vídeo: a Meta só responde depois de receber o arquivo inteiro.
+    signal: AbortSignal.timeout(240_000),
   });
   const json = (await res.json().catch(() => ({}))) as { error?: { message?: string; code?: number; error_user_msg?: string; error_user_title?: string } } & T;
   if (!res.ok || json.error) {
@@ -64,6 +86,18 @@ async function graph<T>(
     throw new ErroMeta(mensagem, e?.code, res.status >= 500 ? 502 : res.status);
   }
   return json;
+}
+
+/** Os bytes no rupload da Meta (contêiner de vídeo do Instagram, story de vídeo do Facebook). */
+async function enviarAoRupload(url: string, token: string, bytes: Uint8Array, rede: string): Promise<void> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `OAuth ${token}`, offset: "0", file_size: String(bytes.byteLength) },
+    body: comoCorpo(bytes),
+    cache: "no-store",
+    signal: AbortSignal.timeout(240_000),
+  });
+  if (!res.ok) throw new ErroMeta(`O ${rede} não recebeu o vídeo (${res.status}): ${(await res.text()).slice(0, 200)}`);
 }
 
 // O token da página vale enquanto o do system user valer; guardado por meia
@@ -81,10 +115,69 @@ async function tokenDaPagina(paginaId: string): Promise<string> {
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ── Fotos: na página, sem publicar ──────────────────────────────────────────
+
+async function linkDaFoto(fotoId: string, token: string): Promise<string> {
+  const r = await graph<{ images?: Array<{ source: string; width: number }> }>(fotoId, { token, campos: "images" });
+  const maior = [...(r.images ?? [])].sort((a, b) => b.width - a.width)[0];
+  if (!maior) throw new ErroMeta(`A Meta não devolveu o link da foto ${fotoId}.`);
+  return maior.source;
+}
+
+/**
+ * Sobe cada foto do post como NÃO PUBLICADA na página do perfil e devolve o id
+ * e o link da Meta para ela. `jaFeitas` são as de uma rodada anterior
+ * (retomada): essas não sobem de novo. `salvar` guarda cada id assim que nasce.
+ */
+export async function prepararFotos(
+  perfil: Perfil,
+  post: PostParaPublicar,
+  jaFeitas: Record<string, string>,
+  salvar: (indice: number, fotoId: string) => Promise<void>,
+): Promise<FotosNaPagina> {
+  const fotos: FotosNaPagina = new Map();
+  if (!post.midias.some((m) => m.tipo === "imagem")) return fotos;
+  const token = await tokenDaPagina(perfil.paginaId);
+  for (const [i, m] of post.midias.entries()) {
+    if (m.tipo !== "imagem") continue;
+    let id = jaFeitas[String(i)];
+    if (!id) {
+      const form = new FormData();
+      form.append("published", "false");
+      form.append("source", new Blob([comoCorpo(await m.bytes()) as BlobPart], { type: m.mime }), m.nome);
+      id = (await graph<{ id: string }>(`${perfil.paginaId}/photos`, { token, formulario: form })).id;
+      await salvar(i, id);
+    }
+    fotos.set(i, { id, url: await linkDaFoto(id, token) });
+  }
+  return fotos;
+}
+
+/** Tira da página as fotos que não viraram post no Facebook. */
+export async function apagarFotos(perfil: Perfil, ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const token = await tokenDaPagina(perfil.paginaId);
+  await Promise.all(
+    ids.map((id) =>
+      graph(id, { token, metodo: "DELETE" }).catch((e) => console.error(`[social] não apaguei a foto ${id}:`, e)),
+    ),
+  );
+}
+
 // ── Instagram ───────────────────────────────────────────────────────────────
 
 async function criarConteiner(igId: string, token: string, corpo: Record<string, unknown>): Promise<string> {
-  return (await graph<{ id: string }>(`${igId}/media`, { metodo: "POST", token, corpo })).id;
+  return (await graph<{ id: string }>(`${igId}/media`, { token, corpo })).id;
+}
+
+/** Contêiner de vídeo com os bytes enviados direto (sem link público). */
+async function conteinerDeVideo(igId: string, token: string, corpo: Record<string, unknown>, m: MidiaParaPublicar): Promise<string> {
+  const c = await graph<{ id: string; uri: string }>(`${igId}/media?upload_type=resumable`, {
+    token,
+    corpo: { ...corpo, upload_type: "resumable" },
+  });
+  await enviarAoRupload(c.uri, token, await m.bytes(), "Instagram");
+  return c.id;
 }
 
 /** Espera a Meta terminar de processar. `ate` é o relógio da rodada inteira. */
@@ -103,39 +196,47 @@ async function esperarConteiner(id: string, token: string, ate: number): Promise
 export async function publicarNoInstagram(
   perfil: Perfil,
   post: PostParaPublicar,
+  fotos: FotosNaPagina,
   progresso: { conteiner?: string },
   salvar: Salvar,
   ate: number,
 ): Promise<Publicado> {
   const token = tokenDoSistema();
   const ig = perfil.instagramId;
+  const linkDa = (i: number) => {
+    const f = fotos.get(i);
+    if (!f) throw new ErroMeta(`A foto ${i + 1} não chegou à página do Facebook.`);
+    return f.url;
+  };
   let conteiner = progresso.conteiner;
 
   if (!conteiner) {
     const [m] = post.midias;
-    const daMidia = (x: MidiaParaPublicar) => (x.tipo === "video" ? { video_url: x.url } : { image_url: x.url });
     if (post.tipo === "feed") {
-      conteiner = await criarConteiner(ig, token, { image_url: m.url, caption: post.legenda });
+      conteiner = await criarConteiner(ig, token, { image_url: linkDa(0), caption: post.legenda });
     } else if (post.tipo === "reels") {
-      conteiner = await criarConteiner(ig, token, {
+      conteiner = await conteinerDeVideo(ig, token, {
         media_type: "REELS",
-        video_url: m.url,
         caption: post.legenda,
         share_to_feed: true,
         ...(post.capaUrl ? { cover_url: post.capaUrl } : {}),
-      });
+      }, m);
     } else if (post.tipo === "story") {
-      conteiner = await criarConteiner(ig, token, { media_type: "STORIES", ...daMidia(m) });
+      conteiner =
+        m.tipo === "video"
+          ? await conteinerDeVideo(ig, token, { media_type: "STORIES" }, m)
+          : await criarConteiner(ig, token, { media_type: "STORIES", image_url: linkDa(0) });
     } else {
       // Carrossel: um contêiner por item, cada um pronto antes do contêiner pai.
       const filhos: string[] = [];
-      for (const x of post.midias) {
-        const filho = await criarConteiner(ig, token, {
-          is_carousel_item: true,
-          ...(x.tipo === "video" ? { media_type: "VIDEO", video_url: x.url } : { image_url: x.url }),
-        });
-        if (x.tipo === "video") await esperarConteiner(filho, token, ate);
-        filhos.push(filho);
+      for (const [i, x] of post.midias.entries()) {
+        if (x.tipo === "video") {
+          const filho = await conteinerDeVideo(ig, token, { media_type: "VIDEO", is_carousel_item: true }, x);
+          await esperarConteiner(filho, token, ate);
+          filhos.push(filho);
+        } else {
+          filhos.push(await criarConteiner(ig, token, { is_carousel_item: true, image_url: linkDa(i) }));
+        }
       }
       conteiner = await criarConteiner(ig, token, { media_type: "CAROUSEL", children: filhos.join(","), caption: post.legenda });
     }
@@ -143,7 +244,7 @@ export async function publicarNoInstagram(
   }
 
   await esperarConteiner(conteiner, token, ate);
-  const { id } = await graph<{ id: string }>(`${ig}/media_publish`, { metodo: "POST", token, corpo: { creation_id: conteiner } });
+  const { id } = await graph<{ id: string }>(`${ig}/media_publish`, { token, corpo: { creation_id: conteiner } });
   await salvar({ id });
 
   const link = await graph<{ permalink?: string }>(id, { token, campos: "permalink" })
@@ -152,7 +253,7 @@ export async function publicarNoInstagram(
 
   let aviso: string | undefined;
   if (post.primeiroComentario && post.tipo !== "story") {
-    await graph(`${id}/comments`, { metodo: "POST", token, corpo: { message: post.primeiroComentario } }).catch((e) => {
+    await graph(`${id}/comments`, { token, corpo: { message: post.primeiroComentario } }).catch((e) => {
       aviso = `Publicado, mas o primeiro comentário falhou: ${e instanceof Error ? e.message : String(e)}`;
     });
   }
@@ -161,87 +262,70 @@ export async function publicarNoInstagram(
 
 // ── Facebook ────────────────────────────────────────────────────────────────
 
-/** Foto subida sem aparecer na página: vira item de carrossel ou de story. */
-async function fotoNaoPublicada(paginaId: string, token: string, url: string): Promise<string> {
-  return (await graph<{ id: string }>(`${paginaId}/photos`, { metodo: "POST", token, corpo: { url, published: false } })).id;
-}
-
-async function storyDeVideo(paginaId: string, token: string, url: string): Promise<string | null> {
+async function storyDeVideo(paginaId: string, token: string, m: MidiaParaPublicar): Promise<string> {
   const inicio = await graph<{ video_id: string; upload_url: string }>(`${paginaId}/video_stories`, {
-    metodo: "POST",
     token,
     corpo: { upload_phase: "start" },
   });
-  // O upload do story é por link: a Meta baixa do file_url.
-  const envio = await fetch(inicio.upload_url, {
-    method: "POST",
-    headers: { Authorization: `OAuth ${token}`, file_url: url },
-    cache: "no-store",
-    signal: AbortSignal.timeout(120_000),
-  });
-  if (!envio.ok) throw new ErroMeta(`O Facebook não aceitou o vídeo do story (${envio.status}): ${(await envio.text()).slice(0, 200)}`);
+  await enviarAoRupload(inicio.upload_url, token, await m.bytes(), "Facebook");
   const fim = await graph<{ post_id?: string }>(`${paginaId}/video_stories`, {
-    metodo: "POST",
     token,
     corpo: { upload_phase: "finish", video_id: inicio.video_id },
   });
   return fim.post_id ?? inicio.video_id;
 }
 
-export async function publicarNoFacebook(perfil: Perfil, post: PostParaPublicar, salvar: Salvar): Promise<Publicado> {
+export async function publicarNoFacebook(
+  perfil: Perfil,
+  post: PostParaPublicar,
+  fotos: FotosNaPagina,
+  salvar: Salvar,
+): Promise<Publicado> {
   const token = await tokenDaPagina(perfil.paginaId);
   const pagina = perfil.paginaId;
   const [m] = post.midias;
+  const fotoDa = (i: number) => {
+    const f = fotos.get(i);
+    if (!f) throw new ErroMeta(`A foto ${i + 1} não chegou à página do Facebook.`);
+    return f.id;
+  };
 
   await salvar({ iniciado: true });
 
   let id: string;
   let link: string | null;
   if (post.tipo === "story") {
-    if (m.tipo === "video") {
-      id = (await storyDeVideo(pagina, token, m.url)) ?? "";
-    } else {
-      const foto = await fotoNaoPublicada(pagina, token, m.url);
-      id = (await graph<{ post_id: string }>(`${pagina}/photo_stories`, { metodo: "POST", token, corpo: { photo_id: foto } })).post_id;
-    }
+    id =
+      m.tipo === "video"
+        ? await storyDeVideo(pagina, token, m)
+        : (await graph<{ post_id: string }>(`${pagina}/photo_stories`, { token, corpo: { photo_id: fotoDa(0) } })).post_id;
     link = null;
-  } else if (post.tipo === "reels" || m?.tipo === "video") {
+  } else if (m?.tipo === "video") {
     // O Reels do Instagram vai ao Facebook como vídeo da página (o mesmo que o
-    // Metricool fazia). O upload de vídeo mora no host graph-video.
-    id = (await graph<{ id: string }>(`${pagina}/videos`, {
-      metodo: "POST",
-      token,
-      host: "graph-video.facebook.com",
-      corpo: { file_url: m.url, description: post.legenda },
-    })).id;
+    // Metricool fazia). Upload direto dos bytes, no host graph-video.
+    const form = new FormData();
+    form.append("description", post.legenda);
+    form.append("source", new Blob([comoCorpo(await m.bytes()) as BlobPart], { type: m.mime }), m.nome);
+    id = (await graph<{ id: string }>(`${pagina}/videos`, { token, host: "graph-video.facebook.com", formulario: form })).id;
     link = `https://www.facebook.com/${pagina}/videos/${id}`;
-  } else if (post.tipo === "carrossel") {
-    const fotos: string[] = [];
-    for (const x of post.midias) fotos.push(await fotoNaoPublicada(pagina, token, x.url));
-    id = (await graph<{ id: string }>(`${pagina}/feed`, {
-      metodo: "POST",
-      token,
-      corpo: { message: post.legenda, attached_media: fotos.map((f) => ({ media_fbid: f })) },
-    })).id;
-    link = `https://www.facebook.com/${id}`;
   } else if (m) {
-    const r = await graph<{ id: string; post_id?: string }>(`${pagina}/photos`, {
-      metodo: "POST",
+    // Feed ou carrossel de fotos: as fotos já estão na página, não publicadas;
+    // o post as junta.
+    id = (await graph<{ id: string }>(`${pagina}/feed`, {
       token,
-      corpo: { url: m.url, message: post.legenda, published: true },
-    });
-    id = r.post_id ?? r.id;
+      corpo: { message: post.legenda, attached_media: post.midias.map((_, i) => ({ media_fbid: fotoDa(i) })) },
+    })).id;
     link = `https://www.facebook.com/${id}`;
   } else {
     // Só texto: o feed do Facebook aceita post sem mídia.
-    id = (await graph<{ id: string }>(`${pagina}/feed`, { metodo: "POST", token, corpo: { message: post.legenda } })).id;
+    id = (await graph<{ id: string }>(`${pagina}/feed`, { token, corpo: { message: post.legenda } })).id;
     link = `https://www.facebook.com/${id}`;
   }
   await salvar({ id, link });
 
   let aviso: string | undefined;
   if (post.primeiroComentario && post.tipo !== "story") {
-    await graph(`${id}/comments`, { metodo: "POST", token, corpo: { message: post.primeiroComentario } }).catch((e) => {
+    await graph(`${id}/comments`, { token, corpo: { message: post.primeiroComentario } }).catch((e) => {
       aviso = `Publicado, mas o primeiro comentário falhou: ${e instanceof Error ? e.message : String(e)}`;
     });
   }

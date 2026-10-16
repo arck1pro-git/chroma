@@ -1,64 +1,50 @@
-// A mídia dos posts: copiada para o nosso storage na hora de agendar.
+// A mídia dos posts: o CRM NÃO GUARDA o arquivo (pedido dele, 2026-10-16:
+// "não salvar nada no nosso supabase, quero que vá direto para o insta").
 //
-// POR QUE COPIAR: o link que o Claude manda costuma ser de um arquivo gerado
-// por IA (Kairogen, Magnific…), com validade curta. Um post agendado para
-// amanhã às 11h chegaria à hora com o link morto. A cópia fica no bucket
-// PRIVADO `crm-posts-sociais`; na publicação sai uma URL assinada, que é o que
-// a Meta busca, e depois de publicado em todas as redes a cópia é apagada.
+// O post guarda só DE ONDE vem cada mídia:
+//   · DRIVE — o arquivo nos Drives da empresa, lido pela conta de serviço do
+//     CRM (lib/google-drive.ts). É o armazém: um post agendado para a semana
+//     que vem busca o arquivo lá na hora de sair;
+//   · LINK — um endereço https público (o vídeo ou a imagem gerada no Kairogen,
+//     no Magnific…). Tem que continuar no ar até a hora do post;
+//   · CHATGPT — o arquivo anexado na conversa do ChatGPT (`openai/fileParams`),
+//     com um download_url que vence em pouco tempo: só para post "agora".
 //
-// O TETO É O DO PROJETO SUPABASE (50 MB por arquivo, ver lib/armazenamento.ts).
-// Arquivo maior não é copiado: o post guarda o link de origem e publica com
-// ele, e o aviso diz que esse link precisa durar até a hora.
-//
-// IMAGEM VIRA JPEG: a API do Instagram só aceita JPEG, e PNG/WebP é o que as
-// IAs de imagem mais devolvem. A conversão usa o sharp que vem com o Next; sem
-// ele, a imagem segue como veio e o aviso diz que o Instagram pode recusar.
+// Na hora de publicar, os bytes são buscados na fonte (baixarMidia) e entregues
+// direto à Meta — o vídeo pelo envio direto, a foto pela página do Facebook do
+// perfil (lib/social/meta-publicar.ts). Nada passa a existir no nosso storage.
 //
 // O LINK VEM DE FORA, então passa por uma peneira antes de o servidor buscar:
 // só https, e nunca endereço interno (nem pelo nome, nem depois do DNS, nem num
 // redirecionamento). Sem isso o conector viraria um jeito de o servidor ler a
 // rede onde ele roda.
-//
-// ARQUIVO QUE NÃO TEM LINK (2026-10-15, pedido dele: "subir as mídias do
-// próprio Claude"): a foto anexada na conversa, ou feita pelo próprio modelo,
-// não tem endereço público. Dois caminhos:
-//   · ENVIO (Claude, ou qualquer um): prepararEnvio dá um link de upload
-//     assinado e a referência `envio:<id>.<ext>`. O Claude sobe o arquivo do
-//     ambiente de código dele com curl — ou a pessoa sobe pela página
-//     /enviar-midia — e o criar_post recebe a referência no lugar do link;
-//   · ARQUIVO DO CHATGPT: o criar_post declara `openai/fileParams`, e o
-//     ChatGPT manda o arquivo da conversa com um download_url temporário, que
-//     entra aqui como um link qualquer (e não é guardado: vira `chatgpt:<id>`).
 import "server-only";
-import { randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import {
-  garantirBucket,
-  infoDoObjeto,
-  limiteDoBucket,
-  listarObjetos,
-  remover,
-  subir,
-  urlDeEnvio,
-  urlDeLeitura,
-} from "@/lib/armazenamento";
-
-export const BUCKET_POSTS = "crm-posts-sociais";
-const TETO_PROJETO = 50 * 1024 * 1024;
+import { arquivoDoDrive, baixarDoDrive, idDoDrive } from "@/lib/google-drive";
 
 export type Midia = {
-  /** O link que veio na chamada. */
-  origem: string;
-  /** O objeto no bucket; null quando o arquivo passou do teto e não foi copiado. */
-  caminho: string | null;
+  fonte: "drive" | "link" | "chatgpt";
+  /** O id do arquivo no Drive, ou o link. */
+  ref: string;
+  nome: string;
   mime: string;
   tipo: "imagem" | "video";
   tamanho: number;
 };
 
+/** O arquivo que o ChatGPT manda da conversa (`openai/fileParams`). */
+export type ArquivoDoChatGpt = { download_url: string; file_id: string; mime_type?: string; file_name?: string };
+
 /** Erro com texto para o modelo ler e corrigir a chamada. */
 export class ErroPost extends Error {}
+
+/**
+ * Teto do que se baixa para entregar à Meta. O arquivo passa pela memória da
+ * função (não pelo disco nem pelo storage), e 1 GB é o maior Reels que a Meta
+ * aceita pela API.
+ */
+const TETO_BAIXAR = 1024 * 1024 * 1024;
 
 // ── A peneira do link ───────────────────────────────────────────────────────
 
@@ -95,11 +81,11 @@ async function conferirLink(bruto: string): Promise<URL> {
 }
 
 /** Busca seguindo redirecionamento À MÃO, para conferir cada salto. */
-async function buscar(bruto: string): Promise<Response> {
+async function buscar(bruto: string, cabecalhos: Record<string, string> = {}): Promise<Response> {
   let atual = bruto;
   for (let salto = 0; salto < 4; salto++) {
     const url = await conferirLink(atual);
-    const res = await fetch(url, { redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(90_000) });
+    const res = await fetch(url, { headers: cabecalhos, redirect: "manual", cache: "no-store", signal: AbortSignal.timeout(180_000) });
     const destino = res.headers.get("location");
     if (res.status >= 300 && res.status < 400 && destino) {
       atual = new URL(destino, url).href;
@@ -134,64 +120,60 @@ function tipoDoMime(mime: string): "imagem" | "video" | null {
   return null;
 }
 
-async function paraJpeg(bytes: Uint8Array): Promise<Uint8Array | null> {
-  try {
-    const { default: sharp } = await import("sharp");
-    return new Uint8Array(await sharp(bytes).rotate().jpeg({ quality: 92, mozjpeg: true }).toBuffer());
-  } catch (e) {
-    console.error("[social] conversão para JPEG falhou:", e);
-    return null;
-  }
-}
-
-// ── Cópia, leitura e limpeza ────────────────────────────────────────────────
-
-let bucketPronto = false;
-
-/**
- * Baixa o link e guarda no bucket como `<base>.<ext>`. Devolve a mídia e os
- * avisos para quem pediu (não copiou, não converteu).
- */
-async function garantirBucketDosPosts() {
-  if (bucketPronto) return;
-  await garantirBucket(BUCKET_POSTS);
-  bucketPronto = true;
+/** Os primeiros bytes e o tamanho de um link, sem baixar o arquivo inteiro. */
+async function espiar(link: string): Promise<{ inicio: Uint8Array; mime: string; tamanho: number }> {
+  const res = await buscar(link, { Range: "bytes=0-63" });
+  const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  // 206 traz o total em Content-Range; servidor que ignora Range manda 200 e o
+  // tamanho inteiro em Content-Length.
+  const total = res.headers.get("content-range")?.match(/\/(\d+)$/)?.[1];
+  const tamanho = Number(total ?? (res.status === 200 ? res.headers.get("content-length") : 0) ?? 0);
+  const leitor = res.body?.getReader();
+  const primeiro = leitor ? await leitor.read() : { value: undefined };
+  await leitor?.cancel().catch(() => {});
+  return { inicio: primeiro.value ?? new Uint8Array(), mime, tamanho };
 }
 
 /**
- * `origem` é o que fica gravado no post como de onde a mídia veio — o próprio
- * link, ou um rótulo quando o link é uma credencial temporária (envio,
- * ChatGPT) que não deve parar no banco.
+ * Confere a fonte e descobre o que ela é — SEM baixar o arquivo. É o que o
+ * criar_post grava no post.
  */
-export async function copiarMidia(
-  link: string,
-  base: string,
-  origem: string = link,
-): Promise<{ midia: Midia; avisos: string[] }> {
-  const avisos: string[] = [];
-  await garantirBucketDosPosts();
-  const teto = (await limiteDoBucket(BUCKET_POSTS).catch(() => null)) ?? TETO_PROJETO;
-
-  const res = await buscar(link);
-  const declarado = Number(res.headers.get("content-length") ?? 0);
-  const mimeDeclarado = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-
-  // Grande demais para o bucket: nem baixa. Publica do link de origem.
-  if (declarado > teto) {
-    await res.body?.cancel();
-    const tipo = tipoDoMime(mimeDeclarado);
-    if (!tipo) throw new ErroPost(`Não reconheci o arquivo (${mimeDeclarado || "sem tipo"}): ${link.slice(0, 120)}`);
-    // Link temporário (envio, ChatGPT) não pode virar o link de publicação.
-    if (origem !== link) {
-      throw new ErroPost(`O arquivo passa de ${Math.round(teto / 1048576)} MB, o teto do nosso storage.`);
-    }
-    avisos.push(
-      `Arquivo de ${Math.round(declarado / 1048576)} MB passa do teto de ${Math.round(teto / 1048576)} MB do nosso storage: não foi copiado, e a publicação usa o link de origem — ele precisa continuar no ar até a hora do post.`,
-    );
-    return { midia: { origem: link, caminho: null, mime: mimeDeclarado, tipo, tamanho: declarado }, avisos };
+export async function inspecionar(entrada: string | ArquivoDoChatGpt): Promise<Midia> {
+  if (typeof entrada !== "string") {
+    const e = await espiar(entrada.download_url);
+    const tipo = farejar(e.inicio)?.tipo ?? tipoDoMime(entrada.mime_type ?? e.mime);
+    if (!tipo) throw new ErroPost(`O arquivo "${entrada.file_name ?? entrada.file_id}" não é foto nem vídeo.`);
+    return {
+      fonte: "chatgpt",
+      ref: entrada.download_url,
+      nome: entrada.file_name ?? entrada.file_id,
+      mime: farejar(e.inicio)?.mime ?? entrada.mime_type ?? e.mime,
+      tipo,
+      tamanho: e.tamanho,
+    };
   }
 
-  // Lê com teto: Content-Length pode faltar ou mentir.
+  const idDrive = idDoDrive(entrada);
+  if (idDrive) {
+    const a = await arquivoDoDrive(idDrive);
+    const tipo = tipoDoMime(a.mime);
+    if (!tipo) throw new ErroPost(`"${a.nome}" no Drive não é foto nem vídeo (${a.mime}).`);
+    if (a.tamanho > TETO_BAIXAR) throw new ErroPost(`"${a.nome}" passa de 1 GB, o maior vídeo que a Meta aceita.`);
+    return { fonte: "drive", ref: a.id, nome: a.nome, mime: a.mime, tipo, tamanho: a.tamanho };
+  }
+
+  const e = await espiar(entrada);
+  const farejado = farejar(e.inicio);
+  const tipo = farejado?.tipo ?? tipoDoMime(e.mime);
+  if (!tipo) throw new ErroPost(`Não reconheci como foto ou vídeo: ${entrada.slice(0, 120)}`);
+  if (e.tamanho > TETO_BAIXAR) throw new ErroPost(`O arquivo passa de 1 GB, o maior vídeo que a Meta aceita: ${entrada.slice(0, 120)}`);
+  const nome = decodeURIComponent(new URL(entrada).pathname.split("/").pop() || "arquivo");
+  return { fonte: "link", ref: entrada, nome, mime: farejado?.mime ?? e.mime, tipo, tamanho: e.tamanho };
+}
+
+/** Os bytes da mídia, buscados na fonte na hora de publicar — só na memória. */
+export async function baixarMidia(m: Midia): Promise<Uint8Array> {
+  const res = m.fonte === "drive" ? await baixarDoDrive(m.ref) : await buscar(m.ref);
   const partes: Uint8Array[] = [];
   let lidos = 0;
   const leitor = res.body!.getReader();
@@ -199,93 +181,12 @@ export async function copiarMidia(
     const { done, value } = await leitor.read();
     if (done) break;
     lidos += value.byteLength;
-    if (lidos > teto) {
+    if (lidos > TETO_BAIXAR) {
       await leitor.cancel();
-      throw new ErroPost(
-        `O arquivo passa de ${Math.round(teto / 1048576)} MB e o servidor não informou o tamanho antes: ${link.slice(0, 120)}`,
-      );
+      throw new ErroPost(`"${m.nome}" passa de 1 GB.`);
     }
     partes.push(value);
   }
-  let bytes: Uint8Array = Buffer.concat(partes);
-
-  const farejado = farejar(bytes);
-  let mime = farejado?.mime ?? mimeDeclarado;
-  const tipo = farejado?.tipo ?? tipoDoMime(mime);
-  if (!tipo) throw new ErroPost(`Não reconheci o arquivo como imagem ou vídeo: ${link.slice(0, 120)}`);
-
-  if (tipo === "imagem" && mime !== "image/jpeg") {
-    const jpeg = await paraJpeg(bytes);
-    if (jpeg) {
-      bytes = jpeg;
-      mime = "image/jpeg";
-    } else {
-      avisos.push(`Imagem em ${mime} não pôde ser convertida para JPEG; o Instagram só aceita JPEG e pode recusar.`);
-    }
-  }
-
-  const extensao = mime === "image/jpeg" ? "jpg" : mime === "video/quicktime" ? "mov" : (mime.split("/")[1] ?? "bin");
-  const caminho = await subir(BUCKET_POSTS, `${base}.${extensao}`, bytes, mime);
-  return { midia: { origem, caminho, mime, tipo, tamanho: bytes.byteLength }, avisos };
-}
-
-// ── Envio de arquivo sem link ───────────────────────────────────────────────
-
-const PASTA_ENVIOS = "envios";
-const REFERENCIA = /^envio:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(\.[a-z0-9]{1,5})?$/i;
-/** Envio que não virou post em um dia sai do bucket. */
-const ENVIO_VALE_MS = 24 * 3600_000;
-
-export const ehReferenciaDeEnvio = (s: string) => REFERENCIA.test(s);
-
-const MIME_DA_EXTENSAO: Record<string, string> = {
-  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif",
-  heic: "image/heic", mp4: "video/mp4", mov: "video/quicktime", m4v: "video/mp4", webm: "video/webm",
-};
-
-/**
- * O link de upload (assinado, 2 h, só para este arquivo) e a referência que o
- * criar_post aceita. Aproveita para tirar do bucket os envios esquecidos.
- */
-export async function prepararEnvio(nomeArquivo: string): Promise<{ referencia: string; url: string; mime: string }> {
-  await garantirBucketDosPosts();
-  const ext = (nomeArquivo.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "").toLowerCase();
-  const id = randomUUID();
-  const sufixo = ext ? `.${ext}` : "";
-  const url = await urlDeEnvio(BUCKET_POSTS, `${PASTA_ENVIOS}/${id}${sufixo}`);
-  limparEnviosVelhos().catch((e) => console.error("[social] limpeza dos envios:", e));
-  return { referencia: `envio:${id}${sufixo}`, url, mime: MIME_DA_EXTENSAO[ext] ?? "application/octet-stream" };
-}
-
-/** A referência vira um link de leitura curto, para copiarMidia baixar. */
-export async function linkDoEnvio(referencia: string): Promise<{ link: string; caminho: string }> {
-  const m = referencia.match(REFERENCIA);
-  if (!m) throw new ErroPost(`Referência de envio inválida: ${referencia.slice(0, 80)}`);
-  const caminho = `${PASTA_ENVIOS}/${m[1].toLowerCase()}${(m[2] ?? "").toLowerCase()}`;
-  if (!(await infoDoObjeto(BUCKET_POSTS, caminho))) {
-    throw new ErroPost(
-      `O arquivo de ${referencia} ainda não chegou. Suba o arquivo no link de envio (comando curl ou página de envio) antes de criar o post.`,
-    );
-  }
-  return { link: await urlDeLeitura(BUCKET_POSTS, caminho, 900), caminho };
-}
-
-/** Depois de copiado para o post, o envio sai do bucket. */
-export async function apagarEnvio(caminho: string): Promise<void> {
-  await remover(BUCKET_POSTS, caminho);
-}
-
-async function limparEnviosVelhos(): Promise<void> {
-  const limite = Date.now() - ENVIO_VALE_MS;
-  const velhos = (await listarObjetos(BUCKET_POSTS, PASTA_ENVIOS)).filter((o) => o.criadoEm && Date.parse(o.criadoEm) < limite);
-  await Promise.all(velhos.map((o) => remover(BUCKET_POSTS, `${PASTA_ENVIOS}/${o.nome}`)));
-}
-
-/** O link que a Meta busca: assinado por 6 h (o Instagram processa vídeo com calma). */
-export async function linkParaPublicar(m: Midia): Promise<string> {
-  return m.caminho ? urlDeLeitura(BUCKET_POSTS, m.caminho, 6 * 3600) : m.origem;
-}
-
-export async function apagarCopias(midias: Midia[]): Promise<void> {
-  await Promise.all(midias.filter((m) => m.caminho).map((m) => remover(BUCKET_POSTS, m.caminho!)));
+  if (lidos === 0) throw new ErroPost(`"${m.nome}" veio vazio da fonte.`);
+  return Buffer.concat(partes);
 }
