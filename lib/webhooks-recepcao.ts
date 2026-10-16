@@ -29,6 +29,7 @@ import { abertaNoFunil } from "@/lib/oportunidades";
 import { inscreverNaCadenciaDaEtapa } from "@/lib/automacoes/repositorio";
 import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 import { carimbarCampanhaDoLead } from "@/lib/campanha-do-lead";
+import { enviarTexto, instanciaExataPorNumero, instanciasPorId } from "@/lib/uazapi";
 
 export type ResultadoRecepcao = {
   status: number;
@@ -486,6 +487,20 @@ export async function processarLead(
         resumo.push(
           ja ? "oportunidade reaproveitada" : "oportunidade não criada",
         );
+        // O LEAD VOLTOU (pedido dele, 2026-10-16): ele já tinha oportunidade
+        // aberta neste funil, então o card fica onde está e nenhuma cadência
+        // dispara — quem precisa saber é o responsável. Nunca derruba a
+        // captação: o aviso que não sai fica no resumo e no histórico.
+        if (ja) {
+          const aviso = await avisarQueVoltou(webhookId, ja.id).catch(
+            (e) => `responsável não avisado: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`,
+          );
+          resumo.push(aviso);
+          await sql`
+            INSERT INTO historico (contato_id, oportunidade_id, descricao)
+            SELECT ${contatoId}, ${ja.id}, 'Lead voltou pela captação ' || w.nome || ': ' || ${aviso}
+              FROM webhooks w WHERE w.id = ${webhookId}`;
+        }
       }
     }
 
@@ -550,6 +565,59 @@ export async function processarLead(
       ...(oportunidadeId ? { oportunidade_id: oportunidadeId } : {}),
     },
   };
+}
+
+/** O endereço do CRM no link da oportunidade que vai no aviso (o mesmo do aviso de reunião). */
+const ENDERECO_DO_CRM = "https://amaanoffice.amaan.com.br";
+
+/**
+ * Avisa no WhatsApp o RESPONSÁVEL da oportunidade que o lead entrou de novo
+ * por uma captação (pedido dele, 2026-10-16). Sai pelo número da última
+ * conversa do lead, ou, sem conversa, pelo primeiro número cadastrado — é
+ * mensagem para a equipe, não para o lead. Devolve como ficou, em poucas
+ * palavras, para o resumo da captação e o histórico.
+ */
+async function avisarQueVoltou(webhookId: string, oportunidadeId: string): Promise<string> {
+  const [l] = await sql`
+    SELECT w.nome AS captacao, f.nome AS funil, e.nome AS etapa, o.valor,
+           c.nome AS lead, c.whatsapp AS lead_whatsapp,
+           u.nome AS responsavel, nullif(u.whatsapp, '') AS responsavel_whatsapp,
+           (SELECT a.numero_instancia FROM atendimentos a
+             WHERE a.contato_id = c.id AND a.numero_instancia IS NOT NULL
+             ORDER BY a.data_atualizacao DESC NULLS LAST LIMIT 1) AS numero_da_conversa
+      FROM oportunidades o
+      JOIN contatos c ON c.id = o.contato_id
+      JOIN funis f ON f.id = o.funil_id
+      JOIN etapas e ON e.id = o.etapa_id
+      LEFT JOIN usuarios u ON u.id = o.responsavel_id
+      JOIN webhooks w ON w.id = ${webhookId}
+     WHERE o.id = ${oportunidadeId}`;
+  if (!l) return "responsável não avisado: oportunidade não encontrada";
+  if (!l.responsavel) return "responsável não avisado: oportunidade sem responsável";
+  if (!l.responsavel_whatsapp) return `${l.responsavel} não avisado: sem WhatsApp no cadastro`;
+
+  const instancia =
+    (l.numero_da_conversa ? await instanciaExataPorNumero(l.numero_da_conversa as string) : null) ??
+    [...(await instanciasPorId()).values()][0];
+  if (!instancia) return `${l.responsavel} não avisado: nenhum número de WhatsApp cadastrado`;
+
+  // numeric chega como texto (fetch_types:false, lib/db.ts).
+  const valor = Number(l.valor ?? 0);
+  const texto = [
+    `🔁 Um lead seu voltou pela captação ${l.captacao}.`,
+    "",
+    `*Nome:* ${l.lead}`,
+    `*WhatsApp:* ${l.lead_whatsapp ? `+${soDigitos(l.lead_whatsapp as string)}` : "não informado"}`,
+    ...(valor > 0 ? [`*Valor:* ${valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}`] : []),
+    `*Está em:* ${l.funil} › ${l.etapa}`,
+    `*Oportunidade:* ${ENDERECO_DO_CRM}/?op=${oportunidadeId}`,
+  ].join("\n");
+  try {
+    await enviarTexto(soDigitos(l.responsavel_whatsapp as string), texto, instancia, "aviso-lead-voltou");
+    return `${l.responsavel} avisado no WhatsApp`;
+  } catch (e) {
+    return `${l.responsavel} não avisado: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`;
+  }
 }
 
 // O log nunca derruba a requisição: falhar em gravar a prova de que o lead
