@@ -33,7 +33,7 @@ import {
 import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
 import { brl } from "../formato";
 import CartaoOportunidade from "../funil/cartao";
-import { bordaDaIa, corDoRobo } from "../funil/ia";
+import { corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
 import {
   proximoIdDeMensagem,
@@ -60,8 +60,8 @@ import {
   type Subetapa,
 } from "./subetapas";
 
-/** A cor do robô da IA e a borda destacada no card deste contato NESTA etapa (null = sem IA). */
-type Robo = (contato: Contato | undefined) => { cor: string | null; borda: string | null };
+/** A cor do robô da IA no card deste contato NESTA etapa (null = sem IA). */
+type Robo = (contato: Contato | undefined) => string | null;
 
 // Painel da cadência de UMA etapa, sobreposto ao quadro com o fundo desfocado.
 // Cada coluna é uma mensagem — e uma mensagem é um BLOCO de uma automação de
@@ -434,7 +434,7 @@ function CartaoNaCadencia({
   responsavel,
   tags,
   ia,
-  bordaIa,
+  pediuAtendimento,
   noFluxo,
   removendo,
   aoRemover,
@@ -444,7 +444,7 @@ function CartaoNaCadencia({
   responsavel: Usuario | undefined;
   tags: Tag[];
   ia: string | null;
-  bordaIa: string | null;
+  pediuAtendimento: boolean;
   noFluxo: boolean;
   removendo: boolean;
   aoRemover: (() => void) | null;
@@ -457,7 +457,7 @@ function CartaoNaCadencia({
         responsavel={responsavel}
         tags={tags}
         ia={ia}
-        bordaIa={bordaIa}
+        pediuAtendimento={pediuAtendimento}
       />
 
       {noFluxo && aoRemover && (
@@ -565,8 +565,11 @@ function Coluna({
   aoExcluir,
   aoRemover,
   robo,
+  pediu,
 }: {
   robo: Robo;
+  /** O contato pediu atendimento humano e espera resposta (a pill do card). */
+  pediu: (contato: Contato | undefined) => boolean;
   coluna: ColunaSubetapa;
   indice: number;
   // A classe de cor da etapa ("bg-sky-500"), a mesma que pinta a faixa da
@@ -696,8 +699,8 @@ function Coluna({
                 contato={contato}
                 responsavel={o.responsavel_id ? usuarioPorId.get(o.responsavel_id) : undefined}
                 tags={contato ? (tagsDoContato.get(contato.id) ?? []) : []}
-                ia={robo(contato).cor}
-                bordaIa={robo(contato).borda}
+                ia={robo(contato)}
+                pediuAtendimento={pediu(contato)}
                 noFluxo={emCadencia.has(o.id)}
                 removendo={removendoId === o.id}
                 aoRemover={aoRemover ? () => aoRemover(o) : null}
@@ -729,6 +732,7 @@ export default function PainelSubetapas({
   contatoPorId,
   usuarioPorId,
   tagsDoContato,
+  pediramAtendimento,
   aoFechar,
   conversaInicial = null,
 }: {
@@ -745,6 +749,8 @@ export default function PainelSubetapas({
   contatoPorId: Map<string, Contato>;
   usuarioPorId: Map<string, Usuario>;
   tagsDoContato: Map<string, Tag[]>;
+  /** Contatos que pediram atendimento humano e esperam resposta (a pill do card). */
+  pediramAtendimento: Set<string>;
   aoFechar: () => void;
   // ?ia= da URL quando o link da sidebar apontou para a conversa DESTA cadência.
   conversaInicial?: string | null;
@@ -762,7 +768,8 @@ export default function PainelSubetapas({
   const hoje = useMemo(() => new Date(), []);
   const cor = etapa.cor;
   // O painel é de UMA etapa: o robô de cada card depende só do contato.
-  const robo: Robo = (contato) => ({ cor: corDoRobo(contato, etapa), borda: bordaDaIa(contato, etapa) });
+  const robo: Robo = (contato) => corDoRobo(contato, etapa);
+  const pediu = (contato: Contato | undefined) => (contato ? pediramAtendimento.has(contato.id) : false);
 
   // Edição local. O que está aqui é o rascunho da tela; só vai ao banco no
   // Publicar. `chave` reseta o estado quando o servidor devolve outra versão —
@@ -1257,6 +1264,7 @@ export default function PainelSubetapas({
                       aoExcluir={() => excluir(coluna.subetapa.id)}
                       aoRemover={demo ? null : remover}
                       robo={robo}
+                      pediu={pediu}
                     />
                   )}
                 </Fragment>

@@ -1,4 +1,4 @@
-import { Bot, Clock, User } from "lucide-react";
+import { Bot, Clock, Hand, User } from "lucide-react";
 import type { Contato, Oportunidade, Tag, Usuario } from "../data";
 import { brl, localizacao } from "../formato";
 
@@ -15,7 +15,7 @@ export default function CartaoOportunidade({
   tags,
   arrastando = false,
   ia = null,
-  bordaIa = null,
+  pediuAtendimento = false,
 }: {
   oportunidade: Oportunidade;
   contato?: Contato;
@@ -24,27 +24,18 @@ export default function CartaoOportunidade({
   arrastando?: boolean;
   /** A IA atende este lead: a classe de cor do robô (a do funil). null = não atende. Ver ./ia.ts. */
   ia?: string | null;
-  /** A borda destacada do card atendido pela IA (bordaDaIa, ./ia.ts). null = borda comum. */
-  bordaIa?: string | null;
+  /** O lead pediu atendimento humano e ninguém da equipe respondeu ainda (app/funil/dados.ts). */
+  pediuAtendimento?: boolean;
 }) {
   // tela-baixa: (app/globals.css) — no tablet deitado o cartão perde respiro,
   // não conteúdo. Com p-3 e os vãos menores cabe quase um cartão a mais por
   // coluna, e é isso que a tela baixa precisa.
-  //
-  // ATENDIDO PELA IA (2026-10-16): borda de 2px no tom do funil. O padding
-  // perde o 1px que a borda ganha, para o card não mudar de tamanho nem o
-  // texto pular quando a IA liga ou desliga.
-  const borda = bordaIa
-    ? `border-2 p-[15px] tela-baixa:p-[11px] ${bordaIa}`
-    : "border p-4 tela-baixa:p-3";
   return (
     <div
-      className={`rounded-xl bg-white dark:bg-zinc-900 ${borda} ${
+      className={`rounded-xl border bg-white p-4 tela-baixa:p-3 dark:bg-zinc-900 ${
         arrastando
-          ? `shadow-lg ${bordaIa ? "" : "border-zinc-300 dark:border-zinc-600"}`
-          : `transition hover:bg-zinc-50 dark:hover:bg-zinc-800/50 ${
-              bordaIa ? "" : "border-zinc-200 hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700"
-            }`
+          ? "border-zinc-300 shadow-lg dark:border-zinc-600"
+          : "border-zinc-200 transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/50"
       }`}
     >
       {/* pr-6: o canto direito da primeira linha é da caixa de marcar do
@@ -53,6 +44,20 @@ export default function CartaoOportunidade({
       <h3 className="pr-6 text-sm font-semibold leading-5 text-zinc-900 dark:text-zinc-50">
         {oportunidade.nome}
       </h3>
+
+      {/* Logo abaixo do nome: é o que a equipe precisa ver primeiro descendo a
+          coluna. Some quando alguém da equipe responde o lead. */}
+      {pediuAtendimento && (
+        <p className="mt-1.5">
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/30"
+            title="A IA passou este lead para a equipe e ninguém respondeu ainda"
+          >
+            <Hand className="size-3" aria-hidden="true" />
+            Pediu atendimento
+          </span>
+        </p>
+      )}
 
       <p className="mt-1.5 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
         <User className="size-3.5 shrink-0" aria-hidden="true" />

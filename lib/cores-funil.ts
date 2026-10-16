@@ -107,30 +107,6 @@ const REALCE_DO_TOM: Record<TomFunil, string> = {
   zinc: "border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200",
 };
 
-// A borda do card que a IA está atendendo (pedido dele, 2026-10-16: "uma
-// borda mais destacada"). Mais forte que o robô para o olho achar descendo a
-// coluna; na cor do funil, para não brigar com a lombada da etapa.
-const BORDA_DO_TOM: Record<TomFunil, string> = {
-  blue: "border-blue-500 dark:border-blue-400",
-  sky: "border-sky-500 dark:border-sky-400",
-  cyan: "border-cyan-500 dark:border-cyan-400",
-  teal: "border-teal-500 dark:border-teal-400",
-  emerald: "border-emerald-500 dark:border-emerald-400",
-  lime: "border-lime-500 dark:border-lime-400",
-  amber: "border-amber-500 dark:border-amber-400",
-  orange: "border-orange-500 dark:border-orange-400",
-  rose: "border-rose-500 dark:border-rose-400",
-  fuchsia: "border-fuchsia-500 dark:border-fuchsia-400",
-  violet: "border-violet-500 dark:border-violet-400",
-  indigo: "border-indigo-500 dark:border-indigo-400",
-  zinc: "border-zinc-500 dark:border-zinc-400",
-};
-
-/** Cor da borda do card atendido pela IA, no tom do funil. */
-export function bordaDoTom(cor: string | null | undefined): string {
-  return BORDA_DO_TOM[corValida(cor)];
-}
-
 const SOLIDO_DO_TOM: Record<TomFunil, string> = {
   blue: "bg-blue-600 hover:bg-blue-700 text-white",
   sky: "bg-sky-600 hover:bg-sky-700 text-white",

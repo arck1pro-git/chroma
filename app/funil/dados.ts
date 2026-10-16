@@ -56,6 +56,8 @@ export type DadosFunil = {
   camposOportunidade: CampoPersonalizado[];
   // As IAs de atendimento (migration-ias.sql), na ordem em que foram criadas.
   ias: Ia[];
+  /** Contatos que pediram atendimento humano e ainda esperam (a pill do card). */
+  pediramAtendimento: string[];
 };
 
 function agrupar<T extends { contato_id: string }>(linhas: T[]) {
@@ -116,6 +118,7 @@ export async function carregarFunil(
     definicoesCampos,
     ias,
     totalContatos,
+    pediram,
   ] = await Promise.all([
     sql`SELECT id, nome, descricao, cor FROM funis ORDER BY data_criacao`,
     // Sem `cor`: ela é derivada abaixo, a partir da cor do FUNIL e da posição
@@ -181,6 +184,22 @@ export async function carregarFunil(
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
       FROM ias ORDER BY data_criacao`,
     totalDeContatos(),
+    // QUEM PEDIU ATENDIMENTO e ainda espera — a pill "Pediu atendimento" no
+    // card (pedido dele, 2026-10-16). Pediu = a IA passou o lead para a equipe
+    // (a linha que lib/ia/atendente.ts grava, passarParaHumano); ainda espera =
+    // ninguém da equipe escreveu para ele depois disso, nem pelo chat do CRM
+    // ('crm') nem pelo celular ('aparelho'). Respondeu, a pill some.
+    sql`
+      SELECT h.contato_id
+        FROM historico h
+       WHERE h.descricao LIKE 'IA passou o atendimento para a equipe:%'
+         AND h.contato_id IN ${doQuadro()}
+       GROUP BY h.contato_id
+      HAVING NOT EXISTS (
+        SELECT 1 FROM mensagens m JOIN atendimentos a ON a.id = m.atendimento_id
+         WHERE a.contato_id = h.contato_id
+           AND m.origem = 'agente' AND m.enviada_por IN ('crm', 'aparelho')
+           AND m.data_criacao > max(h.data_criacao))`,
   ]);
 
   const defs = definicoesCampos as unknown as CampoPersonalizado[];
@@ -242,5 +261,6 @@ export async function carregarFunil(
     camposContato: defs.filter((d) => d.entidade === "contato"),
     camposOportunidade: defs.filter((d) => d.entidade === "oportunidade"),
     ias: ias as unknown as Ia[],
+    pediramAtendimento: pediram.map((p) => p.contato_id as string),
   };
 }

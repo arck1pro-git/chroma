@@ -58,7 +58,7 @@ import {
 import GavetaContatos from "./gaveta-contatos";
 import GavetaIas from "./gaveta-ias";
 import InterruptorIa from "./interruptor-ia";
-import { bordaDaIa, corDoRobo } from "../funil/ia";
+import { corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
 import ModalDemanda from "../components/modal-demanda";
 import { abrirChamado } from "../demandas/acoes";
@@ -134,7 +134,7 @@ function CartaoArrastavel({
   responsavel,
   tags,
   ia,
-  bordaIa,
+  pediuAtendimento,
   aoAbrir,
   selecionado,
   modoSelecao,
@@ -147,7 +147,7 @@ function CartaoArrastavel({
   responsavel?: Usuario;
   tags: Tag[];
   ia: string | null;
-  bordaIa: string | null;
+  pediuAtendimento: boolean;
   aoAbrir: (id: string) => void;
   selecionado: boolean;
   // há algum cartão marcado no quadro: as caixas de todos aparecem
@@ -220,7 +220,7 @@ function CartaoArrastavel({
         responsavel={responsavel}
         tags={tags}
         ia={ia}
-        bordaIa={bordaIa}
+        pediuAtendimento={pediuAtendimento}
       />
     </article>
   );
@@ -292,6 +292,7 @@ function ColunaResumo({
   aoSelecionar,
   ias,
   aoGerenciarIas,
+  pediramAtendimento,
 }: {
   // posição da coluna no quadro; serve só ao escalonamento da entrada
   ordem: number;
@@ -314,6 +315,8 @@ function ColunaResumo({
   // as IAs para o seletor da etapa, e o atalho para a gaveta delas
   ias: Ia[];
   aoGerenciarIas: () => void;
+  /** Contatos que pediram atendimento humano e esperam resposta (a pill do card). */
+  pediramAtendimento: Set<string>;
 }) {
   const total = oportunidades.reduce((soma, o) => soma + o.valor, 0);
   // Quantas da coluna estão marcadas. `oportunidades` é o que a coluna MOSTRA
@@ -556,7 +559,7 @@ function ColunaResumo({
                   }
                   tags={contato ? (tagsDoContato.get(contato.id) ?? []) : []}
                   ia={corDoRobo(contato, etapa)}
-                  bordaIa={bordaDaIa(contato, etapa)}
+                  pediuAtendimento={contato ? pediramAtendimento.has(contato.id) : false}
                   aoAbrir={aoAbrir}
                   selecionado={selecionados.has(o.id)}
                   modoSelecao={selecionados.size > 0}
@@ -618,6 +621,9 @@ export default function Inicio({
     usuarioPorId,
     tagsDoContato,
   } = dados;
+
+  // Quem pediu atendimento humano e espera resposta: a pill do card.
+  const pediramAtendimento = useMemo(() => new Set(dados.pediramAtendimento), [dados.pediramAtendimento]);
 
   // ── Seleção em lote ───────────────────────────────────────────────────────
   // Set e não array: marcar/desmarcar é O(1) e o cartão pergunta "estou
@@ -1178,6 +1184,7 @@ export default function Inicio({
                           aoSelecionar={aoSelecionar}
                           ias={dados.ias}
                           aoGerenciarIas={abrirGavetaIas}
+                          pediramAtendimento={pediramAtendimento}
                         />
                       ))}
                     </div>
@@ -1200,7 +1207,7 @@ export default function Inicio({
                                 : []
                             }
                             ia={corDoRobo(contatoEmArraste, dados.etapaPorId.get(emArraste.etapa_id))}
-                            bordaIa={bordaDaIa(contatoEmArraste, dados.etapaPorId.get(emArraste.etapa_id))}
+                            pediuAtendimento={contatoEmArraste ? pediramAtendimento.has(contatoEmArraste.id) : false}
                             arrastando
                           />
                         </div>
@@ -1286,6 +1293,7 @@ export default function Inicio({
           contatoPorId={contatoPorId}
           usuarioPorId={usuarioPorId}
           tagsDoContato={tagsDoContato}
+          pediramAtendimento={pediramAtendimento}
           aoFechar={() => setEtapaSubetapas(null)}
         />
       )}
