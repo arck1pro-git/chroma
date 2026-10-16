@@ -30,7 +30,7 @@ import {
   type PostParaPublicar,
   type TipoPost,
 } from "./meta-publicar";
-import { perfilPorChave } from "./perfis";
+import { perfilPorChave, perfilPorInstagram } from "./perfis";
 
 export { ErroPost };
 export type { ArquivoDoChatGpt };
@@ -47,6 +47,8 @@ type Linha = {
   midias: Midia[];
   capa_url: string | null;
   primeiro_comentario: string | null;
+  /** @ do Instagram do colab (migration-posts-colaboradores.sql). */
+  colaboradores: string[];
   publicar_em: Date | null;
   estado: Estado;
   resultado: Record<string, Record<string, unknown>>;
@@ -58,7 +60,7 @@ type Linha = {
 // do módulo roda no import e quebra o build.
 const colunas = () => sql`
   id, perfil, to_jsonb(redes) AS redes, tipo, legenda, midias, capa_url, primeiro_comentario,
-  publicar_em, estado, resultado, data_criacao`;
+  to_jsonb(colaboradores) AS colaboradores, publicar_em, estado, resultado, data_criacao`;
 
 const MAX_TENTATIVAS = 3;
 const PARADO_HA = "6 minutes";
@@ -114,6 +116,7 @@ function resumo(l: Linha) {
     publicar_em: l.publicar_em ? br(l.publicar_em) : "assim que possível",
     legenda: l.legenda.length > 160 ? `${l.legenda.slice(0, 160)}…` : l.legenda,
     midias: l.midias.length,
+    ...(l.colaboradores?.length ? { colab: l.colaboradores.map((c) => `@${c}`) } : {}),
     redes,
     criado_em: br(l.data_criacao),
   };
@@ -135,8 +138,12 @@ export type NovoPost = {
   arquivos?: ArquivoDoChatGpt[];
   capaUrl?: string;
   primeiroComentario?: string;
+  /** @ do Instagram para o colab (até 3); nossos perfis aceitam sozinhos. */
+  colaboradores?: string[];
   publicarEm?: string;
 };
+
+const TETO_COLAB = 3;
 
 export async function criarPost(d: NovoPost) {
   const perfil = perfilPorChave(d.perfil);
@@ -168,6 +175,22 @@ export async function criarPost(d: NovoPost) {
   if (d.tipo === "story" && legenda) avisos.push("Story não tem legenda pela API: o texto foi guardado, mas não aparece no story.");
   if (d.tipo === "story" && d.primeiroComentario) avisos.push("Story não aceita comentário: o primeiro comentário foi ignorado.");
 
+  // Colab: o @ como o Instagram escreve (sem o @, minúsculo), no máximo 3.
+  const colaboradores = [
+    ...new Set((d.colaboradores ?? []).map((c) => c.trim().replace(/^@/, "").toLowerCase()).filter(Boolean)),
+  ];
+  if (colaboradores.length > TETO_COLAB) throw new ErroPost(`Colab vai até ${TETO_COLAB} contas.`);
+  if (colaboradores.some((c) => !/^[a-z0-9._]{1,30}$/.test(c))) {
+    throw new ErroPost("Colab: use o @ do Instagram (letras, números, ponto e sublinhado).");
+  }
+  if (colaboradores.includes(perfil.instagram.toLowerCase())) {
+    throw new ErroPost(`Colab: @${perfil.instagram} é quem publica; convide a outra conta.`);
+  }
+  if (colaboradores.length && d.tipo === "story") throw new ErroPost("Story não aceita colab: use reels, feed ou carrossel.");
+  if (colaboradores.length && !redes.includes("instagram")) avisos.push("Colab só existe no Instagram: no Facebook o post sai normal.");
+  const deFora = colaboradores.filter((c) => !perfilPorInstagram(c));
+  if (deFora.length) avisos.push(`@${deFora.join(", @")} recebe o convite e precisa aceitar no app do Instagram.`);
+
   // Só confere cada fonte (o que é, se abre) — o arquivo fica onde está.
   const midias = await Promise.all(fontes.map((f) => inspecionar(f)));
   if (d.tipo === "reels" && midias[0].tipo !== "video") throw new ErroPost("Reels precisa de vídeo; para imagem, use feed.");
@@ -185,11 +208,12 @@ export async function criarPost(d: NovoPost) {
   const id = randomUUID();
   const [linha] = (await sql`
     INSERT INTO posts_sociais
-      (id, perfil, redes, tipo, legenda, midias, capa_url, primeiro_comentario, publicar_em, criado_por)
-    -- A lista vai como texto e o Postgres monta o array (mesma razão de
-    -- listaUuid, lib/db.ts); as redes já passaram pelo enum, sem vírgula.
+      (id, perfil, redes, tipo, legenda, midias, capa_url, primeiro_comentario, colaboradores, publicar_em, criado_por)
+    -- As listas vão como texto e o Postgres monta o array (mesma razão de
+    -- listaUuid, lib/db.ts); redes e @ já passaram pela peneira, sem vírgula.
     VALUES (${id}, ${perfil.chave}, string_to_array(${redes.join(",")}, ',')::text[], ${d.tipo}, ${legenda},
             ${sql.json(midias)}, ${d.capaUrl?.trim() || null}, ${d.primeiroComentario?.trim() || null},
+            string_to_array(${colaboradores.join(",")}, ',')::text[],
             ${quando?.toISOString() ?? null}::timestamptz, 'mcp')
     RETURNING ${colunas()}`) as unknown as Linha[];
 
@@ -337,6 +361,7 @@ async function executar(l: Linha, ate: number): Promise<Estado> {
     midias: l.midias.map((m, i) => ({ tipo: m.tipo, nome: m.nome, mime: m.mime, bytes: () => bytesDa(i) })),
     capaUrl: l.capa_url,
     primeiroComentario: l.primeiro_comentario,
+    colaboradores: l.colaboradores ?? [],
   };
   const pendentes = l.redes.filter((r) => !l.resultado[r]?.id);
 

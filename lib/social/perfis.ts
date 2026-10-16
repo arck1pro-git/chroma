@@ -45,3 +45,9 @@ export const CHAVES_PERFIS = PERFIS.map((p) => p.chave) as [string, ...string[]]
 export function perfilPorChave(chave: string): Perfil | null {
   return PERFIS.find((p) => p.chave === chave) ?? null;
 }
+
+/** O nosso perfil daquele @ do Instagram — é o que o CRM pode aceitar no colab. */
+export function perfilPorInstagram(usuario: string): Perfil | null {
+  const u = usuario.replace(/^@/, "").toLowerCase();
+  return PERFIS.find((p) => p.instagram.toLowerCase() === u) ?? null;
+}

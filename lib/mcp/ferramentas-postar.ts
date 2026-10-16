@@ -69,6 +69,13 @@ const entradaCriar = z.object({
     .max(10)
     .optional()
     .describe("Arquivos anexados na conversa (ChatGPT). Entram depois de `midias`, na ordem. Só para post na hora: o link deles vence."),
+  colab: z
+    .array(z.string().min(1).max(31))
+    .max(3)
+    .optional()
+    .describe(
+      "Colab do Instagram: até 3 @ convidados (ex.: [\"fabhricioari\"]). Quando é um dos nossos perfis (perfis_sociais), o CRM aceita o convite sozinho e o post sai nos dois perfis; conta de fora aceita no app. Reels, feed e carrossel — story não aceita.",
+    ),
   capa_url: z.url().optional().describe("Capa do Reels no Instagram (link https de uma imagem). Opcional."),
   primeiro_comentario: z.string().max(2200).optional().describe("Comentário publicado logo depois do post. Opcional; não vale para story."),
   publicar_em: DATA.optional(),
@@ -82,6 +89,7 @@ async function criar(a: z.infer<typeof entradaCriar>) {
     legenda: a.legenda,
     midias: a.midias,
     arquivos: a.arquivos,
+    colaboradores: a.colab,
     capaUrl: a.capa_url,
     primeiroComentario: a.primeiro_comentario,
     publicarEm: a.publicar_em,
@@ -134,6 +142,7 @@ export const FERRAMENTAS_POSTAR: Ferramenta[] = [
     titulo: "Criar post",
     descricao:
       "Publica agora ou agenda um post no Instagram e/ou no Facebook de um perfil. Tipos: reels (1 vídeo; no Facebook vai como vídeo da página), story (1 imagem ou vídeo), feed (1 imagem) e carrossel (2 a 10; no Facebook só imagens). " +
+      "Colab no Instagram: ponha o @ da outra conta em colab (ex.: post no arck1pro com colab [\"fabhricioari\"]) — entre os nossos perfis o convite é aceito sozinho. " +
       "A mídia vem do Google Drive da empresa: ache o arquivo com o conector do Drive e passe o link ou drive:<id> em midias (o CRM lê o Drive pela conta de serviço dele). Link https público também serve. No ChatGPT, o arquivo anexado pode ir em arquivos (só para post na hora). " +
       "O CRM não guarda cópia: na hora de publicar, busca o arquivo na fonte e manda direto para a Meta (vídeo até 1 GB). Arquivo que não está no Drive nem tem link público: peça à pessoa para salvar no Drive. " +
       "Sem publicar_em, publica em seguida; com data, o CRM publica no horário (Brasília) — o arquivo precisa continuar no Drive até lá. Devolve o id para acompanhar com ver_post. " +

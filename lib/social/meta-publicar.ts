@@ -22,9 +22,14 @@
 // `iniciado`: se a função cair depois da chamada e antes de guardar o id, não
 // há como saber se o post saiu, e a rodada seguinte marca erro em vez de
 // arriscar um post duplicado na página.
+//
+// COLAB (2026-10-16): os @ em `colaboradores` vão no contêiner do Instagram
+// (Reels, foto e carrossel; story não aceita). Quando o convidado é um dos
+// nossos perfis, o próprio CRM aceita o convite por ele logo depois de
+// publicar (POST /collaboration_invites) — e o post já sai nos dois perfis.
 import "server-only";
 import { ErroMeta } from "@/lib/meta";
-import type { Perfil } from "./perfis";
+import { perfilPorInstagram, type Perfil } from "./perfis";
 
 const VERSAO = process.env.META_GRAPH_VERSION?.trim() || "v26.0";
 
@@ -37,6 +42,8 @@ export type PostParaPublicar = {
   midias: MidiaParaPublicar[];
   capaUrl: string | null;
   primeiroComentario: string | null;
+  /** @ do Instagram convidados para o colab (até 3). */
+  colaboradores: string[];
 };
 /** A foto já na página do Facebook (não publicada), pelo índice da mídia. */
 export type FotosNaPagina = Map<number, { id: string; url: string }>;
@@ -209,17 +216,21 @@ export async function publicarNoInstagram(
     return f.url;
   };
   let conteiner = progresso.conteiner;
+  // Story não aceita colab (criarPost já recusa); nos outros, vai no contêiner
+  // do post (no carrossel, no pai).
+  const colab = post.colaboradores.length ? { collaborators: post.colaboradores } : {};
 
   if (!conteiner) {
     const [m] = post.midias;
     if (post.tipo === "feed") {
-      conteiner = await criarConteiner(ig, token, { image_url: linkDa(0), caption: post.legenda });
+      conteiner = await criarConteiner(ig, token, { image_url: linkDa(0), caption: post.legenda, ...colab });
     } else if (post.tipo === "reels") {
       conteiner = await conteinerDeVideo(ig, token, {
         media_type: "REELS",
         caption: post.legenda,
         share_to_feed: true,
         ...(post.capaUrl ? { cover_url: post.capaUrl } : {}),
+        ...colab,
       }, m);
     } else if (post.tipo === "story") {
       conteiner =
@@ -238,7 +249,7 @@ export async function publicarNoInstagram(
           filhos.push(await criarConteiner(ig, token, { is_carousel_item: true, image_url: linkDa(i) }));
         }
       }
-      conteiner = await criarConteiner(ig, token, { media_type: "CAROUSEL", children: filhos.join(","), caption: post.legenda });
+      conteiner = await criarConteiner(ig, token, { media_type: "CAROUSEL", children: filhos.join(","), caption: post.legenda, ...colab });
     }
     await salvar({ conteiner });
   }
@@ -251,13 +262,40 @@ export async function publicarNoInstagram(
     .then((r) => r.permalink ?? null)
     .catch(() => null);
 
-  let aviso: string | undefined;
+  const avisos: string[] = [];
   if (post.primeiroComentario && post.tipo !== "story") {
     await graph(`${id}/comments`, { token, corpo: { message: post.primeiroComentario } }).catch((e) => {
-      aviso = `Publicado, mas o primeiro comentário falhou: ${e instanceof Error ? e.message : String(e)}`;
+      avisos.push(`Publicado, mas o primeiro comentário falhou: ${e instanceof Error ? e.message : String(e)}`);
     });
   }
-  return { id, link, aviso };
+  // O convite do colab aceito pelos nossos perfis; conta de fora aceita no app.
+  for (const usuario of post.colaboradores) {
+    const nosso = perfilPorInstagram(usuario);
+    if (nosso && !(await aceitarColab(nosso, id, token))) {
+      avisos.push(`Colab: não consegui aceitar o convite pelo @${usuario}; aceite no app do Instagram (Notificações).`);
+    }
+  }
+  return { id, link, aviso: avisos.join(" ") || undefined };
+}
+
+/**
+ * Aceita, pelo perfil convidado, o convite de colab do post recém-publicado.
+ * O convite pode levar alguns segundos para existir: tenta 4 vezes.
+ */
+async function aceitarColab(convidado: Perfil, mediaId: string, token: string): Promise<boolean> {
+  for (let tentativa = 1; tentativa <= 4; tentativa++) {
+    try {
+      const r = await graph<{ success?: boolean }>(`${convidado.instagramId}/collaboration_invites`, {
+        token,
+        corpo: { media_id: mediaId, accept: true },
+      });
+      if (r.success) return true;
+    } catch (e) {
+      if (tentativa === 4) console.error(`[social] colab: @${convidado.instagram} não aceitou ${mediaId}:`, e);
+    }
+    await esperar(5_000);
+  }
+  return false;
 }
 
 // ── Facebook ────────────────────────────────────────────────────────────────
