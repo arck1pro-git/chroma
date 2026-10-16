@@ -22,8 +22,9 @@ import type { NextRequest } from "next/server";
 import { ErroDrive } from "@/lib/google-drive";
 import { ErroMeta } from "@/lib/meta";
 import { FERRAMENTAS } from "@/lib/mcp/ferramentas";
+import { FERRAMENTAS_DEMANDAS } from "@/lib/mcp/ferramentas-demandas";
 import { FERRAMENTAS_POSTAR } from "@/lib/mcp/ferramentas-postar";
-import { responderMcp, segredoConfere, semCanal, type ServidorMcp } from "@/lib/mcp/protocolo";
+import { ErroDaFerramenta, responderMcp, segredoConfere, semCanal, type ServidorMcp } from "@/lib/mcp/protocolo";
 import { ErroPost } from "@/lib/social/posts";
 
 export const dynamic = "force-dynamic";
@@ -42,13 +43,17 @@ const SERVIDOR: ServidorMcp = {
     "ou drive:<id> ao criar_post (link https público também serve). O CRM não guarda cópia: busca na fonte e manda direto para a Meta. " +
     "Acompanhe com listar_posts e ver_post; mude ou cancele o que ainda está agendado com editar_post e cancelar_post; " +
     "o que terminou em erro, repetir_post tenta de novo só nas redes que falharam. " +
-    "Publicar é público: confirme com a pessoa o perfil, o texto, as mídias e o horário antes de criar o post. Horários em Brasília.",
-  ferramentas: [...FERRAMENTAS, ...FERRAMENTAS_POSTAR],
+    "Publicar é público: confirme com a pessoa o perfil, o texto, as mídias e o horário antes de criar o post. " +
+    "DEMANDAS: criar_demandas cria uma ou várias de uma vez, cada uma para uma pessoa, várias, \"todos\" ou \"ti\" (chamado); " +
+    "pessoas_demanda diz quem pode receber e listar_demandas mostra o que está pendente. Horários em Brasília.",
+  ferramentas: [...FERRAMENTAS, ...FERRAMENTAS_POSTAR, ...FERRAMENTAS_DEMANDAS],
   // O motivo de uma recusa de post (data no passado, Reels sem vídeo, arquivo
   // do Drive sem acesso, erro da Meta) volta para o modelo corrigir; o resto,
   // que pode trazer detalhe do banco, fica no log.
   mensagemDeErro: (e) =>
-    e instanceof ErroPost || e instanceof ErroMeta || e instanceof ErroDrive ? e.message : "Erro no CRM. Tente de novo.",
+    e instanceof ErroPost || e instanceof ErroMeta || e instanceof ErroDrive || e instanceof ErroDaFerramenta
+      ? e.message
+      : "Erro no CRM. Tente de novo.",
 };
 
 export async function POST(req: NextRequest, ctx: RouteContext<"/api/mcp/[segredo]">) {

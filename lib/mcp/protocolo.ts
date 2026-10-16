@@ -26,6 +26,9 @@ export type Ferramenta = {
   meta?: Record<string, unknown>;
 };
 
+/** Recusa com o motivo para o modelo ler e corrigir a chamada (não é erro do servidor). */
+export class ErroDaFerramenta extends Error {}
+
 export type ServidorMcp = {
   nome: string;
   titulo: string;

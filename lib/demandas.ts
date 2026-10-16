@@ -292,6 +292,32 @@ export async function inserirDemandas(
   return linhas.map((l) => l.id as string);
 }
 
+/**
+ * A demanda para VÁRIAS pessoas escolhidas, uma linha por pessoa — o "para
+ * todos" de um grupo (o conector MCP, 2026-10-16). Num INSERT só: as cópias
+ * nascem no mesmo instante e copiasDe as reconhece como irmãs, então quem
+ * criou vê um cartão com o progresso de cada pessoa. Quem não pode receber
+ * (inativo, sem login ou sem o módulo) fica de fora, como em inserirDemandas.
+ */
+export async function inserirDemandasParaPessoas(
+  campos: Campos,
+  pessoaIds: string[],
+  criadoPor: string,
+): Promise<Array<{ id: string; responsavel: string }>> {
+  if (!pessoaIds.length) return [];
+  const linhas = await sql`
+    INSERT INTO demandas (titulo, descricao, prazo, prioridade, responsavel_id, criado_por)
+    SELECT ${campos.titulo}, ${campos.descricao}, ${campos.prazo}::date,
+           ${campos.prioridade}, u.id, ${criadoPor}
+      FROM usuarios u
+      JOIN departamento_modulos dm
+        ON dm.departamento_id = u.departamento_id AND dm.modulo = 'demandas'
+     WHERE u.ativo = true AND u.email IS NOT NULL
+       AND u.id = ANY(string_to_array(${listaUuid(pessoaIds)}, ',')::uuid[])
+    RETURNING id, (SELECT nome FROM usuarios WHERE id = responsavel_id) AS responsavel`;
+  return linhas.map((l) => ({ id: l.id as string, responsavel: l.responsavel as string }));
+}
+
 /** O chamado: uma demanda do departamento TI. null = o TI não existe no banco. */
 export async function inserirChamado(campos: Campos, criadoPor: string): Promise<string | null> {
   const linhas = await sql`
