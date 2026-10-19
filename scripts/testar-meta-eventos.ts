@@ -149,11 +149,11 @@ async function main() {
   const [{ n }] = await sql`SELECT count(*)::int AS n FROM contatos WHERE nome = 'teste meta-eventos'`;
   assert.equal(n, 0, "a transação foi desfeita: nada ficou no dev");
 
-  // ── 4. O que não envia: etapa sem evento, e a chave desligada (o dev) ──
+  // ── 4. O que não envia: etapa sem evento, e fora da produção (o dev) ──
   const [semEvento] = await sql`SELECT id FROM etapas WHERE meta_evento IS NULL LIMIT 1`;
   if (semEvento) assert.deepEqual(await dispararEventoDaEtapa("00000000-0000-0000-0000-000000000000", semEvento.id, deps), { estado: "sem_evento" });
-  assert.notEqual(process.env.META_EVENTOS_ATIVOS, "1", "no dev a chave tem de estar desligada");
-  // Etapa COM evento e chave desligada: não reserva, não consulta, não envia.
+  assert.notEqual(process.env.VERCEL_ENV, "production", "o dev não pode se passar por produção");
+  // Etapa COM evento fora da produção: não reserva, não consulta, não envia.
   // dispararEventoDaEtapa usa a conexão global, então aqui o evento é gravado
   // de verdade na etapa — e devolvido ao valor original no finally.
   const antes = (await sql`SELECT count(*)::int AS n FROM meta_eventos`)[0].n;
@@ -161,8 +161,8 @@ async function main() {
   try {
     await sql`UPDATE etapas SET meta_evento = 'Lead' WHERE id = ${etapa.id}`;
     const r = await dispararEventoDaEtapa("00000000-0000-0000-0000-000000000000", etapa.id, {
-      pixelsPermitidos: async () => { throw new Error("não devia consultar a Meta com a chave desligada"); },
-      pixelDoConjunto: async () => { throw new Error("não devia consultar a Meta com a chave desligada"); },
+      pixelsPermitidos: async () => { throw new Error("não devia consultar a Meta fora da produção"); },
+      pixelDoConjunto: async () => { throw new Error("não devia consultar a Meta fora da produção"); },
     });
     assert.deepEqual(r, { estado: "desligado" });
   } finally {

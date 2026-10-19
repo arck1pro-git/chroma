@@ -14,11 +14,13 @@ import { contasDeAnuncios, listarMeta, requisicao } from "./meta";
 // O envio sai UMA vez por oportunidade + evento: meta_eventos tem UNIQUE nessas
 // duas colunas, e o card que sai da etapa e volta não manda de novo.
 //
-// DESLIGADO SEM META_EVENTOS_ATIVOS=1. É o estado do dev: a tela configura, o
-// banco guarda, e nada vai para pixel nenhum. Não dá para usar "sem pixel
-// configurado = desligado" como antes, porque agora o pixel vem do lead — um
-// lead de teste com pixel_id no dev dispararia. Com META_TEST_EVENT_CODE, a Meta
-// desvia tudo para a aba "Testar eventos" e nada conta para campanha.
+// SEMPRE LIGADO NA PRODUÇÃO, DESLIGADO FORA DELA (2026-10-19, pedido dele: "deve
+// sempre funcionar"). Era a variável META_EVENTOS_ATIVOS=1, que ninguém
+// cadastrou na Vercel — e nenhum evento saiu, nunca. Agora quem decide é a
+// VERCEL_ENV, que a própria Vercel preenche: "production" envia; o dev (sem
+// ela) só configura e guarda, porque um lead de teste com pixel_id dispararia
+// no pixel de verdade. Com META_TEST_EVENT_CODE, a Meta desvia tudo para a aba
+// "Testar eventos" e nada conta para campanha.
 //
 // action_source "system_generated": o evento nasce no CRM, não numa página.
 // "website" exigiria a URL e o user agent do visitante no momento do evento,
@@ -245,7 +247,7 @@ export function montarEventoMeta(opcoes: {
 
 export type ResultadoEvento =
   | { estado: "sem_evento" }       // a etapa não envia nada
-  | { estado: "desligado" }        // META_EVENTOS_ATIVOS != 1 (dev)
+  | { estado: "desligado" }        // fora da produção da Vercel (dev)
   | { estado: "ja_enviado" }       // esta oportunidade já mandou este evento
   | { estado: "sem_pixel"; motivo: string }
   | { estado: "enviado"; evento: string; pixelId: string }
@@ -288,7 +290,7 @@ export async function dispararEventoDaEtapa(
      WHERE e.id = ${etapaId}`;
   const evento = (etapa?.meta_evento as string | null) ?? null;
   if (!evento) return { estado: "sem_evento" };
-  if (process.env.META_EVENTOS_ATIVOS?.trim() !== "1") return { estado: "desligado" };
+  if (process.env.VERCEL_ENV !== "production") return { estado: "desligado" };
 
   const reserva = await reservarEvento(sql, oportunidadeId, etapaId, evento);
   if (!reserva) return { estado: "ja_enviado" };
