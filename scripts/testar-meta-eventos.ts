@@ -112,6 +112,29 @@ async function main() {
   const lixo = await resolverPixel(lead({ adset_id: "LP2 - topo" }), deps);
   assert.match(lixo.pixelId === null ? lixo.motivo : "", /adset_id do lead inválido/, "nome no lugar de id não vai à Meta");
 
+  // O pixel da marca do funil, para quem não trouxe pixel nem conjunto com pixel.
+  assert.deepEqual(await resolverPixel(lead({ utm_campaign: "LP01" }), deps, "AMAAN"),
+    { pixelId: AMAAN, origem: "funil" }, "sem pixel no lead: vai para o pixel da marca do funil");
+  assert.deepEqual(await resolverPixel(lead({ adset_id: "120200000000000004" }), deps, "AMAAN"),
+    { pixelId: AMAAN, origem: "funil" }, "formulário instantâneo (conjunto sem pixel): pixel da marca");
+  assert.deepEqual(await resolverPixel(lead({ adset_id: "120200000000000001" }), deps, "AMAAN"),
+    { pixelId: OUTRO, origem: "conjunto" }, "o conjunto com pixel continua vencendo a marca");
+  const arckForaDaLista = await resolverPixel(lead(null), deps, "ARCK1PRO");
+  assert.equal(arckForaDaLista.pixelId, null, "pixel da marca fora das contas da integração não recebe");
+  assert.equal((await resolverPixel(lead(null), deps, "TI - testes")).pixelId, null, "funil sem marca conhecida: sem pixel");
+
+  // Lead de formulário instantâneo: lead_id no user_data e a campanha no custom_data.
+  const doFormulario = montarEventoMeta({ evento: "SemInteresse", eventId: "y", funil: "AMAAN", etapa: "sem interesse", lead: {
+    contatoId: "c-3", nome: "Ana Souza", email: null, whatsapp: "47999990000", cidade: null, estado: null, pais: null, valor: 0, criadoEm,
+    camposOportunidade: null,
+    camposContato: { leadgen_id: "1614000000000047", campaign_id: "120200000000000010", campaign_name: "SCP - Meio", adset_name: "Conjunto A", ad_name: "Vídeo 1", form_id: "999000111", form_name: "Formulário Meio" },
+  } });
+  assert.equal(doFormulario.user_data.lead_id, 1614000000000047, "lead_id vai como número");
+  assert.equal(doFormulario.custom_data.campaign_name, "SCP - Meio");
+  assert.equal(doFormulario.custom_data.ad_name, "Vídeo 1");
+  assert.equal(doFormulario.custom_data.form_id, "999000111");
+  assert.equal(minimo.user_data.lead_id, undefined, "sem leadgen_id, sem lead_id");
+
   // ── 3. Reserva: uma vez por oportunidade + evento ────────────────────────
   const [etapa] = await sql`SELECT id, funil_id FROM etapas ORDER BY ordem LIMIT 1`;
   assert.ok(etapa, "o dev precisa de ao menos uma etapa");

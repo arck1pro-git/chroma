@@ -88,13 +88,33 @@ function doLead(lead: DadosDoLead, chaves: string[]) {
   return texto(lead.camposOportunidade, chaves) ?? texto(lead.camposContato, chaves);
 }
 
-const UTMS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "campaign_id", "adset_id", "ad_id"];
+// A CAMPANHA DO LEAD, que vai em custom_data: UTMs, ids e nomes de campanha,
+// conjunto e anúncio, e o formulário instantâneo (2026-10-19, pedido dele:
+// "disparar esses eventos de acordo com a campanha").
+const CAMPANHA = [
+  "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "utm_id",
+  "campaign_id", "campaign_name", "adset_id", "adset_name", "ad_id", "ad_name",
+  "form_id", "form_name", "platform",
+];
 
 // ── De qual pixel é este lead ───────────────────────────────────────────────
 
 export type PixelResolvido =
-  | { pixelId: string; origem: "lead" | "conjunto" }
+  | { pixelId: string; origem: "lead" | "conjunto" | "funil" }
   | { pixelId: null; motivo: string };
+
+/**
+ * O pixel da MARCA, para o lead que não trouxe pixel nem conjunto que otimize
+ * para um: formulário instantâneo da Meta, Typebot, importação. Sem isto, 2 de
+ * cada 3 leads ficavam sem evento (simulação de 2026-10-19). O evento vai para
+ * o pixel do funil, e a Meta liga ao anúncio pelo lead_id do formulário (quando
+ * há), pelo fbc ou pelo telefone e e-mail. Pelo NOME do funil, a ordem importa:
+ * "arck" antes de "amaan".
+ */
+const PIXEL_DA_MARCA: Array<[RegExp, string]> = [
+  [/arck/i, "2102101857297540"], // Pixel Arck1pro 2026
+  [/amaan/i, "1124238353883498"], // Amaan
+];
 
 export type DependenciasMeta = {
   // Pixels que esta integração enxerga. Pixel fora daqui não recebe evento.
@@ -112,13 +132,14 @@ const ID_META = /^\d{6,20}$/;
  *      formulário. É o pixel que de fato disparou na página onde ele converteu.
  *   2. `adset_id` nos campos do lead (UTM {{adset.id}}) → o pixel para o qual
  *      aquele conjunto otimiza. Segue a campanha sozinho, sem nada na LP.
- *   3. Nenhum dos dois → sem pixel, e nada é enviado.
+ *   3. Nenhum dos dois → o pixel da marca do funil (PIXEL_DA_MARCA).
+ *   4. Funil sem marca conhecida → sem pixel, e nada é enviado.
  *
  * SÓ PIXEL DAS CONTAS DA INTEGRAÇÃO: o pixel_id vem de um formulário público.
  * Sem esta trava, um POST forjado escolheria para onde o CRM manda dado de
  * cliente. Pixel do lead fora da lista não para tudo — ainda tenta o conjunto.
  */
-export async function resolverPixel(lead: DadosDoLead, deps: DependenciasMeta): Promise<PixelResolvido> {
+export async function resolverPixel(lead: DadosDoLead, deps: DependenciasMeta, funil?: string): Promise<PixelResolvido> {
   const permitidos = await deps.pixelsPermitidos();
   const motivos: string[] = [];
 
@@ -145,6 +166,10 @@ export async function resolverPixel(lead: DadosDoLead, deps: DependenciasMeta): 
   }
 
   if (!doFormulario && !adset) motivos.push("lead sem pixel_id e sem adset_id");
+
+  const daMarca = funil ? PIXEL_DA_MARCA.find(([marca]) => marca.test(funil))?.[1] : undefined;
+  if (daMarca && permitidos.has(daMarca)) return { pixelId: daMarca, origem: "funil" };
+  if (daMarca) motivos.push(`pixel ${daMarca} da marca não pertence às contas da integração`);
   return { pixelId: null, motivo: motivos.join("; ") };
 }
 
@@ -185,9 +210,9 @@ export const dependenciasMeta: DependenciasMeta = {
  * o "_" do nome do cookie). Sem fbc mas com fbclid, o fbc é montado no formato
  * que o próprio pixel usa: fb.1.<milissegundos>.<fbclid>.
  *
- * UTMs vão em custom_data. Elas NÃO fazem a Meta ligar o evento ao anúncio —
- * quem faz isso é fbc/fbp, email e telefone —, mas ficam no evento para
- * relatório e segmentação.
+ * A campanha (UTMs, ids e nomes de campanha/conjunto/anúncio, formulário) vai
+ * em custom_data, para relatório e segmentação. Quem LIGA o evento ao anúncio
+ * é o lead_id do formulário instantâneo, o fbc/fbp, o e-mail e o telefone.
  */
 export function montarEventoMeta(opcoes: {
   evento: string;
@@ -205,8 +230,16 @@ export function montarEventoMeta(opcoes: {
   const telefone = telefoneMeta(lead.whatsapp);
   const estado = (lead.estado ?? "").trim().toLowerCase();
 
-  const user_data: Record<string, string> = {};
+  const user_data: Record<string, string | number> = {};
   const por = (chave: string, valor: string | undefined | null) => { if (valor) user_data[chave] = valor; };
+  // LEAD DO FORMULÁRIO INSTANTÂNEO: o id do lead da Meta (leadgen_id) é o que
+  // liga o evento do CRM ao anúncio, à campanha e ao formulário de onde ele
+  // veio — a integração "Conversion Leads". Número, como a Meta pede; texto
+  // só se passar do inteiro seguro do JS (perderia dígitos).
+  const leadId = doLead(lead, ["leadgen_id", "lead_id"]);
+  if (leadId && ID_META.test(leadId)) {
+    user_data.lead_id = Number.isSafeInteger(Number(leadId)) ? Number(leadId) : leadId;
+  }
   por("em", hashSe(lead.email?.toLowerCase()));
   por("ph", telefone ? sha256(telefone) : undefined);
   por("fn", partesNome.length ? sha256(partesNome[0]) : undefined);
@@ -230,9 +263,11 @@ export function montarEventoMeta(opcoes: {
     currency: "BRL",
     value: lead.valor,
   };
-  for (const utm of UTMS) {
-    const v = doLead(lead, [utm]);
-    if (v) custom_data[utm] = v;
+  for (const chave of CAMPANHA) {
+    const v = doLead(lead, [chave]);
+    // Teto de 200: já chegou utm_content com uma lista inteira de links do
+    // Typebot, e campo gigante arrisca a Meta recusar o evento todo.
+    if (v) custom_data[chave] = v.slice(0, 200);
   }
 
   return {
@@ -319,7 +354,7 @@ export async function dispararEventoDaEtapa(
       criadoEm: new Date(linha.data_criacao),
     };
 
-    const pixel = await resolverPixel(lead, deps);
+    const pixel = await resolverPixel(lead, deps, etapa.funil as string);
     if (pixel.pixelId === null) {
       await sql`UPDATE meta_eventos SET status = 'sem_pixel', erro = ${pixel.motivo} WHERE id = ${reserva.id}`;
       return { estado: "sem_pixel", motivo: pixel.motivo };
