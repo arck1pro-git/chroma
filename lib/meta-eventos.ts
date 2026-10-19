@@ -318,6 +318,9 @@ export async function dispararEventoDaEtapa(
   oportunidadeId: string,
   etapaId: string,
   deps: DependenciasMeta = dependenciasMeta,
+  // O instante do evento, quando não é agora: envio retroativo de quem entrou
+  // na etapa antes de o envio existir (a Meta aceita até 7 dias para trás).
+  quando?: Date,
 ): Promise<ResultadoEvento> {
   const [etapa] = await sql`
     SELECT e.meta_evento, e.nome, f.nome AS funil
@@ -367,6 +370,7 @@ export async function dispararEventoDaEtapa(
       funil: etapa.funil as string,
       etapa: etapa.nome as string,
       lead,
+      agora: quando,
     });
     const teste = process.env.META_TEST_EVENT_CODE?.trim();
     const resposta = await requisicao<Record<string, unknown>>(`${pixelId}/events`, {
