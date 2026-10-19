@@ -34,6 +34,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import CamadaTopo from "./camada-topo";
+import BotaoDitado, { juntarDitado } from "./botao-ditado";
 import { EscolherAnexos } from "../demandas/anexos";
 import { subirAnexo } from "../demandas/anexos-envio";
 import {
@@ -129,6 +130,7 @@ export default function ModalDemanda({
   const [feito, setFeito] = useState<string | null>(null);
   const [enviando, iniciar] = useTransition();
   const idPara = useId();
+  const idDescricao = useId();
 
   // Esc fecha, como nos outros modais — menos no meio do envio, quando sumir
   // com a tela deixaria a pessoa sem saber se a demanda nasceu.
@@ -308,11 +310,17 @@ export default function ModalDemanda({
                 />
               </label>
 
-              <label className="flex flex-col gap-1">
-                <span className={rotulo}>
-                  Descrição <span className="font-normal text-zinc-400">(opcional)</span>
-                </span>
+              {/* Rótulo fora de <label> envolvendo tudo: com o microfone dentro,
+                  clicar no rótulo dispararia o botão em vez de focar o campo. */}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between gap-2">
+                  <label htmlFor={idDescricao} className={rotulo}>
+                    Descrição <span className="font-normal text-zinc-400">(opcional)</span>
+                  </label>
+                  <BotaoDitado desligado={enviando} aoTranscrever={(t) => setDescricao((v) => juntarDitado(v, t))} />
+                </div>
                 <textarea
+                  id={idDescricao}
                   value={descricao}
                   onChange={(e) => setDescricao(e.target.value)}
                   rows={4}
@@ -322,7 +330,7 @@ export default function ModalDemanda({
                   }
                   className={`${campo} resize-y`}
                 />
-              </label>
+              </div>
 
               {inicial === undefined && (
                 <EscolherAnexos arquivos={arquivos} aoMudar={setArquivos} aoRecusar={setErro} desligado={enviando} />

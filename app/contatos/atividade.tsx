@@ -15,6 +15,7 @@
 // Os filtros só mostram assunto que existe — chip de "Vídeos (0)" é ruído.
 import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import BotaoDitado, { juntarDitado } from "../components/botao-ditado";
 import {
   ArrowUpRight,
   Bot,
@@ -155,21 +156,25 @@ export default function Atividade({
         }}
         className="rounded-xl border border-zinc-200 bg-white transition focus-within:border-zinc-400 focus-within:shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:focus-within:border-zinc-600"
       >
-        <textarea
-          ref={campoRef}
-          value={nota}
-          onChange={(e) => setNota(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              anotar();
-            }
-          }}
-          rows={nota ? 3 : 1}
-          placeholder={`Anotar algo sobre ${primeiroNome}…`}
-          aria-label="Nova anotação"
-          className="block w-full resize-none rounded-xl bg-transparent px-3.5 py-2.5 text-[13px] leading-relaxed text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-50"
-        />
+        <div className="flex items-start">
+          <textarea
+            ref={campoRef}
+            value={nota}
+            onChange={(e) => setNota(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                anotar();
+              }
+            }}
+            rows={nota ? 3 : 1}
+            placeholder={`Anotar algo sobre ${primeiroNome}…`}
+            aria-label="Nova anotação"
+            className="block min-w-0 flex-1 resize-none rounded-xl bg-transparent px-3.5 py-2.5 text-[13px] leading-relaxed text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-50"
+          />
+          {/* Ditar: o que for falado entra no campo, para revisar antes de anotar. */}
+          <BotaoDitado desligado={salvando} aoTranscrever={(t) => setNota((v) => juntarDitado(v, t))} className="mr-1.5 mt-1.5" />
+        </div>
         {nota && (
           <div className="flex items-center justify-between gap-2 border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
             <span className="text-[10px] text-zinc-400 dark:text-zinc-500">Ctrl + Enter para salvar · fica no histórico, ninguém edita</span>

@@ -12,6 +12,7 @@ import { MessageSquare, Plus } from "lucide-react";
 import type { Anotacao, Usuario } from "../data";
 import { dataHora } from "../formato";
 import { adicionarAnotacao } from "../contatos/actions";
+import BotaoDitado, { juntarDitado } from "./botao-ditado";
 
 export function AnotacoesContato({
   contatoId,
@@ -103,7 +104,9 @@ export function AnotacoesContato({
               {erro}
             </p>
           )}
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center gap-2">
+            {/* Ditar: o que for falado entra no campo, para revisar antes de salvar. */}
+            <BotaoDitado desligado={salvando} aoTranscrever={(t) => setTexto((v) => juntarDitado(v, t))} className="mr-auto" />
             <button
               type="button"
               onClick={fechar}
