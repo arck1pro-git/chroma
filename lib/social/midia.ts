@@ -172,6 +172,23 @@ export async function inspecionar(entrada: string | ArquivoDoChatGpt): Promise<M
 }
 
 /** Os bytes da mídia, buscados na fonte na hora de publicar — só na memória. */
+/**
+ * O arquivo direto da fonte, em fluxo, sem ler para a memória — é como o vídeo
+ * vai para a Meta (2026-10-19: Reels de 344 MB derrubava a publicação). O
+ * tamanho vem do Content-Length da fonte ou do que a inspeção gravou.
+ */
+export async function abrirMidia(m: Midia): Promise<{ corpo: ReadableStream<Uint8Array>; tamanho: number | null }> {
+  const res = m.fonte === "drive" ? await baixarDoDrive(m.ref) : await buscar(m.ref);
+  if (!res.body) throw new ErroPost(`"${m.nome}" veio vazio da fonte.`);
+  const cabecalho = Number(res.headers.get("content-length"));
+  const tamanho = Number.isFinite(cabecalho) && cabecalho > 0 ? cabecalho : m.tamanho > 0 ? m.tamanho : null;
+  if (tamanho && tamanho > TETO_BAIXAR) {
+    await res.body.cancel();
+    throw new ErroPost(`"${m.nome}" passa de 1 GB.`);
+  }
+  return { corpo: res.body, tamanho };
+}
+
 export async function baixarMidia(m: Midia): Promise<Uint8Array> {
   const res = m.fonte === "drive" ? await baixarDoDrive(m.ref) : await buscar(m.ref);
   const partes: Uint8Array[] = [];

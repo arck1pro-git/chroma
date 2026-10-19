@@ -19,7 +19,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { after } from "next/server";
 import { sql } from "@/lib/db";
-import { baixarMidia, ErroPost, inspecionar, type ArquivoDoChatGpt, type Midia } from "./midia";
+import { abrirMidia, baixarMidia, ErroPost, inspecionar, type ArquivoDoChatGpt, type Midia } from "./midia";
 import {
   AindaProcessando,
   apagarFotos,
@@ -368,7 +368,15 @@ async function executar(l: Linha, ate: number): Promise<Estado> {
   const post: PostParaPublicar = {
     tipo: l.tipo,
     legenda: l.legenda,
-    midias: l.midias.map((m, i) => ({ tipo: m.tipo, nome: m.nome, mime: m.mime, bytes: () => bytesDa(i) })),
+    // Vídeo vai por `fluxo`, uma leitura nova da fonte por rede, sem passar
+    // pela memória; foto por `bytes`, baixada uma vez para as duas.
+    midias: l.midias.map((m, i) => ({
+      tipo: m.tipo,
+      nome: m.nome,
+      mime: m.mime,
+      bytes: () => bytesDa(i),
+      fluxo: () => abrirMidia(l.midias[i]),
+    })),
     capaUrl: l.capa_url,
     primeiroComentario: l.primeiro_comentario,
     colaboradores: l.colaboradores ?? [],

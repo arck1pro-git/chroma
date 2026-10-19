@@ -34,8 +34,21 @@ import { perfilPorInstagram, type Perfil } from "./perfis";
 const VERSAO = process.env.META_GRAPH_VERSION?.trim() || "v26.0";
 
 export type TipoPost = "reels" | "story" | "feed" | "carrossel";
-/** A mídia na hora de publicar: os bytes vêm da fonte quando alguém pede (e uma vez só). */
-export type MidiaParaPublicar = { tipo: "imagem" | "video"; nome: string; mime: string; bytes: () => Promise<Uint8Array> };
+/** O arquivo direto da fonte, sem passar pela memória. tamanho null = a fonte não disse. */
+export type FluxoDaMidia = { corpo: ReadableStream<Uint8Array>; tamanho: number | null };
+/**
+ * A mídia na hora de publicar. Foto usa `bytes` (pequena, e a mesma serve às
+ * duas redes). VÍDEO USA `fluxo` (2026-10-19): um Reels de 344 MB inteiro na
+ * memória, mais as cópias do envio, passava de 1 GB e o servidor matava a
+ * publicação no meio — o post ficava em "publicando" e não saía.
+ */
+export type MidiaParaPublicar = {
+  tipo: "imagem" | "video";
+  nome: string;
+  mime: string;
+  bytes: () => Promise<Uint8Array>;
+  fluxo: () => Promise<FluxoDaMidia>;
+};
 export type PostParaPublicar = {
   tipo: TipoPost;
   legenda: string;
@@ -70,6 +83,9 @@ async function graph<T>(
     metodo?: "GET" | "POST" | "DELETE";
     corpo?: Record<string, unknown>;
     formulario?: FormData;
+    // Corpo já montado e em fluxo (o multipart do vídeo da página): vai com o
+    // tamanho exato, sem passar pela memória.
+    bruto?: { corpo: ReadableStream<Uint8Array>; tipo: string; tamanho: number };
     token: string;
     host?: string;
     campos?: string;
@@ -78,16 +94,19 @@ async function graph<T>(
   const url = new URL(`https://${opcoes.host ?? "graph.facebook.com"}/${VERSAO}/${caminho.replace(/^\//, "")}`);
   if (opcoes.campos) url.searchParams.set("fields", opcoes.campos);
   const res = await fetch(url, {
-    method: opcoes.metodo ?? (opcoes.corpo || opcoes.formulario ? "POST" : "GET"),
+    method: opcoes.metodo ?? (opcoes.corpo || opcoes.formulario || opcoes.bruto ? "POST" : "GET"),
     headers: {
       Authorization: `Bearer ${opcoes.token}`,
       ...(opcoes.corpo ? { "Content-Type": "application/json" } : {}),
+      ...(opcoes.bruto ? { "Content-Type": opcoes.bruto.tipo, "Content-Length": String(opcoes.bruto.tamanho) } : {}),
     },
-    body: opcoes.formulario ?? (opcoes.corpo ? JSON.stringify(opcoes.corpo) : undefined),
+    body: opcoes.bruto?.corpo ?? opcoes.formulario ?? (opcoes.corpo ? JSON.stringify(opcoes.corpo) : undefined),
+    // Corpo em fluxo exige duplex no fetch do Node.
+    ...(opcoes.bruto ? { duplex: "half" } : {}),
     cache: "no-store",
     // Upload de vídeo: a Meta só responde depois de receber o arquivo inteiro.
     signal: AbortSignal.timeout(240_000),
-  });
+  } as RequestInit);
   const json = (await res.json().catch(() => ({}))) as { error?: { message?: string; code?: number; error_user_msg?: string; error_user_title?: string } } & T;
   if (!res.ok || json.error) {
     const e = json.error;
@@ -97,16 +116,84 @@ async function graph<T>(
   return json;
 }
 
-/** Os bytes no rupload da Meta (contêiner de vídeo do Instagram, story de vídeo do Facebook). */
-async function enviarAoRupload(url: string, token: string, bytes: Uint8Array, rede: string): Promise<void> {
+/**
+ * O arquivo em fluxo e com o tamanho exato. Fonte que não informou o tamanho
+ * (link sem Content-Length) é lida para a memória: sem tamanho a Meta não
+ * aceita o envio.
+ */
+async function comTamanho(m: MidiaParaPublicar): Promise<{ corpo: ReadableStream<Uint8Array>; tamanho: number }> {
+  const f = await m.fluxo();
+  if (f.tamanho) return { corpo: f.corpo, tamanho: f.tamanho };
+  const bytes = new Uint8Array(await new Response(f.corpo).arrayBuffer());
+  return { corpo: new Response(comoCorpo(bytes)).body!, tamanho: bytes.byteLength };
+}
+
+/** O vídeo no rupload da Meta (contêiner do Instagram, story do Facebook), em fluxo da fonte. */
+async function enviarAoRupload(url: string, token: string, m: MidiaParaPublicar, rede: string): Promise<void> {
+  const { corpo, tamanho } = await comTamanho(m);
   const res = await fetch(url, {
     method: "POST",
-    headers: { Authorization: `OAuth ${token}`, offset: "0", file_size: String(bytes.byteLength) },
-    body: comoCorpo(bytes),
+    // Content-Length explícito: em fluxo, sem ele o envio sai "chunked" e o
+    // rupload recusa ("expected both Content-Length and X-Entity-Length").
+    headers: {
+      Authorization: `OAuth ${token}`,
+      offset: "0",
+      file_size: String(tamanho),
+      "Content-Length": String(tamanho),
+      "X-Entity-Length": String(tamanho),
+    },
+    body: corpo,
+    duplex: "half",
     cache: "no-store",
     signal: AbortSignal.timeout(240_000),
-  });
+  } as RequestInit);
   if (!res.ok) throw new ErroMeta(`O ${rede} não recebeu o vídeo (${res.status}): ${(await res.text()).slice(0, 200)}`);
+}
+
+/**
+ * O multipart do vídeo da página (graph-video) montado em fluxo: os campos de
+ * texto, o arquivo direto da fonte e o fecho, com o Content-Length somado. O
+ * FormData juntava o vídeo inteiro num Blob na memória.
+ */
+async function multipartDoVideo(campos: Record<string, string>, m: MidiaParaPublicar) {
+  const { corpo, tamanho } = await comTamanho(m);
+  const limite = `----amaanoffice${crypto.randomUUID().replace(/-/g, "")}`;
+  const cod = new TextEncoder();
+  const textos = Object.entries(campos)
+    .map(([nome, valor]) => `--${limite}\r\nContent-Disposition: form-data; name="${nome}"\r\n\r\n${valor}\r\n`)
+    .join("");
+  const nomeArquivo = m.nome.replace(/["\r\n]/g, "_");
+  const antes = cod.encode(`${textos}--${limite}\r\nContent-Disposition: form-data; name="source"; filename="${nomeArquivo}"\r\nContent-Type: ${m.mime}\r\n\r\n`);
+  const depois = cod.encode(`\r\n--${limite}--\r\n`);
+  const leitor = corpo.getReader();
+  let fase = 0;
+  const fluxo = new ReadableStream<Uint8Array>({
+    async pull(c) {
+      if (fase === 0) {
+        fase = 1;
+        c.enqueue(antes);
+        return;
+      }
+      if (fase === 1) {
+        const { done, value } = await leitor.read();
+        if (!done) {
+          c.enqueue(value);
+          return;
+        }
+        fase = 2;
+      }
+      c.enqueue(depois);
+      c.close();
+    },
+    cancel(motivo) {
+      return leitor.cancel(motivo);
+    },
+  });
+  return {
+    corpo: fluxo,
+    tipo: `multipart/form-data; boundary=${limite}`,
+    tamanho: antes.byteLength + tamanho + depois.byteLength,
+  };
 }
 
 // O token da página vale enquanto o do system user valer; guardado por meia
@@ -185,7 +272,7 @@ async function conteinerDeVideo(igId: string, token: string, corpo: Record<strin
     token,
     corpo: { ...corpo, upload_type: "resumable" },
   });
-  await enviarAoRupload(c.uri, token, await m.bytes(), "Instagram");
+  await enviarAoRupload(c.uri, token, m, "Instagram");
   return c.id;
 }
 
@@ -311,7 +398,7 @@ async function storyDeVideo(paginaId: string, token: string, m: MidiaParaPublica
     token,
     corpo: { upload_phase: "start" },
   });
-  await enviarAoRupload(inicio.upload_url, token, await m.bytes(), "Facebook");
+  await enviarAoRupload(inicio.upload_url, token, m, "Facebook");
   const fim = await graph<{ post_id?: string }>(`${paginaId}/video_stories`, {
     token,
     corpo: { upload_phase: "finish", video_id: inicio.video_id },
@@ -346,11 +433,9 @@ export async function publicarNoFacebook(
     link = null;
   } else if (m?.tipo === "video") {
     // O Reels do Instagram vai ao Facebook como vídeo da página (o mesmo que o
-    // Metricool fazia). Upload direto dos bytes, no host graph-video.
-    const form = new FormData();
-    form.append("description", post.legenda);
-    form.append("source", new Blob([comoCorpo(await m.bytes()) as BlobPart], { type: m.mime }), m.nome);
-    id = (await graph<{ id: string }>(`${pagina}/videos`, { token, host: "graph-video.facebook.com", formulario: form })).id;
+    // Metricool fazia). Upload em fluxo, direto da fonte, no host graph-video.
+    const bruto = await multipartDoVideo({ description: post.legenda }, m);
+    id = (await graph<{ id: string }>(`${pagina}/videos`, { token, host: "graph-video.facebook.com", bruto })).id;
     link = `https://www.facebook.com/${pagina}/videos/${id}`;
   } else if (m) {
     // Feed ou carrossel de fotos: as fotos já estão na página, não publicadas;
@@ -390,3 +475,7 @@ export async function cotaDoInstagram(perfil: Perfil): Promise<{ usados: number;
     return null;
   }
 }
+
+// Para o teste de envio em fluxo SEM publicar (contêiner do Instagram sem
+// media_publish, vídeo da página com published=false, apagado em seguida).
+export const paraTeste = { graph, tokenDaPagina, multipartDoVideo, enviarAoRupload };
