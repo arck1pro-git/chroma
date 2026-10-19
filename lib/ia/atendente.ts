@@ -375,9 +375,9 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
 
     if (saida.tipo === "humano") {
       await passarParaHumano(atendimentoId, s, saida.motivo, saida.mensagem);
-      // O lead falou: no mínimo "em contato". Sem manter a IA — passou para gente.
+      // Pediu gente: "solicitou contato". Sem manter a IA — passou para a equipe.
       if (saida.mover) await moverPelaIa(s, saida.mover);
-      else await avancarPelaIa(s, iaId, ETAPA_EM_CONTATO, "o lead respondeu e pediu a equipe", false);
+      else await avancarPelaIa(s, iaId, ETAPA_SOLICITOU, `o lead pediu atendimento (${saida.motivo})`.slice(0, 300), false);
       return;
     }
     if (saida.texto) {
@@ -401,12 +401,15 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
     }
 
     // Reunião marcada nesta resposta vale mais que qualquer outro movimento; o
-    // pedido do modelo (a recusa → sem interesse) vem depois; e, sem nenhum
-    // dos dois, o lead que respondeu está "em contato".
+    // pedido do modelo (a recusa → sem interesse) vem depois; o pedido de
+    // atendimento humano (avisar_equipe) leva a "solicitou contato"; e, sem
+    // nenhum deles, o lead que respondeu está "em atendimento".
     if (saida.tipo === "texto" && saida.marcou) {
       await avancarPelaIa(s, iaId, ETAPA_REUNIAO, "marcou a reunião", true);
     } else if (saida.mover) {
       await moverPelaIa(s, saida.mover);
+    } else if (saida.avisar) {
+      await avancarPelaIa(s, iaId, ETAPA_SOLICITOU, `o lead pediu atendimento (${saida.avisar})`.slice(0, 300), false);
     } else if (saida.texto) {
       await avancarPelaIa(s, iaId, ETAPA_EM_CONTATO, "o lead respondeu", true);
     }
@@ -478,16 +481,21 @@ async function moverPelaIa(s: Situacao, mover: Movimento) {
  * não estão movendo as oportunidades"). O modelo só movia quando o prompt
  * mandava, e o prompt só manda na recusa: em 14 dias foram 4 movimentos para 7
  * reuniões marcadas. Agora, sem depender do modelo:
- *   · o lead respondeu à IA → "em contato"
- *   · a IA marcou a reunião → "reunião agendada"
- * Só para a frente (card que já passou da etapa não volta), menos "sem contato"
- * → "em contato", que é exatamente o lead que voltou a falar.
+ *   · o lead respondeu à IA         → "em atendimento"
+ *   · o lead pediu atendimento humano → "solicitou contato"
+ *   · a IA marcou a reunião          → "reunião agendada"
+ * (Funis reformulados em 2026-10-19: "em contato" virou "em atendimento" e
+ * "tentando contato" virou "solicitou contato", nessa ordem no quadro.)
+ * Só para a frente pela ordem das etapas (card que já passou não volta), menos
+ * "sem contato" → "em atendimento", que é exatamente o lead que voltou a falar.
  *
- * `manterIa`: a IA atende pela etapa (iaQueAtende), e "em contato" não tem IA —
- * sair da etapa dela a calaria no meio da conversa. Então ela fica ligada no
- * contato antes de o card andar (só se ninguém mexeu à mão: ia IS NULL).
+ * `manterIa`: a IA atende pela etapa (iaQueAtende), e "em atendimento" não tem
+ * IA — sair da etapa dela a calaria no meio da conversa. Então ela fica ligada
+ * no contato antes de o card andar (só se ninguém mexeu à mão: ia IS NULL).
  */
-const ETAPA_EM_CONTATO = /^em contato$/i;
+// "em contato" ainda casa: é o nome antigo, que o banco do dev continua usando.
+const ETAPA_EM_CONTATO = /^(em atendimento|em contato)$/i;
+const ETAPA_SOLICITOU = /^solicitou contato$/i;
 const ETAPA_REUNIAO = /^reuni[aã]o agendada$/i;
 
 async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: string, manterIa: boolean): Promise<void> {
@@ -1473,4 +1481,4 @@ async function gerarResposta(
 }
 
 // Para o teste do andamento do funil (avancarPelaIa) contra o banco do dev.
-export const paraTesteAndamento = { avancarPelaIa, ETAPA_EM_CONTATO, ETAPA_REUNIAO };
+export const paraTesteAndamento = { avancarPelaIa, ETAPA_EM_CONTATO, ETAPA_SOLICITOU, ETAPA_REUNIAO };
