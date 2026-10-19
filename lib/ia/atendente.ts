@@ -375,7 +375,9 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
 
     if (saida.tipo === "humano") {
       await passarParaHumano(atendimentoId, s, saida.motivo, saida.mensagem);
+      // O lead falou: no mínimo "em contato". Sem manter a IA — passou para gente.
       if (saida.mover) await moverPelaIa(s, saida.mover);
+      else await avancarPelaIa(s, iaId, ETAPA_EM_CONTATO, "o lead respondeu e pediu a equipe", false);
       return;
     }
     if (saida.texto) {
@@ -398,7 +400,16 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
       return;
     }
 
-    if (saida.mover) await moverPelaIa(s, saida.mover);
+    // Reunião marcada nesta resposta vale mais que qualquer outro movimento; o
+    // pedido do modelo (a recusa → sem interesse) vem depois; e, sem nenhum
+    // dos dois, o lead que respondeu está "em contato".
+    if (saida.tipo === "texto" && saida.marcou) {
+      await avancarPelaIa(s, iaId, ETAPA_REUNIAO, "marcou a reunião", true);
+    } else if (saida.mover) {
+      await moverPelaIa(s, saida.mover);
+    } else if (saida.texto) {
+      await avancarPelaIa(s, iaId, ETAPA_EM_CONTATO, "o lead respondeu", true);
+    }
 
     if (saida.avisar) {
       // O cliente pediu algo que só a equipe tem (documento, contrato…): a
@@ -459,6 +470,44 @@ async function moverPelaIa(s: Situacao, mover: Movimento) {
     if (!mudou) console.info(`[ia atendente] ${s.op_id} já estava em ${mover.etapaId}`);
   } catch (e) {
     console.error("[ia atendente] não conseguiu mover", s.op_id, e);
+  }
+}
+
+/**
+ * O ANDAMENTO DO FUNIL FEITO PELO CÓDIGO (pedido dele, 2026-10-19: "nossas IAs
+ * não estão movendo as oportunidades"). O modelo só movia quando o prompt
+ * mandava, e o prompt só manda na recusa: em 14 dias foram 4 movimentos para 7
+ * reuniões marcadas. Agora, sem depender do modelo:
+ *   · o lead respondeu à IA → "em contato"
+ *   · a IA marcou a reunião → "reunião agendada"
+ * Só para a frente (card que já passou da etapa não volta), menos "sem contato"
+ * → "em contato", que é exatamente o lead que voltou a falar.
+ *
+ * `manterIa`: a IA atende pela etapa (iaQueAtende), e "em contato" não tem IA —
+ * sair da etapa dela a calaria no meio da conversa. Então ela fica ligada no
+ * contato antes de o card andar (só se ninguém mexeu à mão: ia IS NULL).
+ */
+const ETAPA_EM_CONTATO = /^em contato$/i;
+const ETAPA_REUNIAO = /^reuni[aã]o agendada$/i;
+
+async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: string, manterIa: boolean): Promise<void> {
+  if (!s.op_id || !s.op_funil_id) return;
+  try {
+    const etapas = (await sql`
+      SELECT id, nome, ordem FROM etapas WHERE funil_id = ${s.op_funil_id} ORDER BY ordem`) as unknown as Array<{ id: string; nome: string; ordem: number }>;
+    const destino = etapas.find((e) => alvo.test(e.nome.trim()));
+    const atual = etapas.find((e) => e.id === s.op_etapa_id);
+    if (!destino || !atual || destino.id === atual.id) return;
+    const volta = alvo === ETAPA_EM_CONTATO && /^sem contato$/i.test(atual.nome.trim());
+    if (destino.ordem <= atual.ordem && !volta) return;
+    if (manterIa) {
+      await sql`UPDATE contatos SET ia = true, ia_id = ${iaId} WHERE id = ${s.contato_id} AND ia IS NULL`;
+    }
+    const [ia] = await sql`SELECT nome FROM ias WHERE id = ${iaId}`;
+    const quem = ia?.nome ? `pela IA ${ia.nome}` : "pela IA";
+    await moverOportunidadeDeEtapa(s.op_id, destino.id, s.op_funil_id, ` ${quem}: ${motivo}`);
+  } catch (e) {
+    console.error("[ia atendente] não avançou a etapa:", s.op_id, e);
   }
 }
 
@@ -653,6 +702,8 @@ type Saida = (
       /** O valor que o cliente disse, quando a IA avisou a equipe (avisar_equipe). */
       valor?: number | null;
       mover: Movimento | null;
+      /** A IA reservou a reunião nesta resposta (o card vai para "reunião agendada"). */
+      marcou?: boolean;
     }
   | { tipo: "humano"; motivo: string; mensagem: string | null; mover: Movimento | null }
 ) & { objecoes?: Objecao[] };
@@ -1416,5 +1467,10 @@ async function gerarResposta(
     valor: Number.isFinite(valorAviso) && valorAviso > 0 ? valorAviso : null,
     mover,
     objecoes,
+    // textoReserva só existe quando a reserva no Google deu certo.
+    marcou: Boolean(agendamento?.textoReserva),
   };
 }
+
+// Para o teste do andamento do funil (avancarPelaIa) contra o banco do dev.
+export const paraTesteAndamento = { avancarPelaIa, ETAPA_EM_CONTATO, ETAPA_REUNIAO };
