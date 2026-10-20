@@ -1,25 +1,35 @@
 "use client";
 
-// A seção "Anotações" do contato com o botão de anotar DENTRO dela — usada na
-// gaveta de contatos e na aba Cliente da ficha da oportunidade. Antes a gaveta
-// tinha um botão solto acima das oportunidades, longe da lista, e a ficha não
-// tinha botão nenhum.
+// A seção "Anotações" do contato com o campo de anotar DENTRO dela — usada na
+// gaveta de contatos e na aba Cliente da ficha da oportunidade.
+//
+// Fechado, o campo é uma linha "Anotar algo sobre Fulano…" com o microfone à
+// vista, como na ficha de /contatos: anotar é a ação mais comum da gaveta e não
+// pode morar atrás de um "+ Nova" miúdo. Ditar com ele fechado já abre o campo
+// com o texto, para revisar antes de salvar.
 //
 // Quem usa passa key={contatoId}: trocar de contato descarta o rascunho em vez
 // de levá-lo para o contato seguinte.
 import { useState, useTransition } from "react";
-import { MessageSquare, Plus } from "lucide-react";
+import { Bot } from "lucide-react";
 import type { Anotacao, Usuario } from "../data";
 import { dataHora } from "../formato";
 import { adicionarAnotacao } from "../contatos/actions";
 import BotaoDitado, { juntarDitado } from "./botao-ditado";
+import { Avatar, BOTAO_PRIMARIO, BOTAO_SECUNDARIO, MaisMenos, Secao, Vazio } from "./gaveta";
+
+/** Acima disto a nota abre cortada, com "Ver tudo". */
+const NOTA_LONGA = 220;
+const VISIVEIS = 4;
 
 export function AnotacoesContato({
   contatoId,
+  nome,
   anotacoes,
   usuarioPorId,
 }: {
   contatoId: string;
+  nome?: string;
   anotacoes: Anotacao[];
   usuarioPorId: Map<string, Usuario>;
 }) {
@@ -27,6 +37,7 @@ export function AnotacoesContato({
   const [texto, setTexto] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciarSalvamento] = useTransition();
+  const [todas, setTodas] = useState(false);
 
   function fechar() {
     setEscrevendo(false);
@@ -52,31 +63,13 @@ export function AnotacoesContato({
     });
   }
 
-  return (
-    <section className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-          <MessageSquare className="size-3.5" aria-hidden="true" />
-          Anotações
-          {anotacoes.length > 0 && (
-            <span className="tabular-nums text-zinc-300 dark:text-zinc-600">
-              {anotacoes.length}
-            </span>
-          )}
-        </h3>
-        {!escrevendo && (
-          <button
-            type="button"
-            onClick={() => setEscrevendo(true)}
-            className="-my-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
-          >
-            <Plus className="size-3" aria-hidden="true" /> Nova
-          </button>
-        )}
-      </div>
+  const primeiroNome = nome?.trim().split(/\s+/)[0];
+  const vistas = todas ? anotacoes : anotacoes.slice(0, VISIVEIS);
 
-      {escrevendo && (
-        <div className="mb-3 space-y-2">
+  return (
+    <Secao titulo="Anotações" contagem={anotacoes.length}>
+      {escrevendo ? (
+        <div className="surge mb-3 rounded-xl ring-1 ring-zinc-300 focus-within:ring-2 focus-within:ring-zinc-900/20 dark:ring-zinc-700 dark:focus-within:ring-white/20">
           <textarea
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
@@ -96,71 +89,115 @@ export function AnotacoesContato({
             autoFocus
             disabled={salvando}
             aria-label="Nova anotação"
-            placeholder="Escreva uma anotação sobre este contato…"
-            className="w-full resize-none rounded-lg border border-zinc-300 bg-white px-3 py-2 text-[13px] leading-relaxed text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            placeholder={primeiroNome ? `O que você sabe sobre ${primeiroNome}?` : "Escreva uma anotação…"}
+            className="block w-full resize-none rounded-t-xl bg-transparent px-3 pt-2.5 text-[13px] leading-relaxed text-zinc-900 outline-none placeholder:text-zinc-400 disabled:opacity-60 dark:text-zinc-50"
           />
           {erro && (
-            <p role="alert" className="text-[11px] text-red-500">
+            <p role="alert" className="px-3 pb-1 text-[11.5px] text-red-500">
               {erro}
             </p>
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 px-2 pb-2">
             {/* Ditar: o que for falado entra no campo, para revisar antes de salvar. */}
             <BotaoDitado desligado={salvando} aoTranscrever={(t) => setTexto((v) => juntarDitado(v, t))} className="mr-auto" />
-            <button
-              type="button"
-              onClick={fechar}
-              disabled={salvando}
-              className="rounded-lg px-3 py-1.5 text-[11px] text-zinc-500 hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-900"
-            >
+            <button type="button" onClick={fechar} disabled={salvando} className={BOTAO_SECUNDARIO}>
               Cancelar
             </button>
-            <button
-              type="button"
-              onClick={salvar}
-              disabled={salvando || !texto.trim()}
-              title="Ctrl+Enter"
-              className="rounded-lg bg-zinc-900 px-3 py-1.5 text-[11px] font-medium text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
-            >
-              {salvando ? "Salvando…" : "Salvar anotação"}
+            <button type="button" onClick={salvar} disabled={salvando || !texto.trim()} title="Ctrl+Enter" className={BOTAO_PRIMARIO}>
+              {salvando ? "Salvando…" : "Salvar"}
             </button>
           </div>
+        </div>
+      ) : (
+        <div className="mb-3 flex items-center gap-1 rounded-xl bg-zinc-50 pr-1.5 ring-1 ring-inset ring-zinc-200/70 transition hover:ring-zinc-300 dark:bg-zinc-900/60 dark:ring-zinc-800 dark:hover:ring-zinc-700">
+          <button
+            type="button"
+            onClick={() => setEscrevendo(true)}
+            className="min-w-0 flex-1 truncate px-3 py-2.5 text-left text-[13px] text-zinc-400 outline-none dark:text-zinc-500"
+          >
+            {primeiroNome ? `Anotar algo sobre ${primeiroNome}…` : "Anotar algo…"}
+          </button>
+          <BotaoDitado
+            aoTranscrever={(t) => {
+              setTexto((v) => juntarDitado(v, t));
+              setEscrevendo(true);
+            }}
+          />
         </div>
       )}
 
       {anotacoes.length === 0 ? (
-        // Com o formulário aberto o "nada anotado" só repetiria o óbvio.
-        !escrevendo && (
-          <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-4 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-            Nada anotado sobre este contato
-          </p>
-        )
+        !escrevendo && <Vazio>Nada anotado ainda</Vazio>
       ) : (
-        <ul className="flex flex-col gap-2.5">
-          {anotacoes.map((a) => (
-            <li
-              key={a.id}
-              className="rounded-xl bg-amber-50/60 p-3 ring-1 ring-inset ring-amber-100 dark:bg-amber-500/5 dark:ring-amber-500/15"
-            >
-              <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-200">
-                {a.texto}
-              </p>
-              <p className="mt-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">
-                {/* A IA não é usuário: as anotações dela (o resumo do
-                    atendimento, lib/ia/atendente.ts) vêm sem autor e com 🤖
-                    no começo. */}
-                {usuarioPorId.get(a.autor_id)?.nome ??
-                  (!a.autor_id && a.texto.startsWith("🤖") ? "IA" : "Autor desconhecido")}{" "}
-                ·{" "}
-                {dataHora(a.data_criacao)}
-                {/* anotação se edita (o histórico não) — marcar isso evita
-                    discussão sobre "eu não escrevi assim" */}
-                {a.data_atualizacao && " · editada"}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="flex flex-col gap-2">
+            {vistas.map((a) => (
+              <Nota key={a.id} anotacao={a} usuarioPorId={usuarioPorId} />
+            ))}
+          </ul>
+          {anotacoes.length > VISIVEIS && (
+            <MaisMenos todos={todas} resto={anotacoes.length - VISIVEIS} aoAlternar={() => setTodas((v) => !v)} />
+          )}
+        </>
       )}
-    </section>
+    </Secao>
+  );
+}
+
+function Nota({ anotacao: a, usuarioPorId }: { anotacao: Anotacao; usuarioPorId: Map<string, Usuario> }) {
+  const [aberta, setAberta] = useState(false);
+  // A IA não é usuário: as anotações dela (o resumo do atendimento,
+  // lib/ia/atendente.ts) vêm sem autor e com 🤖 no começo. A primeira linha
+  // dela é o título ("Resumo do atendimento (IA comercial), reunião em …").
+  const daIa = !a.autor_id && a.texto.startsWith("🤖");
+  const autor = usuarioPorId.get(a.autor_id)?.nome;
+  const limpo = daIa ? a.texto.replace(/^🤖\s*/, "") : a.texto;
+  const quebra = daIa ? limpo.indexOf("\n") : -1;
+  const titulo = quebra > 0 ? limpo.slice(0, quebra).trim() : null;
+  const corpo = (titulo ? limpo.slice(quebra) : limpo).trim();
+  // Longa pelo tamanho OU pelas linhas: o resumo da IA é uma lista curta por linha.
+  const longa = corpo.length > NOTA_LONGA || corpo.split("\n").length > 4;
+
+  return (
+    <li
+      className={`rounded-xl px-3 py-2.5 ${
+        daIa
+          ? "bg-violet-50/70 ring-1 ring-inset ring-violet-100 dark:bg-violet-500/[0.07] dark:ring-violet-500/15"
+          : "bg-amber-50/80 ring-1 ring-inset ring-amber-100/80 dark:bg-amber-400/[0.06] dark:ring-amber-400/10"
+      }`}
+    >
+      <p className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+        {daIa ? (
+          <span className="flex size-5 items-center justify-center rounded-full bg-violet-600 text-white dark:bg-violet-500">
+            <Bot className="size-3" aria-hidden="true" />
+          </span>
+        ) : (
+          <Avatar nome={autor ?? "?"} tamanho="sm" equipe />
+        )}
+        <span className="font-medium text-zinc-700 dark:text-zinc-200">{daIa ? "IA" : (autor ?? "Autor desconhecido")}</span>
+        <span aria-hidden="true">·</span>
+        <span className="tabular-nums">{dataHora(a.data_criacao)}</span>
+        {/* anotação se edita (o histórico não) — marcar isso evita discussão
+            sobre "eu não escrevi assim" */}
+        {a.data_atualizacao && <span>· editada</span>}
+      </p>
+      {titulo && <p className="mt-1.5 text-[12.5px] font-medium leading-snug text-zinc-900 dark:text-zinc-50">{titulo}</p>}
+      <p
+        className={`mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-200 ${
+          longa && !aberta ? "line-clamp-4" : ""
+        }`}
+      >
+        {corpo}
+      </p>
+      {longa && (
+        <button
+          type="button"
+          onClick={() => setAberta((v) => !v)}
+          className="mt-1 text-[12px] font-medium text-zinc-500 underline-offset-4 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-zinc-50"
+        >
+          {aberta ? "Mostrar menos" : "Ver tudo"}
+        </button>
+      )}
+    </li>
   );
 }

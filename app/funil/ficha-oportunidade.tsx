@@ -2,27 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import {
-  AtSign,
-  CalendarClock,
-  CalendarDays,
-  Camera,
-  ChevronRight,
-  Clock,
-  Layers,
-  Mail,
-  MapPin,
-  MessageCircle,
-  Pause,
-  Play,
-  Workflow,
-  Phone,
-  Trash2,
-  User,
-  Wallet,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, MessageCircle, Pause, Play, Trash2, Workflow, X } from "lucide-react";
 import type {
   Anotacao,
   Atendimento,
@@ -36,7 +16,9 @@ import type {
   Tag,
   Usuario,
 } from "../data";
-import { brl, dataCurta, dataHora, localizacao } from "../formato";
+import type { Ia } from "@/lib/ia/catalogo";
+import { brl, dataCurta, dataHora } from "../formato";
+import { telefoneLegivel } from "@/lib/telefone";
 import {
   automacoesDaOportunidade,
   excluirOportunidade,
@@ -46,33 +28,46 @@ import {
   retomarAutomacao,
 } from "./actions";
 import { STATUS_OPORTUNIDADE, type StatusOportunidade } from "./status";
-import CamadaTopo from "../components/camada-topo";
 import type { AutomacaoDaEntidade } from "@/lib/automacoes/repositorio";
-import { CamposDoContato, ListaCampos } from "../components/campos-personalizados";
-import { AnotacoesContato } from "../components/anotacoes-contato";
+import { ListaCampos } from "../components/campos-personalizados";
+import {
+  Avatar,
+  BOTAO_PRIMARIO,
+  BOTAO_SECUNDARIO,
+  BotaoCopiar,
+  BotaoIcone,
+  Carregando,
+  CascaGaveta,
+  CorpoGaveta,
+  IconeLinha,
+  LINHA_FIXA,
+  Propriedade,
+  Propriedades,
+  ReguaEtapas,
+  Secao,
+  Vazio,
+} from "../components/gaveta";
+import { CamposContato, SecoesContato } from "../contatos/detalhes";
+import IaDoContato from "../inicio/ia-contato";
 import ReunioesDaOportunidade from "./reunioes-oportunidade";
-import { telefoneLegivel } from "@/lib/telefone";
 
-// Mesmo mapa do /chat (app/chat/chat.tsx) — duplicado de propósito: são só 3
-// linhas e os dois lados vivem em módulos diferentes o bastante pra uma
-// abstração compartilhada custar mais do que economiza aqui.
-const CANAL: Record<
-  Atendimento["canal"],
-  { rotulo: string; Icone: LucideIcon }
-> = {
-  whatsapp: { rotulo: "WhatsApp", Icone: MessageCircle },
-  whatsapp_oficial: { rotulo: "WhatsApp API", Icone: MessageCircle },
-  instagram: { rotulo: "Instagram", Icone: Camera },
-  email: { rotulo: "E-mail", Icone: Mail },
-};
+// A ficha da oportunidade, a gaveta que abre ao clicar num card do quadro.
+// Redesenhada em 2026-10-20 com o kit de app/components/gaveta.tsx.
+//
+// O cabeçalho fica parado e responde, sem rolar, às quatro perguntas de quem
+// abre um card: onde está (funil, etapa, há quanto tempo, a régua), quanto vale
+// e em que pé está, com quem é (nome e número) — e o "Conversar", que é o que
+// se vem fazer aqui na maior parte das vezes. Embaixo, duas abas de verdade:
+// o NEGÓCIO (status, responsável, reuniões, automações, campos) e o CLIENTE
+// (o que se sabe da pessoa). As automações moraram na aba Cliente, mas são
+// desta oportunidade — voltaram para cá.
 
 // A cor de cada status, e só quando ele está SELECIONADO. Verde e vermelho aqui
 // não são série de gráfico, são estado — vêm com a palavra ao lado, nunca
 // sozinhos, que é o que os mantém legíveis em daltonismo e em print cinza.
 const CLASSE_STATUS: Record<StatusOportunidade, string> = {
-  aberta: "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50",
-  ganha:
-    "bg-emerald-600 text-white shadow-sm dark:bg-emerald-500 dark:text-zinc-950",
+  aberta: "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-900/5 dark:bg-zinc-800 dark:text-zinc-50 dark:ring-white/5",
+  ganha: "bg-emerald-600 text-white shadow-sm dark:bg-emerald-500 dark:text-zinc-950",
   perdida: "bg-rose-600 text-white shadow-sm dark:bg-rose-500 dark:text-zinc-950",
 };
 
@@ -86,59 +81,12 @@ const ESTADO_EXECUCAO: Record<string, string> = {
   pausada: "Pausada",
 };
 
-function iniciais(nome: string) {
-  const partes = nome.trim().split(/\s+/);
-  return (partes[0][0] + (partes.at(-1)?.[0] ?? "")).toUpperCase();
-}
+type Aba = "oportunidade" | "cliente";
 
-function Secao({
-  Icone,
-  titulo,
-  contagem,
-  children,
-}: {
-  Icone: LucideIcon;
-  titulo: string;
-  contagem?: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
-      <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-        <Icone className="size-3.5" aria-hidden="true" />
-        {titulo}
-        {contagem !== undefined && contagem > 0 && (
-          <span className="tabular-nums text-zinc-300 dark:text-zinc-600">
-            {contagem}
-          </span>
-        )}
-      </h3>
-      {children}
-    </section>
-  );
-}
-
-function Vazio({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-4 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-      {children}
-    </p>
-  );
-}
-
-function Campo({
-  Icone,
-  children,
-}: {
-  Icone: LucideIcon;
-  children: React.ReactNode;
-}) {
-  return (
-    <p className="flex items-center gap-2 text-[13px] text-zinc-600 dark:text-zinc-300">
-      <Icone className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
-      <span className="truncate">{children}</span>
-    </p>
-  );
+/** A conversa do botão "Conversar": a aberta mais recente, ou a última que houve. */
+function conversaPrincipal(atendimentos: Atendimento[]): Atendimento | null {
+  const recentes = [...atendimentos].sort((a, b) => b.data_criacao.localeCompare(a.data_criacao));
+  return recentes.find((a) => a.status !== "encerrado") ?? recentes[0] ?? null;
 }
 
 export default function FichaOportunidade({
@@ -155,6 +103,8 @@ export default function FichaOportunidade({
   atendimentosDoContato,
   camposContato,
   camposOportunidade,
+  ias,
+  aoAbrirOportunidade,
   aoFechar,
 }: {
   oportunidade: Oportunidade;
@@ -170,15 +120,18 @@ export default function FichaOportunidade({
   atendimentosDoContato: Map<string, Atendimento[]>;
   camposContato: CampoPersonalizado[];
   camposOportunidade: CampoPersonalizado[];
+  ias: Ia[];
+  aoAbrirOportunidade?: (id: string) => void;
   aoFechar: () => void;
 }) {
-  const [aba, setAba] = useState<"oportunidade" | "cliente">("oportunidade");
+  const [aba, setAba] = useState<Aba>("oportunidade");
 
   const etapa = etapaPorId.get(oportunidade.etapa_id);
   const funil = funilPorId.get(oportunidade.funil_id);
-  const responsavel = oportunidade.responsavel_id
-    ? usuarioPorId.get(oportunidade.responsavel_id)
-    : undefined;
+  const etapasDoFunil = [...etapaPorId.values()]
+    .filter((e) => e.funil_id === oportunidade.funil_id)
+    .sort((a, b) => a.ordem - b.ordem);
+  const responsavel = oportunidade.responsavel_id ? usuarioPorId.get(oportunidade.responsavel_id) : undefined;
 
   // Dados do cliente, só carregados quando há contato vinculado.
   const oportunidades = contato ? (oportunidadesDoContato.get(contato.id) ?? []) : [];
@@ -187,6 +140,7 @@ export default function FichaOportunidade({
   const segmentos = contato ? (segmentosDoContato.get(contato.id) ?? []) : [];
   const tags = contato ? (tagsDoContato.get(contato.id) ?? []) : [];
   const atendimentos = contato ? (atendimentosDoContato.get(contato.id) ?? []) : [];
+  const conversa = conversaPrincipal(atendimentos);
 
   // ── Automações em que este lead está ──────────────────────────────────────
   // Buscadas ao abrir a ficha, não junto do funil: é uma consulta por
@@ -214,8 +168,7 @@ export default function FichaOportunidade({
     opId: string;
     status: StatusOportunidade;
   } | null>(null);
-  const status =
-    mudanca?.opId === oportunidade.id ? mudanca.status : oportunidade.status;
+  const status = mudanca?.opId === oportunidade.id ? mudanca.status : oportunidade.status;
 
   const [salvandoStatus, salvarStatus] = useTransition();
   const [avisoStatus, setAvisoStatus] = useState<string | null>(null);
@@ -272,10 +225,7 @@ export default function FichaOportunidade({
   async function alternarAutomacao(a: AutomacaoDaEntidade) {
     setMexendo(a.execucao_id);
     setAvisoAuto(null);
-    const r =
-      a.estado === "pausada"
-        ? await retomarAutomacao(a.execucao_id)
-        : await pausarAutomacao(a.execucao_id);
+    const r = a.estado === "pausada" ? await retomarAutomacao(a.execucao_id) : await pausarAutomacao(a.execucao_id);
     setAvisoAuto(r.mensagem);
     // Relê em vez de mexer no estado local: o retomar decide entre 'esperando'
     // e 'pendente' no banco, e adivinhar isso aqui daria uma tela que discorda
@@ -295,98 +245,110 @@ export default function FichaOportunidade({
     return () => document.removeEventListener("keydown", aoTeclar);
   }, [aoFechar]);
 
-  const noCliente = aba === "cliente" && contato;
+  const dias = oportunidade.dias_na_etapa;
+  const telefone = contato ? telefoneLegivel(contato.whatsapp) : "";
 
-  // No <body>, pela CamadaTopo: dentro da página a ficha dividia camada com os
-  // cartões do quadro (ver app/components/camada-topo.tsx).
   return (
-    <CamadaTopo>
-      <div
-        className="veu-surge fixed inset-0 z-[300] bg-black/40 backdrop-blur-[1px]"
-        onClick={aoFechar}
-        aria-hidden="true"
-      />
-
-      <aside
-        className="ficha-entra fixed bottom-4 right-4 top-4 z-[310] flex w-[26rem] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
-        aria-label={`Oportunidade ${oportunidade.nome}`}
-      >
-        {/* Mesma casca da gaveta de contatos: caixa que não rola, cabeçalho fixo e
-            só o miolo rolando. Antes a caixa inteira rolava dentro de um canto
-            de 32px, e a barra de rolagem era cortada nas curvas. */}
-        <header className="shrink-0 border-b border-zinc-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-              {noCliente ? (
-                <span className="text-xs font-semibold">
-                  {contato ? iniciais(contato.nome) : "—"}
-                </span>
-              ) : (
-                <Wallet className="size-4" aria-hidden="true" />
-              )}
+    <CascaGaveta rotulo={`Oportunidade ${oportunidade.nome}`} aoFechar={aoFechar}>
+      <header className="shrink-0 px-5 pt-4">
+        {/* Onde está: funil › etapa · há quanto tempo. O nome do funil e o da
+            etapa aparecem UMA vez — a seção "Pipeline" que repetia isso saiu. */}
+        <div className="flex items-center gap-2">
+          <p className="flex min-w-0 flex-1 items-center gap-1.5 text-[12px] text-zinc-500 dark:text-zinc-400">
+            <span className={`size-2 shrink-0 rounded-full ${etapa?.cor ?? "bg-zinc-300"}`} aria-hidden="true" />
+            <span className="truncate">{funil?.nome}</span>
+            <ChevronRight className="size-3 shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
+            <span className="truncate font-medium text-zinc-800 dark:text-zinc-200">{etapa?.nome}</span>
+            <span className="shrink-0 tabular-nums text-zinc-400 dark:text-zinc-500">
+              · {dias} {dias === 1 ? "dia" : "dias"}
             </span>
+          </p>
+          <BotaoIcone Icone={X} rotulo="Fechar" onClick={aoFechar} className="-mr-2" />
+        </div>
+
+        <div className="mt-1 flex items-start justify-between gap-4">
+          <h2 className="line-clamp-2 text-[19px] font-semibold leading-snug tracking-tight text-zinc-900 dark:text-zinc-50">
+            {oportunidade.nome}
+          </h2>
+          <p
+            className="shrink-0 pt-px text-[19px] font-semibold leading-snug tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50"
+            title={brl(oportunidade.valor)}
+          >
+            {oportunidade.valor > 0 ? (
+              brl(oportunidade.valor)
+            ) : (
+              <span className="text-[13px] font-medium text-zinc-400 dark:text-zinc-500">Sem valor</span>
+            )}
+          </p>
+        </div>
+
+        <div className="mt-3">
+          <ReguaEtapas etapas={etapasDoFunil} atualId={oportunidade.etapa_id} />
+        </div>
+
+        {contato && (
+          <div className="mt-4 flex items-center gap-3">
+            <Avatar nome={contato.nome} />
             <div className="min-w-0 flex-1">
-              <h2 className="truncate text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                {noCliente ? contato?.nome : oportunidade.nome}
-              </h2>
-              <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                {noCliente
-                  ? localizacao(contato) || "Sem localização"
-                  : [funil?.nome, etapa?.nome].filter(Boolean).join(" · ")}
+              <p className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">{contato.nome}</p>
+              <p className="flex items-center text-[12px] tabular-nums text-zinc-500 dark:text-zinc-400">
+                {telefone ? (
+                  <>
+                    <span className="truncate">{telefone}</span>
+                    <BotaoCopiar texto={contato.whatsapp.replace(/\D/g, "")} rotulo="número" />
+                  </>
+                ) : (
+                  "Sem WhatsApp"
+                )}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={aoFechar}
-              aria-label="Fechar"
-              className="-mr-1 shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
-            >
-              <X className="size-4" aria-hidden="true" />
-            </button>
+            {conversa && (
+              <Link href={`/chat?atendimento=${conversa.id}`} className={BOTAO_PRIMARIO}>
+                <MessageCircle className="size-3.5" aria-hidden="true" />
+                Conversar
+              </Link>
+            )}
           </div>
+        )}
 
-          {/* Alterna entre os dados da oportunidade e os do cliente. */}
-          <div className="mt-3 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
-            {(["oportunidade", "cliente"] as const).map((chave) => {
-              const ativo = aba === chave;
-              const desativado = chave === "cliente" && !contato;
-              return (
-                <button
-                  key={chave}
-                  type="button"
-                  onClick={() => setAba(chave)}
-                  disabled={desativado}
-                  className={`flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium capitalize transition disabled:opacity-40 ${
-                    ativo
-                      ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
-                  }`}
-                >
-                  {chave === "cliente" ? "Cliente" : "Oportunidade"}
-                </button>
-              );
-            })}
-          </div>
-        </header>
+        <div role="tablist" aria-label="Seções da ficha" className="mt-4 flex gap-6 border-b border-zinc-100 dark:border-zinc-900">
+          {(["oportunidade", "cliente"] as const).map((chave) => {
+            const ativo = aba === chave;
+            const desativado = chave === "cliente" && !contato;
+            return (
+              <button
+                key={chave}
+                type="button"
+                role="tab"
+                aria-selected={ativo}
+                onClick={() => setAba(chave)}
+                disabled={desativado}
+                className={`relative -mb-px border-b-2 pb-2.5 text-[13px] font-medium transition disabled:opacity-40 ${
+                  ativo
+                    ? "border-zinc-900 text-zinc-900 dark:border-zinc-50 dark:text-zinc-50"
+                    : "border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                }`}
+              >
+                {chave === "cliente" ? "Cliente" : "Oportunidade"}
+                {chave === "cliente" && anotacoes.length > 0 && (
+                  <span className="ml-1.5 tabular-nums text-zinc-400 dark:text-zinc-500" title={`${anotacoes.length} anotações`}>
+                    {anotacoes.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-
+      <CorpoGaveta>
         {aba === "oportunidade" && (
           <>
+            {/* O status é controle, não selo: clicar em "Ganha" É marcar como
+                ganha; não há Salvar. A cor só aparece no escolhido — três
+                botões coloridos ao mesmo tempo seriam decoração. */}
             <div className="px-5 py-4">
-              <p className="text-2xl font-semibold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">
-                {brl(oportunidade.valor)}
-              </p>
-
-              {/* O status virou controle, não selo. Mesmo segmentado das abas
-                  logo acima — clicar em "Ganha" É marcar como ganha; não há
-                  Salvar. A cor só aparece no estado escolhido: três botões
-                  coloridos ao mesmo tempo seriam decoração, não informação. */}
-              <div
-                className="mt-3 flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900"
-                role="group"
-                aria-label="Status da oportunidade"
-              >
+              <div className="flex gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900" role="group" aria-label="Status da oportunidade">
                 {STATUS_OPORTUNIDADE.map((s) => {
                   const ativo = status === s;
                   return (
@@ -396,7 +358,7 @@ export default function FichaOportunidade({
                       onClick={() => mudarStatus(s)}
                       disabled={salvandoStatus || ativo}
                       aria-pressed={ativo}
-                      className={`flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium capitalize transition disabled:cursor-default ${
+                      className={`flex-1 rounded-lg px-3 py-1.5 text-[13px] font-medium capitalize transition disabled:cursor-default ${
                         ativo
                           ? CLASSE_STATUS[s]
                           : "text-zinc-500 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:text-zinc-50"
@@ -407,230 +369,56 @@ export default function FichaOportunidade({
                   );
                 })}
               </div>
-
-              {avisoStatus && (
-                <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {avisoStatus}
-                </p>
-              )}
+              {avisoStatus && <p className="mt-2 text-[11.5px] text-red-500">{avisoStatus}</p>}
             </div>
 
-            <Secao Icone={Layers} titulo="Pipeline">
-              <div className="flex flex-col gap-2">
-                <Campo Icone={Layers}>
-                  {funil?.nome} · {etapa?.nome}
-                </Campo>
-                <Campo Icone={Clock}>
-                  {oportunidade.dias_na_etapa}{" "}
-                  {oportunidade.dias_na_etapa === 1 ? "dia" : "dias"} na etapa
-                </Campo>
-                <Campo Icone={CalendarDays}>
-                  Criada em {dataCurta(oportunidade.data_criacao)}
-                </Campo>
-              </div>
-            </Secao>
-
-            <Secao Icone={User} titulo="Responsável">
-              <CampoResponsavel
-                oportunidadeId={oportunidade.id}
-                responsavel={responsavel ?? null}
-                usuarios={[...usuarioPorId.values()]}
-              />
-            </Secao>
-
-            <Secao Icone={CalendarClock} titulo="Reuniões">
-              <ReunioesDaOportunidade
-                oportunidadeId={oportunidade.id}
-                usuarioPorId={usuarioPorId}
-              />
-            </Secao>
-
-            <Secao Icone={User} titulo="Cliente">
-              {contato ? (
-                <button
-                  type="button"
-                  onClick={() => setAba("cliente")}
-                  className="group flex w-full items-center gap-3 rounded-xl border border-zinc-200 p-3 text-left transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-700 dark:hover:bg-zinc-900/50"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[11px] font-semibold text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                    {iniciais(contato.nome)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">
-                      {contato.nome}
-                    </span>
-                    <span className="block truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                      {[localizacao(contato), "ver dados do cliente"].filter(Boolean).join(" · ")}
-                    </span>
-                  </span>
-                  <ChevronRight
-                    className="size-4 shrink-0 text-zinc-300 transition group-hover:text-zinc-500 dark:text-zinc-600 dark:group-hover:text-zinc-400"
-                    aria-hidden="true"
+            <Secao titulo="Detalhes">
+              <Propriedades>
+                <Propriedade rotulo="Responsável">
+                  <CampoResponsavel
+                    oportunidadeId={oportunidade.id}
+                    responsavel={responsavel ?? null}
+                    usuarios={[...usuarioPorId.values()]}
                   />
-                </button>
-              ) : (
-                <Vazio>Sem contato vinculado</Vazio>
-              )}
+                </Propriedade>
+                <Propriedade rotulo="Criada em">{dataCurta(oportunidade.data_criacao)}</Propriedade>
+                {!contato && <Propriedade rotulo="Cliente">Sem contato vinculado</Propriedade>}
+              </Propriedades>
             </Secao>
 
-            <ListaCampos
-              definicoes={camposOportunidade}
-              valores={oportunidade.campos}
-            />
+            <ReunioesDaOportunidade oportunidadeId={oportunidade.id} usuarioPorId={usuarioPorId} />
 
-            {/* Última seção da ficha, e discreta de propósito: é destrutiva e
-                não é o que se vem fazer aqui. O texto diz o que NÃO acontece,
-                que é a dúvida real de quem clica. */}
-            <Secao Icone={Trash2} titulo="Excluir">
-              <button
-                type="button"
-                onClick={excluir}
-                disabled={excluindo}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[12px] font-medium text-zinc-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-red-900/60 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-              >
-                <Trash2 className="size-3.5" aria-hidden="true" />
-                {excluindo ? "Excluindo…" : "Excluir oportunidade"}
-              </button>
-              <p className="mt-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                Some só este negócio. O contato{contato ? ` ${contato.nome}` : ""}{" "}
-                continua na base, com as anotações, as conversas e as outras
-                oportunidades dele.
-              </p>
-              {avisoExcluir && (
-                <p className="mt-2 text-[11px] text-red-500">{avisoExcluir}</p>
-              )}
-            </Secao>
-          </>
-        )}
-
-        {noCliente && (
-          <>
-            <div className="flex flex-col gap-2 px-5 py-4">
-              {/* Mesmo "—" da ficha do contato (contatos/detalhes.tsx): campo
-                  vazio sem traço vira um ícone solto do lado de nada. */}
-              <Campo Icone={Phone}>{telefoneLegivel(contato.whatsapp) || "—"}</Campo>
-              <Campo Icone={AtSign}>{contato.email || "—"}</Campo>
-              <Campo Icone={MapPin}>{localizacao(contato, true) || "—"}</Campo>
-              <Campo Icone={CalendarDays}>
-                Criado em {dataCurta(contato.data_criacao)}
-              </Campo>
-            </div>
-
-            {(segmentos.length > 0 || tags.length > 0) && (
-              <div className="flex flex-wrap gap-1.5 px-5 pb-4">
-                {segmentos.map((s) => (
-                  <span
-                    key={s.id}
-                    className="rounded-full bg-zinc-900 px-2.5 py-0.5 text-[11px] font-medium text-white dark:bg-zinc-50 dark:text-zinc-900"
-                  >
-                    {s.nome}
-                  </span>
-                ))}
-                {tags.map((t) => (
-                  <span
-                    key={t.id}
-                    className="rounded-full px-2.5 py-0.5 text-[11px] font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:text-zinc-400 dark:ring-zinc-700"
-                  >
-                    {t.nome}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <CamposDoContato contatoId={contato.id} definicoes={camposContato} />
-
-            <Secao Icone={Wallet} titulo="Oportunidades" contagem={oportunidades.length}>
-              {oportunidades.length === 0 ? (
-                <Vazio>Nenhuma oportunidade para este contato</Vazio>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {oportunidades.map((o) => {
-                    const et = etapaPorId.get(o.etapa_id);
-                    const fu = funilPorId.get(o.funil_id);
-                    const atual = o.id === oportunidade.id;
-
-                    return (
-                      <li
-                        key={o.id}
-                        className={`rounded-xl border p-3 ${
-                          atual
-                            ? "border-zinc-300 bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900"
-                            : "border-zinc-200 dark:border-zinc-800"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">
-                            {o.nome}
-                          </p>
-                          <p className="shrink-0 text-[13px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                            {brl(o.valor)}
-                          </p>
-                        </div>
-                        <p className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                          <span className={`size-1.5 rounded-full ${et?.cor}`} aria-hidden="true" />
-                          <span className="truncate">
-                            {fu?.nome} · {et?.nome}
-                          </span>
-                          {atual && (
-                            <span className="ml-auto shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200">
-                              esta
-                            </span>
-                          )}
-                        </p>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Secao>
-
-            <Secao
-              Icone={Workflow}
-              titulo="Automações"
-              contagem={automacoes?.length ?? 0}
-            >
+            <Secao titulo="Automações" contagem={automacoes?.length ?? 0}>
               {automacoes === null ? (
-                <Vazio>Carregando…</Vazio>
+                <Carregando />
               ) : automacoes.length === 0 ? (
-                <Vazio>Este lead não está em nenhuma automação</Vazio>
+                <Vazio>Fora de qualquer automação</Vazio>
               ) : (
-                <ul className="flex flex-col gap-2">
+                <ul className="flex flex-col">
                   {automacoes.map((a) => {
                     const pausada = a.estado === "pausada";
                     return (
-                      <li
-                        key={a.execucao_id}
-                        className="flex items-center gap-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"
-                      >
+                      <li key={a.execucao_id} className={LINHA_FIXA}>
+                        <IconeLinha Icone={Workflow} tom={pausada ? "neutro" : "ativo"} />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">
-                            {a.fluxo_nome}
-                          </span>
-                          <span className="mt-0.5 block truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+                          <span className="block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">{a.fluxo_nome}</span>
+                          <span className="mt-0.5 block truncate text-[11.5px] text-zinc-500 dark:text-zinc-400">
                             {a.etapa_id ? "Cadência da etapa · " : ""}
                             {pausada
                               ? "Pausada"
                               : a.retomar_em
-                                ? `Retoma ${dataHora(a.retomar_em)}`
-                                : ESTADO_EXECUCAO[a.estado] ?? a.estado}
+                                ? `Próximo passo ${dataHora(a.retomar_em)}`
+                                : (ESTADO_EXECUCAO[a.estado] ?? a.estado)}
                           </span>
                         </span>
                         <button
                           type="button"
                           onClick={() => alternarAutomacao(a)}
                           disabled={mexendo === a.execucao_id}
-                          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[12px] font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                          title={
-                            pausada
-                              ? "Voltar a rodar para este lead"
-                              : "Parar esta automação só para este lead"
-                          }
+                          className={`${BOTAO_SECUNDARIO} ring-1 ring-inset ring-zinc-200 dark:ring-zinc-800`}
+                          title={pausada ? "Voltar a rodar para este lead" : "Parar esta automação só para este lead"}
                         >
-                          {pausada ? (
-                            <Play className="size-3.5" aria-hidden="true" />
-                          ) : (
-                            <Pause className="size-3.5" aria-hidden="true" />
-                          )}
+                          {pausada ? <Play className="size-3.5" aria-hidden="true" /> : <Pause className="size-3.5" aria-hidden="true" />}
                           {pausada ? "Retomar" : "Pausar"}
                         </button>
                       </li>
@@ -638,97 +426,59 @@ export default function FichaOportunidade({
                   })}
                 </ul>
               )}
-              {avisoAuto && (
-                <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {avisoAuto}
-                </p>
-              )}
+              {avisoAuto && <p className="mt-2 text-[11.5px] text-zinc-500 dark:text-zinc-400">{avisoAuto}</p>}
             </Secao>
 
-            <Secao Icone={MessageCircle} titulo="Atendimentos" contagem={atendimentos.length}>
-              {atendimentos.length === 0 ? (
-                <Vazio>Nenhum atendimento com este contato</Vazio>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {/* A conversa é do CONTATO, não da oportunidade: não há o que
-                      anexar (o botão saiu em 2026-10-06). Qual trecho dela é
-                      deste negócio a IA decide pela data — o que veio do dia
-                      em que a oportunidade foi criada em diante. */}
-                  {atendimentos.map((a) => {
-                    const { rotulo, Icone: IconeCanal } = CANAL[a.canal];
-                    return (
-                      <li key={a.id}>
-                        <Link
-                          href={`/chat?atendimento=${a.id}`}
-                          className="group flex items-center gap-2.5 rounded-xl border border-zinc-200 p-3 transition hover:border-zinc-300 dark:border-zinc-800 dark:hover:border-zinc-700"
-                        >
-                          <IconeCanal
-                            className="size-4 shrink-0 text-zinc-400 transition group-hover:text-zinc-600 dark:group-hover:text-zinc-300"
-                            aria-hidden="true"
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">
-                              {rotulo}
-                              {a.numero_instancia ? ` · ${a.numero_instancia}` : ""}
-                            </span>
-                            <span className="block truncate text-[11px] capitalize text-zinc-500 dark:text-zinc-400">
-                              {a.status.replace("_", " ")}
-                            </span>
-                          </span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Secao>
+            <ListaCampos definicoes={camposOportunidade} valores={oportunidade.campos} titulo="Campos da oportunidade" />
 
-            <AnotacoesContato
-              key={contato.id}
-              contatoId={contato.id}
-              anotacoes={anotacoes}
-              usuarioPorId={usuarioPorId}
-            />
-
-            <Secao Icone={Clock} titulo="Histórico" contagem={historico.length}>
-              {historico.length === 0 ? (
-                <Vazio>Sem movimentações registradas</Vazio>
-              ) : (
-                <ul className="flex flex-col">
-                  {historico.map((h, i) => (
-                    <li key={h.id} className="flex gap-3">
-                      <div className="flex flex-col items-center">
-                        <span
-                          className="mt-1.5 size-1.5 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-600"
-                          aria-hidden="true"
-                        />
-                        {i < historico.length - 1 && (
-                          <span
-                            className="w-px flex-1 bg-zinc-200 dark:bg-zinc-800"
-                            aria-hidden="true"
-                          />
-                        )}
-                      </div>
-                      <div className="pb-4">
-                        <p className="text-[13px] leading-snug text-zinc-700 dark:text-zinc-200">
-                          {h.descricao}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
-                          {(h.autor_id && usuarioPorId.get(h.autor_id)?.nome) || "Sistema"}{" "}
-                          ·{" "}
-                          {dataHora(h.data_criacao)}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Secao>
+            {/* No fim e discreto de propósito: é destrutivo e não é o que se vem
+                fazer aqui. A confirmação diz o que NÃO acontece (o contato
+                fica), que é a dúvida real de quem clica. */}
+            <div className="border-t border-zinc-100 px-5 pt-4 dark:border-zinc-900">
+              <button
+                type="button"
+                onClick={excluir}
+                disabled={excluindo}
+                className="-ml-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] font-medium text-zinc-400 transition hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-500 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+              >
+                <Trash2 className="size-3.5" aria-hidden="true" />
+                {excluindo ? "Excluindo…" : "Excluir oportunidade"}
+              </button>
+              {avisoExcluir && <p className="mt-1 text-[11.5px] text-red-500">{avisoExcluir}</p>}
+            </div>
           </>
         )}
-        </div>
-      </aside>
-    </CamadaTopo>
+
+        {aba === "cliente" && contato && (
+          <>
+            {/* Nome e número já estão no cabeçalho: aqui só o resto. */}
+            <CamposContato contato={contato} segmentos={segmentos} tags={tags} semTelefone />
+            <IaDoContato
+              // Remonta por contato: o valor otimista é do contato aberto.
+              key={contato.id}
+              contato={contato}
+              oportunidades={oportunidades}
+              etapaPorId={etapaPorId}
+              funilPorId={funilPorId}
+              ias={ias}
+            />
+            <SecoesContato
+              contato={contato}
+              oportunidades={oportunidades}
+              anotacoes={anotacoes}
+              historico={historico}
+              atendimentos={atendimentos}
+              camposContato={camposContato}
+              oportunidadeAtualId={oportunidade.id}
+              etapaPorId={etapaPorId}
+              funilPorId={funilPorId}
+              usuarioPorId={usuarioPorId}
+              aoAbrirOportunidade={aoAbrirOportunidade}
+            />
+          </>
+        )}
+      </CorpoGaveta>
+    </CascaGaveta>
   );
 }
 
@@ -744,6 +494,9 @@ export default function FichaOportunidade({
  * Reusa `moverParaResponsavel`, a ação que o quadro já usava para o lote: a
  * mesma escrita, o mesmo registro no histórico. Uma segunda ação para "uma só"
  * divergiria na primeira mudança de regra.
+ *
+ * Um <select> nativo de verdade (teclado, leitor de tela, roda do tablet), mas
+ * sem moldura: parece texto com a pessoa ao lado e acende no hover.
  */
 function CampoResponsavel({
   oportunidadeId,
@@ -766,17 +519,19 @@ function CampoResponsavel({
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2.5">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-          {responsavel?.iniciais ?? "—"}
-        </span>
+    <span className="flex min-w-0 flex-col">
+      <label className="relative -ml-2 inline-flex min-w-0 max-w-full items-center gap-2 self-start rounded-lg py-0.5 pl-2 pr-7 transition hover:bg-zinc-100 focus-within:ring-2 focus-within:ring-zinc-900/10 dark:hover:bg-zinc-900 dark:focus-within:ring-white/15">
+        {responsavel ? (
+          <Avatar nome={responsavel.nome} tamanho="sm" equipe />
+        ) : (
+          <span className="size-6 shrink-0 rounded-full border border-dashed border-zinc-300 dark:border-zinc-700" aria-hidden="true" />
+        )}
         <select
           value={responsavel?.id ?? ""}
           onChange={(e) => trocar(e.target.value)}
           disabled={salvando}
           aria-label="Responsável pela oportunidade"
-          className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-transparent px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none transition focus:border-zinc-400 disabled:opacity-50 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
+          className="min-w-0 cursor-pointer appearance-none truncate bg-transparent text-[13px] text-zinc-900 outline-none disabled:opacity-50 dark:text-zinc-100 [&>option]:bg-white dark:[&>option]:bg-zinc-900"
         >
           <option value="">Sem responsável</option>
           {usuarios.map((u) => (
@@ -785,8 +540,9 @@ function CampoResponsavel({
             </option>
           ))}
         </select>
-      </div>
-      {erro && <p className="text-[11px] text-red-500">{erro}</p>}
-    </div>
+        <ChevronDown className="pointer-events-none absolute right-2 size-3.5 text-zinc-400" aria-hidden="true" />
+      </label>
+      {erro && <span className="text-[11.5px] text-red-500">{erro}</span>}
+    </span>
   );
 }

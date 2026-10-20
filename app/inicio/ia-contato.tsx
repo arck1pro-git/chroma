@@ -14,6 +14,7 @@ import type { Contato, Etapa, Funil, Oportunidade } from "../data";
 import { InterruptorIaContato } from "../components/interruptor-ia-contato";
 import { iaDoCard } from "../funil/ia";
 import { definirIaDoContato } from "./acoes-ia";
+import { Secao } from "../components/gaveta";
 
 export default function IaDoContato({
   contato,
@@ -43,17 +44,20 @@ export default function IaDoContato({
   const ligada = Boolean(iaDoCard(contato, etapasComIa[0]));
 
   return (
-    <section className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
-      <h3 className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-        {/* O robô na cor do funil, como no card — é por ele que se reconhece. */}
-        <Bot className={`size-4 ${ligada ? textoDoTom(tom) : "text-zinc-300 dark:text-zinc-600"}`} aria-hidden="true" />
-        Atendimento por IA
-      </h3>
+    <Secao
+      titulo={
+        <>
+          {/* O robô na cor do funil, como no card — é por ele que se reconhece. */}
+          <Bot className={`size-3.5 ${ligada ? textoDoTom(tom) : "text-zinc-300 dark:text-zinc-600"}`} aria-hidden="true" />
+          Atendimento por IA
+        </>
+      }
+    >
       <InterruptorIaContato
         estado={{ valor: contato.ia ?? null, iaId: contato.ia_id ?? null, etapas: nomes, iaDaEtapa }}
         ias={ias}
         aoDefinir={(v, iaId) => definirIaDoContato(contato.id, v, iaId)}
       />
-    </section>
+    </Secao>
   );
 }

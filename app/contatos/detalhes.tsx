@@ -1,17 +1,11 @@
 "use client";
 
-import {
-  AtSign,
-  CalendarDays,
-  ChevronRight,
-  Clock,
-  MapPin,
-  Phone,
-  Wallet,
-  type LucideIcon,
-} from "lucide-react";
+import Link from "next/link";
+import { Camera, ChevronRight, Mail, MessageCircle, type LucideIcon } from "lucide-react";
 import type {
   Anotacao,
+  Atendimento,
+  CampoPersonalizado,
   Contato,
   Etapa,
   Funil,
@@ -21,241 +15,246 @@ import type {
   Tag,
   Usuario,
 } from "../data";
-import { brl, dataCurta, dataHora, localizacao } from "../formato";
+import { brl, brlCurto, localizacao } from "../formato";
+import { telefoneLegivel } from "@/lib/telefone";
 import { AnotacoesContato } from "../components/anotacoes-contato";
+import { CamposDoContato } from "../components/campos-personalizados";
+import {
+  BotaoCopiar,
+  Chips,
+  IconeLinha,
+  LINHA,
+  LINHA_FIXA,
+  ListaHistorico,
+  ObjecoesDoHistorico,
+  Propriedade,
+  Propriedades,
+  Secao,
+  Vazio,
+} from "../components/gaveta";
+import { dataCurta, haQuanto, Selo, type Tom } from "./pecas";
 
-// Partes da ficha do contato, separadas para a gaveta da tela inicial mostrar
-// os mesmos dados sem herdar o resto da ficha (edição, véu, painel flutuante,
-// atalho de Esc). Tudo aqui é leitura, menos anotar — que mora em
+// Partes da ficha do contato que as duas gavetas da tela inicial mostram — a
+// de contatos e a aba Cliente da ficha da oportunidade —, montadas com o kit
+// de app/components/gaveta.tsx. Tudo aqui é leitura, menos anotar, que mora em
 // AnotacoesContato, junto da lista de anotações.
 
-function Secao({
-  Icone,
-  titulo,
-  contagem,
-  children,
+/**
+ * Os dados de cadastro, só os preenchidos: "@ —" e "📍 —" eram três linhas de
+ * nada. O que o cabeçalho de quem chama já mostra fica de fora (semTelefone,
+ * semLocal), para nada aparecer duas vezes na mesma gaveta.
+ */
+export function CamposContato({
+  contato,
+  segmentos = [],
+  tags = [],
+  semTelefone = false,
+  semLocal = false,
 }: {
-  Icone: LucideIcon;
-  titulo: string;
-  contagem?: number;
-  children: React.ReactNode;
+  contato: Contato;
+  segmentos?: Segmento[];
+  tags?: Tag[];
+  semTelefone?: boolean;
+  semLocal?: boolean;
 }) {
+  const telefone = telefoneLegivel(contato.whatsapp);
+  const lugar = localizacao(contato, true);
   return (
-    <section className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
-      <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-        <Icone className="size-3.5" aria-hidden="true" />
-        {titulo}
-        {contagem !== undefined && contagem > 0 && (
-          <span className="tabular-nums text-zinc-300 dark:text-zinc-600">
-            {contagem}
-          </span>
+    <Secao titulo="Contato">
+      <Propriedades>
+        {!semTelefone && (
+          <Propriedade rotulo="WhatsApp">
+            {telefone ? (
+              <>
+                <span className="truncate tabular-nums">{telefone}</span>
+                <BotaoCopiar texto={contato.whatsapp.replace(/\D/g, "")} rotulo="número" />
+              </>
+            ) : (
+              <span className="text-zinc-400 dark:text-zinc-500">Sem número</span>
+            )}
+          </Propriedade>
         )}
-      </h3>
-      {children}
-    </section>
+        {contato.email && (
+          <Propriedade rotulo="E-mail">
+            <a href={`mailto:${contato.email}`} className="truncate underline-offset-4 hover:underline">
+              {contato.email}
+            </a>
+            <BotaoCopiar texto={contato.email} rotulo="e-mail" />
+          </Propriedade>
+        )}
+        {!semLocal && lugar && <Propriedade rotulo="Local">{lugar}</Propriedade>}
+        {!semLocal && (
+          <Propriedade rotulo="No CRM">
+            <span>
+              {haQuanto(contato.data_criacao)}
+              <span className="text-zinc-400 dark:text-zinc-500"> · {dataCurta(contato.data_criacao)}</span>
+            </span>
+          </Propriedade>
+        )}
+        {(segmentos.length > 0 || tags.length > 0) && (
+          <Propriedade rotulo="Tags">
+            <span className="py-0.5">
+              <Chips segmentos={segmentos} tags={tags} />
+            </span>
+          </Propriedade>
+        )}
+      </Propriedades>
+    </Secao>
   );
 }
 
-function Vazio({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-4 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-      {children}
-    </p>
-  );
-}
+const CANAL: Record<Atendimento["canal"], { rotulo: string; Icone: LucideIcon }> = {
+  whatsapp: { rotulo: "WhatsApp", Icone: MessageCircle },
+  whatsapp_oficial: { rotulo: "WhatsApp API", Icone: MessageCircle },
+  instagram: { rotulo: "Instagram", Icone: Camera },
+  email: { rotulo: "E-mail", Icone: Mail },
+};
 
-function Campo({
-  Icone,
-  children,
-}: {
-  Icone: LucideIcon;
-  children: React.ReactNode;
-}) {
-  return (
-    <p className="flex items-center gap-2 text-[13px] text-zinc-600 dark:text-zinc-300">
-      <Icone className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
-      <span className="truncate">{children}</span>
-    </p>
-  );
-}
+const STATUS_ATENDIMENTO: Record<Atendimento["status"], { rotulo: string; tom: Tom }> = {
+  aberto: { rotulo: "Aberto", tom: "bom" },
+  na_fila: { rotulo: "Na fila", tom: "aviso" },
+  encerrado: { rotulo: "Encerrado", tom: "neutro" },
+};
 
-// Dados de cadastro: contato, canais e quando entrou na base.
-export function CamposContato({ contato }: { contato: Contato }) {
-  return (
-    <div className="flex flex-col gap-2 px-5 py-4">
-      <Campo Icone={Phone}>{contato.whatsapp || "—"}</Campo>
-      <Campo Icone={AtSign}>{contato.email || "—"}</Campo>
-      <Campo Icone={MapPin}>{localizacao(contato, true) || "—"}</Campo>
-      <Campo Icone={CalendarDays}>
-        Criado em {dataCurta(contato.data_criacao)}
-      </Campo>
-    </div>
-  );
-}
+const STATUS_NEGOCIO: Record<string, Tom> = { ganha: "bom", perdida: "ruim" };
 
-// Segmentos (chip escuro) e tags (chip vazado). Sem nenhum vínculo não rende
-// nada — a faixa vazia só abriria um buraco entre os campos e as seções.
-export function ChipsContato({
-  segmentos,
-  tags,
-}: {
-  segmentos: Segmento[];
-  tags: Tag[];
-}) {
-  if (segmentos.length === 0 && tags.length === 0) return null;
-
-  return (
-    <div className="flex flex-wrap gap-1.5 px-5 pb-4">
-      {segmentos.map((s) => (
-        <span
-          key={s.id}
-          className="surge rounded-full bg-zinc-900 px-2.5 py-0.5 text-[11px] font-medium text-white dark:bg-zinc-50 dark:text-zinc-900"
-        >
-          {s.nome}
-        </span>
-      ))}
-      {tags.map((t) => (
-        <span
-          key={t.id}
-          className="surge rounded-full px-2.5 py-0.5 text-[11px] font-medium text-zinc-600 ring-1 ring-inset ring-zinc-200 dark:text-zinc-400 dark:ring-zinc-700"
-        >
-          {t.nome}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-// Oportunidades, anotações e histórico do contato.
-//
-// `aoAbrirOportunidade` é opcional: onde o host sabe abrir a ficha da
-// oportunidade (a tela inicial), cada linha vira botão; onde não sabe, vira
-// texto. Antes era um link pra /funil?op=, rota que não existe mais — tudo
-// mora na raiz agora.
+/**
+ * O que a gaveta conta do relacionamento: oportunidades, conversas, anotações,
+ * objeções, campos e histórico — nessa ordem, do que se usa ao que se consulta.
+ *
+ * `aoAbrirOportunidade` é opcional: onde o host sabe abrir a ficha da
+ * oportunidade (a tela inicial), cada linha vira botão; onde não sabe, vira
+ * texto. `oportunidadeAtualId` é a ficha que já está aberta: ela sai da lista,
+ * que vira "Outras oportunidades" (e some quando não há outra).
+ */
 export function SecoesContato({
-  contatoId,
+  contato,
   oportunidades,
   anotacoes,
   historico,
+  atendimentos,
+  camposContato,
+  oportunidadeAtualId,
   etapaPorId,
   funilPorId,
   usuarioPorId,
   aoAbrirOportunidade,
 }: {
-  contatoId: string;
+  contato: Contato;
   oportunidades: Oportunidade[];
   anotacoes: Anotacao[];
   historico: Historico[];
+  /** Só a ficha da oportunidade tem as conversas na mão; sem elas, a seção some. */
+  atendimentos?: Atendimento[];
+  camposContato: CampoPersonalizado[];
+  oportunidadeAtualId?: string;
   etapaPorId: Map<string, Etapa>;
   funilPorId: Map<string, Funil>;
   usuarioPorId: Map<string, Usuario>;
   aoAbrirOportunidade?: (id: string) => void;
 }) {
+  const lista = oportunidadeAtualId ? oportunidades.filter((o) => o.id !== oportunidadeAtualId) : oportunidades;
+
   return (
     <>
-      <Secao Icone={Wallet} titulo="Oportunidades" contagem={oportunidades.length}>
-        {oportunidades.length === 0 ? (
-          <Vazio>Nenhuma oportunidade para este contato</Vazio>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {oportunidades.map((o) => {
-              const etapa = etapaPorId.get(o.etapa_id);
-              const funil = funilPorId.get(o.funil_id);
-
-              const conteudo = (
-                <>
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">
-                      {o.nome}
-                    </p>
-                    <p className="flex shrink-0 items-center gap-1 text-[13px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                      {brl(o.valor)}
-                      {aoAbrirOportunidade && (
-                        <ChevronRight
-                          className="size-3.5 text-zinc-300 transition group-hover:text-zinc-500 dark:text-zinc-600 dark:group-hover:text-zinc-400"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </p>
-                  </div>
-                  <p className="mt-1 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                    <span className={`size-1.5 rounded-full ${etapa?.cor}`} aria-hidden="true" />
-                    <span className="truncate">
-                      {funil?.nome} · {etapa?.nome}
-                    </span>
-                    {o.status !== "aberta" && (
-                      <span className="ml-auto shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-                        {o.status}
+      {(lista.length > 0 || !oportunidadeAtualId) && (
+        <Secao titulo={oportunidadeAtualId ? "Outras oportunidades" : "Oportunidades"} contagem={lista.length}>
+          {lista.length === 0 ? (
+            <Vazio>Nenhuma oportunidade para este contato</Vazio>
+          ) : (
+            <ul className="flex flex-col">
+              {lista.map((o) => {
+                const etapa = etapaPorId.get(o.etapa_id);
+                const funil = funilPorId.get(o.funil_id);
+                const conteudo = (
+                  <>
+                    <span className={`size-2 shrink-0 rounded-full ${etapa?.cor ?? "bg-zinc-300"}`} aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">{o.nome}</span>
+                      <span className="block truncate text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                        {[funil?.nome, etapa?.nome].filter(Boolean).join(" · ")}
                       </span>
+                    </span>
+                    <span className="flex shrink-0 flex-col items-end gap-0.5">
+                      <span className="text-[13px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50" title={brl(o.valor)}>
+                        {o.valor > 0 ? brlCurto(o.valor) : <span className="font-normal text-zinc-400">—</span>}
+                      </span>
+                      {o.status !== "aberta" && <Selo tom={STATUS_NEGOCIO[o.status] ?? "neutro"}>{o.status}</Selo>}
+                    </span>
+                    {aoAbrirOportunidade && (
+                      <ChevronRight className="size-4 shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
                     )}
-                  </p>
-                </>
-              );
+                  </>
+                );
+                return (
+                  <li key={o.id}>
+                    {aoAbrirOportunidade ? (
+                      <button type="button" onClick={() => aoAbrirOportunidade(o.id)} className={LINHA}>
+                        {conteudo}
+                      </button>
+                    ) : (
+                      <div className={LINHA_FIXA}>{conteudo}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Secao>
+      )}
 
-              return (
-                <li key={o.id}>
-                  {aoAbrirOportunidade ? (
-                    <button
-                      type="button"
-                      onClick={() => aoAbrirOportunidade(o.id)}
-                      className="group block w-full rounded-xl border border-zinc-200 p-3 text-left outline-none transition hover:border-zinc-300 hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-zinc-900 dark:border-zinc-800 dark:hover:border-zinc-700 dark:hover:bg-zinc-900/50 dark:focus-visible:ring-zinc-100"
-                    >
-                      {conteudo}
-                    </button>
-                  ) : (
-                    <div className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
-                      {conteudo}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Secao>
+      {atendimentos && (
+        <Secao titulo="Conversas" contagem={atendimentos.length}>
+          {atendimentos.length === 0 ? (
+            <Vazio>Nenhuma conversa com este contato</Vazio>
+          ) : (
+            <ul className="flex flex-col">
+              {/* A conversa é do CONTATO, não da oportunidade: não há o que
+                  anexar (o botão saiu em 2026-10-06). Qual trecho dela é deste
+                  negócio a IA decide pela data. */}
+              {atendimentos.map((a) => {
+                const { rotulo, Icone } = CANAL[a.canal];
+                const status = STATUS_ATENDIMENTO[a.status];
+                const numero = telefoneLegivel(a.numero_instancia);
+                return (
+                  <li key={a.id}>
+                    <Link href={`/chat?atendimento=${a.id}`} className={LINHA}>
+                      <IconeLinha Icone={Icone} tom={a.status === "aberto" ? "ativo" : "neutro"} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">{rotulo}</span>
+                        <span className="block truncate text-[11.5px] tabular-nums text-zinc-500 dark:text-zinc-400">
+                          {numero ? `pelo ${numero} · ` : ""}desde {dataCurta(a.data_criacao)}
+                        </span>
+                      </span>
+                      {a.nao_lidas > 0 && (
+                        <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10.5px] font-semibold tabular-nums text-white">
+                          {a.nao_lidas}
+                        </span>
+                      )}
+                      <Selo tom={status.tom}>{status.rotulo}</Selo>
+                      <ChevronRight className="size-4 shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Secao>
+      )}
 
       <AnotacoesContato
-        key={contatoId}
-        contatoId={contatoId}
+        key={contato.id}
+        contatoId={contato.id}
+        nome={contato.nome}
         anotacoes={anotacoes}
         usuarioPorId={usuarioPorId}
       />
 
-      <Secao Icone={Clock} titulo="Histórico" contagem={historico.length}>
-        {historico.length === 0 ? (
-          <Vazio>Sem movimentações registradas</Vazio>
-        ) : (
-          <ul className="flex flex-col">
-            {historico.map((h, i) => (
-              <li key={h.id} className="flex gap-3">
-                {/* a linha vertical liga os pontos, menos no último item */}
-                <div className="flex flex-col items-center">
-                  <span
-                    className="mt-1.5 size-1.5 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-600"
-                    aria-hidden="true"
-                  />
-                  {i < historico.length - 1 && (
-                    <span
-                      className="w-px flex-1 bg-zinc-200 dark:bg-zinc-800"
-                      aria-hidden="true"
-                    />
-                  )}
-                </div>
-                <div className="pb-4">
-                  <p className="text-[13px] leading-snug text-zinc-700 dark:text-zinc-200">
-                    {h.descricao}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-zinc-400 dark:text-zinc-500">
-                    {(h.autor_id && usuarioPorId.get(h.autor_id)?.nome) || "Sistema"}{" "}
-                          ·{" "}
-                    {dataHora(h.data_criacao)}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Secao>
+      <ObjecoesDoHistorico historico={historico} />
+
+      <CamposDoContato contatoId={contato.id} definicoes={camposContato} />
+
+      <ListaHistorico historico={historico} usuarioPorId={usuarioPorId} />
     </>
   );
 }

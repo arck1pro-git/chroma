@@ -2,9 +2,21 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { CalendarClock, Copy, Plus, Video } from "lucide-react";
+import { CalendarCheck2, CalendarClock, CalendarX2, Plus, Video } from "lucide-react";
 import type { Usuario } from "../data";
-import { dataHora } from "../formato";
+import { diaDe, hora, Selo, type Tom } from "../contatos/pecas";
+import {
+  AcaoSecao,
+  BOTAO_PRIMARIO,
+  BOTAO_SECUNDARIO,
+  BotaoCopiar,
+  CAMPO,
+  Carregando,
+  IconeLinha,
+  LINHA_FIXA,
+  Secao,
+  Vazio,
+} from "../components/gaveta";
 import {
   marcarReuniaoDaOportunidade,
   reunioesDaFicha,
@@ -13,15 +25,41 @@ import {
   type SugestaoHorario,
 } from "./acoes-agenda";
 
-// As reuniões da oportunidade no Google Calendar, e o "Marcar reunião".
-// Carregadas ao abrir a ficha, como as automações: é consulta por oportunidade
-// (e vai ao Google), e a raiz já carrega a base inteira.
+// A seção "Reuniões" da ficha da oportunidade: as reuniões no Google Calendar
+// e o "+ Marcar" no canto do título. Carregadas ao abrir a ficha, como as
+// automações: é consulta por oportunidade (e vai ao Google), e a raiz já
+// carrega a base inteira.
 
 const DURACOES = [
   { min: 30, rotulo: "30 min" },
   { min: 60, rotulo: "1 hora" },
   { min: 90, rotulo: "1h30" },
 ];
+
+const FUSO = "America/Sao_Paulo";
+const fmtDia = new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, weekday: "short", day: "2-digit", month: "short" });
+
+/** "seg, 05 out" */
+function diaDaReuniao(iso: string) {
+  return fmtDia.format(new Date(iso)).replace(/\./g, "").replace(/ de /g, " ");
+}
+
+/** O selo de cada reunião. `hoje` é o dia da leitura — o render não chama o relógio. */
+function seloDaReuniao(
+  r: { inicio: string; passou: boolean; cancelada: boolean },
+  hoje: string,
+): { texto: string; tom: Tom } | null {
+  if (r.cancelada) return { texto: "Cancelada", tom: "ruim" };
+  if (r.passou) return { texto: "Já aconteceu", tom: "neutro" };
+  const dia = diaDe(r.inicio);
+  if (dia === hoje) return { texto: "Hoje", tom: "aviso" };
+  const amanha = new Date(`${hoje}T12:00:00Z`);
+  amanha.setUTCDate(amanha.getUTCDate() + 1);
+  if (dia === amanha.toISOString().slice(0, 10)) return { texto: "Amanhã", tom: "bom" };
+  return null;
+}
+
+const hojeAgora = () => diaDe(new Date().toISOString());
 
 export default function ReunioesDaOportunidade({
   oportunidadeId,
@@ -31,125 +69,129 @@ export default function ReunioesDaOportunidade({
   usuarioPorId: Map<string, Usuario>;
 }) {
   // A carga guarda de QUAL oportunidade é — mesma razão do `carga` das
-  // automações na ficha: a ficha é reaproveitada ao abrir outro card.
-  const [carga, setCarga] = useState<{ opId: string; dado: ReunioesDaFicha } | null>(null);
-  const estado = carga?.opId === oportunidadeId ? carga.dado : null;
+  // automações na ficha: a ficha é reaproveitada ao abrir outro card. E o dia
+  // da leitura, para o "Hoje"/"Amanhã" sem relógio no render.
+  const [carga, setCarga] = useState<{ opId: string; dado: ReunioesDaFicha; hoje: string } | null>(null);
+  const estado = carga?.opId === oportunidadeId ? carga : null;
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [aberto, setAberto] = useState(false);
 
   useEffect(() => {
     let vivo = true;
     reunioesDaFicha(oportunidadeId)
-      .then((dado) => vivo && setCarga({ opId: oportunidadeId, dado }))
-      .catch(() => vivo && setCarga({ opId: oportunidadeId, dado: { conectado: false, reunioes: [] } }));
+      .then((dado) => vivo && setCarga({ opId: oportunidadeId, dado, hoje: hojeAgora() }))
+      .catch(() => vivo && setCarga({ opId: oportunidadeId, dado: { conectado: false, reunioes: [] }, hoje: hojeAgora() }));
     return () => {
       vivo = false;
     };
   }, [oportunidadeId]);
 
   async function recarregar() {
-    setCarga({ opId: oportunidadeId, dado: await reunioesDaFicha(oportunidadeId) });
+    const dado = await reunioesDaFicha(oportunidadeId);
+    setCarga({ opId: oportunidadeId, dado, hoje: hojeAgora() });
   }
 
-  if (!estado) return <Vazio>Carregando…</Vazio>;
-
-  if (!estado.conectado && estado.reunioes.length === 0) {
-    return (
-      <Vazio>
-        Conecte o Google Calendar em{" "}
-        <Link href="/integracoes" className="underline underline-offset-2">
-          Integrações
-        </Link>{" "}
-        para marcar reuniões daqui.
-      </Vazio>
-    );
-  }
+  const reunioes = estado?.dado.reunioes ?? [];
+  const conectado = estado?.dado.conectado ?? false;
 
   return (
-    <div className="flex flex-col gap-2">
-      {estado.reunioes.length === 0 && !aberto && <Vazio>Nenhuma reunião marcada</Vazio>}
-
-      {estado.reunioes.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {estado.reunioes.map((r) => {
-            const passou = r.passou;
-            const autor = r.autorId ? (usuarioPorId.get(r.autorId)?.nome ?? "equipe") : "IA";
-            return (
-              <li
-                key={r.id}
-                className={`flex items-center gap-2 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800 ${
-                  passou || r.cancelada ? "opacity-60" : ""
-                }`}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className={`block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50 ${r.cancelada ? "line-through" : ""}`}>
-                    {dataHora(r.inicio)}
-                  </span>
-                  <span className="mt-0.5 block truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                    {r.cancelada ? "Cancelada no Google · " : passou ? "Já aconteceu · " : ""}
-                    marcada por {autor}
-                  </span>
-                </span>
-                {r.meet && !r.cancelada && !passou && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(r.meet ?? "");
-                        setAviso({ ok: true, texto: "Link do Meet copiado." });
-                      }}
-                      aria-label="Copiar link do Meet"
-                      title="Copiar link do Meet"
-                      className="flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-                    >
-                      <Copy className="size-3.5" aria-hidden="true" />
-                    </button>
-                    <a
-                      href={r.meet}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200 px-2 py-1 text-[12px] font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                    >
-                      <Video className="size-3.5" aria-hidden="true" />
-                      Meet
-                    </a>
-                  </>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {estado.conectado &&
-        (aberto ? (
-          <FormMarcar
-            oportunidadeId={oportunidadeId}
-            aoCancelar={() => setAberto(false)}
-            aoMarcar={async (texto) => {
-              setAberto(false);
-              setAviso({ ok: true, texto });
-              await recarregar();
-            }}
-          />
-        ) : (
-          <button
-            type="button"
+    <Secao
+      titulo="Reuniões"
+      contagem={reunioes.length}
+      acao={
+        conectado && !aberto ? (
+          <AcaoSecao
+            Icone={Plus}
             onClick={() => {
               setAviso(null);
               setAberto(true);
             }}
-            className="inline-flex items-center gap-1.5 self-start rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[12px] font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
           >
-            <Plus className="size-3.5" aria-hidden="true" />
-            Marcar reunião
-          </button>
-        ))}
+            Marcar
+          </AcaoSecao>
+        ) : null
+      }
+    >
+      {!estado ? (
+        <Carregando />
+      ) : !conectado && reunioes.length === 0 ? (
+        <Vazio>
+          Conecte o Google Calendar em{" "}
+          <Link href="/integracoes" className="font-medium text-zinc-600 underline underline-offset-2 dark:text-zinc-300">
+            Integrações
+          </Link>{" "}
+          para marcar reuniões daqui.
+        </Vazio>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {reunioes.length === 0 && !aberto && <Vazio>Nenhuma reunião marcada</Vazio>}
 
-      {aviso && (
-        <p className={`text-[11px] ${aviso.ok ? "text-zinc-500 dark:text-zinc-400" : "text-red-500"}`}>{aviso.texto}</p>
+          {reunioes.length > 0 && (
+            <ul className="flex flex-col">
+              {reunioes.map((r) => {
+                const autor = r.autorId ? (usuarioPorId.get(r.autorId)?.nome ?? "equipe") : null;
+                const selo = seloDaReuniao(r, estado.hoje);
+                const futura = !r.passou && !r.cancelada;
+                return (
+                  <li key={r.id} className={LINHA_FIXA}>
+                    <IconeLinha
+                      Icone={r.cancelada ? CalendarX2 : r.passou ? CalendarCheck2 : CalendarClock}
+                      tom={futura ? "ativo" : "neutro"}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className={`flex items-center gap-1.5 text-[13px] font-medium text-zinc-900 dark:text-zinc-50 ${
+                          r.cancelada ? "line-through decoration-zinc-400" : ""
+                        }`}
+                      >
+                        <span className="truncate">{diaDaReuniao(r.inicio)}</span>
+                        <span className="tabular-nums text-zinc-500 dark:text-zinc-400">{hora(r.inicio)}</span>
+                      </span>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                        {selo && <Selo tom={selo.tom}>{selo.texto}</Selo>}
+                        <span className="truncate">marcada {autor ? `por ${autor}` : "pela IA"}</span>
+                      </span>
+                    </span>
+                    {r.meet && futura && (
+                      <>
+                        <BotaoCopiar texto={r.meet} rotulo="link do Meet" />
+                        <a
+                          href={r.meet}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={`${BOTAO_SECUNDARIO} ring-1 ring-inset ring-zinc-200 dark:ring-zinc-800`}
+                        >
+                          <Video className="size-3.5" aria-hidden="true" />
+                          Entrar
+                        </a>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {conectado && aberto && (
+            <FormMarcar
+              oportunidadeId={oportunidadeId}
+              aoCancelar={() => setAberto(false)}
+              aoMarcar={async (texto) => {
+                setAberto(false);
+                setAviso({ ok: true, texto });
+                await recarregar();
+              }}
+            />
+          )}
+
+          {aviso && (
+            <p role="status" className={`text-[11.5px] ${aviso.ok ? "text-zinc-500 dark:text-zinc-400" : "text-red-500"}`}>
+              {aviso.texto}
+            </p>
+          )}
+        </div>
       )}
-    </div>
+    </Secao>
   );
 }
 
@@ -163,7 +205,7 @@ function FormMarcar({
   aoMarcar: (mensagem: string) => Promise<void>;
 }) {
   const [data, setData] = useState("");
-  const [hora, setHora] = useState("");
+  const [horaEscolhida, setHora] = useState("");
   const [duracao, setDuracao] = useState(60);
   const [livres, setLivres] = useState<SugestaoHorario[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -185,28 +227,27 @@ function FormMarcar({
     e.preventDefault();
     setErro(null);
     marcar(async () => {
-      const r = await marcarReuniaoDaOportunidade(oportunidadeId, data, hora, duracao);
+      const r = await marcarReuniaoDaOportunidade(oportunidadeId, data, horaEscolhida, duracao);
       if (r.ok) await aoMarcar(r.mensagem);
       else setErro(r.mensagem);
     });
   }
 
-  const campo =
-    "min-w-0 rounded-lg border border-zinc-200 bg-transparent px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600";
-
   return (
-    <form onSubmit={enviar} className="flex flex-col gap-2.5 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
-      <p className="flex items-center gap-1.5 text-[12px] font-medium text-zinc-700 dark:text-zinc-200">
-        <CalendarClock className="size-3.5" aria-hidden="true" />
-        Nova reunião (horário de Brasília, com Meet)
+    <form
+      onSubmit={enviar}
+      className="surge flex flex-col gap-3 rounded-xl bg-zinc-50 p-3 ring-1 ring-inset ring-zinc-200/70 dark:bg-zinc-900/60 dark:ring-zinc-800"
+    >
+      <p className="text-[12px] font-medium text-zinc-700 dark:text-zinc-200">
+        Nova reunião <span className="font-normal text-zinc-400">· horário de Brasília, com Meet</span>
       </p>
 
       {livres === null ? (
-        <p className="text-[11px] text-zinc-400">Buscando horários livres…</p>
+        <p className="text-[11.5px] text-zinc-400">Buscando horários livres…</p>
       ) : livres.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {livres.map((l) => {
-            const ativo = l.data === data && l.hora === hora;
+            const ativo = l.data === data && l.hora === horaEscolhida;
             return (
               <button
                 key={l.rotulo}
@@ -215,10 +256,11 @@ function FormMarcar({
                   setData(l.data);
                   setHora(l.hora);
                 }}
-                className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                aria-pressed={ativo}
+                className={`rounded-full px-2.5 py-1 text-[11.5px] font-medium transition ${
                   ativo
                     ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-                    : "text-zinc-600 ring-1 ring-inset ring-zinc-200 hover:bg-zinc-50 dark:text-zinc-300 dark:ring-zinc-700 dark:hover:bg-zinc-800"
+                    : "bg-white text-zinc-600 ring-1 ring-inset ring-zinc-200 hover:ring-zinc-300 dark:bg-zinc-950 dark:text-zinc-300 dark:ring-zinc-800 dark:hover:ring-zinc-700"
                 }`}
               >
                 {l.rotulo}
@@ -229,28 +271,21 @@ function FormMarcar({
       ) : null}
 
       <div className="flex gap-2">
-        <input
-          type="date"
-          value={data}
-          onChange={(e) => setData(e.target.value)}
-          required
-          aria-label="Data"
-          className={`${campo} flex-1`}
-        />
+        <input type="date" value={data} onChange={(e) => setData(e.target.value)} required aria-label="Data" className={`${CAMPO} flex-1`} />
         <input
           type="time"
-          value={hora}
+          value={horaEscolhida}
           onChange={(e) => setHora(e.target.value)}
           required
           step={900}
           aria-label="Hora"
-          className={`${campo} w-24`}
+          className={`${CAMPO} w-[5.5rem]`}
         />
         <select
           value={duracao}
           onChange={(e) => setDuracao(Number(e.target.value))}
           aria-label="Duração"
-          className={`${campo} w-24`}
+          className={`${CAMPO} w-[5.5rem]`}
         >
           {DURACOES.map((d) => (
             <option key={d.min} value={d.min}>
@@ -260,32 +295,16 @@ function FormMarcar({
         </select>
       </div>
 
-      {erro && <p className="text-[11px] text-red-500">{erro}</p>}
+      {erro && <p className="text-[11.5px] text-red-500">{erro}</p>}
 
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={aoCancelar}
-          className="rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[12px] font-medium text-zinc-600 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        >
+      <div className="flex justify-end gap-1">
+        <button type="button" onClick={aoCancelar} className={BOTAO_SECUNDARIO}>
           Cancelar
         </button>
-        <button
-          type="submit"
-          disabled={marcando || !data || !hora}
-          className="rounded-lg bg-zinc-900 px-2.5 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
+        <button type="submit" disabled={marcando || !data || !horaEscolhida} className={BOTAO_PRIMARIO}>
           {marcando ? "Marcando…" : "Marcar no Google"}
         </button>
       </div>
     </form>
-  );
-}
-
-function Vazio({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-4 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-      {children}
-    </p>
   );
 }

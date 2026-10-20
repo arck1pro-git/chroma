@@ -17,14 +17,11 @@ import type { CampoPersonalizado, Contato, Etapa, Funil, Usuario } from "../data
 import type { Ia } from "@/lib/ia/catalogo";
 import type { ContatoEncontrado, DadosDoContato } from "@/lib/contatos-busca";
 import { MIN_DIGITOS, MIN_LETRAS, prepararTermo } from "@/lib/contatos-termo";
-import { iniciais, localizacao } from "../formato";
-import {
-  CamposContato,
-  ChipsContato,
-  SecoesContato,
-} from "../contatos/detalhes";
-import { CamposDoContato } from "../components/campos-personalizados";
-import CamadaTopo from "../components/camada-topo";
+import { localizacao } from "../formato";
+import { telefoneLegivel } from "@/lib/telefone";
+import { CamposContato, SecoesContato } from "../contatos/detalhes";
+import { haQuanto } from "../contatos/pecas";
+import { Avatar, BOTAO_SECUNDARIO, BotaoIcone, CascaGaveta, CorpoGaveta, LINHA } from "../components/gaveta";
 import FormContato, { type DadosContato } from "../contatos/form-contato";
 import IaDoContato from "./ia-contato";
 import {
@@ -81,10 +78,10 @@ function BotaoExcluir({
       disabled={ocupado}
       onBlur={() => setArmado(false)}
       onClick={() => (armado ? aoConfirmar() : setArmado(true))}
-      className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium transition disabled:opacity-50 ${
+      className={`-ml-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] font-medium transition disabled:opacity-50 ${
         armado
-          ? "bg-red-600 text-white hover:bg-red-700"
-          : "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+          ? "surge bg-red-600 px-3 text-white hover:bg-red-700"
+          : "text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-950/40 dark:hover:text-red-400"
       }`}
     >
       <Trash2 className="size-3.5 shrink-0" aria-hidden="true" />
@@ -110,18 +107,6 @@ function frasePerda(r: ResumoExclusao): string {
   }
   if (partes.length === 0) return "Confirmar exclusão";
   return `Excluir e apagar ${partes.join(", ")}`;
-}
-
-function Avatar({ nome, grande = false }: { nome: string; grande?: boolean }) {
-  return (
-    <span
-      className={`flex shrink-0 items-center justify-center rounded-full bg-zinc-100 font-semibold text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300 ${
-        grande ? "size-10 text-xs" : "size-8 text-[10px]"
-      }`}
-    >
-      {iniciais(nome)}
-    </span>
-  );
 }
 
 function Aguarde({ texto }: { texto: string }) {
@@ -299,260 +284,208 @@ export default function GavetaContatos({
     return () => document.removeEventListener("keydown", aoTeclar);
   }, [abertoId, aoFechar, form]);
 
-  // No <body>, pela CamadaTopo: dentro da página a gaveta dividia camada com os
-  // cartões do quadro (ver app/components/camada-topo.tsx).
   return (
-    <CamadaTopo>
-      {/* mesmo véu da ficha da oportunidade: escurece o resto e fecha ao
-          clicar. Era transparente — e no escuro a gaveta tem a MESMA cor da
-          página, então nada a separava dos cartões de fundo. */}
-      <div
-        className="veu-surge fixed inset-0 z-[300] bg-black/40 backdrop-blur-[1px]"
-        onClick={aoFechar}
-        aria-hidden="true"
-      />
-
-      <aside
-        className="ficha-entra fixed bottom-4 right-4 top-4 z-[310] flex w-[25rem] max-w-[92vw] flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950"
-        aria-label={aberto ? `Dados de ${aberto.nome}` : "Contatos"}
-      >
-        {aberto ? (
-          <header className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+    <CascaGaveta
+      rotulo={aberto ? `Dados de ${aberto.nome}` : "Contatos"}
+      aoFechar={aoFechar}
+      // key por contato: trocar de alvo remonta o formulário, senão os campos
+      // ficariam com os valores do contato anterior (useState só lê o inicial
+      // na primeira montagem).
+      depois={
+        form && (
+          <FormContato
+            key={form === "novo" ? "novo" : form.id}
+            inicial={
+              form === "novo"
+                ? undefined
+                : {
+                    nome: form.nome,
+                    email: form.email,
+                    whatsapp: form.whatsapp,
+                    cidade: form.cidade,
+                    estado: form.estado,
+                    pais: form.pais,
+                  }
+            }
+            aoSalvar={salvar}
+            aoFechar={() => setForm(null)}
+          />
+        )
+      }
+    >
+      {aberto ? (
+        <header className="shrink-0 px-5 pb-4 pt-3">
+          <div className="-mx-2 flex items-center gap-0.5">
             <button
               type="button"
               onClick={() => setAbertoId(null)}
-              aria-label="Voltar para a lista de contatos"
-              className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+              className="inline-flex items-center gap-1 rounded-lg py-1.5 pl-1.5 pr-2.5 text-[12px] font-medium text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
             >
-              <ArrowLeft className="size-4" aria-hidden="true" />
+              <ArrowLeft className="size-3.5" aria-hidden="true" />
+              Contatos
             </button>
-            <Avatar nome={aberto.nome} grande />
-            <div className="min-w-0 flex-1">
-              <h2 className="truncate text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                {aberto.nome}
-              </h2>
-              <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
-                {localizacao(aberto) || "Sem localização"}
-              </p>
-            </div>
             {/* Editar fica no cabeçalho porque é a ação frequente. Excluir
                 ficou lá embaixo, no fim da rolagem: é rara e destrutiva, e não
                 deve estar a um pixel de distância do botão de fechar. */}
-            <button
-              type="button"
-              onClick={() => setForm(aberto)}
-              disabled={gravando}
-              aria-label={`Editar ${aberto.nome}`}
-              title="Editar contato"
-              className="shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
-            >
-              <Pencil className="size-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              onClick={aoFechar}
-              aria-label="Fechar contatos"
-              className="-mr-1 shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
-            >
-              <X className="size-4" aria-hidden="true" />
-            </button>
-          </header>
-        ) : (
-          <header className="shrink-0 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                Contatos
+            <BotaoIcone Icone={Pencil} rotulo="Editar contato" onClick={() => setForm(aberto)} disabled={gravando} className="ml-auto" />
+            <BotaoIcone Icone={X} rotulo="Fechar contatos" onClick={aoFechar} />
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <Avatar nome={aberto.nome} tamanho="lg" />
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-[19px] font-semibold leading-snug tracking-tight text-zinc-900 dark:text-zinc-50">
+                {aberto.nome}
               </h2>
-              <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                {totalContatos.toLocaleString("pt-BR")}
-              </span>
-              <button
-                type="button"
-                onClick={() => setForm("novo")}
-                disabled={gravando}
-                aria-label="Novo contato"
-                title="Novo contato"
-                className="ml-auto shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
-              >
-                <Plus className="size-4" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={aoFechar}
-                aria-label="Fechar contatos"
-                className="-mr-1 shrink-0 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
-              >
-                <X className="size-4" aria-hidden="true" />
-              </button>
-            </div>
-
-            <div className="relative mt-3">
-              <Search
-                className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400"
-                aria-hidden="true"
-              />
-              <input
-                value={termo}
-                onChange={(e) => setTermo(e.target.value)}
-                placeholder="Buscar por nome, e-mail, telefone…"
-                aria-label="Buscar contato"
-                autoFocus
-                className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-8 pr-2.5 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-              />
-            </div>
-          </header>
-        )}
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {aberto && !fichaAtual ? (
-            <>
-              <CamposContato contato={aberto} />
-              <Aguarde texto="Carregando o contato…" />
-            </>
-          ) : aberto && fichaAtual ? (
-            <>
-              <CamposContato contato={aberto} />
-              <IaDoContato
-                // Remonta por contato: o valor otimista é do contato aberto.
-                key={aberto.id}
-                contato={aberto}
-                oportunidades={fichaAtual.oportunidades}
-                etapaPorId={etapaPorId}
-                funilPorId={funilPorId}
-                ias={ias}
-              />
-              <ChipsContato segmentos={fichaAtual.segmentos} tags={fichaAtual.tags} />
-              <CamposDoContato contatoId={aberto.id} definicoes={camposContato} />
-              <SecoesContato
-                contatoId={aberto.id}
-                oportunidades={fichaAtual.oportunidades}
-                anotacoes={fichaAtual.anotacoes}
-                historico={fichaAtual.historico}
-                etapaPorId={etapaPorId}
-                funilPorId={funilPorId}
-                usuarioPorId={usuarioPorId}
-                aoAbrirOportunidade={aoAbrirOportunidade}
-              />
-
-              <div className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
-                <BotaoExcluir
-                  ocupado={gravando}
-                  confirmacao={
-                    resumoAtual ? frasePerda(resumoAtual) : "Confirmar exclusão"
-                  }
-                  aoConfirmar={excluir}
-                />
-                {erroAtual && (
-                  <p
-                    role="alert"
-                    className="surge mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-[12px] leading-relaxed text-red-700 dark:bg-red-950/40 dark:text-red-300"
-                  >
-                    {erroAtual}
-                  </p>
-                )}
-              </div>
-            </>
-          ) : carregandoFicha ? (
-            // Contato aberto que não estava na lista (o recém-criado, por exemplo).
-            <Aguarde texto="Carregando o contato…" />
-          ) : !podeBuscar ? (
-            <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-              <UserSearch
-                className="size-8 text-zinc-300 dark:text-zinc-700"
-                aria-hidden="true"
-              />
-              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                {totalContatos === 0 ? "Nenhum contato na base" : "Pesquise para ver um contato"}
-              </p>
-              <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                {totalContatos === 0
-                  ? "Use o + aqui em cima, ou deixe o webhook do chat trazer quem chamar no WhatsApp."
-                  : `Nome, e-mail ou telefone — a partir de ${MIN_LETRAS} letras ou ${MIN_DIGITOS} números. Os ${totalContatos.toLocaleString("pt-BR")} contatos só aparecem quando pesquisados, para a tela abrir leve.`}
+              <p className="truncate text-[12.5px] text-zinc-500 dark:text-zinc-400">
+                {[localizacao(aberto), `no CRM ${haQuanto(aberto.data_criacao)}`].filter(Boolean).join(" · ")}
               </p>
             </div>
-          ) : !lista ? (
-            <Aguarde texto="Procurando…" />
-          ) : lista.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-              <UserSearch
-                className="size-8 text-zinc-300 dark:text-zinc-700"
-                aria-hidden="true"
-              />
-              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                Nenhum contato com esse termo
-              </p>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                A busca procura no nome (inclusive parecido), no e-mail e nos números do telefone.
-              </p>
-            </div>
-          ) : (
-            <ul className={`flex flex-col p-2 transition-opacity ${buscando ? "opacity-60" : ""}`}>
-              {lista.map((c) => {
-                const tags = c.tags;
-                const negocios = c.negocios;
+          </div>
+        </header>
+      ) : (
+        <header className="shrink-0 px-5 pb-3 pt-4">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[15px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Contatos</h2>
+            <span className="text-[12px] tabular-nums text-zinc-400 dark:text-zinc-500">{totalContatos.toLocaleString("pt-BR")}</span>
+            <button
+              type="button"
+              onClick={() => setForm("novo")}
+              disabled={gravando}
+              className={`${BOTAO_SECUNDARIO} ml-auto ring-1 ring-inset ring-zinc-200 dark:ring-zinc-800`}
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+              Novo
+            </button>
+            <BotaoIcone Icone={X} rotulo="Fechar contatos" onClick={aoFechar} className="-mr-2" />
+          </div>
 
-                return (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      onClick={() => setAbertoId(c.id)}
-                      className="group flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left outline-none transition hover:bg-zinc-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zinc-900 dark:hover:bg-zinc-900 dark:focus-visible:ring-zinc-100"
-                    >
-                      <Avatar nome={c.nome} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">
-                          {c.nome}
-                        </span>
-                        <span className="block truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                          {c.whatsapp || c.email || localizacao(c) || "Sem contato cadastrado"}
-                          {tags.length > 0 && ` · ${tags[0].nome}`}
-                          {tags.length > 1 && ` +${tags.length - 1}`}
-                        </span>
-                      </span>
-                      {negocios > 0 && (
-                        <span
-                          title={`${negocios} ${negocios === 1 ? "oportunidade" : "oportunidades"}`}
-                          className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
-                        >
-                          {negocios}
-                        </span>
-                      )}
-                      <ChevronRight
-                        className="size-4 shrink-0 text-zinc-300 transition group-hover:text-zinc-500 dark:text-zinc-700 dark:group-hover:text-zinc-400"
-                        aria-hidden="true"
-                      />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-
-      </aside>
-
-      {/* key por contato: trocar de alvo remonta o formulário, senão os campos
-          ficariam com os valores do contato anterior (useState só lê o inicial
-          na primeira montagem). */}
-      {form && (
-        <FormContato
-          key={form === "novo" ? "novo" : form.id}
-          inicial={
-            form === "novo"
-              ? undefined
-              : {
-                  nome: form.nome,
-                  email: form.email,
-                  whatsapp: form.whatsapp,
-                  cidade: form.cidade,
-                  estado: form.estado,
-                  pais: form.pais,
-                }
-          }
-          aoSalvar={salvar}
-          aoFechar={() => setForm(null)}
-        />
+          <div className="relative mt-3">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
+            <input
+              value={termo}
+              onChange={(e) => setTermo(e.target.value)}
+              placeholder="Nome, e-mail ou telefone"
+              aria-label="Buscar contato"
+              autoFocus
+              className="w-full rounded-xl bg-zinc-100 py-2.5 pl-9 pr-9 text-[13.5px] text-zinc-900 outline-none ring-1 ring-inset ring-transparent transition placeholder:text-zinc-400 focus:bg-white focus:ring-zinc-300 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:bg-zinc-950 dark:focus:ring-zinc-700"
+            />
+            {buscando && (
+              <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-zinc-400" aria-hidden="true" />
+            )}
+          </div>
+        </header>
       )}
-    </CamadaTopo>
+
+      <CorpoGaveta>
+        {aberto && !fichaAtual ? (
+          <>
+            <CamposContato contato={aberto} semLocal />
+            <Aguarde texto="Carregando o contato…" />
+          </>
+        ) : aberto && fichaAtual ? (
+          <>
+            {/* Local e "no CRM há" já estão no cabeçalho. */}
+            <CamposContato contato={aberto} segmentos={fichaAtual.segmentos} tags={fichaAtual.tags} semLocal />
+            <IaDoContato
+              // Remonta por contato: o valor otimista é do contato aberto.
+              key={aberto.id}
+              contato={aberto}
+              oportunidades={fichaAtual.oportunidades}
+              etapaPorId={etapaPorId}
+              funilPorId={funilPorId}
+              ias={ias}
+            />
+            <SecoesContato
+              contato={aberto}
+              oportunidades={fichaAtual.oportunidades}
+              anotacoes={fichaAtual.anotacoes}
+              historico={fichaAtual.historico}
+              camposContato={camposContato}
+              etapaPorId={etapaPorId}
+              funilPorId={funilPorId}
+              usuarioPorId={usuarioPorId}
+              aoAbrirOportunidade={aoAbrirOportunidade}
+            />
+
+            <div className="border-t border-zinc-100 px-5 pt-4 dark:border-zinc-900">
+              <BotaoExcluir
+                ocupado={gravando}
+                confirmacao={resumoAtual ? frasePerda(resumoAtual) : "Confirmar exclusão"}
+                aoConfirmar={excluir}
+              />
+              {erroAtual && (
+                <p
+                  role="alert"
+                  className="surge mt-2 rounded-lg bg-red-50 px-2.5 py-2 text-[12px] leading-relaxed text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                >
+                  {erroAtual}
+                </p>
+              )}
+            </div>
+          </>
+        ) : carregandoFicha ? (
+          // Contato aberto que não estava na lista (o recém-criado, por exemplo).
+          <Aguarde texto="Carregando o contato…" />
+        ) : !podeBuscar ? (
+          <Estado
+            titulo={totalContatos === 0 ? "Nenhum contato na base" : "Pesquise para ver um contato"}
+            texto={
+              totalContatos === 0
+                ? "Use o Novo aqui em cima, ou deixe o webhook do chat trazer quem chamar no WhatsApp."
+                : `A partir de ${MIN_LETRAS} letras ou ${MIN_DIGITOS} números. Os ${totalContatos.toLocaleString("pt-BR")} contatos só aparecem quando pesquisados, para a tela abrir leve.`
+            }
+          />
+        ) : !lista ? (
+          <Aguarde texto="Procurando…" />
+        ) : lista.length === 0 ? (
+          <Estado titulo="Nenhum contato com esse termo" texto="A busca procura no nome (inclusive parecido), no e-mail e nos números do telefone." />
+        ) : (
+          <ul className={`flex flex-col px-5 pt-1 transition-opacity ${buscando ? "opacity-60" : ""}`}>
+            {lista.map((c) => {
+              const tags = c.tags;
+              const negocios = c.negocios;
+              const linha2 = telefoneLegivel(c.whatsapp) || c.email || localizacao(c) || "Sem contato cadastrado";
+
+              return (
+                <li key={c.id}>
+                  <button type="button" onClick={() => setAbertoId(c.id)} className={LINHA}>
+                    <Avatar nome={c.nome} suave />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">{c.nome}</span>
+                      <span className="block truncate text-[11.5px] tabular-nums text-zinc-500 dark:text-zinc-400">
+                        {linha2}
+                        {tags.length > 0 && ` · ${tags[0].nome}`}
+                        {tags.length > 1 && ` +${tags.length - 1}`}
+                      </span>
+                    </span>
+                    {negocios > 0 && (
+                      <span
+                        title={`${negocios} ${negocios === 1 ? "oportunidade" : "oportunidades"}`}
+                        className="shrink-0 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                      >
+                        {negocios}
+                      </span>
+                    )}
+                    <ChevronRight className="size-4 shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CorpoGaveta>
+    </CascaGaveta>
+  );
+}
+
+function Estado({ titulo, texto }: { titulo: string; texto: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2 px-8 py-16 text-center">
+      <span className="flex size-11 items-center justify-center rounded-full bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">
+        <UserSearch className="size-5" aria-hidden="true" />
+      </span>
+      <p className="mt-1 text-[13.5px] font-medium text-zinc-900 dark:text-zinc-50">{titulo}</p>
+      <p className="text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">{texto}</p>
+    </div>
   );
 }

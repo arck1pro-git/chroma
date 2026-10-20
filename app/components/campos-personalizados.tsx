@@ -11,8 +11,8 @@
 // Só mostra campo COM valor: uma ficha com 29 rótulos vazios é ruído, não
 // informação. A ordem é a definida em Configurações.
 import { useEffect, useState } from "react";
-import { SlidersHorizontal } from "lucide-react";
 import type { CampoPersonalizado, ValoresPersonalizados } from "../data";
+import { Propriedade, Propriedades, Secao } from "./gaveta";
 import { camposDoContato } from "../funil/actions";
 import { dataCurta } from "../formato";
 
@@ -44,31 +44,18 @@ export function ListaCampos({
 
   if (preenchidos.length === 0) return null;
 
+  // Rótulo à esquerda, valor à direita — as mesmas Propriedades do resto da
+  // gaveta. Valor longo (resumo do SDR, por exemplo) quebra em vez de estourar.
   return (
-    <section className="border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
-      <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-        <SlidersHorizontal className="size-3.5" aria-hidden="true" />
-        {titulo}
-        <span className="tabular-nums text-zinc-300 dark:text-zinc-600">
-          {preenchidos.length}
-        </span>
-      </h3>
-
-      {/* dl em duas colunas: rótulo à esquerda, valor à direita. Valor longo
-          (resumo do SDR, por exemplo) quebra em vez de estourar a gaveta. */}
-      <dl className="flex flex-col gap-2">
+    <Secao titulo={titulo} contagem={preenchidos.length}>
+      <Propriedades>
         {preenchidos.map((d) => (
-          <div key={d.id} className="flex gap-3 text-[12px]">
-            <dt className="w-2/5 shrink-0 text-zinc-500 dark:text-zinc-400">
-              {d.rotulo}
-            </dt>
-            <dd className="min-w-0 flex-1 break-words text-zinc-800 dark:text-zinc-200">
-              {formatar(String(valores?.[d.chave] ?? ""), d.tipo)}
-            </dd>
-          </div>
+          <Propriedade key={d.id} rotulo={d.rotulo}>
+            <span className="min-w-0">{formatar(String(valores?.[d.chave] ?? ""), d.tipo)}</span>
+          </Propriedade>
         ))}
-      </dl>
-    </section>
+      </Propriedades>
+    </Secao>
   );
 }
 

@@ -1433,6 +1433,8 @@ export default function Inicio({
           atendimentosDoContato={dados.atendimentosDoContato}
           camposContato={dados.camposContato}
           camposOportunidade={dados.camposOportunidade}
+          ias={dados.ias}
+          aoAbrirOportunidade={abrirOportunidade}
           aoFechar={() => setOpAbertaId(null)}
         />
       )}
