@@ -87,10 +87,25 @@ export function degrade(cor: string, alfa: number) {
 
 const ESCURO = "(prefers-color-scheme: dark)";
 
+// O tema da tela: o escolhido no botão de sol/lua (classe no <html>) e, sem
+// escolha, o do sistema — a mesma regra da variante `dark` do CSS.
+function temaEscuro(): boolean {
+  const c = document.documentElement.classList;
+  if (c.contains("escuro")) return true;
+  if (c.contains("claro")) return false;
+  return matchMedia(ESCURO).matches;
+}
+
 function assinarTema(avisar: () => void) {
   const m = matchMedia(ESCURO);
   m.addEventListener("change", avisar);
-  return () => m.removeEventListener("change", avisar);
+  // Clique no botão de tema: muda a classe do <html>, não o sistema.
+  const vigia = new MutationObserver(avisar);
+  vigia.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  return () => {
+    m.removeEventListener("change", avisar);
+    vigia.disconnect();
+  };
 }
 
 // O <canvas> do gráfico. Cria uma vez e, a cada `desenhar` novo, troca dados e
@@ -106,7 +121,7 @@ function assinarTema(avisar: () => void) {
 export function useGrafico(desenhar: (canvas: HTMLCanvasElement) => Desenho) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const grafico = useRef<Chart<"line"> | null>(null);
-  const escuro = useSyncExternalStore(assinarTema, () => matchMedia(ESCURO).matches, () => false);
+  const escuro = useSyncExternalStore(assinarTema, temaEscuro, () => false);
 
   useEffect(() => {
     const el = canvas.current;

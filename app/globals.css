@@ -12,6 +12,22 @@
    número está em TELA_BAIXA (app/components/preferencia-local.ts). */
 @custom-variant tela-baixa (@media (max-height: 900px));
 
+/* `dark:` — o modo escuro ESCOLHIDO no botão de sol/lua da barra (classe
+   "escuro" ou "claro" no <html>, gravada no cookie `tema` e posta pelo layout
+   já no HTML, sem piscar). Sem escolha nenhuma, segue o sistema, como era.
+   Pedido dele, 2026-10-20. Os blocos escuros deste arquivo usam `@variant
+   dark` pelo mesmo motivo: uma regra só para os dois caminhos. */
+@custom-variant dark {
+  &:where(.escuro, .escuro *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not(.claro), :root:not(.claro) *) {
+      @slot;
+    }
+  }
+}
+
 @source inline("bg-blue-300 bg-blue-400 bg-blue-500 bg-blue-600 bg-blue-700 bg-blue-800 bg-blue-900 bg-blue-950 bg-sky-300 bg-sky-400 bg-sky-500 bg-sky-600 bg-sky-700 bg-sky-800 bg-sky-900 bg-sky-950 bg-cyan-300 bg-cyan-400 bg-cyan-500 bg-cyan-600 bg-cyan-700 bg-cyan-800 bg-cyan-900 bg-cyan-950 bg-teal-300 bg-teal-400 bg-teal-500 bg-teal-600 bg-teal-700 bg-teal-800 bg-teal-900 bg-teal-950 bg-emerald-300 bg-emerald-400 bg-emerald-500 bg-emerald-600 bg-emerald-700 bg-emerald-800 bg-emerald-900 bg-emerald-950 bg-lime-300 bg-lime-400 bg-lime-500 bg-lime-600 bg-lime-700 bg-lime-800 bg-lime-900 bg-lime-950 bg-amber-300 bg-amber-400 bg-amber-500 bg-amber-600 bg-amber-700 bg-amber-800 bg-amber-900 bg-amber-950 bg-orange-300 bg-orange-400 bg-orange-500 bg-orange-600 bg-orange-700 bg-orange-800 bg-orange-900 bg-orange-950 bg-rose-300 bg-rose-400 bg-rose-500 bg-rose-600 bg-rose-700 bg-rose-800 bg-rose-900 bg-rose-950 bg-fuchsia-300 bg-fuchsia-400 bg-fuchsia-500 bg-fuchsia-600 bg-fuchsia-700 bg-fuchsia-800 bg-fuchsia-900 bg-fuchsia-950 bg-violet-300 bg-violet-400 bg-violet-500 bg-violet-600 bg-violet-700 bg-violet-800 bg-violet-900 bg-violet-950 bg-indigo-300 bg-indigo-400 bg-indigo-500 bg-indigo-600 bg-indigo-700 bg-indigo-800 bg-indigo-900 bg-indigo-950 bg-zinc-300 bg-zinc-400 bg-zinc-500 bg-zinc-600 bg-zinc-700 bg-zinc-800 bg-zinc-900 bg-zinc-950");
 
 /* UMA SUPERFÍCIE SÓ: barra lateral e conteúdo no mesmo tom.
@@ -41,17 +57,19 @@
   --font-sans: var(--font-inter), sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
+/* modo escuro: a variante `dark` (botão da barra ou, sem escolha, o sistema) */
   :root {
-    --background: #09090b; /* zinc-950 */
-    /* --conteudo NÃO é redefinido aqui de propósito: ele referencia
-       --background, e referência de custom property resolve na hora do uso.
-       Trocar só --background já leva as duas superfícies junto. */
-    --foreground: #ededed;
-    --scrollbar-thumb: #3f3f46; /* zinc-700 */
-    --scrollbar-thumb-hover: #52525b; /* zinc-600 */
-    }
-}
+    @variant dark {
+      --background: #09090b; /* zinc-950 */
+      /* --conteudo NÃO é redefinido aqui de propósito: ele referencia
+         --background, e referência de custom property resolve na hora do uso.
+         Trocar só --background já leva as duas superfícies junto. */
+      --foreground: #ededed;
+      --scrollbar-thumb: #3f3f46; /* zinc-700 */
+      --scrollbar-thumb-hover: #52525b; /* zinc-600 */
+      }
+  }
+
 
 /* Quem rola é a janela (o shell é min-h-screen, sem altura fixa). Sem reservar
    a calha, filtrar encolhe a página, a barra de rolagem some e todo o layout
@@ -189,14 +207,16 @@ body {
   --viz-eixo: #a1a1aa;
   --viz-cursor: #a1a1aa;
 }
-@media (prefers-color-scheme: dark) {
+/* modo escuro: a variante `dark` (botão da barra ou, sem escolha, o sistema) */
   .viz {
-    --serie-ok: #3987e5;
-    --viz-grade: #27272a;
-    --viz-eixo: #71717a;
-    --viz-cursor: #52525b;
+    @variant dark {
+      --serie-ok: #3987e5;
+      --viz-grade: #27272a;
+      --viz-eixo: #71717a;
+      --viz-cursor: #52525b;
+    }
   }
-}
+
 
 /* As duas pontas do TOM DO FUNIL (funis.cor, o que se escolhe na configuração
    do funil), para gráfico que acompanha o funil — o de IA do dashboard:
@@ -227,21 +247,47 @@ body {
 .viz[data-tom="violet"]  { --serie-tom-claro: #a07dff; --serie-tom-escuro: #5e0ec1; }
 .viz[data-tom="indigo"]  { --serie-tom-claro: #7e88ff; --serie-tom-escuro: #3e2cc6; }
 .viz[data-tom="zinc"]    { --serie-tom-claro: #92929d; --serie-tom-escuro: #4f4f5a; }
-@media (prefers-color-scheme: dark) {
-  .viz[data-tom="blue"]    { --serie-tom-claro: #4493ff; --serie-tom-escuro: #144bea; }
-  .viz[data-tom="sky"]     { --serie-tom-claro: #009fe4; --serie-tom-escuro: #006499; }
-  .viz[data-tom="cyan"]    { --serie-tom-claro: #00a5c5; --serie-tom-escuro: #006984; }
-  .viz[data-tom="teal"]    { --serie-tom-claro: #00ab9b; --serie-tom-escuro: #006e67; }
-  .viz[data-tom="emerald"] { --serie-tom-claro: #00af7a; --serie-tom-escuro: #007454; }
-  .viz[data-tom="lime"]    { --serie-tom-claro: #69aa00; --serie-tom-escuro: #426d00; }
-  .viz[data-tom="amber"]   { --serie-tom-claro: #da7700; --serie-tom-escuro: #9e4300; }
-  .viz[data-tom="orange"]  { --serie-tom-claro: #f16000; --serie-tom-escuro: #ac3300; }
-  .viz[data-tom="rose"]    { --serie-tom-claro: #ff4165; --serie-tom-escuro: #bd003a; }
-  .viz[data-tom="fuchsia"] { --serie-tom-claro: #e12afb; --serie-tom-escuro: #a400b2; }
-  .viz[data-tom="violet"]  { --serie-tom-claro: #9c76ff; --serie-tom-escuro: #7818f3; }
-  .viz[data-tom="indigo"]  { --serie-tom-claro: #7b85ff; --serie-tom-escuro: #4f39f5; }
-  .viz[data-tom="zinc"]    { --serie-tom-claro: #93939d; --serie-tom-escuro: #5d5d68; }
-}
+/* modo escuro: a variante `dark` (botão da barra ou, sem escolha, o sistema) */
+  .viz[data-tom="blue"] {
+    @variant dark { --serie-tom-claro: #4493ff; --serie-tom-escuro: #144bea; }
+  }
+  .viz[data-tom="sky"] {
+    @variant dark { --serie-tom-claro: #009fe4; --serie-tom-escuro: #006499; }
+  }
+  .viz[data-tom="cyan"] {
+    @variant dark { --serie-tom-claro: #00a5c5; --serie-tom-escuro: #006984; }
+  }
+  .viz[data-tom="teal"] {
+    @variant dark { --serie-tom-claro: #00ab9b; --serie-tom-escuro: #006e67; }
+  }
+  .viz[data-tom="emerald"] {
+    @variant dark { --serie-tom-claro: #00af7a; --serie-tom-escuro: #007454; }
+  }
+  .viz[data-tom="lime"] {
+    @variant dark { --serie-tom-claro: #69aa00; --serie-tom-escuro: #426d00; }
+  }
+  .viz[data-tom="amber"] {
+    @variant dark { --serie-tom-claro: #da7700; --serie-tom-escuro: #9e4300; }
+  }
+  .viz[data-tom="orange"] {
+    @variant dark { --serie-tom-claro: #f16000; --serie-tom-escuro: #ac3300; }
+  }
+  .viz[data-tom="rose"] {
+    @variant dark { --serie-tom-claro: #ff4165; --serie-tom-escuro: #bd003a; }
+  }
+  .viz[data-tom="fuchsia"] {
+    @variant dark { --serie-tom-claro: #e12afb; --serie-tom-escuro: #a400b2; }
+  }
+  .viz[data-tom="violet"] {
+    @variant dark { --serie-tom-claro: #9c76ff; --serie-tom-escuro: #7818f3; }
+  }
+  .viz[data-tom="indigo"] {
+    @variant dark { --serie-tom-claro: #7b85ff; --serie-tom-escuro: #4f39f5; }
+  }
+  .viz[data-tom="zinc"] {
+    @variant dark { --serie-tom-claro: #93939d; --serie-tom-escuro: #5d5d68; }
+  }
+
 
 /* Enquanto o filtro novo ainda não foi aplicado (useDeferredValue), a lista
    antiga esmaece de leve em vez de travar a digitação. */
@@ -460,22 +506,26 @@ body {
    a cor GANHA CORPO em vez de perder luz, e a leitura da sequência continua.
    Faixa menor no corpo (14% a 42%) porque aqui a mistura CLAREIA: passar disso
    é o que faz o zinc-50/70 perder o fundo no lime e no amber. */
-@media (prefers-color-scheme: dark) {
+/* modo escuro: a variante `dark` (botão da barra ou, sem escolha, o sistema) */
   .subetapa {
-    background-color: color-mix(
-      in oklab,
-      var(--cor-etapa) calc(14% + var(--passo) * 0.28%),
-      #09090b
-    );
+    @variant dark {
+      background-color: color-mix(
+        in oklab,
+        var(--cor-etapa) calc(14% + var(--passo) * 0.28%),
+        #09090b
+      );
+    }
   }
   .subetapa-faixa {
-    background-color: color-mix(
-      in oklab,
-      var(--cor-etapa) calc(45% + var(--passo) * 0.55%),
-      #09090b
-    );
+    @variant dark {
+      background-color: color-mix(
+        in oklab,
+        var(--cor-etapa) calc(45% + var(--passo) * 0.55%),
+        #09090b
+      );
+    }
   }
-}
+
 
 /* ── Painel de IA ────────────────────────────────────────────────────────────
    As três animações do estado "respondendo". Todas em opacity/transform, que

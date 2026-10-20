@@ -77,6 +77,7 @@ import type { ConversaNaBarra } from "@/lib/ia/conversas";
 import { lugarDoEscopo, rotaDaConversa } from "@/lib/ia/navegacao";
 import { EVENTO_NOVA_ANALISE } from "./ia-global-contexto";
 import { sair } from "@/app/login/acoes";
+import BotaoTema from "./botao-tema";
 import type { ChaveModulo } from "@/lib/auth/modulos";
 import type { ContagemDemandas, SituacaoDemandas } from "@/lib/demandas-tipos";
 
@@ -690,6 +691,9 @@ export default function Sidebar({
               {usuario.nome}
             </span>
           )}
+
+          {/* Sol/lua: modo claro ou escuro, guardado no cookie (botao-tema). */}
+          <BotaoTema />
 
           {/* <form> e não onClick: sair é uma ação de servidor que apaga o
               cookie, e o cookie só some numa resposta do servidor. Um botão de

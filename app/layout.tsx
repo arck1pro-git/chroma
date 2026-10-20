@@ -7,6 +7,8 @@ import { temIaCompleta } from "@/lib/ia/modo-completo";
 import { gereUsuarios, usuarioAtual } from "@/lib/auth/dal";
 import { conferirDemandas } from "@/lib/demandas";
 import { MODULOS } from "@/lib/auth/modulos";
+import { cookies } from "next/headers";
+import { classeDoTema, COOKIE_TEMA } from "@/lib/tema";
 import "./globals.css";
 
 const inter = Inter({
@@ -68,10 +70,13 @@ export default async function RootLayout({
     (usuario?.departamento?.gerenciaAcessos ?? false) ||
     (usuario ? gereUsuarios(usuario) : false);
 
+  // O modo claro/escuro escolhido no botão da barra, já no HTML (sem piscar).
+  const tema = classeDoTema((await cookies()).get(COOKIE_TEMA)?.value);
+
   return (
     <html
       lang="pt-BR"
-      className={`${inter.variable} h-full antialiased`}
+      className={`${inter.variable} h-full antialiased ${tema}`.trim()}
       // Extensão de navegador (Grammarly, Dark Reader, gerenciador de senha)
       // injeta atributo aqui antes do React hidratar — não é bug nosso, é
       // exatamente o caso que o suppressHydrationWarning existe pra cobrir.
