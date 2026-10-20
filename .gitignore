@@ -50,3 +50,39 @@ next-env.d.ts
 # Biblioteca de documentos (lib/documentos.ts). Material comercial da empresa:
 # não entra no repositório.
 /.documentos
+
+# MATERIAL LOCAL QUE NÃO É CÓDIGO (2026-10-20). Tudo que está em public/ vai
+# para o ar no domínio do CRM, então PDF, vídeo, planilha e export que alguém
+# deixar ali para o Claude ler não podem entrar no repositório — já havia um
+# instalador .exe e os PDFs/transcrições de treinamento comercial publicados.
+# O que o código usa de verdade em public/ são os ícones (public/icones/).
+*.pdf
+*.mp4
+*.mov
+*.m4v
+*.webm
+*.mkv
+*.avi
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.xlsx
+*.xls
+*.csv
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.zip
+*.rar
+*.7z
+*.exe
+*.msi
+*.dmg
+*.heic
+public/treinamento/
+public/video*.txt
+# Saídas de scripts e testes locais.
+/tmp/
+*.log
