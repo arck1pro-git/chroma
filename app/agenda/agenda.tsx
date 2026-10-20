@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ChevronLeft, ChevronRight, Loader2, PanelLeft, X } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Loader2, PanelLeft, Video, X } from "lucide-react";
 import type { AgendaGoogle, EventoAgenda, ReuniaoDoSistema } from "@/lib/agenda";
 import CamadaTopo from "../components/camada-topo";
 import GradeHoras from "./grade-horas";
@@ -10,6 +10,7 @@ import GradeMes from "./grade-mes";
 import Lista from "./lista";
 import Lateral from "./lateral";
 import PainelEvento from "./painel-evento";
+import GavetaGravacoes from "./gravacoes";
 import { andar, diaDe, janelaDa, tituloDaJanela, VISOES, type Visao } from "./tempo";
 
 // A Agenda: o Google Calendar da conta da empresa em quatro visões, com o que o
@@ -58,6 +59,7 @@ export default function Agenda(p: Props) {
   const [selecionado, setSelecionado] = useState<string | null>(p.eventoInicial);
   const [soSistema, setSoSistema] = useState(false);
   const [lateralAberta, setLateralAberta] = useState(false);
+  const [gravacoesAbertas, setGravacoesAbertas] = useState(false);
 
   const agendaPorId = useMemo(() => new Map(p.agendas.map((a) => [a.id, a])), [p.agendas]);
   const sistemaPorEvento = useMemo(
@@ -128,7 +130,7 @@ export default function Agenda(p: Props) {
   // Atalhos do Google Calendar: T hoje, ←/→ anda, D/S/M/L troca a visão.
   useEffect(() => {
     function aoTeclar(e: KeyboardEvent) {
-      if (selecionado || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (selecionado || gravacoesAbertas || e.ctrlKey || e.metaKey || e.altKey) return;
       const alvo = e.target as HTMLElement | null;
       if (alvo?.closest("input, textarea, select, [contenteditable='true']")) return;
       const tecla = e.key.toLowerCase();
@@ -141,7 +143,7 @@ export default function Agenda(p: Props) {
     }
     document.addEventListener("keydown", aoTeclar);
     return () => document.removeEventListener("keydown", aoTeclar);
-  }, [selecionado, ir, p.hoje, p.visao, p.data]);
+  }, [selecionado, gravacoesAbertas, ir, p.hoje, p.visao, p.data]);
 
   // ── Painel ────────────────────────────────────────────────────────────────
 
@@ -233,6 +235,16 @@ export default function Agenda(p: Props) {
           <span className="hidden truncate text-[12px] text-zinc-400 xl:inline" title="Conta Google conectada">
             {p.conta}
           </span>
+          {/* As reuniões gravadas no Meet (vídeo + resumo do Gemini), numa gaveta. */}
+          <button
+            type="button"
+            onClick={() => setGravacoesAbertas(true)}
+            aria-expanded={gravacoesAbertas}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-1.5 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            <Video className="size-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Gravações</span>
+          </button>
           <div className="flex gap-0.5 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-900" role="group" aria-label="Visão">
             {VISOES.map((v) => {
               const ativa = v === p.visao;
@@ -336,6 +348,8 @@ export default function Agenda(p: Props) {
           aoFechar={fechar}
         />
       )}
+
+      {gravacoesAbertas && <GavetaGravacoes aoFechar={() => setGravacoesAbertas(false)} />}
     </div>
   );
 }

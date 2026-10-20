@@ -519,19 +519,30 @@ function CampoResponsavel({
   }
 
   return (
-    <span className="flex min-w-0 flex-col">
-      <label className="relative -ml-2 inline-flex min-w-0 max-w-full items-center gap-2 self-start rounded-lg py-0.5 pl-2 pr-7 transition hover:bg-zinc-100 focus-within:ring-2 focus-within:ring-zinc-900/10 dark:hover:bg-zinc-900 dark:focus-within:ring-white/15">
+    <span className="-ml-2 flex min-w-0 flex-col">
+      {/* O que se vê é a pessoa e a seta; o <select> fica por cima, invisível,
+          do tamanho do rótulo — o nome nunca sai cortado pela largura que o
+          navegador escolheria para a lista. */}
+      <label
+        className={`relative inline-flex min-w-0 max-w-full items-center gap-2 self-start rounded-lg py-0.5 pl-2 pr-2 transition hover:bg-zinc-100 focus-within:ring-2 focus-within:ring-zinc-900/10 dark:hover:bg-zinc-900 dark:focus-within:ring-white/15 ${
+          salvando ? "opacity-50" : ""
+        }`}
+      >
         {responsavel ? (
           <Avatar nome={responsavel.nome} tamanho="sm" equipe />
         ) : (
           <span className="size-6 shrink-0 rounded-full border border-dashed border-zinc-300 dark:border-zinc-700" aria-hidden="true" />
         )}
+        <span className={`truncate text-[13px] ${responsavel ? "text-zinc-900 dark:text-zinc-100" : "text-zinc-500 dark:text-zinc-400"}`}>
+          {responsavel?.nome ?? "Sem responsável"}
+        </span>
+        <ChevronDown className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
         <select
           value={responsavel?.id ?? ""}
           onChange={(e) => trocar(e.target.value)}
           disabled={salvando}
           aria-label="Responsável pela oportunidade"
-          className="min-w-0 cursor-pointer appearance-none truncate bg-transparent text-[13px] text-zinc-900 outline-none disabled:opacity-50 dark:text-zinc-100 [&>option]:bg-white dark:[&>option]:bg-zinc-900"
+          className="absolute inset-0 size-full cursor-pointer appearance-none opacity-0 disabled:cursor-default"
         >
           <option value="">Sem responsável</option>
           {usuarios.map((u) => (
@@ -540,9 +551,8 @@ function CampoResponsavel({
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-2 size-3.5 text-zinc-400" aria-hidden="true" />
       </label>
-      {erro && <span className="text-[11.5px] text-red-500">{erro}</span>}
+      {erro && <span className="pl-2 text-[11.5px] text-red-500">{erro}</span>}
     </span>
   );
 }

@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { CalendarCheck2, CalendarClock, CalendarX2, Plus, Video } from "lucide-react";
+import { CalendarCheck2, CalendarClock, CalendarX2, FileText, Play, Plus, Video } from "lucide-react";
+import type { Gravacao } from "@/lib/gravacoes";
+import VisorGravacao, { quandoDaGravacao, tituloDaGravacao } from "../components/visor-gravacao";
 import type { Usuario } from "../data";
 import { diaDe, hora, Selo, type Tom } from "../contatos/pecas";
 import {
@@ -75,12 +77,17 @@ export default function ReunioesDaOportunidade({
   const estado = carga?.opId === oportunidadeId ? carga : null;
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [aberto, setAberto] = useState(false);
+  const [visor, setVisor] = useState<Gravacao | null>(null);
 
   useEffect(() => {
     let vivo = true;
     reunioesDaFicha(oportunidadeId)
       .then((dado) => vivo && setCarga({ opId: oportunidadeId, dado, hoje: hojeAgora() }))
-      .catch(() => vivo && setCarga({ opId: oportunidadeId, dado: { conectado: false, reunioes: [] }, hoje: hojeAgora() }));
+      .catch(
+        () =>
+          vivo &&
+          setCarga({ opId: oportunidadeId, dado: { conectado: false, reunioes: [], gravacaoDe: {}, doContato: [] }, hoje: hojeAgora() }),
+      );
     return () => {
       vivo = false;
     };
@@ -93,6 +100,8 @@ export default function ReunioesDaOportunidade({
 
   const reunioes = estado?.dado.reunioes ?? [];
   const conectado = estado?.dado.conectado ?? false;
+  const gravacaoDe = estado?.dado.gravacaoDe ?? {};
+  const doContato = estado?.dado.doContato ?? [];
 
   return (
     <Secao
@@ -114,7 +123,7 @@ export default function ReunioesDaOportunidade({
     >
       {!estado ? (
         <Carregando />
-      ) : !conectado && reunioes.length === 0 ? (
+      ) : !conectado && reunioes.length === 0 && doContato.length === 0 ? (
         <Vazio>
           Conecte o Google Calendar em{" "}
           <Link href="/integracoes" className="font-medium text-zinc-600 underline underline-offset-2 dark:text-zinc-300">
@@ -124,7 +133,7 @@ export default function ReunioesDaOportunidade({
         </Vazio>
       ) : (
         <div className="flex flex-col gap-2">
-          {reunioes.length === 0 && !aberto && <Vazio>Nenhuma reunião marcada</Vazio>}
+          {reunioes.length === 0 && !aberto && <Vazio>Nenhuma reunião marcada pelo CRM</Vazio>}
 
           {reunioes.length > 0 && (
             <ul className="flex flex-col">
@@ -132,6 +141,7 @@ export default function ReunioesDaOportunidade({
                 const autor = r.autorId ? (usuarioPorId.get(r.autorId)?.nome ?? "equipe") : null;
                 const selo = seloDaReuniao(r, estado.hoje);
                 const futura = !r.passou && !r.cancelada;
+                const gravacao = gravacaoDe[r.id];
                 return (
                   <li key={r.id} className={LINHA_FIXA}>
                     <IconeLinha
@@ -152,7 +162,8 @@ export default function ReunioesDaOportunidade({
                         <span className="truncate">marcada {autor ? `por ${autor}` : "pela IA"}</span>
                       </span>
                     </span>
-                    {r.meet && futura && (
+                    {gravacao && <BotaoAssistir gravacao={gravacao} aoAbrir={setVisor} />}
+                    {r.meet && futura && !gravacao && (
                       <>
                         <BotaoCopiar texto={r.meet} rotulo="link do Meet" />
                         <a
@@ -170,6 +181,28 @@ export default function ReunioesDaOportunidade({
                 );
               })}
             </ul>
+          )}
+
+          {doContato.length > 0 && (
+            <div className={reunioes.length > 0 || aberto ? "mt-2" : ""}>
+              <p className="mb-1 text-[11.5px] font-medium text-zinc-500 dark:text-zinc-400">
+                Gravações do Meet com este nome · {doContato.length}
+              </p>
+              <ul className="flex flex-col">
+                {doContato.map((g) => (
+                  <li key={g.id} className={LINHA_FIXA}>
+                    <IconeLinha Icone={g.videoId ? Video : FileText} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">{tituloDaGravacao(g)}</span>
+                      <span className="block truncate text-[11.5px] tabular-nums text-zinc-500 dark:text-zinc-400">
+                        {quandoDaGravacao(g)}
+                      </span>
+                    </span>
+                    <BotaoAssistir gravacao={g} aoAbrir={setVisor} />
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
 
           {conectado && aberto && (
@@ -191,7 +224,23 @@ export default function ReunioesDaOportunidade({
           )}
         </div>
       )}
+      {visor && <VisorGravacao gravacao={visor} aoFechar={() => setVisor(null)} />}
     </Secao>
+  );
+}
+
+/** "Assistir" quando há vídeo; "Resumo" quando o Meet só deixou as anotações. */
+function BotaoAssistir({ gravacao, aoAbrir }: { gravacao: Gravacao; aoAbrir: (g: Gravacao) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => aoAbrir(gravacao)}
+      className={`${BOTAO_SECUNDARIO} shrink-0 ring-1 ring-inset ring-zinc-200 dark:ring-zinc-800`}
+      title={gravacao.videoId ? "Ver a gravação e o resumo do Gemini" : "Ver o resumo do Gemini"}
+    >
+      {gravacao.videoId ? <Play className="size-3.5 fill-current" aria-hidden="true" /> : <FileText className="size-3.5" aria-hidden="true" />}
+      {gravacao.videoId ? "Assistir" : "Resumo"}
+    </button>
   );
 }
 

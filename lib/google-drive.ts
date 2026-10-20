@@ -120,3 +120,53 @@ export async function baixarDoDrive(id: string): Promise<Response> {
   if (!res.ok) return recusa(res, id);
   return res;
 }
+
+// ── Pastas e Docs (as gravações do Meet, lib/gravacoes.ts) ──────────────────
+
+export type ItemDaPasta = { id: string; nome: string; mime: string; criado: string; duracaoMs: number | null };
+
+/** Tudo o que está direto numa pasta (sem descer nas subpastas), página a página. */
+export async function listarPasta(pastaId: string): Promise<ItemDaPasta[]> {
+  const itens: ItemDaPasta[] = [];
+  let pagina: string | undefined;
+  do {
+    const busca = new URLSearchParams({
+      q: `'${pastaId}' in parents and trashed = false`,
+      fields: "nextPageToken,files(id,name,mimeType,createdTime,videoMediaMetadata(durationMillis))",
+      pageSize: "1000",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+    if (pagina) busca.set("pageToken", pagina);
+    const res = await fetch(`${API}?${busca}`, {
+      headers: { Authorization: `Bearer ${await token()}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return recusa(res, pastaId);
+    const j = (await res.json()) as {
+      nextPageToken?: string;
+      files: { id: string; name: string; mimeType: string; createdTime: string; videoMediaMetadata?: { durationMillis?: string } }[];
+    };
+    for (const f of j.files) {
+      const ms = Number(f.videoMediaMetadata?.durationMillis ?? 0);
+      itens.push({ id: f.id, nome: f.name, mime: f.mimeType, criado: f.createdTime, duracaoMs: ms > 0 ? ms : null });
+    }
+    pagina = j.nextPageToken;
+  } while (pagina);
+  return itens;
+}
+
+/** Um Google Doc como texto: em markdown (títulos, listas, negrito); se o Google recusar, texto puro. */
+export async function exportarDoc(id: string): Promise<string> {
+  for (const formato of ["text/markdown", "text/plain"]) {
+    const res = await fetch(`${API}/${encodeURIComponent(id)}/export?mimeType=${encodeURIComponent(formato)}`, {
+      headers: { Authorization: `Bearer ${await token()}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (res.ok) return res.text();
+    if (formato === "text/plain" || (res.status !== 400 && res.status !== 415)) return recusa(res, id);
+  }
+  return "";
+}

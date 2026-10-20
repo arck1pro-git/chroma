@@ -19,13 +19,45 @@ import {
   rotuloDoHorario,
   type ReuniaoDoCrm,
 } from "@/lib/agenda";
+import { gravacaoDaReuniao, gravacoesDoMeet, gravacoesDoNome, type Gravacao } from "@/lib/gravacoes";
 
-export type ReunioesDaFicha = { conectado: boolean; reunioes: ReuniaoDoCrm[] };
+export type ReunioesDaFicha = {
+  conectado: boolean;
+  reunioes: ReuniaoDoCrm[];
+  /** A gravação do Meet de cada reunião (id da reunião → gravação), quando houve. */
+  gravacaoDe: Record<string, Gravacao>;
+  /** Outras gravações com o nome do contato no título — as de antes do CRM. */
+  doContato: Gravacao[];
+};
+
+/**
+ * As gravações vêm da pasta do Meet (lib/gravacoes.ts) e são acessórias: o
+ * Drive fora do ar vira "sem gravação", nunca uma seção de reuniões quebrada.
+ */
+async function gravacoesDaFicha(oportunidadeId: string, reunioes: ReuniaoDoCrm[]) {
+  try {
+    const [lista, [linha]] = await Promise.all([
+      gravacoesDoMeet(),
+      sql`SELECT c.nome FROM oportunidades o JOIN contatos c ON c.id = o.contato_id WHERE o.id = ${oportunidadeId}`,
+    ]);
+    const gravacaoDe: Record<string, Gravacao> = {};
+    for (const r of reunioes) {
+      const g = gravacaoDaReuniao(lista, r.inicio);
+      if (g) gravacaoDe[r.id] = g;
+    }
+    const usadas = new Set(Object.values(gravacaoDe).map((g) => g.id));
+    const doContato = linha ? gravacoesDoNome(lista, linha.nome as string).filter((g) => !usadas.has(g.id)) : [];
+    return { gravacaoDe, doContato };
+  } catch (e) {
+    console.error("[ficha] gravações:", e);
+    return { gravacaoDe: {}, doContato: [] };
+  }
+}
 
 export async function reunioesDaFicha(oportunidadeId: string): Promise<ReunioesDaFicha> {
   await exigirModulo("inicio");
   const [conexao, reunioes] = await Promise.all([conexaoGoogle(), reunioesDaOportunidade(oportunidadeId)]);
-  return { conectado: Boolean(conexao), reunioes };
+  return { conectado: Boolean(conexao), reunioes, ...(await gravacoesDaFicha(oportunidadeId, reunioes)) };
 }
 
 /** Um horário livre como a ficha usa: data e hora de Brasília, prontos para o formulário. */
