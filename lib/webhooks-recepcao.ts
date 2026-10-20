@@ -31,6 +31,7 @@ import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 import { carimbarCampanhaDoLead } from "@/lib/campanha-do-lead";
 import { enviarTexto, instanciaExataPorNumero, instanciasPorId } from "@/lib/uazapi";
 import { linkDaConversa, linkDaOportunidade } from "@/lib/link-do-crm";
+import { segredoConfere } from "@/lib/segredo";
 
 export type ResultadoRecepcao = {
   status: number;
@@ -321,7 +322,7 @@ export async function receberLead(
   if (!webhook || !webhook.ativo) {
     return { status: 404, corpo: { erro: "webhook não encontrada" } };
   }
-  if (segredoRecebido !== webhook.segredo) {
+  if (!segredoConfere(segredoRecebido, webhook.segredo as string)) {
     // Sem gravar recebimento: um endpoint sob varredura encheria a tabela.
     return { status: 401, corpo: { erro: "segredo inválido" } };
   }

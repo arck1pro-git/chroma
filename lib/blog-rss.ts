@@ -9,6 +9,8 @@
 // O que este módulo NÃO faz: ler a matéria. Ele só descobre QUAIS notícias
 // existem; quem busca o texto é lib/artigo-materia.ts, na hora de gerar.
 
+import { urlExternaSegura } from "@/lib/rede-externa";
+
 /** Feed lento é feed descartado: a pauta tem outros quatro para usar. */
 const TIMEOUT_MS = 12_000;
 
@@ -100,16 +102,30 @@ export function lerFeed(xml: string): ItemRss[] {
  */
 export async function buscarFeed(url: string): Promise<ItemRss[]> {
   try {
-    const r = await fetch(url, {
-      headers: {
-        accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
-        "user-agent": "Mozilla/5.0 (compatible; AmaanOfficeBlog/1.0)",
-      },
-      cache: "no-store",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!r.ok) return [];
-    return lerFeed(await r.text());
+    // O feed é endereço que alguém cadastrou: o servidor só o busca se ele for
+    // público (lib/rede-externa.ts), conferindo também cada redirecionamento —
+    // senão um feed "https://ip-interno/" virava leitura da rede da Vercel.
+    let atual = url;
+    for (let salto = 0; salto < 4; salto++) {
+      const alvo = await urlExternaSegura(atual, { exigirHttps: false });
+      const r = await fetch(alvo, {
+        headers: {
+          accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          "user-agent": "Mozilla/5.0 (compatible; AmaanOfficeBlog/1.0)",
+        },
+        cache: "no-store",
+        redirect: "manual",
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      const destino = r.headers.get("location");
+      if (r.status >= 300 && r.status < 400 && destino) {
+        atual = new URL(destino, alvo).href;
+        continue;
+      }
+      if (!r.ok) return [];
+      return lerFeed(await r.text());
+    }
+    return [];
   } catch {
     return [];
   }

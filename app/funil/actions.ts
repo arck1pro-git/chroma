@@ -4,6 +4,7 @@
 // O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
 // pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
 import { exigirAlgumModulo, exigirModulo } from "@/lib/auth/dal";
+import { FORA_DO_ESCOPO, oportunidadesNoEscopo, podeTocarExecucao, podeTocarOportunidade } from "@/lib/auth/escopo-oportunidades";
 
 // Mutações do Funil. Roda no servidor — entrada é não confiável.
 import { revalidatePath } from "next/cache";
@@ -44,7 +45,9 @@ export async function moverOportunidade(
   etapaId: string,
   funilId: string,
 ) {
-  await exigirModulo("inicio");
+  // No escopo "próprio", só a oportunidade de que a pessoa é responsável
+  // (lib/auth/escopo-oportunidades.ts).
+  if (!(await podeTocarOportunidade(id))) throw new Error(FORA_DO_ESCOPO);
   // Histórico, cadência da etapa e evento da Meta: o mesmo caminho da IA que
   // move oportunidade pelo WhatsApp (lib/mover-etapa.ts).
   await moverOportunidadeDeEtapa(id, etapaId, funilId);
@@ -73,7 +76,7 @@ export async function mudarStatusOportunidade(
   id: string,
   status: StatusOportunidade,
 ): Promise<{ ok: boolean; mensagem: string }> {
-  await exigirModulo("inicio");
+  if (!(await podeTocarOportunidade(id))) return { ok: false, mensagem: FORA_DO_ESCOPO };
   if (!STATUS_OPORTUNIDADE.includes(status)) {
     return { ok: false, mensagem: "Status inválido." };
   }
@@ -145,7 +148,7 @@ export async function mudarStatusOportunidade(
 export async function excluirOportunidade(
   id: string,
 ): Promise<{ ok: boolean; mensagem: string }> {
-  await exigirModulo("inicio");
+  if (!(await podeTocarOportunidade(id))) return { ok: false, mensagem: FORA_DO_ESCOPO };
   const [op] = await sql`SELECT nome FROM oportunidades WHERE id = ${id}`;
   if (!op) return { ok: false, mensagem: "Oportunidade não encontrada." };
 
@@ -215,9 +218,8 @@ export async function excluirOportunidade(
 export async function excluirOportunidades(
   oportunidadeIds: string[],
 ): Promise<ResultadoLote> {
-  await exigirModulo("inicio");
-  const ids = idsValidos(oportunidadeIds);
-  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
+  const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
+  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
   const lista = listaUuid(ids);
 
   // 1. As esperas primeiro, com a execução ainda viva: é o predicado dela que
@@ -347,7 +349,7 @@ export async function criarOportunidade(
 export async function automacoesDaOportunidade(
   oportunidadeId: string,
 ): Promise<AutomacaoDaEntidade[]> {
-  await exigirModulo("inicio");
+  if (!(await podeTocarOportunidade(oportunidadeId))) return [];
   return automacoesDaEntidade("oportunidade", oportunidadeId);
 }
 
@@ -364,7 +366,7 @@ export type ResultadoAutomacao = { ok: boolean; mensagem: string };
 export async function pausarAutomacao(
   execucaoId: string,
 ): Promise<ResultadoAutomacao> {
-  await exigirModulo("inicio");
+  if (!(await podeTocarExecucao(execucaoId))) return { ok: false, mensagem: FORA_DO_ESCOPO };
   try {
     const n = await pausarExecucao(execucaoId, "Pausada na ficha da oportunidade");
     revalidatePath("/");
@@ -381,7 +383,7 @@ export async function pausarAutomacao(
 export async function retomarAutomacao(
   execucaoId: string,
 ): Promise<ResultadoAutomacao> {
-  await exigirModulo("inicio");
+  if (!(await podeTocarExecucao(execucaoId))) return { ok: false, mensagem: FORA_DO_ESCOPO };
   try {
     const n = await retomarExecucao(execucaoId);
     revalidatePath("/");
@@ -426,9 +428,8 @@ export async function moverParaResponsavel(
   oportunidadeIds: string[],
   usuarioId: string | null,
 ): Promise<ResultadoLote> {
-  await exigirModulo("inicio");
-  const ids = idsValidos(oportunidadeIds);
-  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
+  const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
+  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
 
   // usuarioId null = tirar o responsável (volta a "sem dono"), que é uma
   // operação legítima e não um erro de entrada.
@@ -461,9 +462,8 @@ export async function adicionarASegmento(
   oportunidadeIds: string[],
   segmentoId: string,
 ): Promise<ResultadoLote> {
-  await exigirModulo("inicio");
-  const ids = idsValidos(oportunidadeIds);
-  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
+  const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
+  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
   if (!/^[0-9a-f-]{36}$/i.test(segmentoId)) {
     return { ok: false, mensagem: "Segmento inválido." };
   }
@@ -494,9 +494,8 @@ export async function inscreverEmFluxo(
   oportunidadeIds: string[],
   fluxoId: string,
 ): Promise<ResultadoLote> {
-  await exigirModulo("inicio");
-  const ids = idsValidos(oportunidadeIds);
-  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
+  const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
+  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
 
   const fluxo = await dadosDeDisparo(fluxoId);
   if (!fluxo) return { ok: false, mensagem: "Automação não encontrada." };
@@ -544,7 +543,11 @@ export async function inscreverEmFluxo(
 // (RFC 4180) — sem ele, um nome com vírgula ("Silva, João") desloca todas as
 // colunas seguintes da linha.
 function csv(valor: unknown): string {
-  const t = valor === null || valor === undefined ? "" : String(valor);
+  let t = valor === null || valor === undefined ? "" : String(valor);
+  // INJEÇÃO DE FÓRMULA (2026-10-20): nome de lead vem de webhook e formulário,
+  // e "=HYPERLINK(...)" abriria como fórmula no Excel de quem exportou. Um
+  // apóstrofo na frente faz o Excel ler como texto.
+  if (/^[=+\-@\t\r]/.test(t)) t = `'${t}`;
   return `"${t.replace(/"/g, '""')}"`;
 }
 
@@ -559,9 +562,9 @@ function csv(valor: unknown): string {
 export async function exportarOportunidades(
   oportunidadeIds: string[],
 ): Promise<{ ok: boolean; conteudo?: string; mensagem?: string }> {
-  await exigirModulo("inicio");
-  const ids = idsValidos(oportunidadeIds);
-  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado." };
+  // Exportar leva WhatsApp e e-mail: no escopo "próprio", só os dele.
+  const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
+  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
 
   const linhas = await sql`
     SELECT o.nome, o.valor, o.status,

@@ -16,6 +16,7 @@ import { sql } from "@/lib/db";
 import { lerArquivo } from "@/lib/midia";
 import { comCaminho, lerArquivo as lerDocumento } from "@/lib/documentos";
 import { exigirModuloApi } from "@/lib/auth/dal";
+import { cabecalhosDeArquivo } from "@/lib/arquivo-seguro";
 
 export const dynamic = "force-dynamic";
 
@@ -65,13 +66,10 @@ export async function GET(
       return new Response("arquivo indisponível", { status: 410 });
     }
 
+    // Abre só o que é inofensivo de abrir; o resto vai como download
+    // (lib/arquivo-seguro.ts).
     return new Response(new Uint8Array(doBanco), {
-      headers: {
-        "content-type": doc.mime || "application/octet-stream",
-        "content-length": String(doBanco.byteLength),
-        "content-disposition": `inline; filename="${doc.arquivoNome.replace(/["\\]/g, "")}"`,
-        "cache-control": "private, max-age=31536000, immutable",
-      },
+      headers: cabecalhosDeArquivo({ mime: doc.mime, nome: doc.arquivoNome, tamanho: doBanco.byteLength }),
     });
   }
 
@@ -101,16 +99,10 @@ export async function GET(
 
   const nome = (msg.midia_nome as string | null) ?? `anexo-${id}`;
 
+  // Imagem, áudio, vídeo e PDF abrem na página; qualquer outro tipo — o que o
+  // REMETENTE declarou, e pode ser text/html — vai como download, em sandbox
+  // (lib/arquivo-seguro.ts). Mídia de WhatsApp é imutável: cache privado longo.
   return new Response(new Uint8Array(bytes), {
-    headers: {
-      "content-type": (msg.midia_mime as string | null) ?? "application/octet-stream",
-      "content-length": String(bytes.byteLength),
-      // inline: imagem e áudio tocam na própria página. O nome só importa
-      // quando a pessoa escolhe baixar, e o navegador o usa mesmo assim.
-      "content-disposition": `inline; filename="${nome.replace(/["\\]/g, "")}"`,
-      // Mídia de WhatsApp é imutável: uma vez salva, aquele id nunca muda de
-      // conteúdo. Cache privado, porque é conversa de cliente.
-      "cache-control": "private, max-age=31536000, immutable",
-    },
+    headers: cabecalhosDeArquivo({ mime: msg.midia_mime as string | null, nome, tamanho: bytes.byteLength }),
   });
 }

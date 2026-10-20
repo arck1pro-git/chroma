@@ -622,7 +622,9 @@ export function artigoParaHtml(artigo: Artigo, blog: Blog): string {
     : "";
 
   // nofollow na fonte: é citação de matéria de terceiro, não endosso.
-  const fonte = artigo.fonte_url
+  // Só link http(s): `javascript:` gravado no campo viraria XSS no blog onde o
+  // HTML for colado (auditoria de 2026-10-20).
+  const fonte = artigo.fonte_url && /^https?:\/\//i.test(artigo.fonte_url)
     ? `<p class="artigo-fonte">Fonte: <a href="${escapar(artigo.fonte_url)}" target="_blank" rel="noopener nofollow">${escapar(artigo.fonte_titulo || artigo.fonte_url)}</a></p>`
     : "";
 
@@ -639,7 +641,9 @@ export function artigoParaHtml(artigo: Artigo, blog: Blog): string {
     .join("\n");
 
   const blocos = jsonLd(artigo, blog);
-  const dados = JSON.stringify(blocos.length === 1 ? blocos[0] : blocos, null, 2);
+  // `<` escapado: um título ou FAQ com "</script>" fecharia o bloco e o resto
+  // viraria HTML executável na página do blog.
+  const dados = JSON.stringify(blocos.length === 1 ? blocos[0] : blocos, null, 2).replace(/</g, "\\u003c");
 
   return `${corpo}\n\n<script type="application/ld+json">\n${dados}\n</script>`;
 }

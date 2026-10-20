@@ -26,6 +26,7 @@ import { soDigitos, chaveTelefone } from "@/lib/telefone";
 import { midiaDoEvento, baixarPendentes, temArquivo } from "@/lib/midia";
 import { ORIGEM_RASTREIO } from "@/lib/uazapi";
 import { alternarIaPelaPalavra, responderComIa } from "@/lib/ia/atendente";
+import { segredoConfere } from "@/lib/segredo";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -58,7 +59,8 @@ function statusRecibo(ev: any): "entregue" | "lido" | null {
 export async function POST(req: NextRequest) {
   // 1. Segredo.
   const secret = req.nextUrl.searchParams.get("secret");
-  if (!process.env.UAZAPI_WEBHOOK_SECRET || secret !== process.env.UAZAPI_WEBHOOK_SECRET) {
+  // Em tempo constante (lib/segredo.ts); sem a variável, ninguém passa.
+  if (!segredoConfere(secret, process.env.UAZAPI_WEBHOOK_SECRET)) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   // Qual dos nossos números recebeu. null = URL antiga sem o parâmetro (ou
@@ -69,9 +71,9 @@ export async function POST(req: NextRequest) {
   const payload = await req.json().catch(() => null);
   if (!payload) return Response.json({ ok: true });
 
-  // Log cru pra confirmar/ajustar o formato. Removível depois do primeiro
-  // evento real capturado.
-  console.log("[uazapi webhook]", JSON.stringify(payload));
+  // O log cru do payload saiu em 2026-10-20: era o telefone e o texto do
+  // cliente em todo evento, gravados no log da Vercel (LGPD). O formato já foi
+  // confirmado; quem precisar depurar loga o tipo, não o conteúdo.
 
   try {
     const tipo = tipoDoEvento(payload);

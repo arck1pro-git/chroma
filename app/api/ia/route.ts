@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { ferramentas, REGRAS_DE_ANALISE } from "@/lib/ia/ferramentas";
+import { ferramentasDoUsuario, REGRAS_DE_ANALISE } from "@/lib/ia/ferramentas";
 import { conversar, historicoDe, texto } from "@/lib/ia/conversa";
 import { REGRA_DADO_NAO_CONFIAVEL } from "@/lib/ia/sanitizar";
 import { blocoDeContexto, registrarContextosUsados } from "@/lib/contextos";
@@ -11,10 +11,11 @@ import { conversaCompleta, temIaCompleta } from "@/lib/ia/completa";
 // conversa é a MESMA em todas. Prender esta rota a um módulo quebraria o painel
 // em todas as outras.
 //
-// O que a IA alcança já é limitado noutro lugar: as ferramentas de leitura em
-// lib/ia/ferramentas.ts. Se um dia uma delas passar a devolver dado de módulo
-// restrito, o filtro entra LÁ, junto do dado — não aqui, onde só daria pra
-// escolher um módulo e errar nos outros.
+// O que a IA alcança é limitado nas ferramentas de leitura, junto do dado
+// (lib/ia/ferramentas.ts, ferramentasDoUsuario): sem o Dashboard não há
+// ferramenta nenhuma, e no escopo "próprio" elas só veem as oportunidades,
+// contatos e conversas da pessoa. Até 2026-10-20 este comentário prometia esse
+// filtro e ele não existia — qualquer conta logada lia a base inteira.
 
 // Conversa com a IA sobre a tela. RODA NO SERVIDOR porque a chave da API não
 // pode chegar ao navegador — o cliente só manda a pergunta e o que está aberto
@@ -82,7 +83,8 @@ export async function POST(req: NextRequest) {
 
   return conversar({
     sistema: blocos ? [SISTEMA, blocos].join("\n\n") : SISTEMA,
-    ferramentas,
+    // No escopo de quem pergunta, e nenhuma sem o Dashboard (lib/ia/ferramentas.ts).
+    ferramentas: ferramentasDoUsuario(sessao),
     pergunta,
     historico: historicoDe(corpo.historico),
     contexto: texto(corpo.contexto, 500),

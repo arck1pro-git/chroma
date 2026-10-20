@@ -70,7 +70,22 @@ function destinoSeguro(de: unknown): string {
   if (typeof de !== "string" || !de.startsWith("/") || de.startsWith("//")) {
     return "/";
   }
-  return de;
+  // O teste acima sozinho deixava passar `/\outro.com` e `/%09/outro.com`: o
+  // navegador normaliza a barra invertida e o tab para `//outro.com`, e o
+  // cliente do Next navega para fora (auditoria de 2026-10-20). Quem decide é
+  // o próprio parser de URL: resolvido contra uma origem nossa, o destino tem
+  // de continuar nela. Sai só caminho + busca, reconstruídos.
+  try {
+    const base = "http://crm.interno";
+    const alvo = new URL(de, base);
+    if (alvo.origin !== base || /[\\\u0000-\u001f]/.test(de)) return "/";
+    // `/..//outro.com` normaliza para o caminho `//outro.com`, que de novo é
+    // URL absoluta para o navegador.
+    if (alvo.pathname.startsWith("//")) return "/";
+    return `${alvo.pathname}${alvo.search}`;
+  } catch {
+    return "/";
+  }
 }
 
 export type EstadoLogin = { erro: string | null };

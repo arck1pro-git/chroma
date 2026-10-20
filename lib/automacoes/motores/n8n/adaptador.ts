@@ -255,14 +255,36 @@ const BLOCOS_QUE_ENVIAM = new Set(["enviar_whatsapp_web"]);
  * uma mensagem com um buraco é melhor que um workflow que não roda.
  */
 function textoParaExpressao(bruto: string): string {
-  const escapado = bruto.replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
-  return escapado.replace(/\{\{\s*([a-z_][a-z0-9_]*)\s*\}\}/gi, (_, campo) => {
+  // SEGURANÇA (auditoria de 2026-10-20) — dois furos fechados aqui:
+  //
+  // 1. EXPRESSÃO LIVRE. O texto vai num parâmetro que o n8n AVALIA. Só
+  //    `{{identificador}}` era traduzido; qualquer outro `{{ … }}` passava e o
+  //    n8n executava como JavaScript — `{{ JSON.stringify($env) }}` numa
+  //    mensagem mandava as variáveis do n8n (compartilhado com o SprintHub)
+  //    para o WhatsApp de quem escreveu. Agora todo `{{`/`}}` que sobra depois
+  //    das variáveis vira texto inerte (um espaço de largura zero no meio).
+  //
+  // 2. JSON DO CORPO. O valor do lead era colado cru dentro de uma string JSON
+  //    que o n8n depois lê: um nome `Ana","para":"5511…` reescrevia o destino
+  //    e a cadência saía do número da empresa para um terceiro. Agora cada
+  //    variável sai por JSON.stringify(...).slice(1,-1) — aspas, barras e
+  //    quebras de linha escapadas, sem fechar a string.
+  const variaveis: string[] = [];
+  const marcado = bruto.replace(/\{\{\s*([a-z_][a-z0-9_]*)\s*\}\}/gi, (_, campo: string) => {
+    variaveis.push(campo);
+    return `\u0000${variaveis.length - 1}\u0000`;
+  });
+  const inerte = marcado.replace(/\{\{/g, "{​{").replace(/\}\}/g, "}​}");
+  return inerte.replace(/\u0000(\d+)\u0000/g, (_, i: string) => {
+    const campo = variaveis[Number(i)];
     // AS DA REUNIÃO NÃO SÃO DO MOTOR (2026-10-20): data, hora e link do Meet
     // moram no CRM e no Google, e é o CRM que as troca no envio
     // (app/api/automacoes/enviar). Viajam como [[reuniao_x]] — com {{ }} o
     // n8n tentaria avaliá-las e mandaria vazio.
     if (/^reuniao_/i.test(campo)) return `[[${campo.toLowerCase()}]]`;
-    return `{{ $('${NOME_LEAD}').first().json.${campo} ?? '' }}`;
+    // `campo` é só identificador ([a-z_][a-z0-9_]*): não há como sair do
+    // acesso à propriedade.
+    return `{{ JSON.stringify(String($('${NOME_LEAD}').first().json.${campo} ?? '')).slice(1, -1) }}`;
   });
 }
 

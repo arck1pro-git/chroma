@@ -6,6 +6,7 @@
 
 import { revalidatePath } from "next/cache";
 import { exigirModulo } from "@/lib/auth/dal";
+import { FORA_DO_ESCOPO, podeTocarOportunidade } from "@/lib/auth/escopo-oportunidades";
 import { sql } from "@/lib/db";
 import { conexaoGoogle, GoogleDesconectado } from "@/lib/google-oauth";
 import {
@@ -55,7 +56,10 @@ async function gravacoesDaFicha(oportunidadeId: string, reunioes: ReuniaoDoCrm[]
 }
 
 export async function reunioesDaFicha(oportunidadeId: string): Promise<ReunioesDaFicha> {
-  await exigirModulo("inicio");
+  // No escopo "próprio", só a ficha de uma oportunidade dele.
+  if (!(await podeTocarOportunidade(oportunidadeId))) {
+    return { conectado: false, reunioes: [], gravacaoDe: {}, doContato: [] };
+  }
   const [conexao, reunioes] = await Promise.all([conexaoGoogle(), reunioesDaOportunidade(oportunidadeId)]);
   return { conectado: Boolean(conexao), reunioes, ...(await gravacoesDaFicha(oportunidadeId, reunioes)) };
 }
@@ -92,6 +96,7 @@ export async function marcarReuniaoDaOportunidade(
   duracaoMin: number,
 ): Promise<{ ok: boolean; mensagem: string }> {
   const { usuario } = await exigirModulo("inicio");
+  if (!(await podeTocarOportunidade(oportunidadeId))) return { ok: false, mensagem: FORA_DO_ESCOPO };
 
   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data);
   const h = /^(\d{2}):(\d{2})$/.exec(hora);

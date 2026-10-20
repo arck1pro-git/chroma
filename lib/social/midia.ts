@@ -19,8 +19,7 @@
 // redirecionamento). Sem isso o conector viraria um jeito de o servidor ler a
 // rede onde ele roda.
 import "server-only";
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { urlExternaSegura } from "@/lib/rede-externa";
 import { arquivoDoDrive, baixarDoDrive, idDoDrive } from "@/lib/google-drive";
 
 export type Midia = {
@@ -48,36 +47,14 @@ const TETO_BAIXAR = 1024 * 1024 * 1024;
 
 // ── A peneira do link ───────────────────────────────────────────────────────
 
-function ipInterno(ip: string): boolean {
-  if (isIP(ip) === 4) {
-    const [a, b] = ip.split(".").map(Number);
-    return (
-      a === 0 || a === 10 || a === 127 ||
-      (a === 100 && b >= 64 && b <= 127) ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168)
-    );
-  }
-  const v6 = ip.toLowerCase();
-  if (v6.startsWith("::ffff:")) return ipInterno(v6.slice(7));
-  return v6 === "::" || v6 === "::1" || v6.startsWith("fc") || v6.startsWith("fd") || v6.startsWith("fe80");
-}
-
+// A peneira mora em lib/rede-externa.ts (a mesma do feed RSS e da uazapi);
+// aqui só vira o erro deste módulo.
 async function conferirLink(bruto: string): Promise<URL> {
-  let url: URL;
   try {
-    url = new URL(bruto);
-  } catch {
-    throw new ErroPost(`Link inválido: ${bruto.slice(0, 120)}`);
+    return await urlExternaSegura(bruto);
+  } catch (e) {
+    throw new ErroPost(e instanceof Error ? e.message : String(e));
   }
-  if (url.protocol !== "https:") throw new ErroPost(`O link precisa ser https: ${url.href.slice(0, 120)}`);
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  if (/^localhost$|\.local$|\.internal$/i.test(host)) throw new ErroPost(`Endereço interno não é aceito: ${host}`);
-  const enderecos = isIP(host) ? [host] : (await lookup(host, { all: true }).catch(() => [])).map((e) => e.address);
-  if (enderecos.length === 0) throw new ErroPost(`Não encontrei o endereço ${host}.`);
-  if (enderecos.some(ipInterno)) throw new ErroPost(`Endereço interno não é aceito: ${host}`);
-  return url;
 }
 
 /** Busca seguindo redirecionamento À MÃO, para conferir cada salto. */

@@ -22,9 +22,18 @@ import { comoDado, comoDadoOuNulo } from "./sanitizar";
 // Mandar PII para um provedor de modelo é decisão consciente, não default.
 const enviarPii = process.env.IA_ENVIAR_CONTATO_PII === "true";
 
-function dados() {
-  return carregarFunil();
-}
+/**
+ * As ferramentas DE QUEM PERGUNTA (2026-10-20, auditoria de segurança).
+ *
+ * Antes eram um array único, lido com carregarFunil() sem dono: qualquer conta
+ * logada — até sem o módulo Dashboard, ou com ele no escopo "próprio" — pedia à
+ * IA a lista de oportunidades, a ficha de qualquer contato e o texto inteiro
+ * das conversas. Agora nascem com o dono: `soDoResponsavel` é o id de quem tem
+ * o Dashboard no escopo "próprio" (vê só as dele), null para quem vê a equipe.
+ * É o mesmo filtro do quadro (app/funil/dados.ts).
+ */
+export function ferramentasDeLeitura(soDoResponsavel: string | null) {
+  const dados = () => carregarFunil(soDoResponsavel);
 
 const listarFunis = betaZodTool({
   name: "listar_funis",
@@ -215,6 +224,17 @@ const mensagensDoAtendimento = betaZodTool({
     // instante": a conversa que gerou a oportunidade costuma começar minutos
     // antes de ela ser criada. O dia é o de Brasília.
     const oportunidade = oportunidade_id && /^[0-9a-f-]{36}$/i.test(oportunidade_id) ? oportunidade_id : null;
+    if (!/^[0-9a-f-]{36}$/i.test(atendimento_id)) return "Atendimento inválido.";
+    // No escopo "próprio", só a conversa de um contato que tem oportunidade
+    // dele: o id do atendimento não pode ser a porta para a conversa alheia.
+    if (soDoResponsavel) {
+      const [visivel] = await sqlIa`
+        SELECT 1 FROM atendimentos a
+          JOIN oportunidades o ON o.contato_id = a.contato_id
+         WHERE a.id = ${atendimento_id} AND o.responsavel_id = ${soDoResponsavel}
+         LIMIT 1`;
+      if (!visivel) return "Este atendimento não é de um contato seu.";
+    }
     const linhas = await sqlIa`
       SELECT m.origem, m.texto, m.tipo, m.midia_estado, m.midia_nome, m.midia_duracao,
              to_char(m.data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
@@ -255,13 +275,18 @@ const mensagensDoAtendimento = betaZodTool({
   },
 });
 
-export const ferramentas = [
-  listarFunis,
-  metricasFunil,
-  listarOportunidades,
-  detalheContato,
-  mensagensDoAtendimento,
-];
+  return [listarFunis, metricasFunil, listarOportunidades, detalheContato, mensagensDoAtendimento];
+}
+
+/**
+ * As ferramentas de leitura para uma pessoa logada: nenhuma sem o Dashboard
+ * (módulo "inicio", de onde vêm funis e oportunidades), e no escopo dele.
+ */
+export function ferramentasDoUsuario(usuario: { id: string; modulos: Map<string, string> }) {
+  const escopo = usuario.modulos.get("inicio");
+  if (!escopo) return [];
+  return ferramentasDeLeitura(escopo === "proprio" ? usuario.id : null);
+}
 
 /**
  * Como a IA responde ao ANALISAR: formato, rigor, o que cada número significa.

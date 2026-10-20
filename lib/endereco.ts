@@ -16,6 +16,8 @@
 // tirar. Nenhum código que rode fora de um request (cron, script) pode usar
 // isto — e nenhum precisa.
 
+import { ENDERECO_DO_CRM } from "@/lib/link-do-crm";
+
 export type EnderecoCrm = {
   /** Sem barra no fim. Ex.: "https://crm.suaempresa.com.br" */
   url: string;
@@ -40,17 +42,35 @@ function ehLocal(host: string) {
  * `x-forwarded-host` antes de `host`: atrás de proxy é ele que carrega o
  * domínio público, enquanto `host` pode ser o hostname interno do contêiner.
  *
- * CONFIAR NO CABEÇALHO é seguro nestes dois usos e não seria em qualquer um:
- * o valor só volta para quem já está logado, derivado do request que essa
- * mesma pessoa fez, e nada é decidido com ele — não vira link de recuperação
- * de senha nem redirect, que são os casos em que envenenar o `Host` machuca.
+ * NÃO SE CONFIA CEGAMENTE NO CABEÇALHO (auditoria de 2026-10-20). O endereço
+ * daqui vira URL que vai para FORA COM SEGREDO: o n8n chama o CRM com o
+ * `Bearer CRM_SERVICE_TOKEN`, e a URL do webhook da uazapi leva o segredo dela.
+ * Um `X-Forwarded-Host: outro.com` forjado por alguém logado, se a borda o
+ * deixasse passar, mandaria o token para o domínio dele. Na Vercel, então, só
+ * valem os hosts do próprio CRM; qualquer outro cai no domínio de produção.
+ * Fora da Vercel (localhost, túnel de desenvolvimento) vale o request.
  */
+function hostsDoCrm(): Set<string> | null {
+  if (!process.env.VERCEL) return null;
+  return new Set(
+    [
+      new URL(ENDERECO_DO_CRM).host,
+      "chromacrm.vercel.app",
+      process.env.VERCEL_URL,
+      process.env.VERCEL_PROJECT_PRODUCTION_URL,
+      process.env.VERCEL_BRANCH_URL,
+    ].filter((h): h is string => Boolean(h)),
+  );
+}
+
 export function enderecoDoCrm(cabecalhos: Headers): EnderecoCrm {
-  const host = (
+  const pedido = (
     cabecalhos.get("x-forwarded-host") ??
     cabecalhos.get("host") ??
     ""
-  ).trim();
+  ).trim().toLowerCase();
+  const permitidos = hostsDoCrm();
+  const host = permitidos && !permitidos.has(pedido) ? new URL(ENDERECO_DO_CRM).host : pedido;
 
   const local = ehLocal(host);
   const proto = cabecalhos.get("x-forwarded-proto") ?? (local ? "http" : "https");

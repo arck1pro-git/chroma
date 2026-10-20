@@ -43,14 +43,14 @@ import { NO_ENTRADA, type DefinicaoFluxo } from "../tipos";
  * oportunidade na hora) e `so_sem_resposta` (a guarda das mensagens na frente
  * do aviso). Fluxo publicado antes não tem nenhum dos dois.
  *
- * (2026-10-20, SEM subir a versão): a espera "até X da reunião"
- * (config.ancora = "reuniao"), o lembrete que ignora a resposta
- * (ignorar_resposta) e as variáveis [[reuniao_x]] só existem em fluxo que as
- * usa — e esses nasceram depois. Para todo fluxo publicado antes, a saída do
- * compilador é idêntica; subir a versão faria a tela pedir "republique" a
- * todos sem motivo.
+ * 1.6.0 (2026-10-20): SEGURANÇA. As variáveis do lead saem escapadas para
+ * JSON no corpo do envio (um nome com aspas reescrevia o destino da mensagem) e
+ * todo {{ }} que não seja variável vira texto inerte (o n8n o executava como
+ * código). Fluxo publicado antes continua com o furo até ser REPUBLICADO.
+ * Também entram aqui a espera "até X da reunião", o lembrete que ignora a
+ * resposta e as variáveis [[reuniao_x]] (só em fluxo que as usa).
  */
-export const VERSAO_COMPILADOR = "1.5.0";
+export const VERSAO_COMPILADOR = "1.6.0";
 
 // Passo já resolvido: posição, tipo, config e para onde vai cada saída.
 export type PassoCompilado = {
@@ -94,6 +94,19 @@ export class ErroCompilacao extends Error {
   }
 }
 
+const ID_DE_NO = /^[A-Za-z0-9_-]{1,64}$/;
+
+// Cada trecho {{ … }} achado num valor: só a leitura de um campo de um nó.
+const EXPRESSAO_SEGURA = /^\{\{\s*\$\('[\w .[\]-]+'\)\.(?:first\(\)|item)\.json(?:\.[A-Za-z_][\w]*)+\s*(?:\?\?\s*(?:''|""|0|null))?\s*\}\}$/;
+
+/** Os trechos {{ … }} de todas as strings dentro de um valor (objeto, lista). */
+function expressoesDe(valor: unknown): string[] {
+  if (typeof valor === "string") return valor.match(/\{\{[\s\S]*?\}\}/g) ?? (valor.includes("{{") ? [valor] : []);
+  if (Array.isArray(valor)) return valor.flatMap(expressoesDe);
+  if (valor && typeof valor === "object") return Object.values(valor).flatMap(expressoesDe);
+  return [];
+}
+
 export function compilar(
   definicao: DefinicaoFluxo,
   ctx: ContextoCompilacao,
@@ -120,9 +133,29 @@ export function compilar(
   for (const [id, no] of Object.entries(definicao.nos)) {
     if (id === NO_ENTRADA) continue;
 
+    // O id vira NOME de nó no n8n, e o nome entra em expressões ($('… [id]')):
+    // uma aspa nele sairia da string e escreveria código no motor (auditoria
+    // de 2026-10-20). Só letras, números, _ e -.
+    if (!ID_DE_NO.test(id)) {
+      throw new ErroCompilacao(`Id de bloco inválido: use só letras, números, _ e - (até 64).`, id);
+    }
+
     const bloco = blocoPorTipo(no.tipo);
     if (!bloco) {
       throw new ErroCompilacao(`Bloco desconhecido: ${no.tipo}`, id);
+    }
+
+    // A condição do "se" e os casos do "alternador" vão crus para o n8n, que
+    // AVALIA o que estiver entre {{ }}. Só passa expressão que lê um campo de
+    // um nó do próprio fluxo; qualquer outra é código e é recusada.
+    if (no.tipo === "se" || no.tipo === "alternador") {
+      const perigosa = expressoesDe(no.config?.condicao ?? no.config?.casos).find((t) => !EXPRESSAO_SEGURA.test(t));
+      if (perigosa) {
+        throw new ErroCompilacao(
+          `A condição deste bloco tem uma expressão que o motor executaria como código (${perigosa.slice(0, 60)}). Use só a leitura de um campo, como {{ $('Carregar lead').first().json.valor }}.`,
+          id,
+        );
+      }
     }
 
     // Contrato de semântica (§5.4): o motor precisa garantir o que o bloco

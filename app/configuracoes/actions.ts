@@ -20,6 +20,7 @@ import { corValida } from "@/lib/cores-funil";
 import { enderecoDoCrm } from "@/lib/endereco";
 import { removerEtapaNoBanco, type ResultadoRemocao } from "@/lib/etapas";
 import { NOME_EVENTO_META } from "@/lib/meta-eventos-nomes";
+import { urlExternaSegura } from "@/lib/rede-externa";
 
 export async function criarFunil(
   nome: string,
@@ -848,6 +849,13 @@ export async function conectarInstancia(
   if (!n) throw new Error("Nome é obrigatório");
   if (!url) throw new Error("URL da instância é obrigatória");
   if (!tok) throw new Error("Token é obrigatório");
+  // O servidor vai chamar esse endereço e mostrar o erro dele na tela: tem de
+  // ser https e público, ou vira porta para ler a rede interna (lib/rede-externa.ts).
+  try {
+    await urlExternaSegura(url);
+  } catch (e) {
+    throw new Error(`URL da instância recusada: ${e instanceof Error ? e.message : String(e)}`);
+  }
   await usuarioDaInstancia(usuarioId);
 
   const { numero, instanciaId } = await statusDaInstancia(url, tok);

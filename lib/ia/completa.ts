@@ -32,7 +32,7 @@ import { enderecoDoCrm } from "@/lib/endereco";
 import { blocoDeDocumentos, blocoDeVideos, ferramentasDeFluxos, REGRAS_DE_FLUXO } from "./automacoes";
 import { ferramentasDeCampanhas, REGRAS_DE_CAMPANHA } from "./campanhas";
 import { conversar, historicoDe, texto } from "./conversa";
-import { ferramentas as ferramentasDeLeitura, REGRAS_DE_ANALISE } from "./ferramentas";
+import { ferramentasDoUsuario, REGRAS_DE_ANALISE } from "./ferramentas";
 import { REGRA_DADO_NAO_CONFIAVEL } from "./sanitizar";
 import { ferramentasDeTagsESegmentos, REGRAS_DE_TAGS } from "./tags-segmentos";
 import { temIaCompleta } from "./modo-completo";
@@ -93,7 +93,7 @@ export async function conversaCompleta({
   const pergunta = texto(corpo.pergunta, 4000).trim();
   if (!pergunta) return Response.json({ erro: "Pergunta vazia." }, { status: 400 });
 
-  const grupos: Grupo[] = [{ ferramentas: ferramentasDeLeitura, gravou: () => false }];
+  const grupos: Grupo[] = [{ ferramentas: ferramentasDoUsuario(usuario), gravou: () => false }];
   const podeFazer = ["analisar os dados do CRM: funis, oportunidades, contatos e conversas"];
   const secoes = [`## ANÁLISE DOS DADOS\n\n${REGRAS_DE_ANALISE}`];
 

@@ -11,6 +11,7 @@
 import { NextRequest } from "next/server";
 import { exigirModuloApi } from "@/lib/auth/dal";
 import { comCaminho, lerArquivo } from "@/lib/documentos";
+import { cabecalhosDeArquivo } from "@/lib/arquivo-seguro";
 
 export const dynamic = "force-dynamic";
 
@@ -44,16 +45,14 @@ export async function GET(
   // ?baixar=1 força o "salvar como" em vez de abrir na aba. A lista usa os dois:
   // o olho pré-visualiza, a seta baixa.
   const anexar = req.nextUrl.searchParams.get("baixar") === "1";
-  const nome = documento.arquivoNome.replace(/["\\]/g, "");
-
+  // O conteúdo de um id nunca muda — substituir um documento é subir outro.
+  // HTML/SVG da biblioteca não abre mais na aba (lib/arquivo-seguro.ts).
   return new Response(new Uint8Array(bytes), {
-    headers: {
-      "content-type": documento.mime || "application/octet-stream",
-      "content-length": String(bytes.byteLength),
-      "content-disposition": `${anexar ? "attachment" : "inline"}; filename="${nome}"`,
-      // O conteúdo de um id nunca muda — substituir um documento é subir outro.
-      // Cache privado, porque é material interno da empresa.
-      "cache-control": "private, max-age=31536000, immutable",
-    },
+    headers: cabecalhosDeArquivo({
+      mime: documento.mime,
+      nome: documento.arquivoNome,
+      tamanho: bytes.byteLength,
+      baixar: anexar,
+    }),
   });
 }
