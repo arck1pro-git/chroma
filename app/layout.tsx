@@ -17,6 +17,10 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "AmaanOffice",
   description: "Gestão de funis e oportunidades",
+  // App instalado (manifest.ts): o nome que aparece no ícone e, no iPhone,
+  // "Adicionar à Tela de Início" abre em tela cheia, sem a barra do Safari.
+  applicationName: "AmaanOffice",
+  appleWebApp: { capable: true, title: "AmaanOffice", statusBarStyle: "default" },
 };
 
 // Assíncrono porque o layout agora pergunta QUEM está logado. A resposta vai

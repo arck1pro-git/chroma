@@ -29,6 +29,10 @@ const PUBLICAS_EXATAS = new Set([
   // Aviso de lead dos formulários instantâneos da Meta. A tranca é a
   // assinatura X-Hub-Signature-256, conferida no próprio handler.
   "/api/meta/leads/webhook",
+  // O app instalável (app/manifest.ts): o navegador busca o manifest e os
+  // ícones SEM o cookie da sessão — mandar para o /login quebrava a instalação.
+  "/manifest.webmanifest",
+  "/apple-icon.png",
 ]);
 
 const PUBLICAS_PREFIXO = [
@@ -46,6 +50,8 @@ const PUBLICAS_PREFIXO = [
   // redes. A tranca é o MCP_SEGREDO na própria URL: o claude.ai não manda
   // cookie nem cabeçalho.
   "/api/mcp/",
+  // Ícones do app instalável (public/icones), pelo mesmo motivo do manifest.
+  "/icones/",
 ];
 
 // Porta de serviço do n8n. Cada uma confere `Authorization: Bearer
