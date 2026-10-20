@@ -41,6 +41,17 @@ const CANAL_POR_TIPO = new Map(
   Object.entries(TIPO_POR_CANAL).map(([canal, tipo]) => [tipo, canal]),
 );
 
+/**
+ * De onde conta o instante de uma mensagem (2026-10-20, anti no-show da AMAAN).
+ *
+ * "entrada": da entrada no fluxo — o de sempre ("2 h depois de entrar").
+ * "reuniao": do INÍCIO DA REUNIÃO marcada para a oportunidade, e aí o número
+ * pode ser negativo ("2 h antes"). É o que faz o lembrete sair na hora certa
+ * tanto para a reunião de amanhã quanto para a de daqui a quatro dias — contado
+ * da entrada, o "2 h antes" de uma seria o "dia 3" da outra.
+ */
+export type Ancora = "entrada" | "reuniao";
+
 export type Subetapa = {
   // id do NÓ no fluxo. É o mesmo id que aparece no builder, nas métricas por
   // bloco e no callback de erro — por isso não se inventa outro aqui.
@@ -81,6 +92,14 @@ export type Subetapa = {
   // (a mesma guarda das mensagens). Desligado, avisa sempre — que é o padrão
   // do bloco, ver o adaptador do n8n.
   soSemResposta?: boolean;
+  // De onde conta `minutos` — ver Ancora. Ausente = "entrada".
+  ancora?: Ancora;
+  // Só no WhatsApp: sai MESMO QUE o lead tenha respondido (2026-10-20). A
+  // regra da cadência é parar quando ele fala — ela existe para arrancar
+  // resposta. Lembrete de reunião é o contrário: o "ok, obrigado" de ontem não
+  // pode matar o link de hoje. Continua parando se ele saiu da etapa, foi
+  // desinscrito ou a cadência foi pausada.
+  ignorarResposta?: boolean;
 };
 
 /**
@@ -133,6 +152,29 @@ function minutosDe(no: No): number {
   return Number.isFinite(m) && m > 0 ? m : 0;
 }
 
+/** A espera que vai "até X da reunião" (config.ancora = "reuniao"). */
+export function esperaDaReuniao(no: Pick<No, "tipo" | "config">): boolean {
+  return no.tipo === "esperar" && no.config.ancora === "reuniao";
+}
+
+/** O deslocamento da espera ancorada, em minutos (negativo = antes). */
+function deslocamentoDe(no: Pick<No, "config">): number {
+  const m = Number(no.config.minutos);
+  return Number.isFinite(m) ? Math.round(m) : 0;
+}
+
+/**
+ * O instante dito como gente fala: "Na entrada", "Após 2 h", "1 dia antes da
+ * reunião", "Na hora da reunião", "10 min depois da reunião".
+ */
+export function instanteEmTexto(ancora: Ancora | undefined, minutos: number): string {
+  if (ancora === "reuniao") {
+    if (minutos === 0) return "Na hora da reunião";
+    return `${duracaoEmTexto(Math.abs(minutos))} ${minutos < 0 ? "antes" : "depois"} da reunião`;
+  }
+  return minutos <= 0 ? "Na entrada" : `Após ${duracaoEmTexto(minutos)}`;
+}
+
 function acaoDe(id: string, no: No): AcaoCadencia {
   const bloco = blocoPorTipo(no.tipo);
   return {
@@ -141,7 +183,11 @@ function acaoDe(id: string, no: No): AcaoCadencia {
     rotulo: bloco?.rotulo ?? no.tipo,
     detalhe:
       no.tipo === "esperar"
-        ? duracaoEmTexto(minutosDe(no))
+        ? esperaDaReuniao(no)
+          ? deslocamentoDe(no) === 0
+            ? "até a hora da reunião"
+            : `até ${instanteEmTexto("reuniao", deslocamentoDe(no))}`
+          : duracaoEmTexto(minutosDe(no))
         : texto(no.config.titulo) || texto(no.config.nome),
     config: no.config,
   };
@@ -194,6 +240,10 @@ export function lerCadencia(definicao: DefinicaoFluxo): Cadencia {
   let pendentes: AcaoCadencia[] = [];
   let linear = !ramificados.has(NO_ENTRADA);
   let minutos = 0;
+  // Depois da primeira espera "até X da reunião", o relógio passa a ser a
+  // reunião: `minutos` vira o deslocamento dela, e uma espera comum seguinte
+  // soma a esse deslocamento.
+  let ancora: Ancora = "entrada";
   let atual = proximo.get(NO_ENTRADA);
   const visitados = new Set<string>();
 
@@ -210,8 +260,9 @@ export function lerCadencia(definicao: DefinicaoFluxo): Cadencia {
         canal: CANAL_POR_TIPO.get(no.tipo)!,
         mensagem: texto(no.config.texto),
         assunto: texto(no.config.assunto) || undefined,
-        dia: Math.round(minutos / MINUTOS_POR_DIA),
+        dia: ancora === "entrada" ? Math.round(minutos / MINUTOS_POR_DIA) : 0,
         minutos,
+        ancora,
         acoes: pendentes,
         // Cada bloco carrega a sua: é daqui que a coluna mostra por qual
         // número aquela mensagem sai, e é exatamente o campo que o executor
@@ -220,13 +271,17 @@ export function lerCadencia(definicao: DefinicaoFluxo): Cadencia {
         documentoId: texto(no.config.documento_id) || null,
         usuarioId: texto(no.config.usuario_id) || null,
         soSemResposta: no.config.so_sem_resposta === true,
+        ignorarResposta: no.config.ignorar_resposta === true,
       });
       pendentes = [];
     } else if ((blocoPorTipo(no.tipo)?.saidas.length ?? 0) <= 1) {
       // Uma saída (ou nenhuma, no `mudar_fluxo`): a corrente continua, e o
       // bloco vira ação da próxima mensagem. A espera também entra aqui, além
       // de somar no relógio — ela é o que mais se quer ver entre duas colunas.
-      if (no.tipo === "esperar") minutos += minutosDe(no);
+      if (esperaDaReuniao(no)) {
+        ancora = "reuniao";
+        minutos = deslocamentoDe(no);
+      } else if (no.tipo === "esperar") minutos += minutosDe(no);
       pendentes.push(acaoDe(atual, no));
     } else {
       // Bloco que a coluna não sabe desenhar: `se`, `alternador`,
@@ -325,32 +380,64 @@ export function escreverCadencia(
       : dia * MINUTOS_POR_DIA;
   };
 
+  // Ancorada na reunião: o deslocamento como veio (negativo = antes), num teto
+  // de 30 dias para os dois lados — o mesmo do bloco de espera.
+  const daReuniao = (s: Subetapa) => s.ancora === "reuniao";
+  const deslocamento = (s: Subetapa) =>
+    Number.isFinite(s.minutos) ? Math.max(-30 * MINUTOS_POR_DIA, Math.min(30 * MINUTOS_POR_DIA, Math.round(s.minutos))) : 0;
+
   // PELO INSTANTE, não pelo dia: com mensagens de horas (2h, 4h) no mesmo
   // dia, ordenar pelo dia deixaria a ordem da coluna decidir, e uma de 4h
   // antes de uma de 2h viraria espera negativa — zero — e as duas sairiam
-  // juntas.
-  const ordenadas = [...subetapas].sort((a, b) =>
-    instante(a) === instante(b) ? a.ordem - b.ordem : instante(a) - instante(b),
-  );
+  // juntas. As contadas da reunião vêm DEPOIS das contadas da entrada (a
+  // confirmação e o vídeo saem ao entrar; os lembretes, perto da reunião), em
+  // ordem de deslocamento.
+  const ordenadas = [...subetapas].sort((a, b) => {
+    if (daReuniao(a) !== daReuniao(b)) return daReuniao(a) ? 1 : -1;
+    const ia = daReuniao(a) ? deslocamento(a) : instante(a);
+    const ib = daReuniao(b) ? deslocamento(b) : instante(b);
+    return ia === ib ? a.ordem - b.ordem : ia - ib;
+  });
+
+  let ancoraAnterior: Ancora = "entrada";
 
   for (const s of ordenadas) {
     const msgId = s.id || idLivre(usados, "msg");
     const acoes = s.acoes ?? [];
+    const esperas = acoes.filter((a) => a.tipo === "esperar");
+    const outras = acoes.filter((a) => a.tipo !== "esperar");
 
-    const minutosAgora = instante(s);
-    const espera = Math.max(0, minutosAgora - minutosAnterior);
+    const minutosAgora = daReuniao(s) ? deslocamento(s) : instante(s);
 
-    const somaOriginal = acoes
-      .filter((a) => a.tipo === "esperar")
-      .reduce((total, a) => total + (Number(a.config.minutos) || 0), 0);
-
-    if (somaOriginal === espera) {
-      for (const a of acoes) emendar(a.id, { tipo: a.tipo, config: a.config });
+    if (daReuniao(s)) {
+      // UMA espera "até X da reunião", sempre absoluta — e não a diferença
+      // para o lembrete anterior. Cada espera relê a hora da reunião quando o
+      // fluxo chega nela (adaptador do n8n), então uma reunião remarcada depois
+      // da confirmação puxa os lembretes seguintes para a hora nova.
+      //
+      // Duas mensagens no mesmo instante da reunião não precisam de segunda
+      // espera; e a que já estava ali, igual, volta intacta.
+      const intacta =
+        esperas.length === 1 &&
+        esperaDaReuniao(esperas[0]) &&
+        deslocamentoDe(esperas[0]) === minutosAgora;
+      if (intacta) {
+        for (const a of acoes) emendar(a.id, { tipo: a.tipo, config: a.config });
+      } else {
+        if (!(ancoraAnterior === "reuniao" && minutosAnterior === minutosAgora)) {
+          emendar(`espera_${msgId}`, { tipo: "esperar", config: { ancora: "reuniao", minutos: minutosAgora } });
+        }
+        for (const a of outras) emendar(a.id, { tipo: a.tipo, config: a.config });
+      }
     } else {
-      esperar(espera, msgId);
-      for (const a of acoes) {
-        if (a.tipo === "esperar") continue;
-        emendar(a.id, { tipo: a.tipo, config: a.config });
+      const espera = Math.max(0, minutosAgora - minutosAnterior);
+      const somaOriginal = esperas.reduce((total, a) => total + (Number(a.config.minutos) || 0), 0);
+
+      if (somaOriginal === espera && !esperas.some(esperaDaReuniao)) {
+        for (const a of acoes) emendar(a.id, { tipo: a.tipo, config: a.config });
+      } else {
+        esperar(espera, msgId);
+        for (const a of outras) emendar(a.id, { tipo: a.tipo, config: a.config });
       }
     }
 
@@ -381,9 +468,15 @@ export function escreverCadencia(
       if (s.usuarioId) config.usuario_id = s.usuarioId;
       if (s.soSemResposta) config.so_sem_resposta = true;
     }
+    if (tipo === TIPO_POR_CANAL.whatsapp && s.ignorarResposta) config.ignorar_resposta = true;
+    // O instante da reunião a que a mensagem se refere viaja com ela até o
+    // envio: é por ele que o CRM descarta o lembrete que chegou atrasado (o
+    // "1 dia antes" de uma reunião marcada para daqui a 5 horas).
+    if (daReuniao(s)) config.instante_reuniao = minutosAgora;
 
     emendar(msgId, { tipo, config });
     minutosAnterior = minutosAgora;
+    ancoraAnterior = daReuniao(s) ? "reuniao" : "entrada";
   }
 
   // O que rodava depois da última mensagem continua depois dela.

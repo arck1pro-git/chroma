@@ -8,6 +8,8 @@ import { abrirConversaDaCadencia, registrarMensagemDaCadencia } from "@/lib/auto
 import { confirmarEnvio, marcarErro } from "@/lib/conversa-envio";
 import { USUARIO_RESPONSAVEL } from "@/lib/automacoes/saida";
 import { dadosDoLeadDaExecucao, responsavelDaExecucao } from "@/lib/automacoes/aviso-equipe";
+import { reuniaoDaExecucao } from "@/lib/agenda";
+import { preencherReuniao, temVariavelDeReuniao, variaveisDaReuniao } from "@/lib/automacoes/reuniao-no-texto";
 
 // O CRM NA FRENTE DO ENVIO. O motor não fala mais com a uazapi: ele diz "manda
 // este texto, por este número", e quem tem a credencial é quem sempre teve — o
@@ -49,7 +51,33 @@ export async function POST(req: NextRequest) {
   }
 
   const para = soDigitos(String(corpo.para ?? ""));
-  const texto = String(corpo.texto ?? "").slice(0, MAX_TEXTO).trim();
+  let texto = String(corpo.texto ?? "").slice(0, MAX_TEXTO).trim();
+
+  // LEMBRETE DE REUNIÃO (2026-10-20). A mensagem que fala da reunião ([[reuniao_x]]
+  // no texto) ou que foi marcada para um instante dela (instante_reuniao) só sai
+  // se a reunião existe, está de pé e o lembrete não chegou atrasado. Pular não
+  // é erro: o motor segue para o próximo passo, e a resposta diz por quê.
+  const instanteReuniao = typeof corpo.instante_reuniao === "number" ? corpo.instante_reuniao : null;
+  if (temVariavelDeReuniao(texto) || instanteReuniao !== null) {
+    const reuniao = await reuniaoDaExecucao(String(corpo.execucao_id ?? "")).catch((e) => {
+      console.error("[automacoes/enviar] não leu a reunião:", e);
+      return undefined;
+    });
+    // Falha ao ler (banco ou Google fora): erro, para o motor registrar —
+    // pular em silêncio esconderia um lembrete que deveria ter saído.
+    if (reuniao === undefined) return Response.json({ erro: "não foi possível ler a reunião — nada foi enviado" }, { status: 502 });
+    if (!reuniao) return Response.json({ ok: true, pulado: "sem reunião de pé para esta oportunidade" });
+    // Atrasado: o "1 dia antes" de uma reunião marcada para daqui a 5 horas, ou
+    // o lembrete que o motor só soltou bem depois da hora. 15 min de folga.
+    if (instanteReuniao !== null && Date.now() > Date.parse(reuniao.inicio) + (instanteReuniao + 15) * 60_000) {
+      return Response.json({ ok: true, pulado: "passou da hora deste lembrete" });
+    }
+    const valores = variaveisDaReuniao(reuniao, new Date());
+    if (temVariavelDeReuniao(texto) && /\[\[reuniao_link\]\]/.test(texto) && !valores.reuniao_link) {
+      return Response.json({ erro: "a reunião não tem link do Meet — nada foi enviado" }, { status: 400 });
+    }
+    texto = preencherReuniao(texto, valores);
+  }
   const numeroOrigem = soDigitos(String(corpo.numero_origem ?? ""));
   const peloResponsavel = corpo.pelo_responsavel === true;
   // O anexo da mensagem, quando há. Só o id chega aqui — os bytes nunca saíram

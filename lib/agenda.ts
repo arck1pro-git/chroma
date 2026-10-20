@@ -717,6 +717,31 @@ async function completarDoGoogle(linhas: LinhaReuniao[]): Promise<ReuniaoDoCrm[]
   );
 }
 
+/**
+ * A reunião a que um lembrete de cadência se refere (2026-10-20, anti no-show):
+ * a da oportunidade da execução — ou, sem ela, a do contato — que ainda não
+ * acabou, a mais próxima. A MESMA escolha da espera do n8n (HORA_DA_REUNIAO, no
+ * adaptador), mais o que só o Google sabe: o link do Meet e se foi cancelada. A
+ * remarcada no Google é corrigida no banco aqui mesmo (completarDoGoogle).
+ * Cancelada não serve: devolve a próxima de pé, ou null.
+ */
+export async function reuniaoDaExecucao(execucaoId: string): Promise<ReuniaoDoCrm | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(execucaoId)) return null;
+  const linhas = (await sql`
+    SELECT r.id, r.google_evento_id, r.contato_id, r.oportunidade_id, r.inicio, r.fim, r.autor_id
+      FROM fluxo_execucoes e
+      LEFT JOIN oportunidades o ON e.entidade_tipo = 'oportunidade' AND o.id = e.entidade_id
+      JOIN agenda_reunioes r
+        ON r.oportunidade_id = o.id
+        OR (r.oportunidade_id IS NULL AND r.contato_id = COALESCE(o.contato_id, e.entidade_id))
+     WHERE e.id = ${execucaoId}
+       AND r.fim > now() - interval '30 minutes'
+     ORDER BY (r.oportunidade_id IS NOT NULL) DESC, r.inicio
+     LIMIT 3`) as LinhaReuniao[];
+  const completas = await completarDoGoogle(linhas);
+  return completas.find((r) => !r.cancelada) ?? null;
+}
+
 /** As reuniões de uma oportunidade, mais novas primeiro. */
 export async function reunioesDaOportunidade(oportunidadeId: string): Promise<ReuniaoDoCrm[]> {
   const linhas = (await sql`

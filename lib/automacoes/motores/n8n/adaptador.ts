@@ -162,6 +162,63 @@ export const GUARDA_INSCRITO = `
     ) = 'automacao'`;
 
 /**
+ * A guarda do LEMBRETE (2026-10-20): a GUARDA_INSCRITO sem a quarta condição.
+ *
+ * Mensagem marcada "enviar mesmo se o lead responder" (ignorar_resposta) — os
+ * lembretes do anti no-show — não para porque ele falou: o "ok, até amanhã"
+ * não pode matar o link de daqui a 2 horas. Para todo o resto continua igual.
+ *
+ * E ganha uma condição que a outra não precisa: a oportunidade AINDA ESTÁ NA
+ * ETAPA em que entrou na cadência, e aberta. Mudar o card de etapa não
+ * desinscreve ninguém (lib/mover-etapa.ts); na cadência comum quem segura é a
+ * resposta do lead, mas aqui não há resposta que segure — sem isto, o card
+ * levado a "No Show" ou "Reunião realizada" ainda receberia "nossa reunião
+ * começa em 10 minutos".
+ */
+export const GUARDA_SO_INSCRITO = `
+  SELECT 1
+  FROM fluxo_execucoes e
+  JOIN fluxos f ON f.id = e.fluxo_id
+  LEFT JOIN oportunidades o
+    ON e.entidade_tipo = 'oportunidade' AND o.id = e.entidade_id
+  WHERE e.id = $1::uuid
+    AND e.estado IN ('pendente','rodando','esperando')
+    AND f.estado = 'publicado'
+    AND f.arquivado_em IS NULL
+    AND (e.entidade_tipo <> 'oportunidade'
+         OR (o.status = 'aberta'
+             AND (e.origem_etapa_id IS NULL OR o.etapa_id = e.origem_etapa_id)))`;
+
+/**
+ * A hora até a qual a espera "X da reunião" segura o fluxo.
+ *
+ * Lida NO INSTANTE em que o fluxo chega na espera — não na entrada —, então
+ * uma reunião remarcada depois da confirmação puxa os lembretes seguintes para
+ * a hora nova. A reunião é a da oportunidade (ou, sem ela, a do contato) que
+ * ainda não acabou; a mais próxima.
+ *
+ * Sem reunião, sem linha: o ramo morre aqui e os lembretes acabam — não há do
+ * que lembrar. Hora já passada faz o Wait do n8n seguir na hora; quem decide se
+ * o lembrete atrasado ainda sai é o CRM, no envio (instante_reuniao).
+ *
+ * $2 é o deslocamento em minutos (negativo = antes). Só números e o id viajam
+ * no queryReplacement — nada com vírgula (ver o registro do envio).
+ */
+export const HORA_DA_REUNIAO = `
+  SELECT to_char((r.inicio + ($2::int * interval '1 minute')) AT TIME ZONE 'UTC',
+                 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ate
+  FROM fluxo_execucoes e
+  LEFT JOIN oportunidades o
+    ON e.entidade_tipo = 'oportunidade' AND o.id = e.entidade_id
+  JOIN agenda_reunioes r
+    ON r.oportunidade_id = o.id
+    OR (r.oportunidade_id IS NULL AND r.contato_id = COALESCE(o.contato_id, e.entidade_id))
+  WHERE e.id = $1::uuid
+    AND r.fim > now() - interval '30 minutes'
+  ORDER BY (r.oportunidade_id IS NOT NULL) DESC, r.inicio
+  LIMIT 1`;
+
+/**
  * "Este lead está NESTE bloco agora."
  *
  * É a linha que a tela da cadência lê para desenhar o card na coluna certa
@@ -200,6 +257,11 @@ const BLOCOS_QUE_ENVIAM = new Set(["enviar_whatsapp_web"]);
 function textoParaExpressao(bruto: string): string {
   const escapado = bruto.replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
   return escapado.replace(/\{\{\s*([a-z_][a-z0-9_]*)\s*\}\}/gi, (_, campo) => {
+    // AS DA REUNIÃO NÃO SÃO DO MOTOR (2026-10-20): data, hora e link do Meet
+    // moram no CRM e no Google, e é o CRM que as troca no envio
+    // (app/api/automacoes/enviar). Viajam como [[reuniao_x]] — com {{ }} o
+    // n8n tentaria avaliá-las e mandaria vazio.
+    if (/^reuniao_/i.test(campo)) return `[[${campo.toLowerCase()}]]`;
     return `{{ $('${NOME_LEAD}').first().json.${campo} ?? '' }}`;
   });
 }
@@ -433,6 +495,42 @@ export function paraWorkflow(
         credentials: credPostgres(cred),
       });
 
+      // "ATÉ X DA REUNIÃO" (2026-10-20): um nó a mais entre a marca e a
+      // espera, que lê a hora da reunião agora (HORA_DA_REUNIAO), e o Wait vai
+      // até ela em vez de contar minutos.
+      if (passo.tipo === "esperar" && passo.config.ancora === "reuniao") {
+        const hora = `Hora da reunião [${passo.id}]`;
+        const deslocamento = Math.round(Number(passo.config.minutos) || 0);
+        nodes.push({
+          id: `${passo.id}__hora`,
+          name: hora,
+          type: "n8n-nodes-base.postgres",
+          typeVersion: 2.4,
+          position: [passo.posicao.x - 95, passo.posicao.y + 110],
+          parameters: {
+            operation: "executeQuery",
+            query: HORA_DA_REUNIAO,
+            options: { queryReplacement: expr([EXECUCAO_ID, String(deslocamento)].join(",")) },
+          },
+          // Sem reunião, sem item: os lembretes acabam aqui.
+          alwaysOutputData: false,
+          credentials: credPostgres(cred),
+        });
+        nodes.push({
+          id: passo.id,
+          name: espera,
+          type: "n8n-nodes-base.wait",
+          typeVersion: 1.1,
+          position: [passo.posicao.x, passo.posicao.y],
+          parameters: {
+            resume: "specificTime",
+            dateTime: `={{ $('${hora}').first().json.ate }}`,
+          },
+        });
+        cadeiaDoBloco.set(passo.id, [marca, hora, espera]);
+        continue;
+      }
+
       nodes.push({
         id: passo.id,
         name: espera,
@@ -474,7 +572,9 @@ export function paraWorkflow(
         position: [passo.posicao.x - 190, passo.posicao.y],
         parameters: {
           operation: "executeQuery",
-          query: GUARDA_INSCRITO,
+          // O lembrete ("enviar mesmo se o lead responder") tem a guarda dele:
+          // não para pela resposta, para se o card saiu da etapa.
+          query: passo.config.ignorar_resposta === true ? GUARDA_SO_INSCRITO : GUARDA_INSCRITO,
           options: { queryReplacement: expr(EXECUCAO_ID) },
         },
         // O ponto inteiro da guarda: sem linha, sem item, e o ramo morre aqui.
@@ -591,6 +691,11 @@ export function paraWorkflow(
                     : { numero_origem: numeroDeOrigem }),
                   para: `{{ $('${NOME_LEAD}').first().json.numero }}`,
                   texto: textoParaExpressao(String(passo.config.texto ?? "")),
+                  // Lembrete de reunião: o instante a que ele se refere, para o
+                  // CRM descartar o que chegou atrasado (ver escreverCadencia).
+                  ...(typeof passo.config.instante_reuniao === "number"
+                    ? { instante_reuniao: passo.config.instante_reuniao }
+                    : {}),
                   // Só o id viaja. Os bytes ficam no CRM e são lidos no
                   // instante do envio — é o que mantém o arquivo fora do
                   // workflow (e fora do n8n compartilhado), e o que faz trocar
@@ -773,6 +878,9 @@ export function paraWorkflow(
               // O texto aceita as mesmas marcas do envio ao lead — é o que
               // deixa o aviso dizer DE QUEM se trata ("Ligar para {{nome}}").
               texto: textoParaExpressao(String(passo.config.texto ?? "")),
+              ...(typeof passo.config.instante_reuniao === "number"
+                ? { instante_reuniao: passo.config.instante_reuniao }
+                : {}),
             }),
           ),
         },

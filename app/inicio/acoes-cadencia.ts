@@ -107,12 +107,20 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
     // ele (tela antiga), vale o dia.
     const diaBruto = Number((s as { dia?: unknown }).dia);
     const minutosBrutos = Number((s as { minutos?: unknown }).minutos);
-    const minutos = Number.isFinite(minutosBrutos) && minutosBrutos >= 0
-      ? Math.min(Math.round(minutosBrutos), MAX_DIAS * MINUTOS_POR_DIA)
-      : Number.isFinite(diaBruto)
-        ? Math.min(Math.max(Math.round(diaBruto), 0), MAX_DIAS) * MINUTOS_POR_DIA
-        : 0;
-    const dia = Math.round(minutos / MINUTOS_POR_DIA);
+    // Contada da REUNIÃO (2026-10-20), o instante é um deslocamento e pode ser
+    // negativo ("2 h antes"); o teto é de 30 dias para cada lado.
+    const ancora = s.ancora === "reuniao" ? ("reuniao" as const) : ("entrada" as const);
+    const minutos =
+      ancora === "reuniao"
+        ? Number.isFinite(minutosBrutos)
+          ? Math.max(-30 * MINUTOS_POR_DIA, Math.min(Math.round(minutosBrutos), 30 * MINUTOS_POR_DIA))
+          : 0
+        : Number.isFinite(minutosBrutos) && minutosBrutos >= 0
+          ? Math.min(Math.round(minutosBrutos), MAX_DIAS * MINUTOS_POR_DIA)
+          : Number.isFinite(diaBruto)
+            ? Math.min(Math.max(Math.round(diaBruto), 0), MAX_DIAS) * MINUTOS_POR_DIA
+            : 0;
+    const dia = ancora === "reuniao" ? 0 : Math.round(minutos / MINUTOS_POR_DIA);
     const id = texto(s.id, 64);
     // Id repetido viraria uma chave só no mapa de nós — duas colunas, um bloco.
     // Zerar manda escreverCadencia escolher um livre.
@@ -157,6 +165,9 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
           ? texto(s.usuarioId, 36)
           : null,
       soSemResposta: s.soSemResposta === true,
+      ancora,
+      // Só faz sentido no WhatsApp (é o único envio ao lead).
+      ignorarResposta: s.ignorarResposta === true && s.canal === "whatsapp",
     };
   });
 }

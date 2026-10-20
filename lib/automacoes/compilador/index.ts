@@ -42,6 +42,13 @@ import { NO_ENTRADA, type DefinicaoFluxo } from "../tipos";
  * 1.5.0: o aviso à equipe aceita `usuario_id: "responsavel"` (o responsável da
  * oportunidade na hora) e `so_sem_resposta` (a guarda das mensagens na frente
  * do aviso). Fluxo publicado antes não tem nenhum dos dois.
+ *
+ * (2026-10-20, SEM subir a versão): a espera "até X da reunião"
+ * (config.ancora = "reuniao"), o lembrete que ignora a resposta
+ * (ignorar_resposta) e as variáveis [[reuniao_x]] só existem em fluxo que as
+ * usa — e esses nasceram depois. Para todo fluxo publicado antes, a saída do
+ * compilador é idêntica; subir a versão faria a tela pedir "republique" a
+ * todos sem motivo.
  */
 export const VERSAO_COMPILADOR = "1.5.0";
 

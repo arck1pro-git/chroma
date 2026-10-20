@@ -14,6 +14,7 @@ import SeletorRemetente from "./seletor-remetente";
 import Link from "next/link";
 import {
   AlertTriangle,
+  BellRing,
   Check,
   ChevronRight,
   Clock,
@@ -39,9 +40,13 @@ import { corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
 import {
   duracaoEmTexto,
+  esperaDaReuniao,
+  instanteEmTexto,
   proximoIdDeMensagem,
   type AcaoCadencia,
+  type Ancora,
 } from "@/lib/automacoes/cadencia";
+import { VARIAVEIS_DA_REUNIAO } from "@/lib/automacoes/reuniao-no-texto";
 import { ICONE_PADRAO, ICONES } from "../automacoes/aparencia";
 import type {
   CadenciaDaEtapa,
@@ -111,8 +116,9 @@ function emUnidade(minutos: number): { valor: number; unidade: Unidade } {
   return { valor: minutos, unidade: "min" };
 }
 
-/** A régua da coluna: "Na entrada", "Após 2 h" ou "Dia 3". */
-function rotuloDoInstante(s: { minutos: number; dia: number }): string {
+/** A régua da coluna: "Na entrada", "Após 2 h", "Dia 3" ou "2 h antes da reunião". */
+function rotuloDoInstante(s: { minutos: number; dia: number; ancora?: Ancora }): string {
+  if (s.ancora === "reuniao") return instanteEmTexto("reuniao", s.minutos);
   if (s.minutos <= 0) return "Na entrada";
   if (s.minutos < MINUTOS_POR_DIA || s.minutos % MINUTOS_POR_DIA !== 0) return `Após ${duracaoEmTexto(s.minutos)}`;
   return `Dia ${s.dia}`;
@@ -128,6 +134,9 @@ const VARIAVEIS: { chave: string; rotulo: string }[] = [
   // Só dígitos — é o que vai no link de vídeo rastreável (/videos):
   // …/v/<código>?w={{numero}}.
   { chave: "numero", rotulo: "WhatsApp" },
+  // As da reunião marcada (2026-10-20): quem troca é o CRM, no envio, com a
+  // reunião daquela hora (lib/automacoes/reuniao-no-texto.ts).
+  ...VARIAVEIS_DA_REUNIAO.map((v) => ({ chave: v.chave, rotulo: v.rotulo })),
 ];
 const ROTULO_DA_VARIAVEL = new Map(VARIAVEIS.map((v) => [v.chave, v.rotulo]));
 
@@ -154,7 +163,14 @@ type Rascunho = {
   documentoId: string | null;
   usuarioId: string | null;
   soSemResposta: boolean;
+  // De onde conta `minutos`: a entrada, ou a reunião (aí negativo = antes).
+  ancora: Ancora;
+  // WhatsApp que sai mesmo que o lead tenha respondido (lembrete de reunião).
+  ignorarResposta: boolean;
 };
+
+// "Quando", contado de onde: o terceiro campo do formulário.
+type Sentido = "entrada" | "antes" | "depois";
 
 /**
  * O anexo desta mensagem, dito na tela.
@@ -240,13 +256,19 @@ function FormSubetapa({
   const [nome, setNome] = useState(inicial.nome);
   const [canal, setCanal] = useState(inicial.canal);
   const [mensagem, setMensagem] = useState(inicial.mensagem);
-  const [quando, setQuando] = useState(() => String(emUnidade(inicial.minutos).valor));
-  const [unidade, setUnidade] = useState<Unidade>(() => emUnidade(inicial.minutos).unidade);
+  const [quando, setQuando] = useState(() => String(emUnidade(Math.abs(inicial.minutos)).valor));
+  const [unidade, setUnidade] = useState<Unidade>(() => emUnidade(Math.abs(inicial.minutos)).unidade);
+  const [sentido, setSentido] = useState<Sentido>(() =>
+    inicial.ancora !== "reuniao" ? "entrada" : inicial.minutos < 0 ? "antes" : "depois",
+  );
   const [instanciaId, setInstanciaId] = useState<string | null>(inicial.instanciaId);
   const [documentoId, setDocumentoId] = useState<string | null>(inicial.documentoId);
   const [usuarioId, setUsuarioId] = useState<string | null>(inicial.usuarioId);
   const [soSemResposta, setSoSemResposta] = useState(inicial.soSemResposta);
-  const minutos = Math.max(0, Math.round((Number(quando.replace(",", ".")) || 0) * UNIDADES[unidade]));
+  const [ignorarResposta, setIgnorarResposta] = useState(inicial.ignorarResposta);
+  const quantidade = Math.max(0, Math.round((Number(quando.replace(",", ".")) || 0) * UNIDADES[unidade]));
+  const ancora: Ancora = sentido === "entrada" ? "entrada" : "reuniao";
+  const minutos = sentido === "antes" ? -quantidade : quantidade;
   const nomeRef = useRef<HTMLInputElement | null>(null);
   const textoRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -285,6 +307,8 @@ function FormSubetapa({
           // Só a notificação tem alguém para avisar.
           usuarioId: canal === "ligacao" ? usuarioId : null,
           soSemResposta: canal === "ligacao" && soSemResposta,
+          ancora,
+          ignorarResposta: canal === "whatsapp" && ignorarResposta,
         });
       }}
       onKeyDown={(e) => {
@@ -335,31 +359,46 @@ function FormSubetapa({
 
       {/* QUANDO SAI é o que vira bloco de espera no fluxo — é ele, e não a
           ordem da coluna, que o motor obedece. Em minutos, horas ou dias
-          (2026-10-16: mensagem 2h depois, aviso 20 min depois da última). */}
-      <div className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
-        <Clock className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
-        <span className="w-14 shrink-0">Quando</span>
-        <input
-          type="number"
-          min={0}
-          value={quando}
-          onChange={(e) => setQuando(e.target.value)}
-          aria-label="Quanto tempo depois de entrar na cadência"
-          className={`${campo} w-16 px-2 text-center tabular-nums`}
-        />
-        <select
-          value={unidade}
-          onChange={(e) => setUnidade(e.target.value as Unidade)}
-          aria-label="Unidade"
-          className={`${campo} w-[4.5rem] px-1.5`}
-        >
-          <option value="min">min</option>
-          <option value="h">h</option>
-          <option value="dias">dias</option>
-        </select>
-        <span className="min-w-0 truncate text-[11px] text-zinc-400 dark:text-zinc-500">
-          {minutos > 0 ? "depois de entrar" : "na entrada"}
-        </span>
+          (2026-10-16: mensagem 2h depois, aviso 20 min depois da última), e
+          contado da entrada ou da REUNIÃO marcada (2026-10-20: o anti no-show
+          sai 1 dia, 2 h e 10 min antes dela, e na hora). */}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
+          <Clock className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
+          <span className="w-14 shrink-0">Quando</span>
+          <input
+            type="number"
+            min={0}
+            value={quando}
+            onChange={(e) => setQuando(e.target.value)}
+            aria-label="Quanto tempo"
+            className={`${campo} w-14 px-1.5 text-center tabular-nums`}
+          />
+          <select
+            value={unidade}
+            onChange={(e) => setUnidade(e.target.value as Unidade)}
+            aria-label="Unidade"
+            className={`${campo} w-[4.25rem] px-1.5`}
+          >
+            <option value="min">min</option>
+            <option value="h">h</option>
+            <option value="dias">dias</option>
+          </select>
+        </div>
+        {/* Contado de onde, numa linha própria: ao lado do número não cabia. */}
+        <div className="flex items-center gap-2 pl-[5.5rem]">
+          <select
+            value={sentido}
+            onChange={(e) => setSentido(e.target.value as Sentido)}
+            aria-label="Contado de onde"
+            className={`${campo} min-w-0 flex-1 px-1.5`}
+          >
+            <option value="entrada">depois de entrar na etapa</option>
+            <option value="antes">antes da reunião marcada</option>
+            <option value="depois">depois da reunião marcada</option>
+          </select>
+        </div>
+        <p className="pl-[5.5rem] text-[11px] text-zinc-400 dark:text-zinc-500">Sai: {instanteEmTexto(ancora, minutos).toLowerCase()}</p>
       </div>
 
       {/* DE ONDE SAI: a instância é POR MENSAGEM. WhatsApp e ligação (o aviso
@@ -423,6 +462,24 @@ function FormSubetapa({
             className="size-3.5 shrink-0 accent-zinc-900 dark:accent-zinc-100"
           />
           Só se o lead não tiver respondido
+        </label>
+      )}
+      {/* O padrão da cadência é parar quando o lead fala. Lembrete de reunião é
+          a exceção: sai mesmo assim (e para se o card sair da etapa). */}
+      {canal === "whatsapp" && (
+        <label className="flex cursor-pointer items-start gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
+          <input
+            type="checkbox"
+            checked={ignorarResposta}
+            onChange={(e) => setIgnorarResposta(e.target.checked)}
+            className="mt-0.5 size-3.5 shrink-0 accent-zinc-900 dark:accent-zinc-100"
+          />
+          <span>
+            Enviar mesmo se o lead responder
+            <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">
+              Para lembretes. Sem isso, a cadência para quando ele responde.
+            </span>
+          </span>
         </label>
       )}
 
@@ -573,6 +630,16 @@ function Intervalo({
         const Icone = ICONES[a.tipo] ?? ICONE_PADRAO;
         const parados = porAcao.get(a.id) ?? [];
         const espera = a.tipo === "esperar";
+        // "Até 2 h antes" + "da reunião" embaixo: numa linha só não cabe.
+        const daReuniao = esperaDaReuniao(a);
+        const m = Math.round(Number(a.config.minutos) || 0);
+        const rotulo = daReuniao
+          ? m === 0
+            ? "Até a hora"
+            : `Até ${duracaoEmTexto(Math.abs(m))} ${m < 0 ? "antes" : "depois"}`
+          : espera
+            ? `Espera ${a.detalhe}`
+            : a.detalhe || a.rotulo;
         return (
           <div key={a.id} className="flex flex-col items-center gap-1.5">
             {/* A seta da sequência: mensagem → espera → próxima. Lida da
@@ -587,9 +654,10 @@ function Intervalo({
                 className="relative inline-flex max-w-full items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
               >
                 <Icone className="size-3 shrink-0 text-zinc-400" aria-hidden="true" />
-                <span className="truncate">{espera ? `Espera ${a.detalhe}` : a.detalhe || a.rotulo}</span>
+                <span className="truncate">{rotulo}</span>
               </span>
             </div>
+            {daReuniao && <span className="-mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">da reunião</span>}
             {espera && seNaoResponder && (
               <span className="-mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">se não responder</span>
             )}
@@ -758,6 +826,18 @@ function Coluna({
           </p>
         )}
 
+        {/* O LEMBRETE sai mesmo que o lead tenha respondido — diferente do
+            resto da cadência, e por isso dito na coluna. */}
+        {subetapa.canal === "whatsapp" && subetapa.ignorarResposta && (
+          <p
+            className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400"
+            title="Sai mesmo se o lead tiver respondido. Para se a oportunidade sair da etapa."
+          >
+            <BellRing className="size-3 shrink-0" aria-hidden="true" />
+            <span className="truncate">Lembrete · sai mesmo se responder</span>
+          </p>
+        )}
+
         {/* A mensagem em balão, e o balão é o atalho para editar: é nela que
             se clica quando se quer mudar o texto. */}
         <button
@@ -909,7 +989,11 @@ export default function PainelSubetapas({
 
   const quantidade = oportunidades.length;
   const total = oportunidades.reduce((s, o) => s + o.valor, 0);
-  const duracao = subetapas.length ? subetapas[subetapas.length - 1].minutos : 0;
+  // Até onde a cadência vai: "em 12 dias" ou, com lembretes, "até 10 min
+  // depois da reunião".
+  const ultimaSub = subetapas.length ? subetapas[subetapas.length - 1] : null;
+  const duracao = ultimaSub && ultimaSub.ancora !== "reuniao" ? ultimaSub.minutos : 0;
+  const ateReuniao = ultimaSub?.ancora === "reuniao" ? instanteEmTexto("reuniao", ultimaSub.minutos).toLowerCase() : null;
   const quadroRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -932,7 +1016,7 @@ export default function PainelSubetapas({
         ...dados,
         // Coluna nova não tem ação nenhuma antes dela; a espera sai do
         // instante, e quem grava a monta a partir dele.
-        dia: Math.round(dados.minutos / MINUTOS_POR_DIA),
+        dia: dados.ancora === "reuniao" ? 0 : Math.round(dados.minutos / MINUTOS_POR_DIA),
         acoes: [],
       };
       return ordenar([...atuais, nova]);
@@ -949,7 +1033,9 @@ export default function PainelSubetapas({
     setSubetapas((atuais) =>
       ordenar(
         atuais.map((s) =>
-          s.id === id ? { ...s, ...dados, dia: Math.round(dados.minutos / MINUTOS_POR_DIA) } : s,
+          s.id === id
+            ? { ...s, ...dados, dia: dados.ancora === "reuniao" ? 0 : Math.round(dados.minutos / MINUTOS_POR_DIA) }
+            : s,
         ),
       ),
     );
@@ -964,9 +1050,15 @@ export default function PainelSubetapas({
 
   // Ordena pelo instante e renumera. `ordem` é o desempate de duas mensagens
   // no mesmo instante, e é o que escreverCadencia usa para montar a corrente.
+  // As contadas da REUNIÃO vêm depois das contadas da entrada — a mesma ordem
+  // de escreverCadencia (lib/automacoes/cadencia.ts).
   function ordenar(lista: Subetapa[]): Subetapa[] {
+    const daReuniao = (s: Subetapa) => s.ancora === "reuniao";
     return [...lista]
-      .sort((a, b) => (a.minutos === b.minutos ? a.ordem - b.ordem : a.minutos - b.minutos))
+      .sort((a, b) => {
+        if (daReuniao(a) !== daReuniao(b)) return daReuniao(a) ? 1 : -1;
+        return a.minutos === b.minutos ? a.ordem - b.ordem : a.minutos - b.minutos;
+      })
       .map((s, i) => ({ ...s, ordem: i + 1 }));
   }
 
@@ -1097,7 +1189,7 @@ export default function PainelSubetapas({
               {cadencia && (
               <p className="mt-1 text-[12px] tabular-nums text-zinc-500 dark:text-zinc-400">
                 {subetapas.length} {subetapas.length === 1 ? "mensagem" : "mensagens"}
-                {subetapas.length > 1 && duracao > 0 ? ` em ${duracaoEmTexto(duracao)}` : ""}
+                {ateReuniao ? ` até ${ateReuniao}` : subetapas.length > 1 && duracao > 0 ? ` em ${duracaoEmTexto(duracao)}` : ""}
                 {" · "}
                 {quantidade} {quantidade === 1 ? "oportunidade" : "oportunidades"} ({brl(total)})
                 {cadencia && cadencia.noFluxo > 0 ? ` · ${cadencia.noFluxo} na automação` : ""}
@@ -1259,8 +1351,9 @@ export default function PainelSubetapas({
                 <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[12px] text-amber-900 dark:bg-amber-950/50 dark:text-amber-100">
                   <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden="true" />
                   <span>
-                    Há uma versão salva que não chegou ao n8n. Quem entrar agora recebe a versão que está lá, não esta —
-                    publique de novo.
+                    {cadencia.publicadoAlgumaVez
+                      ? "Há uma versão salva que não chegou ao n8n. Quem entrar agora recebe a versão que está lá, não esta — publique de novo."
+                      : "Rascunho, nunca publicado: nada sai daqui até alguém clicar em Publicar."}
                   </span>
                 </p>
               )}
@@ -1321,7 +1414,7 @@ export default function PainelSubetapas({
                       porAcao={porAcao}
                       contatoPorId={contatoPorId}
                       seNaoResponder={
-                        coluna.subetapa.canal === "whatsapp" ||
+                        (coluna.subetapa.canal === "whatsapp" && coluna.subetapa.ignorarResposta !== true) ||
                         (coluna.subetapa.canal === "ligacao" && coluna.subetapa.soSemResposta === true)
                       }
                     />
@@ -1343,6 +1436,8 @@ export default function PainelSubetapas({
                         documentoId: coluna.subetapa.documentoId,
                         usuarioId: coluna.subetapa.usuarioId,
                         soSemResposta: coluna.subetapa.soSemResposta === true,
+                        ancora: coluna.subetapa.ancora === "reuniao" ? "reuniao" : "entrada",
+                        ignorarResposta: coluna.subetapa.ignorarResposta === true,
                       }}
                       aoConfirmar={(d) => editar(coluna.subetapa.id, d)}
                       aoCancelar={() => setEditando(null)}
@@ -1390,7 +1485,15 @@ export default function PainelSubetapas({
                       canal: "whatsapp",
                       mensagem: "",
                       // um dia depois da última: é a cadência diária de sempre.
-                      minutos: subetapas.length ? (subetapas[subetapas.length - 1].dia + 1) * MINUTOS_POR_DIA : 0,
+                      // Depois de um lembrete da reunião, a nova segue contada da
+                      // reunião (10 min depois da última).
+                      minutos: !subetapas.length
+                        ? 0
+                        : subetapas[subetapas.length - 1].ancora === "reuniao"
+                          ? subetapas[subetapas.length - 1].minutos + 10
+                          : (subetapas[subetapas.length - 1].dia + 1) * MINUTOS_POR_DIA,
+                      ancora: subetapas.length && subetapas[subetapas.length - 1].ancora === "reuniao" ? "reuniao" : "entrada",
+                      ignorarResposta: false,
                       // e pelo mesmo número da última: trocar de instância no
                       // meio da cadência é a exceção.
                       instanciaId: subetapas.length ? subetapas[subetapas.length - 1].instanciaId : null,
@@ -1413,7 +1516,7 @@ export default function PainelSubetapas({
                   >
                     <Plus className="size-4" aria-hidden="true" />
                     {subetapas.length ? "Nova mensagem" : "Primeira mensagem"}
-                    {subetapas.length > 0 && (
+                    {subetapas.length > 0 && subetapas[subetapas.length - 1].ancora !== "reuniao" && (
                       <span className="text-[11px] font-normal text-zinc-400 dark:text-zinc-500">
                         no dia {subetapas[subetapas.length - 1].dia + 1}
                       </span>

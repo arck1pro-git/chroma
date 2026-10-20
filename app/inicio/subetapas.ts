@@ -74,6 +74,10 @@ export function diasDesde(data_criacao: string, hoje: Date) {
 function indicePorIdade(subetapas: Subetapa[], idade: number) {
   let alvo = -1;
   for (let i = 0; i < subetapas.length; i++) {
+    // A régua é de DIAS DESDE A ENTRADA: as colunas contadas da reunião
+    // (lembretes) não têm dia nesse sentido, e quem está fora do fluxo para
+    // na última contada da entrada.
+    if (subetapas[i].ancora === "reuniao") break;
     if (subetapas[i].dia <= idade) alvo = i;
     else break; // vêm ordenadas por dia; a primeira futura encerra a busca
   }
