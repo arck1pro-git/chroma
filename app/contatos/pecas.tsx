@@ -8,17 +8,12 @@ import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import type { EtapaComTom } from "@/lib/contatos-ficha";
 import { brlCurto } from "../formato";
+import { telefoneLegivel } from "@/lib/telefone";
 
 const FUSO = "America/Sao_Paulo";
 
-/** "+55 (47) 99934-6074". Fora do padrão BR, os dígitos com "+". */
-export function telefone(bruto: string) {
-  const d = bruto.replace(/\D/g, "");
-  if (!d) return "";
-  const comPais = d.length === 10 || d.length === 11 ? `55${d}` : d;
-  const br = /^55(\d{2})(\d{4,5})(\d{4})$/.exec(comPais);
-  return br ? `+55 (${br[1]}) ${br[2]}-${br[3]}` : `+${comPais}`;
-}
+/** "+55 47 9 9934-6074" — o mesmo formato do quadro e do chat (lib/telefone.ts). */
+export const telefone = telefoneLegivel;
 
 /** "1:05", "12:30", "1:02:03". */
 export function tempo(segundos: number) {

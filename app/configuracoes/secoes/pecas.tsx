@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, TriangleAlert, type LucideIcon } from "lucide-react";
 import { amostraDoTom, corValida, TONS_FUNIL } from "@/lib/cores-funil";
+import { telefoneLegivel } from "@/lib/telefone";
 import { tintaDe } from "../../components/tinta";
 
 // ── Cabeçalho da aba ────────────────────────────────────────────────────────
@@ -256,17 +257,9 @@ export function Avatar({
 }
 
 // ── Telefone ────────────────────────────────────────────────────────────────
-/** "5547999346074" → "+55 47 99934-6074". Fora do padrão brasileiro, só o "+". */
+/** "5547999346074" → "+55 47 9 9934-6074" (lib/telefone.ts); vazio, null. */
 export function formatarTelefone(digitos: string | null | undefined): string | null {
-  if (!digitos) return null;
-  const d = digitos.replace(/\D/g, "");
-  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) {
-    const ddd = d.slice(2, 4);
-    const resto = d.slice(4);
-    const corte = resto.length - 4;
-    return `+55 ${ddd} ${resto.slice(0, corte)}-${resto.slice(corte)}`;
-  }
-  return `+${d}`;
+  return telefoneLegivel(digitos) || null;
 }
 
 // ── Cores do funil ──────────────────────────────────────────────────────────

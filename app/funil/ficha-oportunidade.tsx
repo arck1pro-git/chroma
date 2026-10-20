@@ -51,6 +51,7 @@ import type { AutomacaoDaEntidade } from "@/lib/automacoes/repositorio";
 import { CamposDoContato, ListaCampos } from "../components/campos-personalizados";
 import { AnotacoesContato } from "../components/anotacoes-contato";
 import ReunioesDaOportunidade from "./reunioes-oportunidade";
+import { telefoneLegivel } from "@/lib/telefone";
 
 // Mesmo mapa do /chat (app/chat/chat.tsx) — duplicado de propósito: são só 3
 // linhas e os dois lados vivem em módulos diferentes o bastante pra uma
@@ -507,7 +508,7 @@ export default function FichaOportunidade({
             <div className="flex flex-col gap-2 px-5 py-4">
               {/* Mesmo "—" da ficha do contato (contatos/detalhes.tsx): campo
                   vazio sem traço vira um ícone solto do lado de nada. */}
-              <Campo Icone={Phone}>{contato.whatsapp || "—"}</Campo>
+              <Campo Icone={Phone}>{telefoneLegivel(contato.whatsapp) || "—"}</Campo>
               <Campo Icone={AtSign}>{contato.email || "—"}</Campo>
               <Campo Icone={MapPin}>{localizacao(contato, true) || "—"}</Campo>
               <Campo Icone={CalendarDays}>

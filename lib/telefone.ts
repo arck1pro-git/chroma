@@ -11,6 +11,20 @@ export function soDigitos(valor: string): string {
   return valor.replace(/\D/g, "");
 }
 
+// O número para LER na tela: país, DDD e o nono dígito separados por espaço
+// (pedido dele, 2026-10-20) — "+55 47 9 9934-6074"; fixo ou JID antigo, sem o
+// nono, "+55 47 3333-4444". Sem o 55 na frente e com cara de BR, assume BR.
+// Fora do padrão brasileiro, só os dígitos com "+". Vazio devolve "".
+export function telefoneLegivel(valor: string | null | undefined): string {
+  let d = soDigitos(valor ?? "");
+  if (!d) return "";
+  if (d.length === 10 || d.length === 11) d = "55" + d;
+  const br = /^55(\d{2})(9?)(\d{4})(\d{4})$/.exec(d);
+  if (!br) return `+${d}`;
+  const [, ddd, nono, meio, fim] = br;
+  return `+55 ${ddd} ${nono ? `${nono} ` : ""}${meio}-${fim}`;
+}
+
 // Chave canônica pra comparação: 55 + DDD + 8 dígitos finais.
 // - Aceita com 55 na frente ou sem (assume BR).
 // - Se for celular com o nono dígito (55 DDD 9XXXXXXXX = 13 díg), remove o 9.

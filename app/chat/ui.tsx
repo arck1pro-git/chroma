@@ -7,6 +7,7 @@ import { Bot, Check, CheckCheck, Clock, Smartphone, TriangleAlert } from "lucide
 import { horaCurta, iniciais } from "../formato";
 import type { CanalChat, ConversaResumo, EstadoCanal, TipoCanal } from "./tipos";
 import type { StatusMensagem } from "../data";
+import { telefoneLegivel } from "@/lib/telefone";
 
 // ── Identidade dos canais ───────────────────────────────────────────────────
 //
@@ -61,16 +62,8 @@ export function canalDaConversa(canais: CanalChat[], c: Pick<ConversaResumo, "nu
 
 // ── Formatação ──────────────────────────────────────────────────────────────
 
-/** "5547992399626" → "+55 47 99239-9626". Fora do padrão BR, só "+dígitos". */
-export function formatarTelefone(numero: string | null | undefined): string {
-  const d = (numero ?? "").replace(/\D/g, "");
-  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) {
-    const resto = d.slice(4);
-    const corte = resto.length - 4;
-    return `+55 ${d.slice(2, 4)} ${resto.slice(0, corte)}-${resto.slice(corte)}`;
-  }
-  return d ? `+${d}` : "";
-}
+/** "5547992399626" → "+55 47 9 9239-9626" (lib/telefone.ts). */
+export const formatarTelefone = telefoneLegivel;
 
 // Fuso fixo nos dois lados pelo mesmo motivo de app/formato.ts: com o fuso do
 // runtime, o SSR sai em UTC e o navegador em local, e a hidratação reclama.
