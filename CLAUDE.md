@@ -56,6 +56,7 @@ schema.sql            schema base; schema-automacoes.sql; migration-*.sql (raiz,
 scripts/              operação e verificação, rodados com o runner jiti
 docs/                 decisões e arquitetura por assunto
 public/               só ícones e o que o app serve; nada de material interno
+.claude/              subagentes, skills, hooks e settings do Claude Code (seção 10)
 ```
 
 Módulos (chave, rota): inicio `/`, chat, contatos, agenda, demandas, metricas, emails, automacoes, campanhas,
@@ -164,10 +165,14 @@ npm run start                    # serve o build local
 node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projeto fora do Next
 ```
 
-- **Testes:** não existe `npm test`. Lógica de servidor se verifica com um script que chama as funções reais pelo
-  runner acima, contra o banco DEV: cria o cenário com marca reconhecível, chama a função (nunca uma cópia do SQL)
-  e apaga num `finally`. Dependência externa (n8n, uazapi, Meta) é substituída por um servidor `node:http` local.
-  Script descartável fica fora do repositório.
+- **Testes:** não existe `npm test`. Os scripts de verificação que já existem simulam a rede e passam hoje:
+  `scripts/testar-cadencia-responsavel.mjs` (direto com `node`), `testar-filtro-campanhas.ts`, `testar-meta-ads.ts`
+  e `testar-meta-eventos.ts` (pelo runner; este usa o DEV numa transação desfeita), e `scripts/testar-hooks.mjs`
+  para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
+  falam com serviço e conta de verdade e só rodam a pedido.
+- **Script novo de verificação:** chama as funções reais pelo runner acima, contra o banco DEV: cria o cenário com
+  marca reconhecível, chama a função (nunca uma cópia do SQL) e apaga num `finally`. Dependência externa (n8n,
+  uazapi, Meta) é substituída por um servidor `node:http` local. Script descartável fica fora do repositório.
 - **SQL avulso no DEV:** `node --env-file=.env scripts/jiti.mjs scripts/rodar-sql.ts <arquivo.sql>`, só quando a
   tarefa pede.
 - **Windows:** o Bash é Git Bash (use `MSYS_NO_PATHCONV=1` quando um argumento começar com `/`); o PowerShell é
@@ -218,10 +223,13 @@ helpers e componentes existentes. Definir o contrato entre servidor e tela (assi
 antes de escrever as duas pontas. Seguir o fluxo da seção 2 e as convenções da seção 4. Menor mudança que resolve,
 sem refatoração fora do escopo.
 
-**Verificar uma alteração.** `npx tsc --noEmit -p .` e `npx eslint` nos arquivos tocados, sem erro novo. Lógica de
-servidor: script pelo runner contra o DEV. Interface: tipos, lint e o HTML servido pelo dev server; a conferência
-visual fica com o usuário, salvo pedido. Revisão pelo `code-reviewer` (e pelo `security-auditor` quando a mudança
-toca acesso, rota, integração ou IA). Relatar o que foi verificado e o que não foi, com a saída real.
+**Verificar uma alteração.** A skill `/verify` escolhe as verificações pelo que mudou (tipos, lint, scripts, build),
+roda e mostra o resultado real. Lógica de servidor sem script: escrever um (seção 5). Interface: tipos, lint e o
+HTML servido pelo dev server; a conferência visual fica com o usuário, salvo pedido. Revisão com `/review`, e
+`/security-audit` quando a mudança toca acesso, rota, integração, IA ou dados pessoais. Relatar o que foi
+verificado e o que não foi, com a saída real.
+
+O fluxo completo, com delegação aos subagentes e revisão, está nas skills `/fix-bug` e `/implement-feature`.
 
 ## 8. Arquivos críticos, dependências e integrações
 
@@ -272,28 +280,63 @@ bundle, `serverExternalPackages`), `jose`, `zod` 4, `@anthropic-ai/sdk` (o Stora
 - Antes de implementar: localizar os módulos envolvidos, entender contratos e dependências.
 - Depois de implementar: reler os arquivos afetados e rodar as verificações disponíveis (seção 5).
 
-## 10. Subagentes e colaboração
+## 10. Subagentes, skills e hooks
 
-Definidos em `.claude/agents/`, todos em Opus. A sessão principal decide, coordena, fala com o usuário e é a única
-que faz commit, sempre a pedido.
+Tudo em `.claude/`. A sessão principal decide, coordena, fala com o usuário e é a única que faz commit, sempre a
+pedido.
+
+**Subagentes** (`.claude/agents/`, todos em Opus com esforço xhigh). Eles recebem este arquivo automaticamente; o
+arquivo de cada um traz só o papel, a área e o checklist próprio.
 
 | Agente | Papel | Edita? |
 |---|---|---|
 | `code-reviewer` | revisa diff, commit ou branch: bugs, regressões, legibilidade, modularidade, acoplamento, cobertura | não |
-| `security-auditor` | autorização, escopo, segredos, injeção, SSRF, XSS, webhooks, IA, riscos arquiteturais | não |
+| `security-reviewer` | autorização, escopo, segredos, injeção, SSRF, XSS, webhooks, IA, riscos arquiteturais | não |
 | `backend-engineer` | `lib/`, server actions, rotas, `dados.ts`, migrations, scripts; investiga bugs de servidor | sim |
 | `frontend-engineer` | telas, componentes, estilos e interação; investiga bugs de interface | sim |
 
 **Como colaborar:**
 1. **Antes:** a sessão principal localiza os módulos e define o contrato entre servidor e tela. Mudança em acesso,
-   rota pública, integração externa ou IA passa antes pelo `security-auditor` para avaliar o desenho.
+   rota pública, integração externa ou IA passa antes pelo `security-reviewer` para avaliar o desenho.
 2. **Durante:** `backend-engineer` e `frontend-engineer` podem trabalhar em paralelo só sobre o contrato fechado e
    nunca no mesmo arquivo. O backend é dono de `lib/`, `actions.ts`/`acoes.ts`, `dados.ts`, `app/api/` e SQL; o
    frontend, de `page.tsx` (composição), componentes `.tsx`, `app/components/` e `app/globals.css`. Quem precisa de
    mudança na área do outro pede pela sessão principal.
-3. **Depois:** `code-reviewer` no diff inteiro; `security-auditor` também, quando a mudança toca acesso, rota,
+3. **Depois:** `code-reviewer` no diff inteiro; `security-reviewer` também, quando a mudança toca acesso, rota,
    integração, IA ou dados pessoais. Achado crítico ou alto volta para o agente dono do arquivo.
 4. **Fechamento:** a sessão principal confere a verificação real, atualiza a documentação (seção 11) e relata.
+
+Frentes independentes que vão virar mudanças separadas ficam numa branch ou worktree por frente, nunca no mesmo
+checkout. A worktree nasce sem `node_modules` e sem `.env`; quem providencia é o usuário.
+
+**Skills** (`.claude/skills/`):
+
+| Skill | O que faz | Quem chama |
+|---|---|---|
+| `/review [alvo]` | roda o `code-reviewer` em contexto separado: alterações locais, sha, branch ou caminho | usuário ou sessão |
+| `/security-audit [alvo]` | roda o `security-reviewer`, defensivo; aceita também módulo, rota ou desenho | usuário ou sessão |
+| `/verify [build ou tudo]` | escolhe as verificações pelo que mudou, roda e mostra a tabela com o resultado real | usuário ou sessão |
+| `/implement-feature <pedido>` | entender, plano com donos e contrato, implementar pelos agentes, verificar, revisar | só o usuário |
+| `/fix-bug <sintoma>` | reproduzir, causa raiz, menor correção, a mesma reprodução passando, revisão | só o usuário |
+
+**Hooks** (`.claude/settings.json`, scripts em `.claude/hooks/`, testados por `scripts/testar-hooks.mjs`). São rede
+de segurança por padrão de texto e não substituem a seção 6:
+- `proteger-arquivos.mjs`, antes de Read, Grep, Edit, Write e NotebookEdit: nega ler ou editar `.env*` (exceto
+  `.env.example`), inclusive por nome curto, stream ou Grep com glob que alcance o `.env`, e nega editar o que é
+  gerado ou gerenciado (`.git/`, `node_modules/`, `.next/`, `package-lock.json`, `AGENTS.md`).
+- `guardar-comandos.mjs`, antes de Bash e PowerShell: pede aprovação para commit, push, reset, descarte de
+  alterações, remoção recursiva, `npm install`, `npx --yes`, `vercel`, `rodar-sql`, SQL que grava quando o comando
+  executa SQL, banco de produção, e comando que lê o `.env` (`cat .env`, `grep -r` na raiz, `rg --hidden`). No Bash,
+  os primeiros também estão em `permissions.ask`. Não pega script que lê a variável por dentro, comando montado
+  numa variável, `git checkout <arquivo>` sem `--` nem `rm` de arquivo avulso.
+- `verificar-ao-parar.mjs`, ao encerrar a vez: roda `tsc` e `eslint` de `node_modules` quando um `.ts`, `.tsx`,
+  `.js`, `.mjs`, `tsconfig.json` ou `package.json` mudou desde a última conferência. Falhou, bloqueia uma vez por
+  conjunto de alterações com a saída; o mesmo conjunto depois só avisa. Sem `node_modules`, só avisa. Não roda
+  testes nem build: isso é do `/verify`.
+
+**Memória automática.** Ligada no projeto (`autoMemoryEnabled`), com as notas em `~/.claude/projects/<projeto>/memory/`,
+fora do repositório. Guarda preferência do usuário, decisão de produto com data e armadilha não óbvia. Nunca segredo,
+token, senha, telefone, e-mail ou dado de cliente, nem o que o código, o git ou este arquivo já registram.
 
 ## 11. Documentação viva
 

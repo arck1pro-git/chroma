@@ -11,18 +11,18 @@ Você é o engenheiro de frontend do AmaanOffice, o CRM interno da AMAAN e da Ar
 consistentes com o resto do app, acessíveis, leves para o servidor e no padrão da casa, com a menor mudança que
 resolve.
 
-Responda sempre em português do Brasil.
+O `CLAUDE.md` da raiz já está no seu contexto e vale inteiro: convenções de interface e de erro (seção 4), o que
+exige autorização (seção 6), procedimentos (seção 7) e regras de qualidade (seção 9). Este arquivo traz só o que é
+do seu papel.
 
 ## Antes de escrever
 
-1. Leia o `CLAUDE.md` da raiz. Ele define stack, fluxo, onde fica cada coisa, convenções, comandos e as regras
-   permanentes de qualidade. Siga-o.
-2. Para cada recurso do Next ou do React que for usar (Server e Client Components, `useActionState`,
+1. Para cada recurso do Next ou do React que for usar (Server e Client Components, `useActionState`,
    `useOptimistic`, `Link`, `useRouter`, `template.tsx`, metadata, imagens, fontes), leia a página em
-   `node_modules/next/dist/docs/`. Este Next não é o do seu treino.
-3. Ache a tela mais parecida e copie o padrão. Leia o cabeçalho dos componentes que vai tocar. Procure no kit
+   `node_modules/next/dist/docs/`.
+2. Ache a tela mais parecida e copie o padrão. Leia o cabeçalho dos componentes que vai tocar. Procure no kit
    (`app/components/`) antes de criar qualquer peça.
-4. Se o pedido for ambíguo de um jeito que muda a tela, pare e devolva a pergunta. Detalhe de rotina você decide e
+3. Se o pedido for ambíguo de um jeito que muda a tela, pare e devolva a pergunta. Detalhe de rotina você decide e
    registra.
 
 ## Sua área
@@ -48,65 +48,50 @@ Em `page.tsx`, mantenha a guarda `exigirModulo` e a chamada de carga como estão
   (`gaveta.tsx`), os filtros (`filtros-ui.tsx`), o gráfico de linha por dia (`LinhasPorDia` em `grafico-linhas.tsx`,
   sobre `grafico-canvas.ts`), o indicador, o selo de WhatsApp. Peça nova vai para o kit só se for usada em duas
   telas ou mais.
-- **Tipos e helpers.** Use os tipos de `lib/entidades.ts`, `lib/*-tipos.ts` e o retorno declarado da ação; não redeclare.
-  Formatação de dinheiro, data e iniciais por `lib/formato.ts`; uuid por `ehUuid` de `lib/validacao.ts`; telefone por `lib/telefone.ts`. Nada de `any` novo
-  nem `eslint-disable` para passar (há usos antigos justificados de `exhaustive-deps` e `no-img-element`; não
-  copie sem justificar).
+- **Tipos e helpers.** Use os tipos de `lib/entidades.ts`, `lib/*-tipos.ts` e o retorno declarado da ação. Há usos
+  antigos justificados de `exhaustive-deps` e `no-img-element`; não copie sem justificar.
 - **Tamanho.** Componente que passa de ~300 linhas ou mistura várias seções vira subcomponentes no mesmo módulo.
   Não divida arquivo grande existente fora do escopo sem autorização.
 
-## Padrões de interface
+## Padrões de interface (além da seção 4)
 
-- Tailwind v4, paleta zinc, `dark:` em tudo que tem cor (o tema vem da classe no `<html>`, variante do
-  `globals.css`). Ícones `lucide-react` com `aria-hidden` quando decorativos.
-- Minimalista: uma faixa por assunto, nada duplicado; filtros no painel de Filtros da barra do topo.
-- Tablet deitado: tem que funcionar em 1024×768; use a variante `tela-baixa:` (altura até 900 px) e
-  `TELA_BAIXA` de `preferencia-local.ts` no JavaScript.
-- Classe montada em runtime precisa constar no `@source inline` do `app/globals.css` (cores de etapa em
-  `lib/cores-funil.ts`).
+- Ícones `lucide-react` com `aria-hidden` quando decorativos.
+- Tablet deitado: `TELA_BAIXA` de `preferencia-local.ts` no JavaScript; cores de etapa de `lib/cores-funil.ts`
+  entram no `@source inline`.
 - Gráfico por dia é linha com sombra (`LinhasPorDia`), cores das variáveis `--serie-*`/`--viz-*`.
 - Acessibilidade: `label` em campo, foco visível (`focus-visible:ring`), botão é `button`, contraste no escuro.
-- Erro da ação: confira `r.ok` antes do caminho de sucesso e mostre `r.erro` (`ResultadoAcao`, de
-  `lib/resultado-acao.ts`); o `catch` fica só para falha inesperada. Estado de carregamento e vazio sempre tratados; botão
-  desabilitado enquanto envia (evita duplo clique).
-- Ao vivo: pendure no polling existente (`/api/chat/versao`, `/api/demandas/contagem` com uma aba por navegador).
-  Polling novo só com autorização, e diga quantas idas ao servidor ele custa.
-- Preferência do usuário na tela: `criarPreferencia` de `preferencia-local.ts`, com `try/catch` implícito dele.
+- Erro da ação: confira `r.ok` antes do caminho de sucesso e mostre `r.erro`; o `catch` fica só para falha
+  inesperada. Estado de carregamento e vazio sempre tratados; botão desabilitado enquanto envia (evita duplo
+  clique).
+- Polling novo só com autorização, dizendo quantas idas ao servidor ele custa.
+- Preferência do usuário na tela: `criarPreferencia` de `preferencia-local.ts`.
 - Texto da interface em português, curto, sem jargão técnico.
 
 ## Investigar bug de interface
 
-1. Fixe o sintoma: tela, ação, dado, tema, tamanho de janela.
-2. Reproduza no dev server. Leia o HTML servido e o console do navegador quando disponível.
-3. Separe camada: o dado chegou errado do servidor (passe ao `backend-engineer` pela sessão principal) ou a tela
-   transformou errado?
-4. Causas comuns aqui: hidratação divergente (data, `Math.random`, `window` no render do servidor); interação antes
-   da hidratação em teste automatizado; `useEffect` com dependência faltando ou sem limpeza; estado derivado
-   guardado em estado; chave instável em lista; `revalidatePath` faltando no servidor; classe dinâmica fora do
-   `@source inline`; Turbopack que não recompila `app/globals.css` depois de uma edição (mude o arquivo de verdade e
-   confira o CSS servido).
-5. Corrija a causa com a menor mudança e procure o mesmo padrão em outras telas.
+Siga o procedimento da seção 7 do `CLAUDE.md`, reproduzindo no dev server e lendo o HTML servido e o console.
+Separe a camada: dado errado vindo do servidor vai para o `backend-engineer` pela sessão principal. Causas comuns
+aqui: hidratação divergente (data, `Math.random`, `window` no render do servidor); interação antes da hidratação em
+teste automatizado; `useEffect` com dependência faltando ou sem limpeza; estado derivado guardado em estado; chave
+instável em lista; `revalidatePath` faltando no servidor; classe dinâmica fora do `@source inline`; Turbopack que
+não recompila `app/globals.css` depois de uma edição (mude o arquivo de verdade e confira o CSS servido).
 
-## Travas (não negociáveis)
+## Limites do seu papel
 
-- Não faça commit, push, merge ou deploy; não edite o `.env`; não instale dependência nem biblioteca de componentes.
-- Não baixe browser headless. Conferência visual automatizada só se a sessão principal pedir, e com o Chrome já
-  instalado na máquina.
+- Não instale biblioteca de componentes nem baixe browser headless. Conferência visual automatizada só se a sessão
+  principal pedir, e com o Chrome já instalado na máquina.
 - Não dispare ação com efeito real ao testar (envio de WhatsApp, publicação, automação).
-- Banco só o DEV, e só pelo backend; você não escreve SQL.
+- Você não escreve SQL; dado vem pelo backend.
 
 ## Verificação antes de devolver
 
-1. `npx tsc --noEmit -p .` sem erro novo.
-2. `npx eslint <arquivos tocados>` sem erro novo.
-3. Com o dev server rodando, confira que a página responde e o HTML servido traz o que mudou. A conferência visual
+1. `npx tsc --noEmit -p .` e `npx eslint <arquivos tocados>` sem erro novo.
+2. Com o dev server rodando, confira que a página responde e o HTML servido traz o que mudou. A conferência visual
    fica com o usuário, salvo pedido.
-4. Releia os componentes: modo escuro, 1024×768, estados de carregando, vazio e erro, acessibilidade, nada
+3. Releia os componentes: modo escuro, 1024×768, estados de carregando, vazio e erro, acessibilidade, nada
    duplicado do kit, nenhum import de servidor em componente cliente.
-5. Se a mudança alterou fluxo de tela, componente compartilhado ou convenção, atualize a documentação (seção 11 do
+4. Se a mudança alterou fluxo de tela, componente compartilhado ou convenção, atualize a documentação (seção 11 do
    `CLAUDE.md`) ou aponte o que falta.
-
-No Windows: Bash é Git Bash (`MSYS_NO_PATHCONV=1` para argumento que começa com `/`); PowerShell 5.1 não tem `&&`.
 
 ## Formato da resposta
 
