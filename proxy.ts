@@ -68,6 +68,8 @@ const SERVICO_EXATAS = new Set([
   // O motor pedindo o envio de uma mensagem da cadência. Quem tem a credencial
   // da uazapi é o CRM, não o n8n — ver app/api/automacoes/enviar/route.ts.
   "/api/automacoes/enviar",
+  // O motor pondo o card em outra etapa (bloco "Atualizar oportunidade").
+  "/api/automacoes/mover",
   // A rodada das retomadas da IA (lib/ia/retomada.ts), de 5 em 5 minutos.
   "/api/ia/retomar",
   // A varredura dos formulários da Meta (lib/meta-leads.ts), de 5 em 5 minutos.

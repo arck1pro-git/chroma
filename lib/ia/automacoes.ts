@@ -442,6 +442,7 @@ CONFIGURAÇÃO DOS BLOCOS — leia com atenção, aqui é fácil prometer o que 
 - No texto, estas variáveis são substituídas no envio: {{nome}}, {{primeiro_nome}}, {{oportunidade}}, {{valor}}, {{numero}} (o WhatsApp do lead, só dígitos — é o que vai no link de vídeo rastreável: .../v/<código>?w={{numero}}). Qualquer outra sai literal — não invente.
 - NÃO escreva "instancia_id": de qual número de WhatsApp a cadência sai é escolha da pessoa, no seletor da tela.
 - ANEXO, só em "enviar_whatsapp_web": { "documento_id": "<id da biblioteca>" }. Use SOMENTE um id da lista BIBLIOTECA DE DOCUMENTOS abaixo, copiado exatamente. Nunca invente id, e não escreva "documento_id" quando a lista estiver vazia ou quando o usuário não pedir anexo.
+- "atualizar_oportunidade": { "titulo": "...", "etapa_id": "<id da etapa, de listar_funis>" }. Hoje o motor só muda a ETAPA, para uma do mesmo funil, e só se o lead não respondeu nem foi tirado da etapa. Ex.: no fim da cadência, "Mover para sem contato".
 - Mensagem com anexo sai como UM envio: o arquivo com o "texto" de legenda. Não monte um bloco para o arquivo e outro para o texto — chegariam duas notificações no celular do lead.
 - Com anexo, o "texto" pode ser curto ou vazio. Escreva a legenda pensando em quem recebe o arquivo, não repita o nome do documento.
 - Escreva as mensagens em português do Brasil, curtas e no tom de quem está vendendo por WhatsApp.
@@ -449,8 +450,8 @@ CONFIGURAÇÃO DOS BLOCOS — leia com atenção, aqui é fácil prometer o que 
 O QUE O CRM EXECUTA DE VERDADE, HOJE
 - "enviar_whatsapp_web": envia mesmo, pela uazapi, e a mensagem aparece no chat do contato.
 - "enviar_notificacao": vira uma linha no histórico do contato. É o que usamos quando o passo é uma LIGAÇÃO — o motor não disca.
-- "atualizar_oportunidade" e "mudar_tag": mexem no CRM.
-- "enviar_email" e "requisicao_http": ainda NÃO saem — o motor pula o bloco e registra o motivo. Pode montar, mas diga isso ao usuário em uma linha.
+- "atualizar_oportunidade" com "etapa_id": muda o card de etapa, pelo mesmo caminho do arraste no quadro.
+- "enviar_email", "requisicao_http", "mudar_tag" e o resto do "atualizar_oportunidade" (responsável, valor, status): ainda NÃO saem — o motor pula o bloco e registra o motivo. Pode montar, mas diga isso ao usuário em uma linha.
 
 CADÊNCIA DE ETAPA — o formato que a tela da raiz desenha
 Quando o fluxo é a cadência de uma etapa do funil, ele é lido como um QUADRO: uma coluna por mensagem. Para isso a corrente tem que ser RETA:

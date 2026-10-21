@@ -242,6 +242,9 @@ export const MARCAR_PASSO = `
 // próximo (whatsapp oficial, e-mail), acrescente aqui.
 const BLOCOS_QUE_ENVIAM = new Set(["enviar_whatsapp_web"]);
 
+// A etapa do "Atualizar oportunidade" vai dentro do corpo JSON do nó: só id.
+const UUID_ETAPA = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Traduz o template do CRM (`{{primeiro_nome}}`) para expressão do n8n.
  *
@@ -964,6 +967,77 @@ export function paraWorkflow(
 
       cadeiaDoBloco.set(passo.id, soSemResposta ? [guarda, envio, registro] : [envio, registro]);
       if (soSemResposta) comGuarda.add(passo.id);
+      continue;
+    }
+
+    if (passo.tipo === "atualizar_oportunidade" && typeof passo.config.etapa_id === "string" && passo.config.etapa_id) {
+      // MUDAR A ETAPA (2026-10-21) — "terminou a cadência sem resposta → sem
+      // contato". Só a etapa, por ora; responsável, valor e status continuam no
+      // No-Op lá embaixo.
+      //
+      // TRÊS nós, como a mensagem: confere, pede ao CRM e marca o passo. A
+      // guarda é a mesma da mensagem — respondeu, o card não sai do lugar (a IA
+      // é quem o leva para "em atendimento"). Quem move é o CRM
+      // (/api/automacoes/mover), pelo mesmo caminho do arraste no quadro.
+      if (!UUID_ETAPA.test(passo.config.etapa_id)) {
+        throw new Error(`O bloco "${passo.rotulo}" aponta para uma etapa inválida. Escolha a etapa de novo.`);
+      }
+      if (!cred.crmBaseUrl || !cred.crmCredencialId) {
+        throw new Error(
+          `O bloco "${passo.rotulo}" muda a etapa pelo CRM e exige que o motor alcance o CRM por um endereço público.`,
+        );
+      }
+      const pedido = nomeDoNo(passo);
+      const guarda = `Ainda inscrito? [${passo.id}]`;
+      const registro = `Registrar [${passo.id}]`;
+      nodes.push({
+        id: `${passo.id}__guarda`,
+        name: guarda,
+        type: "n8n-nodes-base.postgres",
+        typeVersion: 2.4,
+        position: [passo.posicao.x - 190, passo.posicao.y],
+        parameters: {
+          operation: "executeQuery",
+          query: passo.config.ignorar_resposta === true ? GUARDA_SO_INSCRITO : GUARDA_INSCRITO,
+          options: { queryReplacement: expr(EXECUCAO_ID) },
+        },
+        alwaysOutputData: false,
+        credentials: credPostgres(cred),
+      });
+      nodes.push({
+        id: passo.id,
+        name: pedido,
+        type: "n8n-nodes-base.httpRequest",
+        typeVersion: 4.2,
+        position: [passo.posicao.x, passo.posicao.y],
+        parameters: {
+          method: "POST",
+          url: `${cred.crmBaseUrl}/api/automacoes/mover`,
+          authentication: "genericCredentialType",
+          genericAuthType: "httpHeaderAuth",
+          sendBody: true,
+          specifyBody: "json",
+          jsonBody: expr(JSON.stringify({ execucao_id: EXECUCAO_ID, no_id: passo.id, etapa_id: passo.config.etapa_id })),
+        },
+        credentials: {
+          httpHeaderAuth: { id: cred.crmCredencialId, name: "Chroma · CRM" },
+        },
+      });
+      nodes.push({
+        id: `${passo.id}__reg`,
+        name: registro,
+        type: "n8n-nodes-base.postgres",
+        typeVersion: 2.4,
+        position: [passo.posicao.x + 190, passo.posicao.y],
+        parameters: {
+          operation: "executeQuery",
+          query: MARCAR_PASSO,
+          options: { queryReplacement: expr([EXECUCAO_ID, passo.id, passo.tipo].join(",")) },
+        },
+        credentials: credPostgres(cred),
+      });
+      cadeiaDoBloco.set(passo.id, [guarda, pedido, registro]);
+      comGuarda.add(passo.id);
       continue;
     }
 
