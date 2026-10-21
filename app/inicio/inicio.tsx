@@ -48,7 +48,7 @@ import { SeletorMenu } from "../components/filtros-ui";
 import PainelFiltros from "../funil/painel-filtros";
 import DashboardMetaAds from "./dashboard-meta-ads";
 import VisaoGeral from "./visao-geral";
-import type { DiaIa } from "./atendimentos-ia";
+import type { IaDoFunil } from "./atendimentos-ia";
 import { filtroCampanhasVazio, passaNoFiltroCampanhas, type FiltroCampanhas } from "./filtro-campanhas";
 import BarraRolagem from "./barra-rolagem";
 import {
@@ -659,9 +659,10 @@ export default function Inicio({
   // em "Inscrever na automação". Vem do servidor porque a lista muda quando
   // alguém publica um fluxo, e a raiz já é force-dynamic.
   fluxosParaInscricao: FluxoDisponivel[];
-  // Atendimentos de IA e reuniões por dia (./atendimentos-ia.ts), já no
-  // escopo de quem está vendo.
-  graficoIa: DiaIa[];
+  // Atendimentos e reuniões da IA por dia, POR FUNIL (./atendimentos-ia.ts),
+  // já no escopo de quem está vendo. Todos os funis vêm de uma vez: trocar de
+  // funil não busca de novo.
+  graficoIa: Record<string, IaDoFunil>;
 }) {
   const {
     funis,
@@ -1215,11 +1216,20 @@ export default function Inicio({
                 className="flex min-h-0 flex-1 flex-col"
                 aria-label={`Quadro · ${funil.nome}`}
               >
-                {/* A IA nos últimos 30 dias, nas cores do funil aberto.
+                {/* A IA neste funil nos últimos 30 dias, nas cores dele.
                     Minimizável — em tela baixa já abre minimizada (ver
                     ./visao-geral.tsx). Campanhas e filtros, que vinham logo
-                    abaixo, subiram para a barra do topo. */}
-                <VisaoGeral dias={graficoIa} tom={corValida(funil?.cor)} />
+                    abaixo, subiram para a barra do topo. Funil criado depois
+                    da carga ainda não tem linha: vai zerado, com os mesmos dias. */}
+                <VisaoGeral
+                  ia={
+                    graficoIa[funil.id] ?? {
+                      leads: 0,
+                      dias: (Object.values(graficoIa)[0]?.dias ?? []).map((d) => ({ ...d, atendimentos: 0, reunioes: 0 })),
+                    }
+                  }
+                  tom={corValida(funil?.cor)}
+                />
 
                 {colunas.length === 0 ? (
                   <p className="surge rounded-2xl border border-dashed border-zinc-200 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-700">
