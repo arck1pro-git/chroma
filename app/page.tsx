@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Inicio from "./inicio/inicio";
-import { carregarFunil } from "./funil/dados";
+import { carregarFunil } from "@/lib/funil";
 import { CADENCIAS_VAZIAS, carregarCadencias } from "./inicio/cadencias";
 import { carregarAtendimentosIa } from "./inicio/atendimentos-ia";
 import { comCadenciaDeDemonstracao, FLUXO_DEMO } from "./inicio/demo-cadencia";
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 // A raiz concentra dashboard, funis/kanbans e contatos — /dashboard, /funil e
 // /contatos deixaram de existir como rota.
 //
-// FONTE DOS DADOS: Postgres, via carregarFunil (app/funil/dados.ts). Até
+// FONTE DOS DADOS: Postgres, via carregarFunil (lib/funil.ts). Até
 // 2026-09-03 isto lia app/mock/dados.json (removido) porque a base estava
 // vazia e a UI nova precisava de volume pra ser avaliada.
 export default async function Home({
@@ -46,7 +46,7 @@ export default async function Home({
 
   // ESCOPO 'proprio' = a pessoa só enxerga as oportunidades em que ela é a
   // responsável. Quem decide é o departamento dela, na tela de Acessos; o corte
-  // acontece na consulta (app/funil/dados.ts), não na interface.
+  // acontece na consulta (lib/funil.ts), não na interface.
   const soMinhas = escopo === "proprio" ? usuario.id : null;
 
   // O painel de cadência mora na raiz, mas o que ele faz é AUTOMAÇÃO: cria,

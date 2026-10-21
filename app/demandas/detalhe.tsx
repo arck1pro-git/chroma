@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, CalendarClock, Check, Flag, LifeBuoy, Pencil, Trash2, Users, X } from "lucide-react";
 import CamadaTopo from "../components/camada-topo";
-import { dataHora } from "../formato";
+import { dataHora } from "@/lib/formato";
 import { AnexosDaDemanda } from "./anexos";
 import Checklist, { type MontarChecklist } from "./checklist";
 import { Avatar, alvoDo, ehMinha, siglaDe, type Eu, type Item } from "./cartao";

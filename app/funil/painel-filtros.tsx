@@ -32,7 +32,7 @@ import { SlidersHorizontal, X } from "lucide-react";
 import BarraFiltros from "./barra-filtros";
 import CamadaTopo from "../components/camada-topo";
 import { contarFiltrosAtivos, filtrosVazios, type Filtros } from "./filtros";
-import type { Contato, Funil, Segmento, Tag, Usuario } from "../data";
+import type { Contato, Funil, Segmento, Tag, Usuario } from "@/lib/entidades";
 
 export default function PainelFiltros({
   aberto,

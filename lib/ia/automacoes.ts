@@ -14,6 +14,7 @@ import { NO_ENTRADA, type DefinicaoFluxo } from "@/lib/automacoes/tipos";
 import { documentosEscolhiveis } from "@/lib/documentos";
 import type { EnderecoCrm } from "@/lib/endereco";
 import { listarVideos } from "@/lib/videos";
+import { ehUuid } from "@/lib/validacao";
 
 // Ferramentas que deixam a IA MONTAR um fluxo de automação.
 //
@@ -235,8 +236,6 @@ export function ferramentasDoFluxo(fluxoId: string) {
 
 // ── Modo completo: o modelo escolhe o fluxo ─────────────────────────────────
 
-const ID = /^[0-9a-f-]{36}$/i;
-
 /** A definição como o modelo a lê: sem layout (quem posiciona é dispor). */
 async function definicaoParaModelo(fluxoId: string) {
   const d = await definicaoDoFluxo(fluxoId);
@@ -248,7 +247,7 @@ async function definicaoParaModelo(fluxoId: string) {
 }
 
 async function fluxoExiste(id: string) {
-  if (!ID.test(id)) return false;
+  if (!ehUuid(id)) return false;
   const [f] = await sql`SELECT 1 FROM fluxos WHERE id = ${id} AND arquivado_em IS NULL`;
   return Boolean(f);
 }
@@ -343,7 +342,7 @@ export function ferramentasDeFluxos() {
       "Devolve o fluxo da cadência de uma etapa do funil, criando-o (vazio, em rascunho) se a etapa ainda não tiver um. É o mesmo que o botão \"Criar cadência\" da coluna. Depois monte as mensagens com escrever_fluxo.",
     inputSchema: z.object({ etapa_id: z.string().describe("id da etapa, de listar_funis") }),
     run: async ({ etapa_id }) => {
-      if (!ID.test(etapa_id)) return "Etapa inválida. Use um id de listar_funis.";
+      if (!ehUuid(etapa_id)) return "Etapa inválida. Use um id de listar_funis.";
       const [etapa] = await sql`SELECT nome FROM etapas WHERE id = ${etapa_id}`;
       if (!etapa) return "Etapa não encontrada. Use um id de listar_funis.";
       const [existente] = await sql`

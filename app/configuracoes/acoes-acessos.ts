@@ -8,10 +8,15 @@
 // server action é ponto de entrada de rede — o navegador posta direto nela, sem
 // passar pela tela que a chamou. Uma função destas sem a linha do guarda é um
 // endpoint público que reescreve as permissões do CRM inteiro.
+//
+// Toda recusa volta como `{ ok: false, erro }` (lib/resultado-acao.ts): em
+// produção a mensagem de um erro lançado não chega à tela, e aqui o motivo
+// ("ficaria sem como voltar aqui") é justamente o que a pessoa precisa ler.
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { exigirGerenciaAcessos } from "@/lib/auth/dal";
 import { ehChaveModulo, ehEscopo } from "@/lib/auth/modulos";
+import { comoResultado, type ResultadoAcao } from "@/lib/resultado-acao";
 
 // A barra lateral muda de itens quando a permissão muda, e ela mora no layout
 // raiz — daí o "layout" no revalidatePath da raiz, e não só o caminho literal.
@@ -30,11 +35,11 @@ function revalidar() {
 export async function criarDepartamento(
   nome: string,
   nivel: number,
-): Promise<string> {
+): Promise<ResultadoAcao<{ id: string }>> {
   await exigirGerenciaAcessos();
 
   const n = nome.trim();
-  if (!n) throw new Error("Nome do departamento é obrigatório");
+  if (!n) return { ok: false, erro: "Nome do departamento é obrigatório" };
 
   // slug derivado do nome: sem acento, sem espaço. É o que consultas manuais e
   // scripts usam pra achar o departamento sem depender do uuid sorteado.
@@ -44,38 +49,37 @@ export async function criarDepartamento(
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-  if (!slug) throw new Error("Nome precisa ter ao menos uma letra ou número");
+  if (!slug) return { ok: false, erro: "Nome precisa ter ao menos uma letra ou número" };
 
   const faixa = Math.min(99, Math.max(1, Math.round(nivel)));
 
-  try {
-    const [d] = await sql`
-      INSERT INTO departamentos (nome, slug, nivel)
-      VALUES (${n}, ${slug}, ${faixa})
-      RETURNING id`;
-    revalidar();
-    return d.id;
-  } catch (e) {
-    // slug é UNIQUE — nome repetido vira recado, não 500 cru.
-    if (typeof e === "object" && e !== null && (e as { code?: string }).code === "23505") {
-      throw new Error(`Já existe um departamento chamado "${n}"`);
-    }
-    throw e;
-  }
+  // slug é UNIQUE — nome repetido vira recado, não 500 cru.
+  return comoResultado(
+    async () => {
+      const [d] = await sql`
+        INSERT INTO departamentos (nome, slug, nivel)
+        VALUES (${n}, ${slug}, ${faixa})
+        RETURNING id`;
+      revalidar();
+      return { id: d.id as string };
+    },
+    { duplicado: `Já existe um departamento chamado "${n}"` },
+  );
 }
 
-export async function renomearDepartamento(id: string, nome: string): Promise<void> {
+export async function renomearDepartamento(id: string, nome: string): Promise<ResultadoAcao> {
   await exigirGerenciaAcessos();
   const n = nome.trim();
-  if (!n) throw new Error("Nome do departamento é obrigatório");
+  if (!n) return { ok: false, erro: "Nome do departamento é obrigatório" };
   // O slug NÃO acompanha o nome: ele é a referência estável que o seed da
   // migração e as consultas manuais usam. Renomear "TI" para "Tecnologia" não
   // pode fazer o slug 'ti' sumir debaixo delas.
   await sql`UPDATE departamentos SET nome = ${n} WHERE id = ${id}`;
   revalidar();
+  return { ok: true };
 }
 
-export async function apagarDepartamento(id: string): Promise<void> {
+export async function apagarDepartamento(id: string): Promise<ResultadoAcao> {
   const usuario = await exigirGerenciaAcessos();
 
   const [alvo] = (await sql`
@@ -85,25 +89,27 @@ export async function apagarDepartamento(id: string): Promise<void> {
      WHERE d.id = ${id}
   `) as { sistema: boolean; gerencia_acessos: boolean; pessoas: number }[];
 
-  if (!alvo) throw new Error("Departamento não encontrado");
+  if (!alvo) return { ok: false, erro: "Departamento não encontrado" };
 
   // Os três do pedido são a estrutura que o resto assume existir.
   if (alvo.sistema) {
-    throw new Error("Comercial, Admin e TI não podem ser apagados");
+    return { ok: false, erro: "Comercial, Admin e TI não podem ser apagados" };
   }
   // O ON DELETE do banco é RESTRICT e recusaria de qualquer jeito — mas com um
   // erro de driver na cara do usuário. Aqui a recusa explica o que fazer.
   if (alvo.pessoas > 0) {
-    throw new Error(
-      `Ainda há ${alvo.pessoas} pessoa(s) neste departamento. Mova-as antes de apagar.`,
-    );
+    return {
+      ok: false,
+      erro: `Ainda há ${alvo.pessoas} pessoa(s) neste departamento. Mova-as antes de apagar.`,
+    };
   }
   if (id === usuario.departamento?.id) {
-    throw new Error("Você não pode apagar o seu próprio departamento");
+    return { ok: false, erro: "Você não pode apagar o seu próprio departamento" };
   }
 
   await sql`DELETE FROM departamentos WHERE id = ${id}`;
   revalidar();
+  return { ok: true };
 }
 
 /**
@@ -116,15 +122,16 @@ export async function apagarDepartamento(id: string): Promise<void> {
 export async function definirGerenciaAcessos(
   id: string,
   ligado: boolean,
-): Promise<void> {
+): Promise<ResultadoAcao> {
   const usuario = await exigirGerenciaAcessos();
 
   if (!ligado) {
     // 1ª trava: não desligue de si mesmo.
     if (id === usuario.departamento?.id) {
-      throw new Error(
-        "Você não pode tirar essa permissão do seu próprio departamento — ficaria sem como voltar aqui",
-      );
+      return {
+        ok: false,
+        erro: "Você não pode tirar essa permissão do seu próprio departamento — ficaria sem como voltar aqui",
+      };
     }
     // 2ª trava: tem que sobrar alguém.
     const [{ restantes }] = (await sql`
@@ -133,13 +140,14 @@ export async function definirGerenciaAcessos(
        WHERE gerencia_acessos = true AND id <> ${id}
     `) as { restantes: number }[];
     if (restantes === 0) {
-      throw new Error("Ao menos um departamento precisa administrar os acessos");
+      return { ok: false, erro: "Ao menos um departamento precisa administrar os acessos" };
     }
   }
 
   await sql`
     UPDATE departamentos SET gerencia_acessos = ${ligado} WHERE id = ${id}`;
   revalidar();
+  return { ok: true };
 }
 
 // ── Módulos do departamento ──────────────────────────────────────────────────
@@ -153,13 +161,13 @@ export async function definirModulo(
   departamentoId: string,
   modulo: string,
   ligado: boolean,
-): Promise<void> {
+): Promise<ResultadoAcao> {
   await exigirGerenciaAcessos();
 
   // A chave vem do navegador. Sem esta linha dava pra gravar qualquer string em
   // `departamento_modulos` — a coluna não tem CHECK, de propósito —, e a tabela
   // viraria lixo que nenhuma tela lê e ninguém entende depois.
-  if (!ehChaveModulo(modulo)) throw new Error(`Módulo desconhecido: ${modulo}`);
+  if (!ehChaveModulo(modulo)) return { ok: false, erro: `Módulo desconhecido: ${modulo}` };
 
   if (ligado) {
     await sql`
@@ -173,6 +181,7 @@ export async function definirModulo(
   }
 
   revalidar();
+  return { ok: true };
 }
 
 /**
@@ -184,15 +193,16 @@ export async function definirEscopoDoModulo(
   departamentoId: string,
   modulo: string,
   escopo: string,
-): Promise<void> {
+): Promise<ResultadoAcao> {
   await exigirGerenciaAcessos();
-  if (!ehChaveModulo(modulo)) throw new Error(`Módulo desconhecido: ${modulo}`);
-  if (!ehEscopo(escopo)) throw new Error(`Escopo inválido: ${escopo}`);
+  if (!ehChaveModulo(modulo)) return { ok: false, erro: `Módulo desconhecido: ${modulo}` };
+  if (!ehEscopo(escopo)) return { ok: false, erro: `Escopo inválido: ${escopo}` };
 
   await sql`
     UPDATE departamento_modulos SET escopo = ${escopo}
      WHERE departamento_id = ${departamentoId} AND modulo = ${modulo}`;
   revalidar();
+  return { ok: true };
 }
 
 // ── Participantes ────────────────────────────────────────────────────────────
@@ -205,7 +215,7 @@ export async function definirEscopoDoModulo(
 export async function moverParticipante(
   usuarioId: string,
   departamentoId: string | null,
-): Promise<void> {
+): Promise<ResultadoAcao> {
   const usuario = await exigirGerenciaAcessos();
 
   // A mesma trava do desligar, pelo mesmo motivo: mover a si mesmo pra um
@@ -213,20 +223,22 @@ export async function moverParticipante(
   // pessoa pra fora é decisão administrativa legítima e passa.
   if (usuarioId === usuario.id) {
     if (!departamentoId) {
-      throw new Error("Você não pode se deixar sem departamento");
+      return { ok: false, erro: "Você não pode se deixar sem departamento" };
     }
     const [destino] = (await sql`
       SELECT gerencia_acessos FROM departamentos WHERE id = ${departamentoId}
     `) as { gerencia_acessos: boolean }[];
-    if (!destino) throw new Error("Departamento não encontrado");
+    if (!destino) return { ok: false, erro: "Departamento não encontrado" };
     if (!destino.gerencia_acessos) {
-      throw new Error(
-        "Esse departamento não administra acessos — você perderia esta tela. Peça a outra pessoa que administre para te mover",
-      );
+      return {
+        ok: false,
+        erro: "Esse departamento não administra acessos — você perderia esta tela. Peça a outra pessoa que administre para te mover",
+      };
     }
   }
 
   await sql`
     UPDATE usuarios SET departamento_id = ${departamentoId} WHERE id = ${usuarioId}`;
   revalidar();
+  return { ok: true };
 }

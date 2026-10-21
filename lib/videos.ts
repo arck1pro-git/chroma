@@ -16,6 +16,7 @@ import "server-only";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { sql } from "@/lib/db";
 import { chaveTelefone, soDigitos } from "@/lib/telefone";
+import { ehUuid } from "@/lib/validacao";
 
 export const BUCKET_VIDEOS = process.env.SUPABASE_BUCKET_VIDEOS ?? "crm-videos";
 
@@ -101,14 +102,6 @@ export async function listarVideos(): Promise<Video[]> {
      GROUP BY v.id, u.nome
      ORDER BY v.data_criacao DESC`;
   return linhas.map(paraVideo);
-}
-
-export async function buscarVideo(id: string): Promise<Video | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const [l] = await sql`
-    SELECT ${colunasDoVideo()} FROM videos v LEFT JOIN usuarios u ON u.id = v.autor_id
-     WHERE v.id = ${id}`;
-  return l ? paraVideo(l) : null;
 }
 
 export async function buscarVideoPorSlug(slug: string): Promise<Video | null> {
@@ -368,7 +361,7 @@ function normalizarTrechos(bruto: unknown, teto: number): Trecho[] {
 export async function registrarSinal(dados: unknown): Promise<boolean> {
   if (!dados || typeof dados !== "object") return false;
   const { id, token, trechos, naPagina, duracao } = dados as Record<string, unknown>;
-  if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) return false;
+  if (typeof id !== "string" || !ehUuid(id)) return false;
   if (typeof token !== "string" || !tokenConfere(id, token)) return false;
 
   const [v] = await sql`

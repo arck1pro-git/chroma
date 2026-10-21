@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { criarWebhook } from "./acoes";
 import { normalizar } from "../filtros-comuns";
-import { dataCurta } from "../formato";
+import { dataCurta } from "@/lib/formato";
 import { NOME_PADRAO, type Webhook } from "@/lib/webhooks";
 
 function Cartao({
@@ -99,8 +99,12 @@ export default function ListaWebhooks({
   // painel abre direto no primeiro passo que falta — que é dar nome a ela.
   function nova() {
     iniciar(async () => {
-      const id = await criarWebhook(NOME_PADRAO);
-      router.push(`/webhooks?webhook=${id}`);
+      const r = await criarWebhook(NOME_PADRAO);
+      if (!r.ok) {
+        alert(r.erro);
+        return;
+      }
+      router.push(`/webhooks?webhook=${r.id}`);
     });
   }
 

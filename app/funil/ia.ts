@@ -6,7 +6,7 @@
 // contato, porque o card é de UMA etapa: o mesmo contato pode ter o robô numa
 // oportunidade e não na outra.
 import { textoDoTom } from "@/lib/cores-funil";
-import type { Contato, Etapa } from "../data";
+import type { Contato, Etapa } from "@/lib/entidades";
 
 /** O id da IA que responde este card, ou null. */
 export function iaDoCard(contato: Contato | undefined, etapa: Etapa | undefined): string | null {

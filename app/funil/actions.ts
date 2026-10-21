@@ -24,6 +24,7 @@ import {
   jaTemAberta,
 } from "@/lib/oportunidades";
 import { entrarNaCadencia, moverOportunidadeDeEtapa } from "@/lib/mover-etapa";
+import type { ResultadoAcao } from "@/lib/resultado-acao";
 import {
   registrarOportunidadeCriada,
   registrarResponsavel,
@@ -31,6 +32,7 @@ import {
   registrarStatus,
 } from "@/lib/historico";
 import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
+import { ehUuid } from "@/lib/validacao";
 import { STATUS_OPORTUNIDADE, type StatusOportunidade } from "./status";
 
 // Mover card entre etapas persiste etapa_id + funil_id juntos. A FK composta
@@ -44,14 +46,15 @@ export async function moverOportunidade(
   id: string,
   etapaId: string,
   funilId: string,
-) {
+): Promise<ResultadoAcao> {
   // No escopo "próprio", só a oportunidade de que a pessoa é responsável
   // (lib/auth/escopo-oportunidades.ts).
-  if (!(await podeTocarOportunidade(id))) throw new Error(FORA_DO_ESCOPO);
+  if (!(await podeTocarOportunidade(id))) return { ok: false, erro: FORA_DO_ESCOPO };
   // Histórico, cadência da etapa e evento da Meta: o mesmo caminho da IA que
   // move oportunidade pelo WhatsApp (lib/mover-etapa.ts).
   await moverOportunidadeDeEtapa(id, etapaId, funilId);
   revalidatePath("/");
+  return { ok: true };
 }
 
 // ── Status da oportunidade ──────────────────────────────────────────────────
@@ -304,19 +307,19 @@ export async function criarOportunidade(
   dados: NovaOportunidade,
   funilId: string,
   etapaId: string,
-): Promise<string> {
+): Promise<ResultadoAcao<{ id: string }>> {
   await exigirModulo("inicio");
   const nome = dados.nome.trim();
-  if (!nome) throw new Error("Nome é obrigatório");
+  if (!nome) return { ok: false, erro: "Nome é obrigatório" };
   // contato_id é NOT NULL no schema (oportunidade é sempre de um contato).
-  if (!dados.contato_id) throw new Error("Selecione um contato");
+  if (!dados.contato_id) return { ok: false, erro: "Selecione um contato" };
 
   // Uma aberta por contato em cada funil (migration-oportunidade-unica.sql).
   // A consulta aqui é pela MENSAGEM — quem garante a regra é o índice, e é por
   // isso que o INSERT abaixo também trata a violação: entre esta linha e ele
   // cabe um segundo clique.
   const ja = await abertaNoFunil(dados.contato_id, funilId);
-  if (ja) throw new Error(jaTemAberta(ja.contato));
+  if (ja) return { ok: false, erro: jaTemAberta(ja.contato) };
 
   let nova;
   try {
@@ -329,7 +332,7 @@ export async function criarOportunidade(
       RETURNING id`;
   } catch (e) {
     if (!ehDuplicadaNoFunil(e)) throw e;
-    throw new Error(jaTemAberta("Este contato"));
+    return { ok: false, erro: jaTemAberta("Este contato") };
   }
 
   await registrarOportunidadeCriada(nova.id);
@@ -337,7 +340,7 @@ export async function criarOportunidade(
   await entrarNaCadencia(nova.id, etapaId);
   eventoAoEntrarNaEtapa(nova.id, etapaId);
   revalidatePath("/");
-  return nova.id;
+  return { ok: true, id: nova.id as string };
 }
 
 // ── Automações do lead, na ficha ────────────────────────────────────────────
@@ -414,7 +417,7 @@ const TETO_LOTE = 2000;
 function idsValidos(ids: unknown): string[] {
   if (!Array.isArray(ids)) return [];
   const limpos = ids.filter(
-    (id): id is string => typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id),
+    (id): id is string => typeof id === "string" && ehUuid(id),
   );
   // Set: o mesmo id repetido faria a mesma linha ser contada duas vezes no
   // "N movidas" que a tela mostra.
@@ -433,7 +436,7 @@ export async function moverParaResponsavel(
 
   // usuarioId null = tirar o responsável (volta a "sem dono"), que é uma
   // operação legítima e não um erro de entrada.
-  const alvo = usuarioId && /^[0-9a-f-]{36}$/i.test(usuarioId) ? usuarioId : null;
+  const alvo = usuarioId && ehUuid(usuarioId) ? usuarioId : null;
 
   const linhas = await sql`
     UPDATE oportunidades SET responsavel_id = ${alvo}
@@ -464,7 +467,7 @@ export async function adicionarASegmento(
 ): Promise<ResultadoLote> {
   const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
-  if (!/^[0-9a-f-]{36}$/i.test(segmentoId)) {
+  if (!ehUuid(segmentoId)) {
     return { ok: false, mensagem: "Segmento inválido." };
   }
 

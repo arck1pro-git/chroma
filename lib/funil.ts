@@ -1,12 +1,15 @@
-// Leitura do Funil direto do Neon. Só é importado por page.tsx (server).
-// Funis/etapas/oportunidades inteiros + os contatos QUE O QUADRO USA e os dados
-// por contato deles.
+// Leitura do quadro de oportunidades direto do banco: funis, etapas,
+// oportunidades + os contatos QUE O QUADRO USA e os dados por contato deles.
+// Quem lê: a tela raiz (app/page.tsx) e a IA de interface (lib/ia/ferramentas.ts).
+// Morava em app/funil/dados.ts até 2026-10-21; veio para lib/ porque a IA, que
+// mora em lib/, também lê o quadro.
 //
 // SÓ OS CONTATOS DO QUADRO (2026-10-15): os de alguma oportunidade e os com IA
 // ligada à mão (a gaveta das IAs conta esses). Antes vinha a base inteira, e
 // com os ~27 mil leads do SprintHub eram ~9 MB a cada abertura. O resto da
 // base aparece sob demanda, pela busca (lib/contatos-busca.ts); daqui sai só o
 // total, para o botão.
+import "server-only";
 import { sql } from "@/lib/db";
 import { totalDeContatos } from "@/lib/contatos-busca";
 import { tomDaEtapa } from "@/lib/cores-funil";
@@ -23,7 +26,7 @@ import type {
   Segmento,
   Tag,
   Usuario,
-} from "../data";
+} from "@/lib/entidades";
 
 export type DadosFunil = {
   funis: Funil[];

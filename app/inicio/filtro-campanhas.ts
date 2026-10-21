@@ -1,4 +1,4 @@
-import type { ValoresPersonalizados } from "../data";
+import type { ValoresPersonalizados } from "@/lib/entidades";
 
 export type OrigemSelecionada = { id: string; nome: string };
 export type FiltroCampanhas = {

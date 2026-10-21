@@ -1,4 +1,4 @@
-import type { Oportunidade } from "../data";
+import type { Oportunidade } from "@/lib/entidades";
 import type { Subetapa } from "@/lib/automacoes/cadencia";
 
 // A regra do quadro de subetapas. Só cálculo — nada aqui toca o banco, porque
@@ -53,7 +53,7 @@ export type QuadroCadencia = {
 // Meia-noite local do dia de `data`. Sem passar a string por new Date(): o
 // construtor lê "2026-09-02" como UTC e, em Brasília, isso é dia 1º — a
 // oportunidade cairia uma coluna adiante. Mesmo motivo do dataCurta em
-// app/formato.ts.
+// lib/formato.ts.
 function meiaNoite(data: string) {
   const [ano, mes, dia] = data.slice(0, 10).split("-").map(Number);
   return new Date(ano, mes - 1, dia);
@@ -162,29 +162,6 @@ export function distribuir(
     }
   }
   return { colunas, porAcao };
-}
-
-// ── Cor da etapa ao longo da cadência ──────────────────────────────────────
-//
-// etapas.cor guarda uma classe do Tailwind ("bg-sky-500"), e a coluna precisa
-// da COR, não da classe: cada uma das colunas recebe um degrau diferente da
-// mesma tinta. Como toda classe `bg-<familia>-500` da paleta está no @source
-// inline do globals.css, a variável correspondente existe no :root — daí a
-// tradução direta de classe para var(). O fallback é o zinc-500 literal, para
-// uma cor fora da paleta não apagar a coluna.
-export function corDaEtapa(cor: string) {
-  const familia = cor.startsWith("bg-") ? cor.slice(3) : "";
-  return familia ? `var(--color-${familia}, #71717b)` : "#71717b";
-}
-
-// Onde a coluna `indice` está na cadência, de 0 (1ª mensagem) a 100 (última).
-// É POSIÇÃO, não a porcentagem da mistura: quanto de cor isso vira é decisão da
-// classe .subetapa no globals.css, que tem faixas diferentes no claro e no
-// escuro. Misturar aqui obrigaria este módulo a saber o tema — e ele não sabe.
-export function passoDaCadencia(indice: number, total: number) {
-  if (total <= 1) return 0;
-  const posicao = Math.min(Math.max(indice, 0), total - 1);
-  return Math.round((posicao / (total - 1)) * 100);
 }
 
 // Rótulo do dia de uma coluna, dito em português. É a régua da cadência no

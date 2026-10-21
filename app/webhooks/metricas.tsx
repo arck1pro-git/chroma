@@ -26,7 +26,7 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
-import type { DetalheWebhook } from "./dados";
+import type { DetalheWebhook } from "@/lib/webhooks-dados";
 import { RecebimentosPorDia } from "./graficos";
 import { girarSegredo } from "./acoes";
 import {
@@ -43,7 +43,7 @@ import {
   type Webhook,
   type WebhookCampo,
 } from "@/lib/webhooks";
-import { dataCurta, dataHora } from "../formato";
+import { dataCurta, dataHora } from "@/lib/formato";
 
 /** Um payload sempre deveria ser objeto, mas o que chega é do outro lado. */
 function objeto(payload: unknown): Record<string, unknown> {

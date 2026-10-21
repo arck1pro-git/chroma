@@ -137,7 +137,11 @@ export default function Atividade({
     setErro(null);
     iniciar(async () => {
       try {
-        await adicionarAnotacao(ficha.contato.id, texto);
+        const r = await adicionarAnotacao(ficha.contato.id, texto);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         setNota("");
         aoMudar();
       } catch (e) {

@@ -25,8 +25,8 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
-import type { Etapa, Historico, Segmento, Tag, Usuario } from "../data";
-import { dataHora, iniciais } from "../formato";
+import type { Etapa, Historico, Segmento, Tag, Usuario } from "@/lib/entidades";
+import { dataHora, iniciais } from "@/lib/formato";
 import { assuntoDoHistorico, lerObjecao, Selo, type Assunto } from "../contatos/pecas";
 import CamadaTopo from "./camada-topo";
 import { tintaDe } from "./tinta";

@@ -1,6 +1,6 @@
 // Remover uma etapa do funil — o botão da lixeira em Configurações → Funis.
 //
-// Separado da action (app/configuracoes/actions.ts) para que a regra de banco
+// Separado da action (app/configuracoes/acoes-funis.ts) para que a regra de banco
 // possa ser chamada e testada sem sessão; a action só confere quem pede.
 //
 // O QUE APONTA PARA UMA ETAPA, e o que acontece com cada um (conferido no

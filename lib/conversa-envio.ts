@@ -22,6 +22,7 @@ import { soDigitos } from "@/lib/telefone";
 import { conferirDestino } from "@/lib/destino-permitido";
 import { guardarMidia } from "@/lib/midia";
 import { sintetizarVoz } from "@/lib/voz";
+import { ehUuid } from "@/lib/validacao";
 
 export type ResultadoEnvio = {
   erro?: string;
@@ -30,7 +31,6 @@ export type ResultadoEnvio = {
   mensagemId?: string;
 };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const JANELA_MS = 24 * 60 * 60 * 1000;
 
 export const motivo = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 500);
@@ -45,7 +45,7 @@ export type Destino = {
 
 /** Para onde vai a mensagem desta conversa: canal, nosso número e o do contato. */
 export async function destinoDa(atendimentoId: string): Promise<Destino | null> {
-  if (!UUID.test(atendimentoId)) return null;
+  if (!ehUuid(atendimentoId)) return null;
   const [d] = await sql`
     SELECT a.id, a.canal, a.numero_instancia, c.whatsapp,
            (SELECT max(m.data_criacao) FROM mensagens m

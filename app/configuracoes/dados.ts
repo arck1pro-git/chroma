@@ -6,11 +6,11 @@
 // usuários, campos e instâncias junto. O que sobrou de Promise.all é só o que
 // uma mesma tela precisa de fato.
 import { sql } from "@/lib/db";
-import type { Etapa, Funil, Segmento, Tag, Usuario } from "../data";
+import type { Etapa, Funil, Segmento, Tag, Usuario } from "@/lib/entidades";
 import { ehChaveModulo, ehEscopo, type ChaveModulo, type Escopo } from "@/lib/auth/modulos";
 
 // Nasce da conexão com a uazapi (GET /instance/status), não de digitação livre
-// — ver conectarInstancia em ./actions.ts. token NUNCA sai daqui inteiro: só
+// — ver conectarInstancia em ./acoes-whatsapp.ts. token NUNCA sai daqui inteiro: só
 // os 4 últimos dígitos, pra tela conseguir mostrar "qual token é esse" sem
 // devolver o segredo pro navegador a cada carga da página.
 export type InstanciaUazapi = {
@@ -111,7 +111,7 @@ export async function carregarSegmentos(): Promise<NomeComUso[]> {
  * Usuário como a tela de Configurações o vê: com o WhatsApp junto.
  *
  * Tipo PRÓPRIO, e não `Usuario` alargado: aquele viaja para o quadro, o chat e
- * cada card (app/data.ts), e todas as consultas que o produzem selecionam três
+ * cada card (lib/entidades.ts), e todas as consultas que o produzem selecionam três
  * colunas. Acrescentar o telefone lá obrigaria a tocar em todas — e mandaria o
  * número de todo mundo para o navegador de quem só quer ver um avatar.
  */

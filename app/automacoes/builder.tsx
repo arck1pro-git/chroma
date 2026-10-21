@@ -144,8 +144,12 @@ function Canvas({
   function salvar() {
     setAviso(null);
     iniciar(async () => {
-      const n = await salvarRascunho(fluxoId, paraDefinicao(nos, arestas));
-      setAviso({ tipo: "ok", texto: `Rascunho salvo - versao ${n}` });
+      const r = await salvarRascunho(fluxoId, paraDefinicao(nos, arestas));
+      setAviso(
+        r.ok
+          ? { tipo: "ok", texto: `Rascunho salvo - versao ${r.versao}` }
+          : { tipo: "erro", texto: r.erro },
+      );
     });
   }
 
@@ -154,7 +158,11 @@ function Canvas({
     setNoComErro(null);
     iniciar(async () => {
       // Salva antes: publicar o que esta na tela, nao a ultima versao gravada.
-      await salvarRascunho(fluxoId, paraDefinicao(nos, arestas));
+      const salvo = await salvarRascunho(fluxoId, paraDefinicao(nos, arestas));
+      if (!salvo.ok) {
+        setAviso({ tipo: "erro", texto: salvo.erro });
+        return;
+      }
       const r = await publicar(fluxoId);
       if (r.ok) {
         setAviso({ tipo: "ok", texto: r.mensagem });

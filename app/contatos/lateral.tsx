@@ -14,10 +14,11 @@ import Link from "next/link";
 import { ArrowUpRight, CalendarCheck2 } from "lucide-react";
 import type { EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
 import type { Ia } from "@/lib/ia/catalogo";
-import type { CampoPersonalizado, Contato, Etapa, Funil, Oportunidade } from "../data";
+import type { CampoPersonalizado, Contato, Etapa, Funil, Oportunidade } from "@/lib/entidades";
+import { dataDoInstante } from "@/lib/formato";
 import { CamposDoContato } from "../components/campos-personalizados";
 import IaDoContato from "../inicio/ia-contato";
-import { dataCurta, dinheiro, hora, lerObjecao, ReguaDoFunil, Selo, tempo, TituloDeGrupo, type Tom } from "./pecas";
+import { dinheiro, hora, lerObjecao, ReguaDoFunil, Selo, tempo, TituloDeGrupo, type Tom } from "./pecas";
 
 const ESTADO_EXECUCAO: Record<string, { rotulo: string; tom: Tom }> = {
   pendente: { rotulo: "na fila", tom: "neutro" },
@@ -133,7 +134,7 @@ export default function Lateral({
                     </div>
                   )}
                   <p className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-500">
-                    {o.responsavel ?? "sem responsável"} · desde {dataCurta(o.dataCriacao)}
+                    {o.responsavel ?? "sem responsável"} · desde {dataDoInstante(o.dataCriacao)}
                   </p>
                   {o.eventosMeta.length > 0 && (
                     <p className="mt-1.5 flex flex-wrap gap-1">
@@ -176,7 +177,7 @@ export default function Lateral({
               {passadas.slice(0, 3).map((r) => (
                 <li key={r.id} className="flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
                   <CalendarCheck2 className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
-                  {dataCurta(r.inicio)}, {hora(r.inicio)}
+                  {dataDoInstante(r.inicio)}, {hora(r.inicio)}
                   <span className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">{r.pelaIa ? "· pela IA" : ""}</span>
                 </li>
               ))}

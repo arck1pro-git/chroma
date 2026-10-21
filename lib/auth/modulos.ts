@@ -51,7 +51,7 @@ export type Modulo = {
    * entre "próprio" e "todos" na tela de acessos.
    *
    * Hoje, só o Dashboard: com escopo 'proprio', `carregarFunil` só traz as
-   * oportunidades em que a pessoa é a responsável (app/funil/dados.ts), e o
+   * oportunidades em que a pessoa é a responsável (lib/funil.ts), e o
    * quadro, os totais e a exportação saem todos dessa mesma consulta. A
    * Métricas foi escopável até 2026-10-07; agora quem vê a equipe é o
    * departamento (Admin e TI), como nas Demandas.
@@ -243,14 +243,6 @@ export const MODULOS: readonly Modulo[] = [
 ] as const;
 
 const PORA_CHAVE = new Map(MODULOS.map((m) => [m.chave, m]));
-
-export function moduloPorChave(chave: ChaveModulo): Modulo {
-  const m = PORA_CHAVE.get(chave);
-  // Impossível pelo tipo; existe pro caso de a chave vir do BANCO, onde não há
-  // CHECK que a prenda ao catálogo (ver migration-departamentos.sql).
-  if (!m) throw new Error(`Módulo desconhecido: ${chave}`);
-  return m;
-}
 
 /**
  * A chave veio do banco e ainda está no catálogo? Módulo removido do código

@@ -14,7 +14,7 @@
 // o conjunto para separar dois estados que, no gráfico, respondem a mesma
 // coisa. Qual dos dois foi está nos totais acima e no log abaixo.
 import { LinhasPorDia, type SerieLinha } from "../components/grafico-linhas";
-import type { RecebimentoNoDia } from "./dados";
+import type { RecebimentoNoDia } from "@/lib/webhooks-dados";
 
 const SERIES: SerieLinha<RecebimentoNoDia>[] = [
   { nome: "Virou lead", cor: "var(--serie-ok)", valor: (d) => d.ok },

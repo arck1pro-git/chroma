@@ -30,7 +30,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Documento, TipoDocumento } from "@/lib/documentos";
-import { dataCurta } from "../formato";
+import { dataCurta } from "@/lib/formato";
 import {
   alternarArquivado,
   removerDocumento,

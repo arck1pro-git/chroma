@@ -25,6 +25,7 @@ import "server-only";
 import path from "path";
 import { sql } from "@/lib/db";
 import { BUCKET_DOCUMENTOS, baixar, remover, subir } from "@/lib/armazenamento";
+import { ehUuid } from "@/lib/validacao";
 
 /** O que a uazapi precisa saber para escolher como a mídia chega no WhatsApp. */
 export type TipoDocumento = "imagem" | "video" | "audio" | "documento";
@@ -169,7 +170,7 @@ export async function documentosEscolhiveis(): Promise<Documento[]> {
 export async function comCaminho(
   id: string,
 ): Promise<DocumentoComCaminho | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  if (!ehUuid(id)) return null;
   const [l] = await sql`
     SELECT d.id, d.nome, d.descricao, d.arquivo_nome, d.caminho, d.mime,
            d.tamanho, d.tipo, d.criado_por, d.data_criacao, d.arquivado,
@@ -178,11 +179,6 @@ export async function comCaminho(
       LEFT JOIN usuarios u ON u.id = d.criado_por
      WHERE d.id = ${id}`;
   return l ? daLinha(l) : null;
-}
-
-export async function documentoPorId(id: string): Promise<Documento | null> {
-  const d = await comCaminho(id);
-  return d ? semCaminho(d) : null;
 }
 
 /**

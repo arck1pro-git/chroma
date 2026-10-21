@@ -42,12 +42,13 @@ import {
   type Prioridade,
   type ResultadoDemanda,
 } from "@/lib/demandas-tipos";
+import { ehUuid } from "@/lib/validacao";
 
 const TETO_TITULO = 200;
 const TETO_DESCRICAO = 4000;
 
 function idValido(id: unknown): id is string {
-  return typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id);
+  return typeof id === "string" && ehUuid(id);
 }
 
 /**

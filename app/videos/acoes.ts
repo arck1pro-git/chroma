@@ -21,6 +21,7 @@ import {
   novoCaminho,
   renomearVideo,
 } from "@/lib/videos";
+import { ehUuid } from "@/lib/validacao";
 
 export type Resultado = { ok: boolean; mensagem: string };
 
@@ -28,7 +29,7 @@ const TETO_NOME = 120;
 const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 
 function idValido(id: unknown): id is string {
-  return typeof id === "string" && /^[0-9a-f-]{36}$/i.test(id);
+  return typeof id === "string" && ehUuid(id);
 }
 
 export async function prepararEnvio(dados: {

@@ -20,6 +20,9 @@ function carregar(arquivo, mocks = {}, cache = new Map()) {
   }).outputText;
   const importar = (nome) => {
     if (Object.hasOwn(mocks, nome)) return mocks[nome];
+    // Fora do Next o pacote estoura de propósito; aqui ele é só um marcador
+    // (o mesmo apelido que scripts/jiti.mjs faz).
+    if (nome === "server-only") return {};
     if (nome.startsWith("@/")) return carregar(resolve(raiz, nome.slice(2)), mocks, cache);
     if (nome.startsWith(".")) return carregar(resolve(dirname(caminho), nome), mocks, cache);
     return require(nome);
@@ -86,12 +89,12 @@ const { POST } = carregar(resolve(raiz, "app/api/automacoes/enviar/route.ts"), {
 const payload = { pelo_responsavel: true, execucao_id: execucaoId, para: "5547666666666", texto: "Olá" };
 const enviar = (corpo = payload) => POST({ json: async () => corpo });
 assert.equal((await enviar()).status, 200);
-assert.equal(envios.at(-1).at(-1).nome, "WhatsApp Ana");
+assert.equal(envios.at(-1).at(-2).nome, "WhatsApp Ana");
 linha = { ...linha, responsavel: "Bia", nome: "WhatsApp Bia", token: "novo", numero: "5547555555555" };
 assert.equal((await enviar()).status, 200);
-assert.equal(envios.at(-1).at(-1).token, "novo", "reconsulta o vínculo no próximo envio");
+assert.equal(envios.at(-1).at(-2).token, "novo", "reconsulta o vínculo no próximo envio");
 assert.equal((await enviar({ ...payload, documento_id: instanciaId })).status, 200);
-assert.equal(envios.at(-1).at(-1).nome, "WhatsApp Bia");
+assert.equal(envios.at(-1).at(-2).nome, "WhatsApp Bia");
 assert.equal((await enviar({ ...payload, usuario_id: usuarioId })).status, 200);
 assert.equal(envios.at(-1)[0], "5547888888888", "destinatário do aviso permanece separado do remetente");
 assert.equal(consultasFixas, 0);
@@ -138,7 +141,7 @@ const sql = async (partes, ...valores) => {
   return existeUsuario ? [{ id: usuarioId }] : [];
 };
 sql.begin = async (fn) => { emTransacao = true; try { return await fn(sql); } finally { emTransacao = false; } };
-const acoes = carregar(resolve(raiz, "app/configuracoes/actions.ts"), {
+const acoes = carregar(resolve(raiz, "app/configuracoes/acoes-whatsapp.ts"), {
   "@/lib/auth/dal": { exigirModulo: async () => {} },
   "next/cache": { revalidatePath: () => {} },
   "next/headers": { headers: async () => new Headers() },
@@ -150,9 +153,14 @@ globalThis.fetch = async () => { chamadasExternas++; return Response.json({ inst
 process.env.UAZAPI_BASE_URL = "https://wpp.example";
 process.env.UAZAPI_ADMIN_TOKEN = "teste";
 try {
-  await assert.rejects(acoes.criarInstanciaNaUazapi("Comercial", ""), /Selecione o usuário/);
+  // Recusa volta como { ok: false, erro } desde 2026-10-21 (lib/resultado-acao.ts).
+  let recusa = await acoes.criarInstanciaNaUazapi("Comercial", "");
+  assert.equal(recusa.ok, false);
+  assert.match(recusa.erro, /Selecione o usuário/);
   existeUsuario = false;
-  await assert.rejects(acoes.criarInstanciaNaUazapi("Comercial", usuarioId), /não existe/);
+  recusa = await acoes.criarInstanciaNaUazapi("Comercial", usuarioId);
+  assert.equal(recusa.ok, false);
+  assert.match(recusa.erro, /não existe/);
   assert.equal(chamadasExternas, 0, "valida usuário antes de criar na uazapi");
   existeUsuario = true;
   assert.equal((await acoes.criarInstanciaNaUazapi("Comercial", usuarioId)).id, instanciaId);

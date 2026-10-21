@@ -11,13 +11,13 @@ import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import type { DestinoCampo, TipoCampo } from "@/lib/webhooks";
+import { comoResultado, type ResultadoAcao } from "@/lib/resultado-acao";
+
+// Recusa volta como `{ ok: false, erro }`, nunca como exceção: em produção a
+// mensagem de um erro lançado não chega à tela (lib/resultado-acao.ts).
 
 function revalidar() {
   revalidatePath("/webhooks");
-}
-
-function ehDuplicado(e: unknown) {
-  return typeof e === "object" && e !== null && (e as { code?: string }).code === "23505";
 }
 
 // ── Slug e segredo ──────────────────────────────────────────────────────────
@@ -45,10 +45,10 @@ const novoSegredo = () => randomBytes(32).toString("hex");
  * uma webhook recém-criada sem ela responderia 200 sem fazer nada, que é o
  * pior estado possível para depurar.
  */
-export async function criarWebhook(nome: string): Promise<string> {
+export async function criarWebhook(nome: string): Promise<ResultadoAcao<{ id: string }>> {
   await exigirModulo("webhooks");
   const n = nome.trim();
-  if (!n) throw new Error("Nome é obrigatório");
+  if (!n) return { ok: false, erro: "Nome é obrigatório" };
 
   const [w] = await sql`
     INSERT INTO webhooks (nome, slug, segredo)
@@ -60,23 +60,24 @@ export async function criarWebhook(nome: string): Promise<string> {
     VALUES (${w.id}, 'criar_lead', 0)`;
 
   revalidar();
-  return w.id;
+  return { ok: true, id: w.id as string };
 }
 
 export async function editarWebhook(
   id: string,
   nome: string,
   descricao: string,
-): Promise<void> {
+): Promise<ResultadoAcao> {
   await exigirModulo("webhooks");
   const n = nome.trim();
-  if (!n) throw new Error("Nome é obrigatório");
+  if (!n) return { ok: false, erro: "Nome é obrigatório" };
   await sql`
     UPDATE webhooks
     SET nome = ${n}, descricao = ${descricao.trim() || null},
         data_atualizacao = now()
     WHERE id = ${id}`;
   revalidar();
+  return { ok: true };
 }
 
 export async function alternarAtivo(id: string, ativo: boolean): Promise<void> {
@@ -119,33 +120,33 @@ export async function criarCampo(
   obrigatorio: boolean,
   destino: DestinoCampo,
   destinoChave: string,
-): Promise<void> {
+): Promise<ResultadoAcao> {
   await exigirModulo("webhooks");
   const k = chave.trim();
-  if (!k) throw new Error("A chave do campo é obrigatória");
+  if (!k) return { ok: false, erro: "A chave do campo é obrigatória" };
   if (!/^[A-Za-z0-9_.-]+$/.test(k)) {
-    throw new Error("A chave só aceita letras, números, ponto, hífen e _");
+    return { ok: false, erro: "A chave só aceita letras, números, ponto, hífen e _" };
   }
 
   const precisaChave = destino.endsWith(".campo");
   const dc = destinoChave.trim();
   if (precisaChave && !dc) {
-    throw new Error("Escolha em qual campo personalizado o valor vai ser gravado");
+    return { ok: false, erro: "Escolha em qual campo personalizado o valor vai ser gravado" };
   }
 
-  try {
-    await sql`
-      INSERT INTO webhook_campos
-        (webhook_id, chave, rotulo, tipo, obrigatorio, destino, destino_chave, ordem)
-      VALUES (
-        ${webhookId}, ${k}, ${rotulo.trim() || k}, ${tipo}, ${obrigatorio},
-        ${destino}, ${precisaChave ? dc : null},
-        (SELECT COALESCE(MAX(ordem), 0) + 1 FROM webhook_campos WHERE webhook_id = ${webhookId}))`;
-    revalidar();
-  } catch (e) {
-    if (ehDuplicado(e)) throw new Error("Já existe um campo com essa chave nesta webhook");
-    throw e;
-  }
+  return comoResultado(
+    async () => {
+      await sql`
+        INSERT INTO webhook_campos
+          (webhook_id, chave, rotulo, tipo, obrigatorio, destino, destino_chave, ordem)
+        VALUES (
+          ${webhookId}, ${k}, ${rotulo.trim() || k}, ${tipo}, ${obrigatorio},
+          ${destino}, ${precisaChave ? dc : null},
+          (SELECT COALESCE(MAX(ordem), 0) + 1 FROM webhook_campos WHERE webhook_id = ${webhookId}))`;
+      revalidar();
+    },
+    { duplicado: "Já existe um campo com essa chave nesta webhook" },
+  );
 }
 
 export async function editarCampo(
@@ -155,12 +156,12 @@ export async function editarCampo(
   obrigatorio: boolean,
   destino: DestinoCampo,
   destinoChave: string,
-): Promise<void> {
+): Promise<ResultadoAcao> {
   await exigirModulo("webhooks");
   const precisaChave = destino.endsWith(".campo");
   const dc = destinoChave.trim();
   if (precisaChave && !dc) {
-    throw new Error("Escolha em qual campo personalizado o valor vai ser gravado");
+    return { ok: false, erro: "Escolha em qual campo personalizado o valor vai ser gravado" };
   }
   await sql`
     UPDATE webhook_campos
@@ -168,6 +169,7 @@ export async function editarCampo(
         destino = ${destino}, destino_chave = ${precisaChave ? dc : null}
     WHERE id = ${id}`;
   revalidar();
+  return { ok: true };
 }
 
 export async function excluirCampo(id: string): Promise<void> {
@@ -193,10 +195,10 @@ export async function configurarCriarLead(
   // `alternadoId` preenchido liga o rodízio entre os dois.
   responsavelId = "",
   alternadoId = "",
-): Promise<void> {
+): Promise<ResultadoAcao> {
   await exigirModulo("webhooks");
   if (criarOportunidade && (!funilId || !etapaId)) {
-    throw new Error("Escolha o funil e a etapa onde o card vai nascer");
+    return { ok: false, erro: "Escolha o funil e a etapa onde o card vai nascer" };
   }
 
   const dono = responsavelId.trim() || null;
@@ -205,10 +207,10 @@ export async function configurarCriarLead(
   // As duas recusas abaixo existem porque o CHECK da tabela devolveria um erro
   // de Postgres na cara de quem está configurando, sem dizer o que fazer.
   if (alternado && !dono) {
-    throw new Error("Para alternar, escolha o primeiro responsável também");
+    return { ok: false, erro: "Para alternar, escolha o primeiro responsável também" };
   }
   if (alternado && alternado === dono) {
-    throw new Error("A alternância precisa de duas pessoas diferentes");
+    return { ok: false, erro: "A alternância precisa de duas pessoas diferentes" };
   }
 
   await sql`
@@ -223,30 +225,31 @@ export async function configurarCriarLead(
         ultimo_responsavel_id = NULL
     WHERE webhook_id = ${webhookId} AND tipo = 'criar_lead'`;
   revalidar();
+  return { ok: true };
 }
 
 export async function adicionarAcao(
   webhookId: string,
   tipo: "inscrever_fluxo" | "adicionar_segmento" | "adicionar_tag",
   alvoId: string,
-): Promise<void> {
+): Promise<ResultadoAcao> {
   await exigirModulo("webhooks");
-  if (!alvoId) throw new Error("Escolha o alvo da ação");
+  if (!alvoId) return { ok: false, erro: "Escolha o alvo da ação" };
 
-  try {
-    await sql`
-      INSERT INTO webhook_acoes (webhook_id, tipo, ordem, fluxo_id, segmento_id, tag_id)
-      VALUES (
-        ${webhookId}, ${tipo},
-        (SELECT COALESCE(MAX(ordem), 0) + 1 FROM webhook_acoes WHERE webhook_id = ${webhookId}),
-        ${tipo === "inscrever_fluxo" ? alvoId : null},
-        ${tipo === "adicionar_segmento" ? alvoId : null},
-        ${tipo === "adicionar_tag" ? alvoId : null})`;
-    revalidar();
-  } catch (e) {
-    if (ehDuplicado(e)) throw new Error("Essa ação já está nesta webhook");
-    throw e;
-  }
+  return comoResultado(
+    async () => {
+      await sql`
+        INSERT INTO webhook_acoes (webhook_id, tipo, ordem, fluxo_id, segmento_id, tag_id)
+        VALUES (
+          ${webhookId}, ${tipo},
+          (SELECT COALESCE(MAX(ordem), 0) + 1 FROM webhook_acoes WHERE webhook_id = ${webhookId}),
+          ${tipo === "inscrever_fluxo" ? alvoId : null},
+          ${tipo === "adicionar_segmento" ? alvoId : null},
+          ${tipo === "adicionar_tag" ? alvoId : null})`;
+      revalidar();
+    },
+    { duplicado: "Essa ação já está nesta webhook" },
+  );
 }
 
 // 'criar_lead' não sai: é ela que resolve o contato de quem as outras dependem.

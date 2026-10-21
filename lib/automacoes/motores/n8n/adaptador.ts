@@ -12,6 +12,7 @@
 
 import type { PlanoCompilado } from "../../compilador";
 import { INSTANCIA_RESPONSAVEL } from "../../saida";
+import { ehUuid } from "@/lib/validacao";
 
 const BASE = process.env.N8N_BASE_URL;
 const CHAVE = process.env.N8N_API_KEY;
@@ -241,9 +242,6 @@ export const MARCAR_PASSO = `
 // e não enviam nada, então guardá-los seria consulta à toa. Ao implementar o
 // próximo (whatsapp oficial, e-mail), acrescente aqui.
 const BLOCOS_QUE_ENVIAM = new Set(["enviar_whatsapp_web"]);
-
-// A etapa do "Atualizar oportunidade" vai dentro do corpo JSON do nó: só id.
-const UUID_ETAPA = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Traduz o template do CRM (`{{primeiro_nome}}`) para expressão do n8n.
@@ -979,7 +977,10 @@ export function paraWorkflow(
       // guarda é a mesma da mensagem — respondeu, o card não sai do lugar (a IA
       // é quem o leva para "em atendimento"). Quem move é o CRM
       // (/api/automacoes/mover), pelo mesmo caminho do arraste no quadro.
-      if (!UUID_ETAPA.test(passo.config.etapa_id)) {
+      //
+      // A etapa vai dentro do corpo JSON do nó: só uuid canônico passa, para
+      // nenhum texto livre chegar ao workflow.
+      if (!ehUuid(passo.config.etapa_id)) {
         throw new Error(`O bloco "${passo.rotulo}" aponta para uma etapa inválida. Escolha a etapa de novo.`);
       }
       if (!cred.crmBaseUrl || !cred.crmCredencialId) {

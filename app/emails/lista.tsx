@@ -9,8 +9,8 @@ import {
   Pencil,
   SearchX,
 } from "lucide-react";
-import { emails as emailsSeed, usuarioPorId, type Email } from "../data";
-import { dataHora } from "../formato";
+import { emails as emailsSeed, usuarioPorId, type Email } from "./mock";
+import { dataHora } from "@/lib/formato";
 import Construtor, { type DadosEmail } from "./construtor";
 
 // Estado local espelhando a tabela `emails`. Enquanto não há banco, criar e

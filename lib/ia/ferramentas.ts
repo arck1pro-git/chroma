@@ -3,9 +3,10 @@ import { z } from "zod";
 // sqlIa, e não o `sql` de lib/db.ts: a conexão da IA é a do role sem
 // privilégio de escrita (ver ./db.ts e migration-revisao-modulos.sql §5).
 import { sqlIa } from "./db";
-import { carregarFunil } from "@/app/funil/dados";
-import { metricasDoFunil } from "@/app/inicio/metricas";
-import { brl } from "@/app/formato";
+import { carregarFunil } from "@/lib/funil";
+import { metricasDoFunil } from "@/lib/metricas-funil";
+import { brl } from "@/lib/formato";
+import { ehUuid } from "@/lib/validacao";
 import { comoDado, comoDadoOuNulo } from "./sanitizar";
 
 // Ferramentas que a IA usa para ler o CRM.
@@ -30,7 +31,7 @@ const enviarPii = process.env.IA_ENVIAR_CONTATO_PII === "true";
  * IA a lista de oportunidades, a ficha de qualquer contato e o texto inteiro
  * das conversas. Agora nascem com o dono: `soDoResponsavel` é o id de quem tem
  * o Dashboard no escopo "próprio" (vê só as dele), null para quem vê a equipe.
- * É o mesmo filtro do quadro (app/funil/dados.ts).
+ * É o mesmo filtro do quadro (lib/funil.ts).
  */
 export function ferramentasDeLeitura(soDoResponsavel: string | null) {
   const dados = () => carregarFunil(soDoResponsavel);
@@ -223,8 +224,8 @@ const mensagensDoAtendimento = betaZodTool({
     // no dia em que ele foi criado ou depois. "No dia" e não "depois do
     // instante": a conversa que gerou a oportunidade costuma começar minutos
     // antes de ela ser criada. O dia é o de Brasília.
-    const oportunidade = oportunidade_id && /^[0-9a-f-]{36}$/i.test(oportunidade_id) ? oportunidade_id : null;
-    if (!/^[0-9a-f-]{36}$/i.test(atendimento_id)) return "Atendimento inválido.";
+    const oportunidade = oportunidade_id && ehUuid(oportunidade_id) ? oportunidade_id : null;
+    if (!ehUuid(atendimento_id)) return "Atendimento inválido.";
     // No escopo "próprio", só a conversa de um contato que tem oportunidade
     // dele: o id do atendimento não pode ser a porta para a conversa alheia.
     if (soDoResponsavel) {

@@ -14,7 +14,8 @@ import { sql } from "@/lib/db";
 import { documentosEscolhiveis } from "@/lib/documentos";
 import { fim8, listarCanais } from "@/lib/canais";
 import { tomDaEtapa } from "@/lib/cores-funil";
-import type { Contato, Etapa, Funil, Oportunidade, Usuario } from "../data";
+import type { Contato, Etapa, Funil, Oportunidade, Usuario } from "@/lib/entidades";
+import { ehUuid } from "@/lib/validacao";
 import type {
   CanalChat,
   ConversaAberta,
@@ -22,8 +23,6 @@ import type {
   DadosChat,
   MensagemChat,
 } from "./tipos";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Quantas conversas a lista traz. A busca da tela filtra em cima disto; canal
 // com mais conversas que isso mostra as mais recentes.
@@ -153,7 +152,7 @@ export async function carregarChat({
   atendimentoId: string | null;
 }): Promise<DadosChat> {
   const alvo = canal ? fim8(canal) : null;
-  const idAberta = atendimentoId && UUID.test(atendimentoId) ? atendimentoId : null;
+  const idAberta = atendimentoId && ehUuid(atendimentoId) ? atendimentoId : null;
 
   const [canais, contagens, conversas, aberta, usuarios, funis, etapas, documentos, ias] =
     await Promise.all([

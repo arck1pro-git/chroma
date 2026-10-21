@@ -3,7 +3,7 @@
 // Campos personalizados da ficha de contato e da de oportunidade.
 //
 // A `chave` é derivada do rótulo e NUNCA muda: é ela que indexa o valor dentro
-// do jsonb de cada registro (ver ../actions.ts). Por isso a tela só deixa
+// do jsonb de cada registro (ver ../acoes-campos.ts). Por isso a tela só deixa
 // editar o rótulo — renomear a chave orfanaria todo valor já gravado.
 //
 // O DESENHO (redesenho de 2026-10-08): as duas fichas viram abas com contagem,
@@ -31,7 +31,7 @@ import {
   criarCampoPersonalizado,
   editarCampoPersonalizado,
   excluirCampoPersonalizado,
-} from "../actions";
+} from "../acoes-campos";
 import { botao, botaoFantasma, campoTexto, rotuloCampo, textoAjuda } from "./ui";
 import { BotaoIcone, Cabecalho, Erro, Painel, Vazio } from "./pecas";
 
@@ -207,7 +207,11 @@ function NovoCampo({
     setErro(null);
     iniciar(async () => {
       try {
-        await criarCampoPersonalizado(entidade, r, tipo, opcoes);
+        const res = await criarCampoPersonalizado(entidade, r, tipo, opcoes);
+        if (!res.ok) {
+          setErro(res.erro);
+          return;
+        }
         setRotulo("");
         setOpcoes("");
         setTipo("texto");
@@ -291,7 +295,11 @@ function CampoRow({ campo }: { campo: CampoPersonalizado }) {
     setErro(null);
     iniciar(async () => {
       try {
-        await editarCampoPersonalizado(campo.id, r, tipo, opcoes);
+        const res = await editarCampoPersonalizado(campo.id, r, tipo, opcoes);
+        if (!res.ok) {
+          setErro(res.erro);
+          return;
+        }
         setEditando(false);
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao salvar");

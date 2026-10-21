@@ -1,7 +1,7 @@
 // O ESCOPO "PRÓPRIO" DO DASHBOARD NAS AÇÕES (2026-10-20, auditoria de segurança).
 //
 // Quem tem o módulo Dashboard ("inicio") no escopo "próprio" vê no quadro só as
-// oportunidades de que é responsável (app/funil/dados.ts). Mas as ações do
+// oportunidades de que é responsável (lib/funil.ts). Mas as ações do
 // funil — mover, fechar, excluir, exportar, passar para outro, inscrever em
 // fluxo, marcar reunião — só conferiam o MÓDULO e aceitavam o id de qualquer
 // oportunidade. Bastava o id (e a IA os entregava) para mexer na de um colega.
@@ -13,13 +13,12 @@
 import "server-only";
 import { exigirModulo } from "@/lib/auth/dal";
 import { listaUuid, sql } from "@/lib/db";
-
-const UUID = /^[0-9a-f-]{36}$/i;
+import { ehUuid } from "@/lib/validacao";
 
 /** As oportunidades da lista que quem chamou pode tocar, e quem chamou. */
 export async function oportunidadesNoEscopo(ids: string[]) {
   const acesso = await exigirModulo("inicio");
-  const validos = ids.filter((id) => typeof id === "string" && UUID.test(id));
+  const validos = ids.filter((id) => typeof id === "string" && ehUuid(id));
   if (acesso.escopo !== "proprio" || validos.length === 0) return { ...acesso, ids: validos };
   const linhas = await sql`
     SELECT id FROM oportunidades
@@ -38,7 +37,7 @@ export async function podeTocarOportunidade(id: string): Promise<boolean> {
 /** Pode tocar a oportunidade desta execução de automação (pausar/retomar na ficha)? */
 export async function podeTocarExecucao(execucaoId: string): Promise<boolean> {
   const acesso = await exigirModulo("inicio");
-  if (!UUID.test(execucaoId)) return false;
+  if (!ehUuid(execucaoId)) return false;
   const [e] = await sql`
     SELECT e.entidade_tipo, e.entidade_id, o.responsavel_id
       FROM fluxo_execucoes e

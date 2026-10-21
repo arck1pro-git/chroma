@@ -7,8 +7,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Globe,
   Search,
   X,
@@ -287,77 +285,6 @@ export function Chip({
     >
       {rotulo}
     </button>
-  );
-}
-
-// Tamanho da página + navegação, lado a lado. As setas ficam do tamanho dos
-// campos (py-2 ≈ size-9) para a linha não desalinhar.
-export function Paginacao({
-  tamanho,
-  aoMudarTamanho,
-  pagina,
-  totalPaginas,
-  aoMudarPagina,
-  opcoes = [10, 30, 50, 100],
-  unidade = "/ página",
-}: {
-  tamanho: number;
-  aoMudarTamanho: (n: number) => void;
-  pagina: number;
-  totalPaginas: number;
-  aoMudarPagina: (p: number) => void;
-  opcoes?: number[];
-  unidade?: string;
-}) {
-  const seta =
-    "flex size-9 shrink-0 items-center justify-center rounded-lg border border-zinc-300 text-zinc-600 transition hover:bg-zinc-50 disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900";
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className="relative">
-        <select
-          value={tamanho}
-          onChange={(e) => aoMudarTamanho(Number(e.target.value))}
-          aria-label="Itens por página"
-          className={`w-36 ${campo}`}
-        >
-          {opcoes.map((n) => (
-            <option key={n} value={n}>
-              {n} {unidade}
-            </option>
-          ))}
-        </select>
-        <Seta />
-      </div>
-
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => aoMudarPagina(pagina - 1)}
-          disabled={pagina <= 1}
-          aria-label="Página anterior"
-          className={seta}
-        >
-          <ChevronLeft className="size-4" aria-hidden="true" />
-        </button>
-        <span className="w-24 whitespace-nowrap text-center text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
-          Página{" "}
-          <strong className="font-semibold text-zinc-900 dark:text-zinc-50">
-            {pagina}
-          </strong>{" "}
-          de {totalPaginas}
-        </span>
-        <button
-          type="button"
-          onClick={() => aoMudarPagina(pagina + 1)}
-          disabled={pagina >= totalPaginas}
-          aria-label="Próxima página"
-          className={seta}
-        >
-          <ChevronRight className="size-4" aria-hidden="true" />
-        </button>
-      </div>
-    </div>
   );
 }
 

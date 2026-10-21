@@ -16,6 +16,7 @@ import { sql } from "@/lib/db";
 import { exigirModuloApi } from "@/lib/auth/dal";
 import { soDigitos } from "@/lib/telefone";
 import { tagDaFoto, urlDaFoto } from "@/lib/canais";
+import { ehUuid } from "@/lib/validacao";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (sessao instanceof Response) return sessao;
 
   const { id } = await params;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return semFoto(3600);
+  if (!ehUuid(id)) return semFoto(3600);
 
   const [contato] = await sql`SELECT whatsapp FROM contatos WHERE id = ${id}`;
   const numero = soDigitos((contato?.whatsapp as string | null) ?? "");

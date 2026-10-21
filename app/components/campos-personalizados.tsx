@@ -11,10 +11,10 @@
 // Só mostra campo COM valor: uma ficha com 29 rótulos vazios é ruído, não
 // informação. A ordem é a definida em Configurações.
 import { useEffect, useState } from "react";
-import type { CampoPersonalizado, ValoresPersonalizados } from "../data";
+import type { CampoPersonalizado, ValoresPersonalizados } from "@/lib/entidades";
 import { Propriedade, Propriedades, Secao } from "./gaveta";
 import { camposDoContato } from "../funil/actions";
-import { dataCurta } from "../formato";
+import { dataCurta } from "@/lib/formato";
 
 // Datas chegam em formatos diferentes conforme a origem do dado (ISO do
 // SprintHub, "dd/MM/aaaa hh:mm" do export de oportunidades). Formata o que

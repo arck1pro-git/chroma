@@ -247,7 +247,7 @@ const GEREM_USUARIOS = new Set(["admin", "ti"]);
  * Usuários: Admin e TI, e quem já tinha a tela pelo módulo Configurações.
  *
  * Isto abre a TELA. O que dá pra mexer lá dentro tem um teto, nas actions
- * (app/configuracoes/actions.ts): quem não administra acessos não põe ninguém
+ * (app/configuracoes/acoes-usuarios.ts): quem não administra acessos não põe ninguém
  * num departamento que administra, nem edita a conta de quem está num. Sem o
  * teto, o Admin criaria uma conta no TI e entraria por ela em tudo o que o
  * pedido de 2026-09-16 lhe tirou — inclusive a tela de Acessos.

@@ -1,6 +1,6 @@
 // O que o servidor monta para a tela do chat. Só tipos — o client importa
 // daqui, então nada de import de servidor (banco, uazapi, Meta).
-import type { Atendimento, Contato, Etapa, Funil, Mensagem, Oportunidade, Usuario } from "../data";
+import type { Atendimento, Contato, Etapa, Funil, Mensagem, Oportunidade, Usuario } from "@/lib/entidades";
 import type { Documento } from "@/lib/documentos";
 import type { EstadoIaContato, IaResumo } from "@/lib/ia/catalogo";
 

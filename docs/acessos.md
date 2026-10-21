@@ -76,7 +76,7 @@ e aí basta abrir o DevTools pra ler o número do colega.
 
 Só oferece escopo o módulo marcado `escopavel` no catálogo — hoje, só o
 Dashboard, que filtra o funil pelo responsável (`carregarFunil` em
-app/funil/dados.ts). Marcar como escopável um módulo que não filtra de verdade
+lib/funil.ts). Marcar como escopável um módulo que não filtra de verdade
 prometeria na tela o que o dado não cumpre.
 
 Demandas e Métricas **não** usam o escopo: quem vê a equipe é o
@@ -112,7 +112,7 @@ departamento, fixo no código como nas Demandas, e quem tem o módulo
 Configurações.
 
 Abrir a tela não é poder tudo lá dentro. Quem **não** administra acessos tem um
-teto, conferido nas actions (`app/configuracoes/actions.ts`) e repetido no
+teto, conferido nas actions (`app/configuracoes/acoes-usuarios.ts`) e repetido no
 `WHERE` do UPDATE:
 
 - não põe ninguém num departamento que administra acessos (o TI);

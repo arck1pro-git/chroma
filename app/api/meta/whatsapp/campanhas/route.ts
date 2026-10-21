@@ -5,6 +5,7 @@ import { respostaErroMeta, templatesMeta } from "@/lib/meta";
 import { lerDefinicao, processarFila } from "@/lib/campanhas-whatsapp";
 import { enderecoDoCrm } from "@/lib/endereco";
 import { publicarWorkflowCampanha } from "@/lib/campanhas-workflow";
+import { ehUuid } from "@/lib/validacao";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
     if (b.confirmar !== true) return Response.json({ erro: "Confirme a ativação antes de iniciar." }, { status: 400 });
     const waba = String(b.waba ?? "");
     const telefoneId = String(b.telefoneId ?? "");
-    const segmentoIds = Array.isArray(b.segmentoIds) ? [...new Set(b.segmentoIds.filter((id):id is string=>typeof id==="string"&&/^[0-9a-f-]{36}$/i.test(id)))] : [];
+    const segmentoIds = Array.isArray(b.segmentoIds) ? [...new Set(b.segmentoIds.filter((id):id is string=>typeof id==="string"&&ehUuid(id)))] : [];
     const definicao = lerDefinicao(b.definicao);
     const templateNome = definicao.template_nome;
     const idioma = definicao.template_idioma;

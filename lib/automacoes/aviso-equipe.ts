@@ -10,13 +10,13 @@ import "server-only";
 import { sql } from "@/lib/db";
 import { linkDaConversa } from "@/lib/link-do-crm";
 import { soDigitos } from "@/lib/telefone";
+import { ehUuid } from "@/lib/validacao";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 /** As linhas de dados do lead que vão no fim do aviso. Vazio se a execução não acha lead. */
 export async function dadosDoLeadDaExecucao(execucaoId: string): Promise<string[]> {
-  if (!UUID.test(execucaoId)) return [];
+  if (!ehUuid(execucaoId)) return [];
   const [l] = await sql`
     SELECT c.nome, c.whatsapp, o.valor, f.nome AS funil, et.nome AS etapa,
            -- A faixa que o lead marcou no formulário ("50 a 100 mil"): é o
@@ -50,7 +50,7 @@ export async function dadosDoLeadDaExecucao(execucaoId: string): Promise<string[
 export async function responsavelDaExecucao(
   execucaoId: string,
 ): Promise<{ nome: string; whatsapp: string | null } | { erro: string }> {
-  if (!UUID.test(execucaoId)) return { erro: "execução inválida para avisar o responsável" };
+  if (!ehUuid(execucaoId)) return { erro: "execução inválida para avisar o responsável" };
   const [l] = await sql`
     SELECT o.id AS oportunidade_id, u.id AS usuario_id, u.nome, nullif(u.whatsapp, '') AS whatsapp
       FROM fluxo_execucoes e

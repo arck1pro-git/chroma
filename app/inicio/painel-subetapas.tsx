@@ -33,8 +33,8 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
-import { brl } from "../formato";
+import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "@/lib/entidades";
+import { brl } from "@/lib/formato";
 import CartaoOportunidade from "../funil/cartao";
 import { corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
@@ -1108,7 +1108,11 @@ export default function PainelSubetapas({
     setErroAoCriar(null);
     comecar(async () => {
       try {
-        await criarCadencia(etapa.id, etapa.nome);
+        const r = await criarCadencia(etapa.id, etapa.nome);
+        if (!r.ok) {
+          setErroAoCriar(r.erro);
+          return;
+        }
         router.refresh();
       } catch (e) {
         setErroAoCriar(e instanceof Error ? e.message : "Não consegui criar a cadência.");

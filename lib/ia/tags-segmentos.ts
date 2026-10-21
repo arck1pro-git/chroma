@@ -1,7 +1,7 @@
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { sql } from "@/lib/db";
-import { criarSegmento, criarTag } from "@/app/configuracoes/actions";
+import { criarSegmento, criarTag } from "@/app/configuracoes/acoes-tags-segmentos";
 
 // A IA CRIA TAG E SEGMENTO (pedido dele, 2026-10-06: "a ia pode criar tags e
 // segmentos").
@@ -12,7 +12,7 @@ import { criarSegmento, criarTag } from "@/app/configuracoes/actions";
 // conversa parava para a pessoa ir em Configurações. Agora a IA cria e segue.
 //
 // As mesmas três escolhas das outras ferramentas que escrevem:
-//   · ESCREVE PELAS AÇÕES DA TELA (app/configuracoes/actions.ts), não por SQL:
+//   · ESCREVE PELAS AÇÕES DA TELA (app/configuracoes/acoes-tags-segmentos.ts), não por SQL:
 //     a mesma validação, o mesmo revalidatePath. Por isso vale a mesma porta —
 //     só entra para quem tem o módulo Configurações (quem chama confere).
 //   · NÃO DUPLICA: o nome é UNIQUE no banco, mas "Site" e "site" passariam. Já
@@ -43,8 +43,9 @@ async function criarOuAchar(tipo: keyof typeof TIPOS, bruto: string): Promise<st
   const [existente] = await t.achar(nome);
   if (existente) return `Já existia ${t.artigo} "${existente.nome}", id ${existente.id}. Use esse id; nada foi criado.`;
   try {
-    const id = await t.criar(nome);
-    return `Criei ${t.artigo} "${nome}", id ${id}. ${t.vazio}: ninguém entra até uma ação (da captação ou da campanha) ou alguém da equipe pôr.`;
+    const r = await t.criar(nome);
+    if (!r.ok) return `RECUSADO: ${r.erro}`;
+    return `Criei ${t.artigo} "${nome}", id ${r.id}. ${t.vazio}: ninguém entra até uma ação (da captação ou da campanha) ou alguém da equipe pôr.`;
   } catch (e) {
     return `RECUSADO: ${e instanceof Error ? e.message : String(e)}`;
   }

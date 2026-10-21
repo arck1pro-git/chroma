@@ -10,6 +10,7 @@ import { USUARIO_RESPONSAVEL } from "@/lib/automacoes/saida";
 import { dadosDoLeadDaExecucao, responsavelDaExecucao } from "@/lib/automacoes/aviso-equipe";
 import { reuniaoDaExecucao } from "@/lib/agenda";
 import { preencherReuniao, temVariavelDeReuniao, variaveisDaReuniao } from "@/lib/automacoes/reuniao-no-texto";
+import { ehUuid } from "@/lib/validacao";
 
 // O CRM NA FRENTE DO ENVIO. O motor não fala mais com a uazapi: ele diz "manda
 // este texto, por este número", e quem tem a credencial é quem sempre teve — o
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest) {
     destino = soDigitos(r.whatsapp);
     avisado = r.nome;
   } else if (usuarioId) {
-    if (!/^[0-9a-f-]{36}$/i.test(usuarioId)) {
+    if (!ehUuid(usuarioId)) {
       return Response.json({ erro: "usuário inválido" }, { status: 400 });
     }
     const [u] = await sql`
@@ -171,7 +172,7 @@ export async function POST(req: NextRequest) {
   let instancia: Instancia | null;
   if (peloResponsavel) {
     const execucaoId = String(corpo.execucao_id ?? "");
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(execucaoId)) {
+    if (!ehUuid(execucaoId)) {
       return Response.json({ erro: "execução inválida para envio pelo responsável" }, { status: 400 });
     }
     // A execução identifica UMA oportunidade. Não inferir pelo contato, que

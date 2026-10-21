@@ -39,7 +39,7 @@ import {
   type ArtigoStatus,
   type Blog,
 } from "@/lib/artigo";
-import { dataCurta } from "../../formato";
+import { dataCurta } from "@/lib/formato";
 import { SeloSeo, Tag, TagStatus } from "../pecas";
 import PainelArtigo from "../painel-artigo";
 import PainelConexao from "../painel-conexao";

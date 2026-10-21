@@ -51,7 +51,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import type { Etapa, Funil } from "../../data";
+import type { Etapa, Funil } from "@/lib/entidades";
 import type { VinculosDaEtapa } from "../dados";
 import { TOM_PADRAO, tomDaEtapa } from "@/lib/cores-funil";
 import { EVENTOS_META_PADRAO, ehEventoPadrao, NOME_EVENTO_META } from "@/lib/meta-eventos-nomes";
@@ -64,7 +64,7 @@ import {
   editarFunil,
   removerEtapa,
   reordenarEtapas,
-} from "../actions";
+} from "../acoes-funis";
 import { botao, botaoFantasma, botaoPerigo, campoTexto, rotuloCampo, textoAjuda } from "./ui";
 import {
   BotaoIcone,
@@ -168,7 +168,11 @@ function NovoFunil({ aoFechar }: { aoFechar?: () => void }) {
     setErro(null);
     iniciar(async () => {
       try {
-        await criarFunil(n, descricao, cor);
+        const r = await criarFunil(n, descricao, cor);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         setNome("");
         setDescricao("");
         setCor(TOM_PADRAO);
@@ -281,7 +285,11 @@ function FunilCard({
     setErro(null);
     iniciar(async () => {
       try {
-        await editarFunil(funil.id, n, descricao);
+        const r = await editarFunil(funil.id, n, descricao);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         setEditando(false);
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao salvar");
@@ -425,7 +433,11 @@ function NovaEtapa({ funilId }: { funilId: string }) {
     setErro(null);
     iniciar(async () => {
       try {
-        await criarEtapa(funilId, n);
+        const r = await criarEtapa(funilId, n);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         setNome("");
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao criar etapa");
@@ -605,7 +617,11 @@ function EtapaLinha({
     setErro(null);
     iniciar(async () => {
       try {
-        await editarEtapa(etapa.id, n);
+        const r = await editarEtapa(etapa.id, n);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         setEditando(false);
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao salvar");
@@ -876,7 +892,11 @@ function EventoMetaDaEtapa({ etapa }: { etapa: Etapa }) {
     setErro(null);
     iniciar(async () => {
       try {
-        await definirEventoMetaDaEtapa(etapa.id, valor);
+        const r = await definirEventoMetaDaEtapa(etapa.id, valor);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         setEscolha(valor ?? "");
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao salvar");

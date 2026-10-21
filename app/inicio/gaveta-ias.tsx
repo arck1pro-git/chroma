@@ -19,7 +19,7 @@ import {
   type Ia,
 } from "@/lib/ia/catalogo";
 import CamadaTopo from "../components/camada-topo";
-import type { Contato, Etapa, Funil } from "../data";
+import type { Contato, Etapa, Funil } from "@/lib/entidades";
 import { atualizarIa, criarIa, excluirIa } from "./acoes-ia";
 
 type Uso = { etapas: string[]; contatos: number };

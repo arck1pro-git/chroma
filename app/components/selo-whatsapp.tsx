@@ -51,7 +51,7 @@ import {
   removerInstancia,
   usuariosParaVincularWhatsApp,
   type ConexaoUazapi,
-} from "@/app/configuracoes/actions";
+} from "@/app/configuracoes/acoes-whatsapp";
 
 // Enquanto o QR está na tela a pergunta é outra e a pressa é outra: a uazapi
 // não avisa quando o celular escaneia, então a única forma de saber é
@@ -290,12 +290,18 @@ function PainelNovaInstancia({
     setAviso(null);
 
     try {
-      const { id, aviso: pendencia } = await criarInstanciaNaUazapi(n, usuarioId);
-      setInstanciaId(id);
-      setAviso(pendencia);
+      const criada = await criarInstanciaNaUazapi(n, usuarioId);
+      if (!criada.ok) {
+        setErro(criada.erro);
+        return;
+      }
+      setInstanciaId(criada.id);
+      setAviso(criada.aviso);
       // O QR na sequência, sem passar pela lista: é o passo seguinte
       // inevitável de quem acabou de pedir um número novo.
-      setConexao(await gerarQrCode(id));
+      const qr = await gerarQrCode(criada.id);
+      if (qr.ok) setConexao(qr.conexao);
+      else setErro(qr.erro);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao criar a instância");
     } finally {
@@ -312,10 +318,11 @@ function PainelNovaInstancia({
 
     const id = setInterval(() => {
       consultarConexao(instanciaId)
-        .then((c) => {
-          if (!vivo) return;
-          setConexao(c);
-          if (c.estado === "connected" && !avisou.current) {
+        .then((r) => {
+          // Recusa no laço é silenciosa como o erro de rede: a próxima volta tenta de novo.
+          if (!vivo || !r.ok) return;
+          setConexao(r.conexao);
+          if (r.conexao.estado === "connected" && !avisou.current) {
             avisou.current = true;
             aoConectar();
           }
@@ -489,8 +496,12 @@ function PainelInstancia({
     setOcupado(true);
     setErro(null);
     consultarConexao(numero.id)
-      .then((c) => {
-        setConexao(c);
+      .then((r) => {
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
+        setConexao(r.conexao);
         aoMudar();
       })
       .catch((e) =>
@@ -503,7 +514,9 @@ function PainelInstancia({
     setOcupado(true);
     setErro(null);
     try {
-      setConexao(await gerarQrCode(numero.id));
+      const r = await gerarQrCode(numero.id);
+      if (r.ok) setConexao(r.conexao);
+      else setErro(r.erro);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao pedir o QR Code");
     } finally {
@@ -522,7 +535,11 @@ function PainelInstancia({
     setOcupado(true);
     setErro(null);
     removerInstancia(numero.id)
-      .then(() => {
+      .then((r) => {
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         aoMudar();
         aoFechar();
       })
@@ -540,10 +557,11 @@ function PainelInstancia({
 
     const id = setInterval(() => {
       consultarConexao(numero.id)
-        .then((c) => {
-          if (!vivo) return;
-          setConexao(c);
-          if (c.estado === "connected" && !avisou.current) {
+        .then((r) => {
+          // Recusa no laço é silenciosa como o erro de rede: a próxima volta tenta de novo.
+          if (!vivo || !r.ok) return;
+          setConexao(r.conexao);
+          if (r.conexao.estado === "connected" && !avisou.current) {
             avisou.current = true;
             aoMudar();
           }

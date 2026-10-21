@@ -4,9 +4,9 @@
 // conversa). Nada aqui fala com o servidor.
 import { Fragment, useState, type ComponentType, type ReactNode } from "react";
 import { Bot, Check, CheckCheck, Clock, Smartphone, TriangleAlert } from "lucide-react";
-import { horaCurta, iniciais } from "../formato";
+import { horaCurta, iniciais } from "@/lib/formato";
 import type { CanalChat, ConversaResumo, EstadoCanal, TipoCanal } from "./tipos";
-import type { StatusMensagem } from "../data";
+import type { StatusMensagem } from "@/lib/entidades";
 import { telefoneLegivel } from "@/lib/telefone";
 
 // ── Identidade dos canais ───────────────────────────────────────────────────
@@ -65,7 +65,7 @@ export function canalDaConversa(canais: CanalChat[], c: Pick<ConversaResumo, "nu
 /** "5547992399626" → "+55 47 9 9239-9626" (lib/telefone.ts). */
 export const formatarTelefone = telefoneLegivel;
 
-// Fuso fixo nos dois lados pelo mesmo motivo de app/formato.ts: com o fuso do
+// Fuso fixo nos dois lados pelo mesmo motivo de lib/formato.ts: com o fuso do
 // runtime, o SSR sai em UTC e o navegador em local, e a hidratação reclama.
 const FUSO = "America/Sao_Paulo";
 const fmtDia = new Intl.DateTimeFormat("en-CA", { timeZone: FUSO, year: "numeric", month: "2-digit", day: "2-digit" });

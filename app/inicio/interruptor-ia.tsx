@@ -17,7 +17,7 @@ import { ArrowRightLeft, BookOpen, Bot, Check, Hand, Loader2, MessageCircle, Plu
 import { realceDoTom, solidoDoTom } from "@/lib/cores-funil";
 import type { Ia } from "@/lib/ia/catalogo";
 import CamadaTopo from "../components/camada-topo";
-import type { Etapa } from "../data";
+import type { Etapa } from "@/lib/entidades";
 import { definirIaDaEtapa } from "./acoes-ia";
 
 export default function InterruptorIa({

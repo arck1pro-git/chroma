@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { exigirModulo } from "@/lib/auth/dal";
 import { administraDemandas, listarDemandas, pessoasParaDemanda } from "@/lib/demandas";
+import { ehUuid } from "@/lib/validacao";
 import PainelDemandas from "./painel";
 
 export const metadata: Metadata = {
@@ -21,7 +22,7 @@ export default async function DemandasPage({ searchParams }: { searchParams: Pro
   // ?abrir=<id>: o clique na notificação de demanda nova (vigia-demandas.tsx)
   // abre a tela já com a gaveta dela.
   const { abrir } = await searchParams;
-  const abrirId = abrir && /^[0-9a-f-]{36}$/i.test(abrir) ? abrir : null;
+  const abrirId = abrir && ehUuid(abrir) ? abrir : null;
   const admin = administraDemandas(usuario);
 
   const eu = {

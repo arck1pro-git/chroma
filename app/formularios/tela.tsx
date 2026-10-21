@@ -35,7 +35,7 @@ import {
 } from "./acoes";
 import { botao, botaoSecundario, campoTexto, rotuloCampo, textoAjuda } from "../configuracoes/secoes/ui";
 import { Erro, Interruptor, Painel, PainelTopo, Vazio } from "../configuracoes/secoes/pecas";
-import { dataCurta, dataHora } from "../formato";
+import { dataCurta, dataHora } from "@/lib/formato";
 
 type Alvos = {
   funis: { id: string; nome: string }[];

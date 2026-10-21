@@ -1009,7 +1009,7 @@ export async function execucoesPorDia(fluxoId: string, dias = 14) {
            COALESCE(SUM((e.estado = 'sucesso')::int), 0)::int AS sucesso,
            COALESCE(SUM((e.estado = 'erro')::int), 0)::int    AS erro
     -- Dia de Brasília, não UTC: em UTC a execução das 22h caía na barra do dia
-    -- seguinte (o mesmo ajuste do gráfico de webhooks, app/webhooks/dados.ts).
+    -- seguinte (o mesmo ajuste do gráfico de webhooks, lib/webhooks-dados.ts).
     FROM generate_series(
            (now() AT TIME ZONE 'America/Sao_Paulo')::date - (${dias - 1}::int),
            (now() AT TIME ZONE 'America/Sao_Paulo')::date,

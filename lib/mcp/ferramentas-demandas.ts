@@ -17,6 +17,7 @@ import { listaUuid, sql } from "@/lib/db";
 import { inserirChamado, inserirDemandasParaPessoas, inserirItens, pessoasParaDemanda } from "@/lib/demandas";
 import { TETO_ITENS, TETO_TEXTO_ITEM } from "@/lib/demandas-tipos";
 import { ErroDaFerramenta, type Ferramenta } from "@/lib/mcp/protocolo";
+import { ehUuid } from "@/lib/validacao";
 
 /** Fabrício Arck — o dono do conector, autor das demandas que entram por ele. */
 const AUTOR = "79003fab-577d-467c-a71e-13f198d73a82";
@@ -26,7 +27,6 @@ const TETO_DEMANDAS_POR_CHAMADA = 20;
 type Pessoa = { id: string; nome: string };
 
 const semAcento = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Os nomes que vieram do modelo viram ids. Exato (sem acento e caixa) ganha;
@@ -47,7 +47,7 @@ function resolverPara(lista: string[], pessoas: Pessoa[]): { ids: string[]; cham
       chamado = true;
       continue;
     }
-    if (UUID.test(bruto.trim())) {
+    if (ehUuid(bruto.trim())) {
       const p = pessoas.find((x) => x.id === bruto.trim());
       if (!p) throw new ErroDaFerramenta(`O id ${bruto} não é de ninguém que recebe demanda.`);
       ids.add(p.id);

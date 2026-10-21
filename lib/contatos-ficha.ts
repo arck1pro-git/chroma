@@ -15,6 +15,7 @@ import "server-only";
 import { listaUuid, sql } from "@/lib/db";
 import { tomDaEtapa } from "@/lib/cores-funil";
 import { unirTrechos } from "@/lib/videos";
+import { ehUuid } from "@/lib/validacao";
 
 const iso = (v: unknown) => (v ? new Date(v as string).toISOString() : null);
 const num = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
@@ -281,7 +282,7 @@ const objeto = (v: unknown): Record<string, unknown> => (v && typeof v === "obje
 
 /** A ficha inteira de um contato, ou null se ele não existe. */
 export async function fichaDoContato(id: string, chavesPersonalizadas: Set<string>): Promise<FichaContato | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  if (!ehUuid(id)) return null;
 
   const [
     [contato],

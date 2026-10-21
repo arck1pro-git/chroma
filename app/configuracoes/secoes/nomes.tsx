@@ -35,7 +35,8 @@ import {
   deletarTag,
   editarSegmento,
   editarTag,
-} from "../actions";
+} from "../acoes-tags-segmentos";
+import type { ResultadoAcao } from "@/lib/resultado-acao";
 import { botao, campoTexto } from "./ui";
 import { BotaoIcone, Cabecalho, Erro, Painel, Vazio } from "./pecas";
 
@@ -54,8 +55,8 @@ type Variante = {
   artigo: "a" | "o";
   /** O passo seguinte, para o estado vazio. */
   depois: string;
-  aoCriar: (nome: string) => Promise<unknown>;
-  aoEditar: (id: string, nome: string) => Promise<unknown>;
+  aoCriar: (nome: string) => Promise<ResultadoAcao<{ id: string }>>;
+  aoEditar: (id: string, nome: string) => Promise<ResultadoAcao>;
   aoExcluir: (id: string) => Promise<unknown>;
 };
 
@@ -117,7 +118,11 @@ function SecaoNomes({ itens, v }: { itens: Nomeado[]; v: Variante }) {
     setErro(null);
     iniciar(async () => {
       try {
-        await v.aoCriar(n);
+        const r = await v.aoCriar(n);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         setNome("");
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao criar");
@@ -215,7 +220,12 @@ function LinhaNome({ item, v }: { item: Nomeado; v: Variante }) {
     setErro(null);
     iniciar(async () => {
       try {
-        await v.aoEditar(item.id, n);
+        const r = await v.aoEditar(item.id, n);
+        if (!r.ok) {
+          // Fica em edição E diz por quê (nome repetido, vazio).
+          setErro(r.erro);
+          return;
+        }
         setEditando(false);
       } catch (e) {
         // Fica em edição E diz por quê — antes a falha era engolida e o campo

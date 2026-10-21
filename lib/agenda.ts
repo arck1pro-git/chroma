@@ -16,6 +16,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
 import { acessoGoogle, esquecerTokenGoogle, GoogleDesconectado } from "@/lib/google-oauth";
+import { ehUuid } from "@/lib/validacao";
 
 const API = "https://www.googleapis.com/calendar/v3";
 export const FUSO = "America/Sao_Paulo";
@@ -726,7 +727,7 @@ async function completarDoGoogle(linhas: LinhaReuniao[]): Promise<ReuniaoDoCrm[]
  * Cancelada não serve: devolve a próxima de pé, ou null.
  */
 export async function reuniaoDaExecucao(execucaoId: string): Promise<ReuniaoDoCrm | null> {
-  if (!/^[0-9a-f-]{36}$/i.test(execucaoId)) return null;
+  if (!ehUuid(execucaoId)) return null;
   const linhas = (await sql`
     SELECT r.id, r.google_evento_id, r.contato_id, r.oportunidade_id, r.inicio, r.fim, r.autor_id
       FROM fluxo_execucoes e

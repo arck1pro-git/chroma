@@ -4,8 +4,9 @@ import { sql } from "@/lib/db";
 import { tomDaEtapa } from "@/lib/cores-funil";
 import { etapasComTom, fichaDoContato, listarContatos } from "@/lib/contatos-ficha";
 import { buscarContatosNoBanco, totalDeContatos } from "@/lib/contatos-busca";
-import type { CampoPersonalizado, Etapa, Funil } from "../data";
+import type { CampoPersonalizado, Etapa, Funil } from "@/lib/entidades";
 import type { Ia } from "@/lib/ia/catalogo";
+import { ehUuid } from "@/lib/validacao";
 import PainelContatos from "./painel";
 
 export const metadata: Metadata = {
@@ -36,7 +37,7 @@ export default async function ContatosPage({
 }) {
   await exigirModulo("contatos");
   const { contato: escolhidoBruto, q } = await searchParams;
-  const escolhido = typeof escolhidoBruto === "string" && /^[0-9a-f-]{36}$/i.test(escolhidoBruto) ? escolhidoBruto : null;
+  const escolhido = typeof escolhidoBruto === "string" && ehUuid(escolhidoBruto) ? escolhidoBruto : null;
   const termo = typeof q === "string" ? q.slice(0, 120) : "";
 
   const achados = termo ? await buscarContatosNoBanco(termo) : [];

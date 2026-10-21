@@ -23,8 +23,7 @@ import {
   RETOMADA_MAX_MINUTOS,
   RETOMADA_MIN_MINUTOS,
 } from "@/lib/ia/catalogo";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { ehUuid } from "@/lib/validacao";
 
 export type DadosIa = {
   nome: string;
@@ -141,7 +140,7 @@ export async function criarIa(d: DadosIa): Promise<{ id?: string; erro?: string;
 
 export async function atualizarIa(id: string, d: DadosIa): Promise<{ erro?: string; aviso?: string }> {
   await exigirModulo("inicio");
-  if (!UUID.test(id)) return { erro: "IA inválida." };
+  if (!ehUuid(id)) return { erro: "IA inválida." };
   const v = validar(d);
   if (typeof v === "string") return { erro: v };
   const repetida = await palavraEmUso(v.palavra, id);
@@ -172,7 +171,7 @@ export async function atualizarIa(id: string, d: DadosIa): Promise<{ erro?: stri
  */
 export async function excluirIa(id: string): Promise<{ erro?: string }> {
   const { usuario } = await exigirModulo("inicio");
-  if (!UUID.test(id)) return { erro: "IA inválida." };
+  if (!ehUuid(id)) return { erro: "IA inválida." };
   const contatos = await sql`SELECT id FROM contatos WHERE ia_id = ${id}`;
   for (const c of contatos) await gravarIaDoContato(c.id as string, null, null, usuario.id);
   await sql`DELETE FROM ias WHERE id = ${id}`;
@@ -184,8 +183,8 @@ export async function excluirIa(id: string): Promise<{ erro?: string }> {
 /** A IA que atende quem está na etapa; `null` desliga. */
 export async function definirIaDaEtapa(etapaId: string, iaId: string | null): Promise<{ erro?: string }> {
   await exigirModulo("inicio");
-  if (!UUID.test(etapaId)) return { erro: "Etapa inválida." };
-  if (iaId !== null && !UUID.test(iaId)) return { erro: "IA inválida." };
+  if (!ehUuid(etapaId)) return { erro: "Etapa inválida." };
+  if (iaId !== null && !ehUuid(iaId)) return { erro: "IA inválida." };
   try {
     await sql`UPDATE etapas SET ia_id = ${iaId}::uuid WHERE id = ${etapaId}`;
   } catch {
@@ -199,7 +198,7 @@ export async function definirIaDaEtapa(etapaId: string, iaId: string | null): Pr
 /** Esconde (ou volta a mostrar) os cards da etapa no quadro — o olho da coluna. */
 export async function definirOcultarLeads(etapaId: string, ocultar: boolean): Promise<{ erro?: string }> {
   await exigirModulo("inicio");
-  if (!UUID.test(etapaId)) return { erro: "Etapa inválida." };
+  if (!ehUuid(etapaId)) return { erro: "Etapa inválida." };
   await sql`UPDATE etapas SET ocultar_leads = ${ocultar === true} WHERE id = ${etapaId}`;
   revalidatePath("/");
   return {};
@@ -215,8 +214,8 @@ export async function definirIaDoContato(
   iaId: string | null,
 ): Promise<{ erro?: string }> {
   const { usuario } = await exigirAlgumModulo("inicio", "contatos");
-  if (!UUID.test(contatoId)) return { erro: "Contato inválido." };
-  if (iaId !== null && !UUID.test(iaId)) return { erro: "IA inválida." };
+  if (!ehUuid(contatoId)) return { erro: "Contato inválido." };
+  if (iaId !== null && !ehUuid(iaId)) return { erro: "IA inválida." };
   const r = await gravarIaDoContato(contatoId, valor, iaId, usuario.id);
   if (r.erro) return r;
   revalidatePath("/");

@@ -19,6 +19,8 @@ import {
   type ContatoEncontrado,
   type DadosDoContato,
 } from "@/lib/contatos-busca";
+import type { ResultadoAcao } from "@/lib/resultado-acao";
+import { ehUuid } from "@/lib/validacao";
 
 /**
  * A busca da gaveta de contatos e do seletor de contato: a base não viaja mais
@@ -35,7 +37,7 @@ export async function buscarContatos(termo: string): Promise<ContatoEncontrado[]
  */
 export async function dadosDoContato(id: string): Promise<DadosDoContato | null> {
   const { usuario, escopo } = await exigirAlgumModulo("inicio", "contatos");
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  if (!ehUuid(id)) return null;
   return dadosDoContatoNoBanco(id, escopo === "proprio" ? usuario.id : null);
 }
 
@@ -48,22 +50,29 @@ export type NovoContato = {
   pais: string;
 };
 
+// Recusa volta como `{ ok: false, erro }` (lib/resultado-acao.ts): em produção
+// a mensagem de um erro lançado não chega à tela.
+
 /** Anotação é append-only nesta interface: cria, mas não oferece edição ou exclusão. */
-export async function adicionarAnotacao(contatoId: string, textoBruto: string) {
+export async function adicionarAnotacao(
+  contatoId: string,
+  textoBruto: string,
+): Promise<ResultadoAcao> {
   const { usuario } = await exigirAlgumModulo("inicio", "contatos");
-  if (!/^[0-9a-f-]{36}$/i.test(contatoId)) throw new Error("Contato inválido.");
+  if (!ehUuid(contatoId)) return { ok: false, erro: "Contato inválido." };
   const texto = textoBruto.trim().slice(0, 4000);
-  if (!texto) throw new Error("Escreva uma anotação.");
+  if (!texto) return { ok: false, erro: "Escreva uma anotação." };
   await sql`INSERT INTO anotacoes (contato_id, texto, autor_id)
             VALUES (${contatoId}::uuid, ${texto}, ${usuario.id}::uuid)`;
   revalidatePath("/");
   revalidatePath("/contatos");
+  return { ok: true };
 }
 
-export async function criarContato(dados: NovoContato): Promise<string> {
+export async function criarContato(dados: NovoContato): Promise<ResultadoAcao<{ id: string }>> {
   await exigirAlgumModulo("inicio", "contatos");
   const nome = dados.nome.trim();
-  if (!nome) throw new Error("Nome é obrigatório");
+  if (!nome) return { ok: false, erro: "Nome é obrigatório" };
 
   const [novo] = await sql`
     INSERT INTO contatos (nome, email, whatsapp, cidade, estado, pais)
@@ -74,17 +83,17 @@ export async function criarContato(dados: NovoContato): Promise<string> {
   await registrarContatoCriado(novo.id);
   revalidatePath("/");
   revalidatePath("/contatos");
-  return novo.id;
+  return { ok: true, id: novo.id as string };
 }
 
 // Edita os dados do contato. Toca / e /chat porque nome/whatsapp aparecem lá.
 export async function atualizarContato(
   id: string,
   dados: NovoContato,
-): Promise<void> {
+): Promise<ResultadoAcao> {
   await exigirAlgumModulo("inicio", "contatos");
   const nome = dados.nome.trim();
-  if (!nome) throw new Error("Nome é obrigatório");
+  if (!nome) return { ok: false, erro: "Nome é obrigatório" };
   // O UPDATE mora em lib/historico.ts junto com a linha que ele gera: dizer
   // QUAIS campos mudaram exige comparar com o valor anterior, e ele só existe
   // dentro da mesma consulta.
@@ -99,6 +108,7 @@ export async function atualizarContato(
   revalidatePath("/");
   revalidatePath("/contatos");
   revalidatePath("/chat");
+  return { ok: true };
 }
 
 // ── Vínculos de tag/segmento ao contato ──────────────────────────────────────

@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import type { EtapaComTom } from "@/lib/contatos-ficha";
-import { brlCurto } from "../formato";
+import { brlCurto, dataDoInstante } from "@/lib/formato";
 import { telefoneLegivel } from "@/lib/telefone";
 
 const FUSO = "America/Sao_Paulo";
@@ -24,7 +24,7 @@ export function tempo(segundos: number) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${resto}` : `${m}:${resto}`;
 }
 
-/** "R$ 1,3 mi", "R$ 350 mil", "R$ 9.800". Mora em app/formato.ts desde que o
+/** "R$ 1,3 mi", "R$ 350 mil", "R$ 9.800". Mora em lib/formato.ts desde que o
  *  quadro também passou a usá-lo; o nome daqui ficou para a ficha. */
 export const dinheiro = brlCurto;
 
@@ -41,23 +41,13 @@ export function hora(iso: string) {
   return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: FUSO }).format(new Date(iso));
 }
 
-/** "05 out", e com o ano quando não é o corrente. */
-export function dataCurta(iso: string) {
-  const d = new Date(iso);
-  const mesmoAno = diaDe(iso).slice(0, 4) === diaDe(new Date().toISOString()).slice(0, 4);
-  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: mesmoAno ? undefined : "numeric", timeZone: FUSO })
-    .format(d)
-    .replace(/\./g, "")
-    .replace(/ de /g, " ");
-}
-
 /** "13:42" hoje, "ontem", "há 3 d", "05 out" — o tempo da lista. */
 export function quando(iso: string) {
   const dias = diasEntre(iso, new Date().toISOString());
   if (dias <= 0) return hora(iso);
   if (dias === 1) return "ontem";
   if (dias < 7) return `há ${dias} d`;
-  return dataCurta(iso);
+  return dataDoInstante(iso);
 }
 
 /** O cabeçalho de um dia no feed: "Hoje", "Ontem", "sex, 03 out". */

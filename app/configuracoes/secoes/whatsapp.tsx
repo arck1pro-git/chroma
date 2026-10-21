@@ -20,7 +20,7 @@
 //   ao fechar o painel e ao desmontar.
 //
 // · O token não passa por aqui em nenhum momento. As actions recebem o id da
-//   linha e buscam a credencial no servidor (ver ../actions.ts).
+//   linha e buscam a credencial no servidor (ver ../acoes-whatsapp.ts).
 //
 // O REDESENHO (2026-10-08): o estado da instância virou o protagonista do
 // cartão (ícone tingido + selo); quem envia por ela aparece como gente, com
@@ -42,6 +42,7 @@ import {
   Webhook,
   X,
 } from "lucide-react";
+import type { ResultadoAcao } from "@/lib/resultado-acao";
 import type { InstanciaUazapi, UsuarioConfig } from "../dados";
 import {
   consultarConexao,
@@ -55,7 +56,7 @@ import {
   vincularUsuarioInstancia,
   type ConexaoUazapi,
   type EstadoConexao,
-} from "../actions";
+} from "../acoes-whatsapp";
 import {
   botao,
   botaoFantasma,
@@ -239,7 +240,12 @@ function NovaInstancia({
     setErro(null);
     iniciar(async () => {
       try {
-        const { id, aviso } = await criarInstanciaNaUazapi(n, usuarioId);
+        const r = await criarInstanciaNaUazapi(n, usuarioId);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
+        const { id, aviso } = r;
         setNome("");
         setUsuarioId("");
         // Abre o cartão da instância nova já pedindo o QR Code — é o passo
@@ -382,7 +388,11 @@ function InstanciaCard({
     setErro(null);
     iniciar(async () => {
       try {
-        await renomearInstancia(instancia.id, n);
+        const r = await renomearInstancia(instancia.id, n);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         setEditando(false);
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao renomear");
@@ -406,7 +416,8 @@ function InstanciaCard({
     setErro(null);
     iniciar(async () => {
       try {
-        await removerInstancia(instancia.id);
+        const r = await removerInstancia(instancia.id);
+        if (!r.ok) setErro(r.erro);
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao remover a instância");
       }
@@ -418,7 +429,8 @@ function InstanciaCard({
     setErro(null);
     iniciar(async () => {
       try {
-        await vincularUsuarioInstancia(instancia.id, usuarioId);
+        const r = await vincularUsuarioInstancia(instancia.id, usuarioId);
+        if (!r.ok) setErro(r.erro);
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao vincular usuário");
       }
@@ -637,10 +649,14 @@ function PainelConexao({
     try {
       const primeira = pedirQr.current;
       pedirQr.current = false;
-      const c = primeira
+      const r = primeira
         ? await gerarQrCode(instanciaId)
         : await consultarConexao(instanciaId);
-      aoMudar(c);
+      if (!r.ok) {
+        setErro(r.erro);
+        return;
+      }
+      aoMudar(r.conexao);
       setErro(null);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao consultar a uazapi");
@@ -679,11 +695,13 @@ function PainelConexao({
     };
   }, [conectando, consultar]);
 
-  async function acao(fn: () => Promise<ConexaoUazapi>) {
+  async function acao(fn: () => Promise<ResultadoAcao<{ conexao: ConexaoUazapi }>>) {
     setOcupado(true);
     setErro(null);
     try {
-      aoMudar(await fn());
+      const r = await fn();
+      if (r.ok) aoMudar(r.conexao);
+      else setErro(r.erro);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao falar com a uazapi");
     } finally {
@@ -713,7 +731,7 @@ function PainelConexao({
     setOcupado(true);
     setWebhook(null);
     sincronizarWebhook(instanciaId)
-      .then(setWebhook)
+      .then((r) => setWebhook(r.ok ? r.mensagem : r.erro))
       .catch((e) =>
         setWebhook(e instanceof Error ? e.message : "Falha ao falar com a uazapi"),
       )

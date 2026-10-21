@@ -22,7 +22,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Pencil, Power, PowerOff, Trash2, Webhook as WebhookIcon } from "lucide-react";
-import type { Alvos, DetalheWebhook } from "./dados";
+import type { Alvos, DetalheWebhook } from "@/lib/webhooks-dados";
 import Configuracao, {
   AbasDaConfiguracao,
   calcularPendencias,
@@ -136,7 +136,8 @@ function Identificacao({
       return;
     }
     iniciar(async () => {
-      await editarWebhook(webhook.id, nome, descricao);
+      const r = await editarWebhook(webhook.id, nome, descricao);
+      if (!r.ok) alert(r.erro);
     });
   }
 

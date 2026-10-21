@@ -16,6 +16,7 @@
 import { NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { exigirModuloApi } from "@/lib/auth/dal";
+import { ehUuid } from "@/lib/validacao";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
 
   let conversa = "";
   const id = req.nextUrl.searchParams.get("atendimento") ?? "";
-  if (/^[0-9a-f-]{36}$/i.test(id)) {
+  if (ehUuid(id)) {
     const [c] = await sql`
       SELECT coalesce(md5(string_agg(status || midia_estado, ',')), '') AS v
       FROM (

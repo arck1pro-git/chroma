@@ -20,7 +20,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { dataHora } from "../formato";
+import { dataHora } from "@/lib/formato";
 import FluxoComMetricas from "./fluxo-metricas";
 import { ExecucoesPorDia } from "./graficos";
 import {

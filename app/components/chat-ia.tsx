@@ -11,7 +11,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { dataHora } from "../formato";
+import { dataHora } from "@/lib/formato";
 import {
   apagarConversaIa,
   conversasDaBarra,

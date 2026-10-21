@@ -36,11 +36,11 @@ import {
   X,
 } from "lucide-react";
 import type { DepartamentoDaConta, UsuarioComConta } from "../dados";
-import { criarUsuario, editarUsuario, type DadosUsuario } from "../actions";
+import { criarUsuario, editarUsuario, type DadosUsuario } from "../acoes-usuarios";
 import { botao, botaoFantasma, campoTexto, rotuloCampo, textoAjuda } from "./ui";
 import { Avatar, BotaoIcone, Cabecalho, Erro, formatarTelefone, Painel, PainelTopo } from "./pecas";
 
-/** O mesmo mínimo das actions (SENHA_MINIMA em ../actions.ts). */
+/** O mesmo mínimo das actions (SENHA_MINIMA em ../acoes-usuarios.ts). */
 const SENHA_MINIMA = 12;
 
 /**

@@ -46,6 +46,7 @@ import {
   moverParticipante,
   renomearDepartamento,
 } from "../acoes-acessos";
+import type { ResultadoAcao } from "@/lib/resultado-acao";
 import { botao, botaoFantasma, campoTexto, rotuloCampo } from "./ui";
 import {
   Avatar,
@@ -66,6 +67,14 @@ import {
  */
 type Pendentes = Record<string, boolean | Escopo>;
 
+/** Roda uma ação da grade com o valor otimista em `pendentes` enquanto ela não volta. */
+type Rodar = (
+  chave: string,
+  alvo: boolean | Escopo,
+  acao: () => Promise<ResultadoAcao>,
+  queixa: string,
+) => void;
+
 export function AcessosSection({
   dados,
   departamentoIdAtual,
@@ -84,12 +93,13 @@ export function AcessosSection({
   const [pendentes, setPendentes] = useState<Pendentes>({});
   const [, iniciar] = useTransition();
 
-  function rodar(chave: string, alvo: boolean | Escopo, acao: () => Promise<unknown>, queixa: string) {
+  const rodar: Rodar = (chave, alvo, acao, queixa) => {
     setErro(null);
     setPendentes((p) => ({ ...p, [chave]: alvo }));
     iniciar(async () => {
       try {
-        await acao();
+        const r = await acao();
+        if (!r.ok) setErro(r.erro);
       } catch (e) {
         setErro(e instanceof Error ? e.message : queixa);
       } finally {
@@ -100,7 +110,7 @@ export function AcessosSection({
         });
       }
     });
-  }
+  };
 
   const departamentos = dados.departamentos;
 
@@ -257,7 +267,11 @@ function NovoDepartamento({
     aoFalhar(null);
     iniciar(async () => {
       try {
-        await criarDepartamento(n, Number(nivel) || 1);
+        const r = await criarDepartamento(n, Number(nivel) || 1);
+        if (!r.ok) {
+          aoFalhar(r.erro);
+          return;
+        }
         setNome("");
         setNivel("1");
         aoFechar();
@@ -336,7 +350,7 @@ function CabecaDepartamento({
   ehOMeu: boolean;
   pessoas: number;
   pendentes: Pendentes;
-  rodar: (chave: string, alvo: boolean | Escopo, acao: () => Promise<unknown>, queixa: string) => void;
+  rodar: Rodar;
   aoFalhar: (e: string | null) => void;
 }) {
   const [editando, setEditando] = useState(false);
@@ -362,7 +376,8 @@ function CabecaDepartamento({
     aoFalhar(null);
     iniciarApagar(async () => {
       try {
-        await apagarDepartamento(d.id);
+        const r = await apagarDepartamento(d.id);
+        if (!r.ok) aoFalhar(r.erro);
       } catch (e) {
         aoFalhar(e instanceof Error ? e.message : "Falha ao apagar");
       }
@@ -467,7 +482,7 @@ function CelulaModulo({
   rotuloModulo: string;
   escopavel: boolean;
   pendentes: Pendentes;
-  rodar: (chave: string, alvo: boolean | Escopo, acao: () => Promise<unknown>, queixa: string) => void;
+  rodar: Rodar;
 }) {
   const chaveLigado = `${d.id}:${chave}`;
   const chaveEscopo = `${d.id}:escopo:${chave}`;
@@ -572,7 +587,8 @@ function Participantes({
                       aoFalhar(null);
                       iniciar(async () => {
                         try {
-                          await moverParticipante(p.id, destino);
+                          const r = await moverParticipante(p.id, destino);
+                          if (!r.ok) aoFalhar(r.erro);
                         } catch (err) {
                           aoFalhar(err instanceof Error ? err.message : "Falha ao mover");
                         }

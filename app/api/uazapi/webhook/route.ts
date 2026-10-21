@@ -27,8 +27,7 @@ import { midiaDoEvento, baixarPendentes, temArquivo } from "@/lib/midia";
 import { ORIGEM_RASTREIO } from "@/lib/uazapi";
 import { alternarIaPelaPalavra, responderComIa } from "@/lib/ia/atendente";
 import { segredoConfere } from "@/lib/segredo";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { ehUuid } from "@/lib/validacao";
 
 // ── Extração tolerante ──────────────────────────────────────────────────────
 // Aceita o evento solto ou dentro de { message } / { data }.
@@ -128,7 +127,7 @@ export async function POST(req: NextRequest) {
     if (fromMe && (ev?.wasSentByApi === true || ev?.track_source === ORIGEM_RASTREIO)) {
       const idEco: string | null = ev?.messageid ?? ev?.id ?? null;
       const nossa = typeof ev?.track_id === "string" ? ev.track_id : "";
-      if (ev?.track_source === ORIGEM_RASTREIO && UUID.test(nossa)) {
+      if (ev?.track_source === ORIGEM_RASTREIO && ehUuid(nossa)) {
         await sql`
           UPDATE mensagens
              SET id_externo = COALESCE(id_externo, ${idEco}),

@@ -10,7 +10,7 @@
 import { Bot } from "lucide-react";
 import { textoDoTom } from "@/lib/cores-funil";
 import type { Ia } from "@/lib/ia/catalogo";
-import type { Contato, Etapa, Funil, Oportunidade } from "../data";
+import type { Contato, Etapa, Funil, Oportunidade } from "@/lib/entidades";
 import { InterruptorIaContato } from "../components/interruptor-ia-contato";
 import { iaDoCard } from "../funil/ia";
 import { definirIaDoContato } from "./acoes-ia";

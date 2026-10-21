@@ -5,7 +5,7 @@ import { Users, X } from "lucide-react";
 import { SeletorMenu } from "../components/filtros-ui";
 import CamadaTopo from "../components/camada-topo";
 import BuscaContato, { type ContatoEscolhido } from "../components/busca-contato";
-import type { Usuario } from "../data";
+import type { Usuario } from "@/lib/entidades";
 
 // Estilo dos campos de texto — mesmo dos selects/filtros, só sem a seta.
 const campoTexto =

@@ -18,12 +18,9 @@
 // o painel de IA inteiro em vez de só deixá-lo sem a trava. O aviso existe para
 // a diferença não passar despercebida em produção.
 import postgres from "postgres";
-
-type SqlPermissivo = ((
-  strings: TemplateStringsArray,
-  ...values: unknown[]
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-) => Promise<any[]>) & { [k: string]: any };
+// Só o tipo: o `sql` de lib/db.ts é a conexão de dono, com escrita, e a IA
+// nunca o usa.
+import type { SqlPermissivo } from "@/lib/db";
 
 let cliente: ReturnType<typeof postgres> | null = null;
 let avisou = false;

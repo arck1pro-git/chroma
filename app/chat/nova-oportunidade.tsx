@@ -4,7 +4,7 @@
 // escolhe funil, etapa, nome, valor e responsável.
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { Wallet, X } from "lucide-react";
-import type { Contato, Etapa, Funil, Usuario } from "../data";
+import type { Contato, Etapa, Funil, Usuario } from "@/lib/entidades";
 import { criarOportunidade } from "./actions";
 
 const campoModal =

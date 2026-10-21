@@ -1,3 +1,8 @@
+// Formatação de dinheiro, data, lugar e iniciais, igual em toda tela e no
+// servidor. Importado como valor por dezenas de componentes cliente: aqui não
+// entra `server-only`, banco nem segredo, senão o build das telas quebra.
+// Morava em app/formato.ts até 2026-10-21.
+
 /**
  * "Porto Belo/SC", "Porto Belo", "SC" — ou "" quando não há nada.
  *
@@ -35,9 +40,37 @@ const MESES = [
 // "2026-07-13" → "13 jul 2026", sem passar por Date de propósito:
 // new Date("2026-07-13") é meia-noite UTC, que em Brasília é dia 12 — a data
 // apareceria um dia atrasada.
+//
+// Recebe uma DATA PURA ('AAAA-MM-DD'). Para um instante (timestamptz, com hora),
+// use dataDoInstante: cortar a string de um instante pega o dia em UTC, que às
+// 22h de Brasília já é o dia seguinte.
 export function dataCurta(data: string) {
   const [ano, mes, dia] = data.slice(0, 10).split("-");
   return `${dia} ${MESES[Number(mes) - 1]} ${ano}`;
+}
+
+const anoEmBrasilia = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  timeZone: "America/Sao_Paulo",
+});
+
+/**
+ * "05 out", e "05 out 2025" quando não é o ano corrente. Recebe um INSTANTE
+ * (timestamptz) e converte para Brasília; para uma data pura, use dataCurta.
+ * Era `dataCompacta` em app/contatos/pecas.tsx até 2026-10-21.
+ */
+export function dataDoInstante(iso: string) {
+  const d = new Date(iso);
+  const mesmoAno = anoEmBrasilia.format(d) === anoEmBrasilia.format(new Date());
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: mesmoAno ? undefined : "numeric",
+    timeZone: "America/Sao_Paulo",
+  })
+    .format(d)
+    .replace(/\./g, "")
+    .replace(/ de /g, " ");
 }
 
 // Aqui, ao contrário, a conversão é o ponto: histórico e anotações são

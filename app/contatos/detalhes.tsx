@@ -14,8 +14,8 @@ import type {
   Segmento,
   Tag,
   Usuario,
-} from "../data";
-import { brl, brlCurto, localizacao } from "../formato";
+} from "@/lib/entidades";
+import { brl, brlCurto, dataDoInstante, localizacao } from "@/lib/formato";
 import { telefoneLegivel } from "@/lib/telefone";
 import { AnotacoesContato } from "../components/anotacoes-contato";
 import { CamposDoContato } from "../components/campos-personalizados";
@@ -32,7 +32,7 @@ import {
   Secao,
   Vazio,
 } from "../components/gaveta";
-import { dataCurta, haQuanto, Selo, type Tom } from "./pecas";
+import { haQuanto, Selo, type Tom } from "./pecas";
 
 // Partes da ficha do contato que as duas gavetas da tela inicial mostram — a
 // de contatos e a aba Cliente da ficha da oportunidade —, montadas com o kit
@@ -87,7 +87,7 @@ export function CamposContato({
           <Propriedade rotulo="No CRM">
             <span>
               {haQuanto(contato.data_criacao)}
-              <span className="text-zinc-400 dark:text-zinc-500"> · {dataCurta(contato.data_criacao)}</span>
+              <span className="text-zinc-400 dark:text-zinc-500"> · {dataDoInstante(contato.data_criacao)}</span>
             </span>
           </Propriedade>
         )}
@@ -223,7 +223,7 @@ export function SecoesContato({
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-50">{rotulo}</span>
                         <span className="block truncate text-[11.5px] tabular-nums text-zinc-500 dark:text-zinc-400">
-                          {numero ? `pelo ${numero} · ` : ""}desde {dataCurta(a.data_criacao)}
+                          {numero ? `pelo ${numero} · ` : ""}desde {dataDoInstante(a.data_criacao)}
                         </span>
                       </span>
                       {a.nao_lidas > 0 && (

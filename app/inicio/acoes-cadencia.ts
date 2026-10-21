@@ -34,7 +34,9 @@ import {
   salvarRascunho,
 } from "@/lib/automacoes/repositorio";
 import type { DefinicaoFluxo } from "@/lib/automacoes/tipos";
+import { ehDuplicado, type ResultadoAcao } from "@/lib/resultado-acao";
 import { USUARIO_RESPONSAVEL } from "@/lib/automacoes/saida";
+import { ehUuid } from "@/lib/validacao";
 import { pausar, publicar, retomar } from "../automacoes/acoes";
 
 export type Resultado =
@@ -44,9 +46,9 @@ export type Resultado =
 export async function criarCadencia(
   etapaId: string,
   nomeEtapa: string,
-): Promise<string> {
+): Promise<ResultadoAcao<{ id: string }>> {
   await exigirModulo("automacoes");
-  if (!etapaId) throw new Error("Etapa não informada");
+  if (!etapaId) return { ok: false, erro: "Etapa não informada" };
   const nome = `Cadência · ${nomeEtapa.trim() || "etapa"}`.slice(0, 120);
 
   let id: string;
@@ -56,18 +58,24 @@ export async function criarCadencia(
     // 42703 = undefined_column: `fluxos.etapa_id` ainda não existe. É o
     // primeiro lugar em que a migration que falta aparece para quem está
     // usando a tela — dizer O QUE rodar vale mais que repassar o erro do
-    // Postgres, ainda mais porque em produção o Next redige a mensagem e
-    // sobraria um "erro no servidor" sem pista nenhuma.
+    // Postgres. Volta como valor: em produção o Next redige a mensagem de um
+    // erro lançado e sobraria um "erro no servidor" sem pista nenhuma.
     if (typeof e === "object" && e !== null && (e as { code?: string }).code === "42703") {
-      throw new Error(
-        "Falta rodar migration-cadencia-etapa.sql no banco — é ela que cria fluxos.etapa_id, a coluna que amarra a cadência à etapa.",
-      );
+      return {
+        ok: false,
+        erro: "Falta rodar migration-cadencia-etapa.sql no banco — é ela que cria fluxos.etapa_id, a coluna que amarra a cadência à etapa.",
+      };
+    }
+    // ux_fluxos_etapa: uma cadência viva por etapa. Acontece quando duas
+    // pessoas abrem o painel juntas (ele cria ao abrir) ou com o quadro velho.
+    if (ehDuplicado(e)) {
+      return { ok: false, erro: "Esta etapa já tem uma cadência. Recarregue a página." };
     }
     throw e;
   }
 
   revalidatePath("/");
-  return id;
+  return { ok: true, id };
 }
 
 // Teto de colunas. Uma cadência de 18 mensagens é normal aqui; 200 não é, e
@@ -151,7 +159,7 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
       // deixaria um POST forjado escolher o que a instância manda para o lead.
       // Formato conferido aqui porque um valor torto só apareceria como erro de
       // sintaxe de uuid do Postgres, na hora do disparo.
-      documentoId: /^[0-9a-f-]{36}$/i.test(texto(s.documentoId, 36))
+      documentoId: ehUuid(texto(s.documentoId, 36))
         ? texto(s.documentoId, 36)
         : null,
       // Quem é avisado no canal "ligação". Mesmo tratamento do anexo: só o
@@ -161,7 +169,7 @@ function limpar(bruto: Subetapa[]): Subetapa[] {
       // instância do responsável.
       usuarioId:
         texto(s.usuarioId, 36) === USUARIO_RESPONSAVEL ||
-        /^[0-9a-f-]{36}$/i.test(texto(s.usuarioId, 36))
+        ehUuid(texto(s.usuarioId, 36))
           ? texto(s.usuarioId, 36)
           : null,
       soSemResposta: s.soSemResposta === true,

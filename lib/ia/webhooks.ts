@@ -1,6 +1,6 @@
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { carregarAlvos, detalheDoWebhook, listarWebhooks } from "@/app/webhooks/dados";
+import { carregarAlvos, detalheDoWebhook, listarWebhooks } from "@/lib/webhooks-dados";
 import {
   adicionarAcao,
   configurarCriarLead,
@@ -164,13 +164,25 @@ export function ferramentasDeWebhooks() {
         .describe("uma linha sobre o que essa captação recebe"),
     }),
     run: async ({ nome, descricao }) => {
+      // Fora do try: se a descrição falhar depois de criar, a resposta tem que
+      // dizer que a captação EXISTE — senão o modelo tenta de novo e duplica.
+      let id: string | null = null;
       try {
-        const id = await criarWebhook(nome);
-        if (descricao) await editarWebhook(id, nome, descricao);
+        const criada = await criarWebhook(nome);
+        if (!criada.ok) return `RECUSADO, nada foi criado: ${criada.erro}`;
+        id = criada.id;
         gravou = true;
+        if (descricao) {
+          const editada = await editarWebhook(id, nome, descricao);
+          if (!editada.ok) {
+            return `Captação "${nome}" criada com o id ${id}, mas a descrição não foi gravada: ${editada.erro}`;
+          }
+        }
         return `Captação "${nome}" criada com o id ${id}. Ela já nasce ATIVA e com a ação "criar lead". Chame definir_campos para declarar o que ela recebe.`;
       } catch (e) {
-        return `RECUSADO, nada foi criado: ${motivo(e)}`;
+        return id
+          ? `Captação "${nome}" criada com o id ${id}, mas a descrição não foi gravada: ${motivo(e)}`
+          : `RECUSADO, nada foi criado: ${motivo(e)}`;
       }
     },
   });
@@ -186,7 +198,8 @@ export function ferramentasDeWebhooks() {
     }),
     run: async ({ webhook_id, nome, descricao }) => {
       try {
-        await editarWebhook(webhook_id, nome, descricao ?? "");
+        const r = await editarWebhook(webhook_id, nome, descricao ?? "");
+        if (!r.ok) return `RECUSADO, nada mudou: ${r.erro}`;
         gravou = true;
         return `Captação renomeada para "${nome}".`;
       } catch (e) {
@@ -217,28 +230,29 @@ export function ferramentasDeWebhooks() {
         const existente = porChave.get(c.chave.trim());
 
         try {
-          if (existente) {
-            await editarCampo(
-              existente.id,
-              c.rotulo,
-              tipo,
-              c.obrigatorio,
-              destino,
-              c.destino_chave ?? "",
-            );
-            atualizados.push(c.chave);
-          } else {
-            await criarCampo(
-              webhook_id,
-              c.chave,
-              c.rotulo,
-              tipo,
-              c.obrigatorio,
-              destino,
-              c.destino_chave ?? "",
-            );
-            criados.push(c.chave);
+          const r = existente
+            ? await editarCampo(
+                existente.id,
+                c.rotulo,
+                tipo,
+                c.obrigatorio,
+                destino,
+                c.destino_chave ?? "",
+              )
+            : await criarCampo(
+                webhook_id,
+                c.chave,
+                c.rotulo,
+                tipo,
+                c.obrigatorio,
+                destino,
+                c.destino_chave ?? "",
+              );
+          if (!r.ok) {
+            recusados.push(`${c.chave} (${r.erro})`);
+            continue;
           }
+          (existente ? atualizados : criados).push(c.chave);
           gravou = true;
         } catch (e) {
           // Campo a campo, e não tudo ou nada: uma chave inválida no meio da
@@ -290,30 +304,38 @@ export function ferramentasDeWebhooks() {
       const partes: string[] = [];
 
       try {
-        await configurarCriarLead(
+        const r = await configurarCriarLead(
           webhook_id,
           criar_oportunidade,
           funil_id ?? "",
           etapa_id ?? "",
         );
-        gravou = true;
-        partes.push(
-          criar_oportunidade
-            ? "Cada lead passa a abrir uma oportunidade no funil e etapa escolhidos."
-            : "O lead vira contato, sem abrir oportunidade.",
-        );
+        if (r.ok) {
+          gravou = true;
+          partes.push(
+            criar_oportunidade
+              ? "Cada lead passa a abrir uma oportunidade no funil e etapa escolhidos."
+              : "O lead vira contato, sem abrir oportunidade.",
+          );
+        } else {
+          partes.push(`RECUSADO em criar_lead: ${r.erro}`);
+        }
       } catch (e) {
         partes.push(`RECUSADO em criar_lead: ${motivo(e)}`);
       }
 
       for (const a of extras ?? []) {
         try {
-          await adicionarAcao(webhook_id, a.tipo, a.alvo_id);
+          const r = await adicionarAcao(webhook_id, a.tipo, a.alvo_id);
+          if (!r.ok) {
+            // Duplicada é o caso comum aqui: o índice único recusa a mesma tag
+            // duas vezes, e isso é o estado desejado, não uma falha.
+            partes.push(`${a.tipo}: ${r.erro}`);
+            continue;
+          }
           gravou = true;
           partes.push(`Ação ${a.tipo} adicionada.`);
         } catch (e) {
-          // Duplicada é o caso comum aqui: o índice único recusa a mesma tag
-          // duas vezes, e isso é o estado desejado, não uma falha.
           partes.push(`${a.tipo}: ${motivo(e)}`);
         }
       }

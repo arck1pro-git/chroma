@@ -9,7 +9,7 @@ import {
   ResumoFiltros,
   SeletorMenu,
 } from "../components/filtros-ui";
-import type { Contato, Funil, Segmento, Tag, Usuario } from "../data";
+import type { Contato, Funil, Segmento, Tag, Usuario } from "@/lib/entidades";
 import { periodos } from "../filtros-comuns";
 import { contarFiltrosAtivos, filtrosVazios, type Filtros } from "./filtros";
 

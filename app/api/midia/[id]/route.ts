@@ -17,6 +17,7 @@ import { lerArquivo } from "@/lib/midia";
 import { comCaminho, lerArquivo as lerDocumento } from "@/lib/documentos";
 import { exigirModuloApi } from "@/lib/auth/dal";
 import { cabecalhosDeArquivo } from "@/lib/arquivo-seguro";
+import { ehUuid } from "@/lib/validacao";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export async function GET(
 
   // Formato antes do banco: sem isto, um id inválido vira erro de sintaxe de
   // uuid do Postgres (500) em vez de um 404 honesto.
-  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+  if (!ehUuid(id)) {
     return new Response("não encontrado", { status: 404 });
   }
 

@@ -15,7 +15,7 @@ import LogoGoogleCalendar from "../components/logo-google-calendar";
 import LogoMeta from "../components/logo-meta";
 import { SeletorMenu } from "../components/filtros-ui";
 import { desconectarGoogleCalendar } from "./acoes";
-import { dataHora } from "../formato";
+import { dataHora } from "@/lib/formato";
 
 type IconeSvg = ComponentType<SVGProps<SVGSVGElement>>;
 type IntegracaoId = "meta" | "email" | "google-calendar";

@@ -7,7 +7,7 @@
 // canal, não lidas, janela de 24h, última mensagem), escritas sobre arrays.
 import dadosMock from "../mock/chat.json";
 import { tomDaEtapa } from "@/lib/cores-funil";
-import type { Contato, Etapa, Oportunidade } from "../data";
+import type { Contato, Etapa, Oportunidade } from "@/lib/entidades";
 import type { CanalChat, ConversaResumo, DadosChat, MensagemChat } from "./tipos";
 
 const fim8 = (n: string | null | undefined) => (n ?? "").replace(/\D/g, "").slice(-8);

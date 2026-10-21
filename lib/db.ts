@@ -1,13 +1,16 @@
-// Cliente Postgres (Supabase) via postgres.js. `sql` é tagged-template com
-// parâmetros escapados — nunca interpole string na query.
+// Cliente Postgres via postgres.js — a ÚNICA conexão de dono do app (a da IA,
+// sem escrita, é lib/ia/db.ts). `sql` é tagged-template com parâmetros
+// escapados — nunca interpole string na query.
 //
 //   const linhas = await sql`SELECT * FROM contatos WHERE id = ${id}`;
 //
 // Init PREGUIÇOSO de propósito: o cliente só nasce na primeira query, não no
 // import — assim `next build` não quebra por falta de DATABASE_URL.
 //
-// prepare:false porque a DATABASE_URL aponta pro pooler de TRANSAÇÃO do Supabase
-// (porta 6543), que é pgbouncer e não suporta prepared statements.
+// O banco é o Neon (DEV no .env local, produção na Vercel). A configuração
+// abaixo nasceu no pooler de TRANSAÇÃO do Supabase, onde o banco morava antes,
+// e continua sendo a certa para o pooler do Neon (pgbouncer em modo transação):
+// sem prepared statements, sem a consulta de tipos.
 import postgres from "postgres";
 
 type Cliente = ReturnType<typeof postgres>;
@@ -17,8 +20,9 @@ type Cliente = ReturnType<typeof postgres>;
 // válidos. Os utilitários (unsafe/end/array…) ficam disponíveis pelo index.
 // O `any` é o ponto do tipo: trocar por `unknown` quebraria cada acesso a
 // coluna (`linha.id`) do projeto, que hoje confia no retorno solto.
+// Exportado só como tipo, para lib/ia/db.ts usar o mesmo sem copiar.
 /* eslint-disable @typescript-eslint/no-explicit-any */
-type SqlPermissivo = ((
+export type SqlPermissivo = ((
   strings: TemplateStringsArray,
   ...values: unknown[]
 ) => Promise<any[]>) & { [k: string]: any };

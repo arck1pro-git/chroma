@@ -9,7 +9,7 @@ import {
   type PerguntaMeta,
 } from "@/lib/meta-leads";
 import mock from "../mock/formularios-meta.json";
-import { carregarAlvos } from "../webhooks/dados";
+import { carregarAlvos } from "@/lib/webhooks-dados";
 import { configDoFormulario, resumoDasConfigs } from "./dados";
 import TelaFormularios from "./tela";
 

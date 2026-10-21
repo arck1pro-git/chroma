@@ -13,11 +13,11 @@ import {
   UserSearch,
   X,
 } from "lucide-react";
-import type { CampoPersonalizado, Contato, Etapa, Funil, Usuario } from "../data";
+import type { CampoPersonalizado, Contato, Etapa, Funil, Usuario } from "@/lib/entidades";
 import type { Ia } from "@/lib/ia/catalogo";
 import type { ContatoEncontrado, DadosDoContato } from "@/lib/contatos-busca";
 import { MIN_DIGITOS, MIN_LETRAS, prepararTermo } from "@/lib/contatos-termo";
-import { localizacao } from "../formato";
+import { localizacao } from "@/lib/formato";
 import { telefoneLegivel } from "@/lib/telefone";
 import { CamposContato, SecoesContato } from "../contatos/detalhes";
 import { haQuanto } from "../contatos/pecas";
@@ -240,12 +240,22 @@ export default function GavetaContatos({
       setForm(null);
       iniciarGravacao(async () => {
         if (alvo === "novo") {
-          const id = await criarContato(dados);
+          const r = await criarContato(dados);
+          if (!r.ok) {
+            // Ainda não há contato aberto onde mostrar o aviso (ex.: nome só
+            // com espaços passa pelo `required` do formulário e cai aqui).
+            alert(r.erro);
+            return;
+          }
           // Abre o recém-criado: é a confirmação de que gravou, e já deixa a
           // pessoa onde ela vai querer continuar (tags, segmentos, campos).
-          setAbertoId(id);
+          setAbertoId(r.id);
         } else if (alvo) {
-          await atualizarContato(alvo.id, dados);
+          const r = await atualizarContato(alvo.id, dados);
+          if (!r.ok) {
+            setErro({ id: alvo.id, texto: r.erro });
+            return;
+          }
         }
         router.refresh();
       });

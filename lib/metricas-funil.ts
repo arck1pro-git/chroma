@@ -1,8 +1,13 @@
-import type { Etapa, Oportunidade } from "../data";
+import type { Etapa, Oportunidade } from "@/lib/entidades";
 
 // Contas do painel de desempenho da tela inicial. Funções puras, sem React:
 // entram as etapas de UM funil (já na ordem) e as oportunidades da base, saem
-// os números que os gráficos desenham.
+// os números que os gráficos desenham. A IA de interface usa as mesmas contas
+// (lib/ia/ferramentas.ts) — por isso mora em lib/ desde 2026-10-21 (era
+// app/inicio/metricas.ts).
+//
+// A tela raiz (app/inicio/inicio.tsx, componente cliente) importa daqui como
+// valor: sem `server-only`, sem banco, sem segredo.
 
 export type MetricaEtapa = {
   etapaId: string;

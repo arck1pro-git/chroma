@@ -1,6 +1,6 @@
 import { Bot, Clock, Hand, User } from "lucide-react";
-import type { Contato, Oportunidade, Tag, Usuario } from "../data";
-import { brl, localizacao } from "../formato";
+import type { Contato, Oportunidade, Tag, Usuario } from "@/lib/entidades";
+import { brl, localizacao } from "@/lib/formato";
 
 // Cartão de oportunidade do kanban. Arquivo próprio porque dois lugares montam
 // o mesmo cartão — o quadro da tela inicial e as colunas do painel de
@@ -24,7 +24,7 @@ export default function CartaoOportunidade({
   arrastando?: boolean;
   /** A IA atende este lead: a classe de cor do robô (a do funil). null = não atende. Ver ./ia.ts. */
   ia?: string | null;
-  /** O lead pediu atendimento humano e ninguém da equipe respondeu ainda (app/funil/dados.ts). */
+  /** O lead pediu atendimento humano e ninguém da equipe respondeu ainda (lib/funil.ts). */
   pediuAtendimento?: boolean;
 }) {
   // tela-baixa: (app/globals.css) — no tablet deitado o cartão perde respiro,

@@ -1,4 +1,4 @@
-import { type Contato, type Oportunidade } from "../data";
+import { type Contato, type Oportunidade } from "@/lib/entidades";
 import { dentroDoPeriodo, normalizar } from "../filtros-comuns";
 
 // Lookups vêm do banco (via props), não mais de mapas globais.

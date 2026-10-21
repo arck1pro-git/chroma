@@ -12,8 +12,8 @@
 // de levá-lo para o contato seguinte.
 import { useState, useTransition } from "react";
 import { Bot } from "lucide-react";
-import type { Anotacao, Usuario } from "../data";
-import { dataHora } from "../formato";
+import type { Anotacao, Usuario } from "@/lib/entidades";
+import { dataHora } from "@/lib/formato";
 import { adicionarAnotacao } from "../contatos/actions";
 import BotaoDitado, { juntarDitado } from "./botao-ditado";
 import { Avatar, BOTAO_PRIMARIO, BOTAO_SECUNDARIO, MaisMenos, Secao, Vazio } from "./gaveta";
@@ -53,11 +53,16 @@ export function AnotacoesContato({
       try {
         // O revalidatePath da action devolve a lista nova na mesma ida ao
         // servidor — não precisa de router.refresh().
-        await adicionarAnotacao(contatoId, limpo);
+        const r = await adicionarAnotacao(contatoId, limpo);
+        if (!r.ok) {
+          // O texto fica no campo para a pessoa corrigir sem redigitar.
+          setErro(r.erro);
+          return;
+        }
         fechar();
       } catch {
-        // Em produção a mensagem da action chega mascarada; o texto fica no
-        // campo para a pessoa tentar de novo sem redigitar.
+        // Falha inesperada: em produção a mensagem chega mascarada, então a
+        // frase é daqui. O texto fica no campo para tentar de novo.
         setErro("Não foi possível salvar a anotação. Tente de novo.");
       }
     });

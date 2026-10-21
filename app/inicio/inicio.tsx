@@ -34,10 +34,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Bot, Check, EyeOff, Funnel, Layers, LifeBuoy, ListTree, Minus, Plus, Users } from "lucide-react";
 import { definirOcultarLeads } from "./acoes-ia";
-import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "../data";
-import type { DadosFunil } from "../funil/dados";
+import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "@/lib/entidades";
+import type { DadosFunil } from "@/lib/funil";
 import type { Ia } from "@/lib/ia/catalogo";
-import { brl, brlCurto } from "../formato";
+import { brl, brlCurto } from "@/lib/formato";
 import CartaoOportunidade from "../funil/cartao";
 import BarraSelecao, { type FluxoDisponivel } from "../funil/barra-selecao";
 import { corValida, tomEscuro } from "@/lib/cores-funil";
@@ -64,7 +64,7 @@ import { corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
 import ModalDemanda from "../components/modal-demanda";
 import { abrirChamado } from "../demandas/acoes";
-import { metricasDoFunil, type Conversao, type MetricaEtapa } from "./metricas";
+import { metricasDoFunil, type Conversao, type MetricaEtapa } from "@/lib/metricas-funil";
 import PainelSubetapas from "./painel-subetapas";
 import type { CadenciaDaEtapa, DadosCadencias } from "./cadencias";
 
@@ -782,10 +782,14 @@ export default function Inicio({
     setEtapaNova(null);
     startTransition(async () => {
       try {
-        const id = await criarOportunidade(d, funil.id, etapaId);
-        setOpAbertaId(id);
+        const r = await criarOportunidade(d, funil.id, etapaId);
+        if (!r.ok) {
+          // Sem contato, ou o contato já tem uma aberta neste funil.
+          alert(r.erro);
+          return;
+        }
+        setOpAbertaId(r.id);
       } catch (e) {
-        // Sem contato selecionado a action recusa (contato_id é obrigatório).
         alert(e instanceof Error ? e.message : "Falha ao criar oportunidade");
       }
     });
@@ -993,7 +997,11 @@ export default function Inicio({
     if (mudouEtapa && funil) {
       startTransition(async () => {
         try {
-          await moverOportunidade(String(active.id), destinoFinal, funil.id);
+          const r = await moverOportunidade(String(active.id), destinoFinal, funil.id);
+          if (!r.ok) {
+            alert(r.erro);
+            router.refresh(); // volta o quadro pro estado do banco
+          }
         } catch (e) {
           alert(e instanceof Error ? e.message : "Falha ao mover oportunidade");
           router.refresh(); // volta o quadro pro estado do banco

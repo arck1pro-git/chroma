@@ -23,7 +23,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
-import { dataCurta, dinheiro } from "./pecas";
+import { dataDoInstante } from "@/lib/formato";
+import { dinheiro } from "./pecas";
 
 type Marco = {
   chave: string;
@@ -190,7 +191,7 @@ export default function Jornada({ ficha, etapas }: { ficha: FichaContato; etapas
                 </p>
               )}
               <p className="text-[10px] tabular-nums text-zinc-400 dark:text-zinc-500">
-                {m.quando ? (m.chave === "agora" ? `desde ${dataCurta(m.quando)}` : dataCurta(m.quando)) : " "}
+                {m.quando ? (m.chave === "agora" ? `desde ${dataDoInstante(m.quando)}` : dataDoInstante(m.quando)) : " "}
               </p>
             </li>
           );

@@ -43,12 +43,11 @@ import {
   telefoneOficial,
 } from "@/lib/conversa-envio";
 import { gravarIaDoContato } from "@/lib/ia/contato-ia";
+import { ehUuid } from "@/lib/validacao";
 import type { TemplateChat } from "./tipos";
 
 /** `registrada`: a mensagem chegou a ser gravada (e está na conversa com o erro). */
 export type Resultado = { erro?: string; registrada?: boolean };
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Responder é assumir: a conversa da fila (ou a que uma automação começou,
@@ -105,7 +104,7 @@ export async function enviarDocumento(
 ): Promise<Resultado> {
   const { usuario } = await exigirModulo("chat");
 
-  const doc = UUID.test(documentoId) ? await comCaminho(documentoId) : null;
+  const doc = ehUuid(documentoId) ? await comCaminho(documentoId) : null;
   if (!doc) return { erro: "Documento não encontrado na biblioteca." };
   const texto = legenda.trim().slice(0, 1024);
 
@@ -324,7 +323,7 @@ export async function iniciarConversa(
   canalChave: string,
 ): Promise<{ id?: string; erro?: string }> {
   const { usuario } = await exigirModulo("chat");
-  if (!UUID.test(contatoId)) return { erro: "Contato inválido." };
+  if (!ehUuid(contatoId)) return { erro: "Contato inválido." };
 
   const canal = (await listarCanais()).find((c) => fim8(c.chave) === fim8(canalChave));
   if (!canal) return { erro: "Escolha por qual número a conversa vai sair." };
@@ -383,7 +382,7 @@ export async function iniciarConversa(
 /** Assumir: vira de quem clicou e abre. lido_em = agora zera as não lidas. */
 export async function assumirAtendimento(id: string): Promise<void> {
   const { usuario } = await exigirModulo("chat");
-  if (!UUID.test(id)) return;
+  if (!ehUuid(id)) return;
   await sql`
     UPDATE atendimentos
        SET responsavel_id = ${usuario.id}, status = 'aberto', lido_em = now()
@@ -393,14 +392,14 @@ export async function assumirAtendimento(id: string): Promise<void> {
 
 export async function encerrarAtendimento(id: string): Promise<void> {
   await exigirModulo("chat");
-  if (!UUID.test(id)) return;
+  if (!ehUuid(id)) return;
   await sql`UPDATE atendimentos SET status = 'encerrado', lido_em = now() WHERE id = ${id}`;
   revalidatePath("/chat");
 }
 
 export async function reabrirAtendimento(id: string): Promise<void> {
   const { usuario } = await exigirModulo("chat");
-  if (!UUID.test(id)) return;
+  if (!ehUuid(id)) return;
   await sql`
     UPDATE atendimentos
        SET status = 'aberto', responsavel_id = ${usuario.id}
@@ -419,8 +418,8 @@ export async function definirIaDoContatoNoChat(
   iaId: string | null,
 ): Promise<Resultado> {
   const { usuario } = await exigirModulo("chat");
-  if (!UUID.test(contatoId)) return { erro: "Contato inválido." };
-  if (iaId !== null && !UUID.test(iaId)) return { erro: "IA inválida." };
+  if (!ehUuid(contatoId)) return { erro: "Contato inválido." };
+  if (iaId !== null && !ehUuid(iaId)) return { erro: "IA inválida." };
   const r = await gravarIaDoContato(contatoId, valor, iaId, usuario.id);
   if (r.erro) return r;
   revalidatePath("/chat");
@@ -431,7 +430,7 @@ export async function definirIaDoContatoNoChat(
 /** Abriu = leu. É o que zera as não lidas na lista e no canal. */
 export async function marcarLido(id: string): Promise<void> {
   await exigirModulo("chat");
-  if (!UUID.test(id)) return;
+  if (!ehUuid(id)) return;
   await sql`UPDATE atendimentos SET lido_em = now() WHERE id = ${id}`;
   revalidatePath("/chat");
 }
@@ -449,8 +448,8 @@ export async function criarOportunidade(
   await exigirModulo("chat");
   const n = nome.trim();
   if (!n) return { erro: "Dê um nome à oportunidade." };
-  if (!UUID.test(contatoId)) return { erro: "Sem contato." };
-  if (!UUID.test(funilId) || !UUID.test(etapaId)) return { erro: "Escolha o funil e a etapa." };
+  if (!ehUuid(contatoId)) return { erro: "Sem contato." };
+  if (!ehUuid(funilId) || !ehUuid(etapaId)) return { erro: "Escolha o funil e a etapa." };
 
   try {
     const [op] = await sql`

@@ -24,7 +24,7 @@ import { useRouter } from "next/navigation";
 import { Clapperboard, Plus, Search, UsersRound } from "lucide-react";
 import type { ContatoNaLista, EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
 import { MIN_DIGITOS, MIN_LETRAS, prepararTermo } from "@/lib/contatos-termo";
-import { iniciais } from "../formato";
+import { iniciais } from "@/lib/formato";
 import CamadaTopo from "../components/camada-topo";
 import FormContato from "./form-contato";
 import { criarContato } from "./actions";
@@ -229,7 +229,12 @@ export default function PainelContatos({
   async function criar(dados: Parameters<typeof criarContato>[0]) {
     setErro(null);
     try {
-      const id = await criarContato(dados);
+      const r = await criarContato(dados);
+      if (!r.ok) {
+        setErro(r.erro);
+        return;
+      }
+      const id = r.id;
       setCriando(false);
       setSelecionadoId(id);
       router.push(`/contatos?contato=${id}`);

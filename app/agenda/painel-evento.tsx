@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import type { AgendaGoogle, EventoAgenda, ParticipanteEvento, ReuniaoDoSistema } from "@/lib/agenda";
 import CamadaTopo from "../components/camada-topo";
-import { brl, dataHora, iniciais, localizacao } from "../formato";
+import { brl, dataHora, iniciais, localizacao } from "@/lib/formato";
 import { diaDe, diaPorExtenso, duracao, intervalo } from "./tempo";
 import { useAgora } from "./relogio";
 import { comCor, corDe, PONTO_COR, quemMarcou } from "./visual";

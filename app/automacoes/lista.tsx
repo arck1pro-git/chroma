@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { LogIn, Plus, Search, SearchX, Workflow } from "lucide-react";
 import { criarFluxo } from "./acoes";
 import { normalizar } from "../filtros-comuns";
-import { dataCurta } from "../formato";
+import { dataCurta } from "@/lib/formato";
 import type { EstadoFluxo, Fluxo } from "./dados";
 
 const SELO: Record<EstadoFluxo, { rotulo: string; classe: string }> = {
@@ -110,8 +110,12 @@ export default function ListaFluxos({
   // próximo passo do usuário é sempre desenhar.
   function novo() {
     iniciar(async () => {
-      const id = await criarFluxo("Novo fluxo", "oportunidade");
-      router.push(`/automacoes/${id}`);
+      const r = await criarFluxo("Novo fluxo", "oportunidade");
+      if (!r.ok) {
+        alert(r.erro);
+        return;
+      }
+      router.push(`/automacoes/${r.id}`);
     });
   }
 

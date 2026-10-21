@@ -19,8 +19,8 @@ import Link from "next/link";
 import { Clock, Mail, MapPin, MessagesSquare, MoreHorizontal, Pencil, Phone, Plus, Trash2, X } from "lucide-react";
 import type { EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
 import type { Ia } from "@/lib/ia/catalogo";
-import type { CampoPersonalizado, Etapa, Funil } from "../data";
-import { iniciais } from "../formato";
+import type { CampoPersonalizado, Etapa, Funil } from "@/lib/entidades";
+import { iniciais } from "@/lib/formato";
 import CamadaTopo from "../components/camada-topo";
 import FormContato from "./form-contato";
 import {
@@ -350,7 +350,12 @@ export default function Ficha({
               estado: contato.estado,
               pais: contato.pais,
             }}
-            aoSalvar={(dados) => executar(() => atualizarContato(contato.id, dados), () => setEditando(false))}
+            aoSalvar={(dados) =>
+              executar(async () => {
+                const r = await atualizarContato(contato.id, dados);
+                if (!r.ok) throw new Error(r.erro);
+              }, () => setEditando(false))
+            }
             aoFechar={() => setEditando(false)}
           />
         </CamadaTopo>

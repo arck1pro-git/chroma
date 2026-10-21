@@ -18,6 +18,7 @@ import {
   criarContexto,
   editarContexto,
 } from "@/lib/contextos";
+import { ehUuid } from "@/lib/validacao";
 
 const TETO_CONTEUDO = 8000;
 const TETO_NOME = 80;
@@ -67,7 +68,7 @@ export async function salvarContexto(dados: {
 
 export async function ligarContexto(id: string, ativo: boolean): Promise<Resultado> {
   await exigirModulo("contextos");
-  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+  if (!ehUuid(id)) {
     return { ok: false, mensagem: "Contexto inválido." };
   }
   await alternarContexto(id, ativo);

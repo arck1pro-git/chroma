@@ -36,7 +36,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import type { Alvos, DetalheWebhook } from "./dados";
+import type { Alvos, DetalheWebhook } from "@/lib/webhooks-dados";
 import {
   adicionarAcao,
   configurarCriarLead,
@@ -342,7 +342,11 @@ function PassoCampos({
     setErro(null);
     iniciar(async () => {
       try {
-        await criarCampo(webhookId, chave, rotulo, tipo, obrigatorio, destino, destinoChave);
+        const r = await criarCampo(webhookId, chave, rotulo, tipo, obrigatorio, destino, destinoChave);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         setChave("");
         setRotulo("");
         setDestinoChave("");
@@ -476,12 +480,22 @@ function LinhaCampo({
   const [destino, setDestino] = useState<DestinoCampo>(campo.destino);
   const [destinoChave, setDestinoChave] = useState(campo.destino_chave ?? "");
   const [obrigatorio, setObrigatorio] = useState(campo.obrigatorio);
+  const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
 
   function salvar() {
+    setErro(null);
     iniciar(async () => {
-      await editarCampo(campo.id, rotulo, tipo, obrigatorio, destino, destinoChave);
-      setEditando(false);
+      try {
+        const r = await editarCampo(campo.id, rotulo, tipo, obrigatorio, destino, destinoChave);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
+        setEditando(false);
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Falha ao salvar o campo");
+      }
     });
   }
 
@@ -491,6 +505,7 @@ function LinhaCampo({
     setDestino(campo.destino);
     setDestinoChave(campo.destino_chave ?? "");
     setObrigatorio(campo.obrigatorio);
+    setErro(null);
     setEditando(false);
   }
 
@@ -560,6 +575,7 @@ function LinhaCampo({
             <X className="size-4" aria-hidden="true" />
           </button>
         </div>
+        {erro && <p className="text-xs text-red-500">{erro}</p>}
       </li>
     );
   }
@@ -679,7 +695,7 @@ function CriarLead({
     setErro(null);
     iniciar(async () => {
       try {
-        await configurarCriarLead(
+        const r = await configurarCriarLead(
           webhookId,
           novoLigado,
           novoFunil,
@@ -687,6 +703,7 @@ function CriarLead({
           dono,
           alterna,
         );
+        if (!r.ok) setErro(r.erro);
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao salvar");
       }
@@ -919,7 +936,11 @@ function NovaAcao({
     setErro(null);
     iniciar(async () => {
       try {
-        await adicionarAcao(webhookId, tipo, alvoId);
+        const r = await adicionarAcao(webhookId, tipo, alvoId);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
         setAlvoId("");
       } catch (e) {
         setErro(e instanceof Error ? e.message : "Falha ao adicionar ação");

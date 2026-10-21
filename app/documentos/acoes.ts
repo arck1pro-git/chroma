@@ -15,6 +15,7 @@ import {
   renomearDocumento,
   usosDoDocumento,
 } from "@/lib/documentos";
+import { ehUuid } from "@/lib/validacao";
 
 export type Resultado = { ok: boolean; mensagem: string };
 
@@ -26,7 +27,7 @@ function texto(v: unknown, max: number): string {
 }
 
 function idValido(id: string) {
-  return /^[0-9a-f-]{36}$/i.test(id);
+  return ehUuid(id);
 }
 
 export async function salvarDocumento(dados: {

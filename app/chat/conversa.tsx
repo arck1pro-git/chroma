@@ -27,7 +27,7 @@ import {
   TriangleAlert,
   Wallet,
 } from "lucide-react";
-import type { Usuario } from "../data";
+import type { Usuario } from "@/lib/entidades";
 import type { CanalChat, ConversaAberta, MensagemChat } from "./tipos";
 import {
   Avatar,
@@ -40,7 +40,7 @@ import {
   rotuloDoDia,
   tipoDaConversa,
 } from "./ui";
-import { horaCurta } from "../formato";
+import { horaCurta } from "@/lib/formato";
 import { InterruptorIaCompacto } from "../components/interruptor-ia-contato";
 import type { IaResumo } from "@/lib/ia/catalogo";
 

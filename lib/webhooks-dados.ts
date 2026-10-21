@@ -1,9 +1,13 @@
-// Leitura do módulo Webhooks. Só é importado por page.tsx.
+// Leitura do módulo Webhooks: a tela (app/webhooks/page.tsx), Formulários Meta
+// (que reaproveita os alvos) e a IA que monta captação (lib/ia/webhooks.ts).
+// Morava em app/webhooks/dados.ts até 2026-10-21; veio para lib/ porque a IA,
+// que mora em lib/, também lê daqui. A escrita continua em app/webhooks/acoes.ts.
 //
 // O `segredo` SAI daqui inteiro, ao contrário do token da uazapi — e é uma
 // diferença deliberada, não um descuido: o segredo da webhook precisa ser
 // copiado para dentro do sistema do outro lado, então a tela tem que conseguir
 // mostrá-lo. É o mesmo raciocínio de uma chave de API em painel de provedor.
+import "server-only";
 import { sql } from "@/lib/db";
 import type {
   CampoDoCrm,

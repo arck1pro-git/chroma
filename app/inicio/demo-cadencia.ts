@@ -9,7 +9,7 @@
 // servidor: não há fluxo nenhum por trás.
 import mock from "../mock/cadencia.json";
 import { duracaoEmTexto, type AcaoCadencia, type Subetapa } from "@/lib/automacoes/cadencia";
-import type { DadosFunil } from "../funil/dados";
+import type { DadosFunil } from "@/lib/funil";
 import type { DadosCadencias } from "./cadencias";
 
 export const FLUXO_DEMO = "demo";

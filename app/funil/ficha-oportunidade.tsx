@@ -15,9 +15,9 @@ import type {
   Segmento,
   Tag,
   Usuario,
-} from "../data";
+} from "@/lib/entidades";
 import type { Ia } from "@/lib/ia/catalogo";
-import { brl, dataCurta, dataHora } from "../formato";
+import { brl, dataCurta, dataHora } from "@/lib/formato";
 import { telefoneLegivel } from "@/lib/telefone";
 import {
   automacoesDaOportunidade,

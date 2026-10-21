@@ -28,8 +28,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { chaveTelefone } from "@/lib/telefone";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { ehUuid } from "@/lib/validacao";
 
 /**
  * Abre (ou reabre) a conversa do lead com o número que enviou e devolve o id.
@@ -45,7 +44,7 @@ export async function abrirConversaDaCadencia(dados: {
 }): Promise<string | null> {
   let contatoId: string | null = null;
 
-  if (UUID.test(dados.execucaoId)) {
+  if (ehUuid(dados.execucaoId)) {
     const [e] = await sql`
       SELECT CASE WHEN e.entidade_tipo = 'contato' THEN e.entidade_id ELSE o.contato_id END AS contato_id
         FROM fluxo_execucoes e

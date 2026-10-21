@@ -11,6 +11,7 @@ import { exigirModulo } from "@/lib/auth/dal";
 import { sql } from "@/lib/db";
 import { enderecoDoCrm } from "@/lib/endereco";
 import { DESTINOS, type DestinoCampo } from "@/lib/webhooks";
+import { Recusa, type ResultadoAcao } from "@/lib/resultado-acao";
 import {
   estadoDaIntegracao,
   formularioComPerguntas,
@@ -20,6 +21,7 @@ import {
   type EstadoIntegracaoMeta,
   type ResultadoVarredura,
 } from "@/lib/meta-leads";
+import { ehUuid } from "@/lib/validacao";
 
 export type EntradaFormulario = {
   formId: string;
@@ -34,10 +36,6 @@ export type EntradaFormulario = {
   ativo: boolean;
 };
 
-export type Resultado = { ok: true } | { ok: false; erro: string };
-
-class Recusa extends Error {}
-
 /** Destinos que guardam UM valor: duas perguntas no mesmo, a segunda apagaria a primeira. */
 const DESTINO_UNICO = new Set<DestinoCampo>([
   "contato.nome",
@@ -50,14 +48,12 @@ const DESTINO_UNICO = new Set<DestinoCampo>([
   "oportunidade.valor",
 ]);
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Salva a configuração de um formulário: o que cada pergunta vira, se o lead
  * vira oportunidade (e onde, e de quem) e o segmento. Cria a configuração na
  * primeira vez. Uma transação só: ou fica tudo, ou nada.
  */
-export async function salvarFormulario(e: EntradaFormulario): Promise<Resultado> {
+export async function salvarFormulario(e: EntradaFormulario): Promise<ResultadoAcao> {
   await exigirModulo("formularios");
   try {
     if (!/^\d+$/.test(e.formId)) throw new Recusa("Formulário inválido");
@@ -103,19 +99,19 @@ export async function salvarFormulario(e: EntradaFormulario): Promise<Resultado>
     const funilId = e.funilId.trim();
     const etapaId = e.etapaId.trim();
     if (e.criarOportunidade) {
-      if (!UUID.test(funilId) || !UUID.test(etapaId)) throw new Recusa("Escolha o funil e a etapa");
+      if (!ehUuid(funilId) || !ehUuid(etapaId)) throw new Recusa("Escolha o funil e a etapa");
       const [et] = await sql`SELECT 1 FROM etapas WHERE id = ${etapaId} AND funil_id = ${funilId}`;
       if (!et) throw new Recusa("A etapa escolhida não é deste funil");
     }
-    const dono = e.criarOportunidade && UUID.test(e.responsavelId) ? e.responsavelId : null;
-    const alternado = e.criarOportunidade && UUID.test(e.responsavelAlternadoId) ? e.responsavelAlternadoId : null;
+    const dono = e.criarOportunidade && ehUuid(e.responsavelId) ? e.responsavelId : null;
+    const alternado = e.criarOportunidade && ehUuid(e.responsavelAlternadoId) ? e.responsavelAlternadoId : null;
     if (alternado && !dono) throw new Recusa("Para alternar, escolha o primeiro responsável também");
     if (alternado && alternado === dono) throw new Recusa("A alternância precisa de duas pessoas diferentes");
     for (const u of [dono, alternado].filter(Boolean) as string[]) {
       const [ok] = await sql`SELECT 1 FROM usuarios WHERE id = ${u} AND ativo`;
       if (!ok) throw new Recusa("O responsável escolhido não está mais ativo");
     }
-    const segmentoId = UUID.test(e.segmentoId) ? e.segmentoId : null;
+    const segmentoId = ehUuid(e.segmentoId) ? e.segmentoId : null;
     if (segmentoId) {
       const [s] = await sql`SELECT 1 FROM segmentos WHERE id = ${segmentoId}`;
       if (!s) throw new Recusa("O segmento escolhido não existe mais");
@@ -185,7 +181,7 @@ export async function salvarFormulario(e: EntradaFormulario): Promise<Resultado>
 }
 
 /** Liga ou pausa o recebimento de um formulário já configurado. */
-export async function alternarFormulario(formId: string, ativo: boolean): Promise<Resultado> {
+export async function alternarFormulario(formId: string, ativo: boolean): Promise<ResultadoAcao> {
   await exigirModulo("formularios");
   if (!/^\d+$/.test(formId)) return { ok: false, erro: "Formulário inválido" };
   const feitos = await sql`

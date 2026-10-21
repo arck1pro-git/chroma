@@ -212,6 +212,7 @@ async function credenciaisDaUazapi() {
 }
 import type { DefinicaoFluxo } from "@/lib/automacoes/tipos";
 import { registrarSaidaDeFluxo } from "@/lib/historico";
+import type { ResultadoAcao } from "@/lib/resultado-acao";
 
 const MOTOR = "n8n";
 
@@ -219,33 +220,35 @@ export type Resultado =
   | { ok: true; mensagem: string }
   | { ok: false; erro: string; noId?: string };
 
+// Recusa de entrada volta como valor (lib/resultado-acao.ts): em produção a
+// mensagem de um erro lançado não chega à tela.
 export async function criarFluxo(
   nome: string,
   entidade: "contato" | "oportunidade",
-): Promise<string> {
+): Promise<ResultadoAcao<{ id: string }>> {
   await exigirModulo("automacoes");
   const limpo = nome.trim();
-  if (!limpo) throw new Error("Nome é obrigatório");
+  if (!limpo) return { ok: false, erro: "Nome é obrigatório" };
   if (entidade !== "contato" && entidade !== "oportunidade") {
-    throw new Error("Entidade inválida");
+    return { ok: false, erro: "Entidade inválida" };
   }
 
   const id = await criarNoBanco(limpo, entidade);
   revalidatePath("/automacoes");
-  return id;
+  return { ok: true, id };
 }
 
 export async function salvarRascunho(
   fluxoId: string,
   definicao: DefinicaoFluxo,
-): Promise<number> {
+): Promise<ResultadoAcao<{ versao: number }>> {
   await exigirModulo("automacoes");
   if (definicao?.schema !== "chroma.flow/v1") {
-    throw new Error("Formato de definição desconhecido");
+    return { ok: false, erro: "Formato de definição desconhecido" };
   }
-  const numero = await salvarNoBanco(fluxoId, definicao, null);
+  const versao = await salvarNoBanco(fluxoId, definicao, null);
   revalidatePath(`/automacoes/${fluxoId}`);
-  return numero;
+  return { ok: true, versao };
 }
 
 /**

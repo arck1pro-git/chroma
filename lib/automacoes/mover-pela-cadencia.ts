@@ -14,8 +14,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { moverOportunidadeDeEtapa } from "@/lib/mover-etapa";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { ehUuid } from "@/lib/validacao";
 
 export type ResultadoMover =
   | { movido: string }
@@ -25,7 +24,7 @@ export type ResultadoMover =
   | { erro: string; status: number };
 
 export async function moverPelaCadencia(execucaoId: string, etapaId: string): Promise<ResultadoMover> {
-  if (!UUID.test(execucaoId) || !UUID.test(etapaId)) return { erro: "execução ou etapa inválida", status: 400 };
+  if (!ehUuid(execucaoId) || !ehUuid(etapaId)) return { erro: "execução ou etapa inválida", status: 400 };
 
   const [l] = await sql`
     SELECT e.estado, e.entidade_tipo, e.origem_etapa_id, f.nome AS fluxo, f.etapa_id AS etapa_do_fluxo,

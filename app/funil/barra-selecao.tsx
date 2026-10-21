@@ -11,7 +11,7 @@
 // tendo saído daqui.
 import { useState, useTransition } from "react";
 import { Download, Send, Trash2, Users, UserCog, X } from "lucide-react";
-import type { Segmento, Usuario } from "../data";
+import type { Segmento, Usuario } from "@/lib/entidades";
 import {
   adicionarASegmento,
   excluirOportunidades,

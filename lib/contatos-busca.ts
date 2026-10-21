@@ -8,7 +8,7 @@
 // DADOS de um contato só, quando ele é aberto.
 import { sql } from "@/lib/db";
 import { LIMITE_BUSCA, prepararTermo } from "@/lib/contatos-termo";
-import type { Anotacao, Contato, Historico, Oportunidade, Segmento, Tag } from "@/app/data";
+import type { Anotacao, Contato, Historico, Oportunidade, Segmento, Tag } from "@/lib/entidades";
 
 // % e _ digitados são texto, não curinga do LIKE.
 const literal = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
@@ -84,7 +84,7 @@ export type DadosDoContato = {
 /**
  * Tudo o que a ficha de UM contato mostra. `soDoResponsavel` é o escopo
  * 'proprio' do Dashboard: as oportunidades dos colegas não saem do servidor,
- * igual ao quadro (app/funil/dados.ts).
+ * igual ao quadro (lib/funil.ts).
  */
 export async function dadosDoContatoNoBanco(
   id: string,

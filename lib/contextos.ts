@@ -16,6 +16,7 @@
 // contexto já podia escrever a pergunta; não há escalada. O que continua
 // marcado como dado inerte é o que vem do WhatsApp.
 import { listaUuid, sql } from "@/lib/db";
+import { ehUuid } from "@/lib/validacao";
 import { type Contexto } from "./contextos-tipos";
 
 // Reexporta para o lado servidor importar de um lugar só. Quem é de CLIENTE
@@ -126,7 +127,7 @@ export async function blocoDeContexto(ids: string[]): Promise<{
   usados: { id: string; versao: number }[];
 }> {
   const limpos = [...new Set(ids)]
-    .filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+    .filter((id) => ehUuid(id))
     .slice(0, 10);
   if (limpos.length === 0) return { texto: "", usados: [] };
 
@@ -165,7 +166,7 @@ export async function registrarContextosUsados(
   conversaId: string,
   usados: { id: string; versao: number }[],
 ): Promise<void> {
-  if (usados.length === 0 || !/^[0-9a-f-]{36}$/i.test(conversaId)) return;
+  if (usados.length === 0 || !ehUuid(conversaId)) return;
 
   for (const u of usados) {
     await sql`

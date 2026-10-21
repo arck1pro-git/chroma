@@ -1,7 +1,7 @@
 // Leitura das cadências para a raiz. Só importado por page.tsx (server).
 //
 // Uma consulta por assunto e um Promise.all: a raiz já faz ~13 consultas em
-// paralelo (app/funil/dados.ts) e o pool está dimensionado para isso
+// paralelo (lib/funil.ts) e o pool está dimensionado para isso
 // (max:12 em lib/db.ts) — ver o comentário de lá antes de acrescentar mais.
 
 import { lerCadencia } from "@/lib/automacoes/cadencia";

@@ -2,7 +2,7 @@
 //
 // Sem import de banco de propósito: este arquivo é importado pelo CLIENTE (o
 // botão de copiar prompt recalcula o texto a cada campo que você mexe, sem ida
-// ao servidor). Leitura e escrita ficam em app/webhooks/dados.ts e acoes.ts.
+// ao servidor). Leitura em lib/webhooks-dados.ts; escrita em app/webhooks/acoes.ts.
 //
 // O schema está em migration-webhooks.sql, com as decisões de modelagem.
 

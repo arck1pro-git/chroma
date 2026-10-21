@@ -23,11 +23,9 @@ import type { UsuarioLogado } from "@/lib/auth/dal";
 import { copiarObjeto, garantirBucket, infoDoObjeto, remover, urlDeEnvio, urlDeLeitura } from "@/lib/armazenamento";
 import { listaUuid, sql } from "@/lib/db";
 import { TETO_ANEXOS, TETO_NOME_ANEXO, TETO_TAMANHO_ANEXO, type AnexoDemanda } from "@/lib/demandas-tipos";
+import { ehUuid } from "@/lib/validacao";
 
 export const BUCKET_DEMANDAS = "crm-demandas";
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const ehUuid = (v: unknown): v is string => typeof v === "string" && UUID.test(v);
 
 /** A cópia "para todos" e as irmãs dela, com quem criou (lib/demandas.ts, copiasDe). */
 export type Copias = { ids: string[]; criadoPor: string | null };

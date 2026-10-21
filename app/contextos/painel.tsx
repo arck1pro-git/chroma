@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { Blocks, Check, Plus, Power } from "lucide-react";
 import { type Contexto } from "@/lib/contextos-tipos";
-import { dataCurta } from "../formato";
+import { dataCurta } from "@/lib/formato";
 import { ligarContexto, salvarContexto } from "./actions";
 
 // Um contexto é nome, descrição e o prompt. Nada mais: onde ele se aplica é

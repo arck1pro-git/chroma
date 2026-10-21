@@ -10,7 +10,7 @@ import {
   carregarAlvos,
   detalheDoWebhook,
   listarWebhooks,
-} from "./dados";
+} from "@/lib/webhooks-dados";
 
 export const metadata: Metadata = {
   title: "Webhooks · AmaanOffice",

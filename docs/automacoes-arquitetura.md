@@ -889,7 +889,7 @@ depois do 1, banco e motor divergem. Corrigido:
      sucesso: publicacao='sucesso', fluxos.motor_workflow_id, projeta gatilhos
      erro:    publicacao='erro' + motivo, backoff exponencial, fluxo continua
               na versão publicada ANTERIOR
-5. UI reflete o estado real da publicação (poll ou Realtime, que já existe)
+5. UI reflete o estado real da publicação (por polling; o Realtime do Supabase saiu do projeto em 2026-10-21)
 ```
 
 Nada some porque a chamada HTTP falhou, e nunca existe estado "publicado" no CRM
