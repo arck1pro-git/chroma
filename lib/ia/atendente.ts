@@ -978,6 +978,8 @@ async function agendarPelaIa(
       inicio: horario.inicio,
       autorId: null,
       quem: `IA ${ia.nome}`,
+      // As mesmas agendas de onde saíram os horários oferecidos (lib/agenda.ts).
+      conferirAgendasQueOcupam: true,
     });
     if (resumo.trim()) {
       const anotacao = `${MARCA_ANOTACAO_IA} Resumo do atendimento (IA ${ia.nome}), reunião em ${rotuloDoHorario(r.inicio)}\n\n${resumo.trim()}`;

@@ -1,17 +1,22 @@
 // A Agenda: o Google Calendar da conta da empresa (lib/google-oauth.ts) visto
 // pelo CRM. Três usos, uma porta só:
 //
-//   · a tela /agenda lista os compromissos da semana (eventosEntre);
+//   · a tela /agenda lista os compromissos das agendas da conta (eventosDasAgendas);
 //   · a ficha da oportunidade marca reunião num horário escolhido à mão;
 //   · a IA comercial oferece os horários livres e marca quando o lead escolhe
 //     (ação agendar_reuniao, lib/ia/atendente.ts).
+//
+// As reuniões são criadas na agenda da conexão. Os horários livres e a reserva
+// da IA conferem também as outras agendas que ocupam o horário
+// (AGENDAS_QUE_OCUPAM, desde 2026-10-22).
 //
 // O que fica no banco é só o VÍNCULO (agenda_reunioes): qual evento do Google
 // é de qual contato/oportunidade, com início e fim. O evento em si — título,
 // link do Meet, se foi cancelado — mora no Google e é lido de lá.
 //
-// SEM SDK, como lib/google-sa.ts: são três endpoints REST (listar, ler, criar),
-// e o pacote `googleapis` traria todas as APIs do Google para o bundle.
+// SEM SDK, como lib/google-sa.ts: são poucos endpoints REST (lista de agendas,
+// eventos, um evento, criar e apagar), e o pacote `googleapis` traria todas as
+// APIs do Google para o bundle.
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
@@ -20,14 +25,17 @@ import { ehUuid } from "@/lib/validacao";
 
 const API = "https://www.googleapis.com/calendar/v3";
 export const FUSO = "America/Sao_Paulo";
+/** Quanto uma leitura do Google Calendar pode demorar (ver `chamar`). */
+const PRAZO_LEITURA_MS = 15_000;
 
 /**
  * Os horários que a IA pode oferecer (decisões dele, 2026-10-02: fixo no
  * código; das 10h; 10 dias úteis para achar o dia que o lead sugerir). Seg a
  * sex, das 10h às 18h de Brasília — a última começa às 17h —, reuniões de 1h,
  * nos próximos 10 dias úteis com horário, e com 2h de antecedência no mínimo
- * — sempre só onde a agenda do Google está livre. A IA oferece os mais
- * próximos primeiro; o resto da lista serve para o dia que ele pedir.
+ * — sempre só onde a agenda da conexão e as de AGENDAS_QUE_OCUPAM estão livres.
+ * A IA oferece os mais próximos primeiro; o resto da lista serve para o dia que
+ * ele pedir.
  */
 export const REGRA_HORARIOS = {
   diasUteis: 10,
@@ -74,6 +82,10 @@ export type EventoAgenda = {
   local: string | null;
   /** Bloqueia a agenda? Falso para "disponível", recusado e cancelado. */
   ocupa: boolean;
+  /** A própria conta recusou o convite: não é compromisso dela. */
+  recusado: boolean;
+  /** O tipo do evento no Google ("default", "workingLocation", "birthday"...). */
+  tipo: string;
   /** Descrição em texto puro (o Google manda HTML). */
   descricao: string | null;
   participantes: ParticipanteEvento[];
@@ -178,16 +190,38 @@ async function chamar<T>(
   const url = new URL(API + caminho(encodeURIComponent(agenda ?? calendarioId)));
   for (const [k, v] of Object.entries(busca)) url.searchParams.set(k, v);
 
-  const r = await fetch(url, {
-    method: metodo,
-    headers: {
-      authorization: `Bearer ${token}`,
-      ...(corpo ? { "content-type": "application/json" } : {}),
-    },
-    body: corpo ? JSON.stringify(corpo) : undefined,
-    cache: "no-store",
-  });
-  const dado = (await r.json().catch(() => ({}))) as T & { error?: { message?: string } };
+  // Prazo só na LEITURA: a conferência dos horários corre segurando a fila de
+  // reservas (marcarReuniao), e uma leitura pendurada prenderia as outras. Criar
+  // e apagar esperam o Google, como sempre: abortar um POST depois que o Google
+  // já criou o evento deixaria reunião sem vínculo no CRM, com o convite enviado.
+  const prazo = metodo === "GET" ? { signal: AbortSignal.timeout(PRAZO_LEITURA_MS) } : {};
+  let r: Response;
+  let dado: T & { error?: { message?: string } };
+  try {
+    r = await fetch(url, {
+      method: metodo,
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(corpo ? { "content-type": "application/json" } : {}),
+      },
+      body: corpo ? JSON.stringify(corpo) : undefined,
+      cache: "no-store",
+      ...prazo,
+    });
+    const resposta = r;
+    dado = (await resposta.json().catch((x: unknown) => {
+      // Resposta boa que não chegou inteira (prazo no meio da leitura, conexão
+      // cortada) é falha, não resposta vazia: virava "agenda sem compromisso" ou
+      // evento de 1970. Só o 204 (apagar) vem sem corpo.
+      if (resposta.ok && resposta.status !== 204) throw x;
+      return {};
+    })) as T & { error?: { message?: string } };
+  } catch (e) {
+    if (e instanceof Error && e.name === "TimeoutError") {
+      throw new Error(`O Google Calendar não respondeu em ${PRAZO_LEITURA_MS / 1000} segundos.`);
+    }
+    throw e;
+  }
   if (r.status === 401) {
     // 401 com o token GUARDADO não quer dizer conexão caída: o token pode ter
     // sido recusado antes da hora. Renova e tenta UMA vez — seguro inclusive
@@ -213,6 +247,8 @@ type EventoGoogle = {
   hangoutLink?: string;
   htmlLink?: string;
   transparency?: string;
+  /** "default", "workingLocation" (local de trabalho), "birthday", "outOfOffice", "focusTime"... */
+  eventType?: string;
   colorId?: string;
   recurringEventId?: string;
   start?: { dateTime?: string; date?: string };
@@ -303,6 +339,8 @@ function paraEvento(e: EventoGoogle, agendaId: string): EventoAgenda {
     link: e.htmlLink ?? null,
     local: e.location?.trim() || null,
     ocupa: e.status !== "cancelled" && e.transparency !== "transparent" && !recusado,
+    recusado,
+    tipo: e.eventType ?? "default",
     descricao: textoDaDescricao(e.description),
     participantes: (e.attendees ?? [])
       // Sala de reunião é recurso, não pessoa.
@@ -356,10 +394,17 @@ export async function eventosEntre(de: Date, ate: Date, agenda?: string): Promis
 /**
  * As agendas da conta conectada, a principal primeiro. Sem a permissão de
  * listar (ESCOPO_AGENDAS — conta conectada antes dela, ou caixa desmarcada no
- * consentimento), volta só a principal e `podeListar: false`, para a tela
- * pedir a reconexão em vez de quebrar.
+ * consentimento) ou com 403 de cota do Google, volta só a principal e
+ * `podeListar: false`: a tela pede a reconexão em vez de quebrar, e a
+ * conferência dos horários de reunião (ocupadosEntre) recusa.
+ *
+ * `incluirOcultas`: também as agendas que a conta escondeu da lista lateral do
+ * Google. A tela não quer; a conferência dos horários quer, porque esconder
+ * uma agenda não a desocupa.
  */
-export async function agendasDaConta(): Promise<{ agendas: AgendaGoogle[]; podeListar: boolean }> {
+export async function agendasDaConta(
+  { incluirOcultas = false }: { incluirOcultas?: boolean } = {},
+): Promise<{ agendas: AgendaGoogle[]; podeListar: boolean }> {
   type Item = {
     id: string;
     summary?: string;
@@ -374,6 +419,7 @@ export async function agendasDaConta(): Promise<{ agendas: AgendaGoogle[]; podeL
     for (let i = 0; i < 4; i++) {
       const r = await chamar<{ items?: Item[]; nextPageToken?: string }>("GET", () => "/users/me/calendarList", {
         maxResults: "250",
+        ...(incluirOcultas ? { showHidden: "true" } : {}),
         ...(pagina ? { pageToken: pagina } : {}),
       });
       itens.push(...(r.items ?? []));
@@ -454,6 +500,60 @@ export async function eventoPorId(id: string): Promise<(EventoAgenda & { cancela
 const sobrepoe = (a: { inicio: Date; fim: Date }, b: EventoAgenda) =>
   b.ocupa && new Date(b.inicio) < a.fim && new Date(b.fim) > a.inicio;
 
+/**
+ * As agendas da conta que também ocupam o horário de reunião, além da agenda
+ * da conexão, onde as reuniões são criadas. Pedido dele, 2026-10-22: a IA
+ * marcava por cima de compromisso que estava em outra agenda da conta. A
+ * "Agenda Fabricio" fica de fora por decisão dele.
+ *
+ * Achadas pelo NOME na lista de agendas da conta, inclusive as escondidas (o
+ * id não muda, mas não diz qual é qual). Renomear uma delas no Google tira só
+ * essa da conferência, com um erro no log a cada consulta; as outras seguem.
+ */
+const AGENDAS_QUE_OCUPAM = ["Agenda Fernanda - Ligação", "Agenda Fernanda - Vídeo chamada"];
+
+/**
+ * Os compromissos que ocupam o horário de reunião entre `de` e `ate`: os da
+ * agenda da conexão e os de AGENDAS_QUE_OCUPAM. Falha fechada: sem a lista de
+ * agendas, ou com uma agenda que não deu para ler, a consulta inteira cai,
+ * porque horário que não foi conferido não é livre.
+ *
+ * Na agenda da conexão, onde as reuniões são criadas, todo evento COM HORÁRIO
+ * ocupa, seja da IA, da ficha ou criado direto no Google, mesmo marcado como
+ * "disponível" (pedido dele, 2026-10-22: compromisso na hora é compromisso). O
+ * de dia inteiro segue o Google, ou seja, só ocupa marcado como ocupado:
+ * lembrete, aniversário e local de trabalho nascem "disponíveis" e apagariam o
+ * dia inteiro sem ninguém perceber. Local de trabalho e aniversário seguem o
+ * Google mesmo com horário (o Workspace divide o local de trabalho por hora, e
+ * "Escritório 8h–18h" tiraria todos os horários). O convite que a própria conta
+ * recusou não ocupa. Nas outras agendas vale o que o Google diz (`ocupa`).
+ */
+async function ocupadosEntre(de: Date, ate: Date): Promise<EventoAgenda[]> {
+  // A lista e a agenda da conexão vão juntas: uma ida a menos em série.
+  const [{ agendas, podeListar }, daConexao] = await Promise.all([
+    agendasDaConta({ incluirOcultas: true }),
+    eventosEntre(de, ate),
+  ]);
+  if (!podeListar) {
+    throw new Error(
+      "Sem a lista de agendas da conta Google, não dá para conferir as agendas que ocupam o horário. " +
+        "Se continuar, conecte o Google de novo em Integrações deixando marcada a lista de agendas.",
+    );
+  }
+  const procuradas = new Set(AGENDAS_QUE_OCUPAM.map((n) => n.toLowerCase()));
+  const achadas = agendas.filter((a) => !a.principal && procuradas.has(a.nome.trim().toLowerCase()));
+  const nomes = new Set(achadas.map((a) => a.nome.trim().toLowerCase()));
+  const faltam = AGENDAS_QUE_OCUPAM.filter((n) => !nomes.has(n.toLowerCase()));
+  if (faltam.length) {
+    console.error("[agenda] agenda que ocupa horário não está na conta (renomeada ou sem acesso):", faltam.join(", "));
+  }
+  const dasOutras = await Promise.all(achadas.map((a) => eventosEntre(de, ate, a.id)));
+  // eventosEntre já tira os cancelados.
+  const segueOGoogle = (ev: EventoAgenda) => ev.diaInteiro || ev.tipo === "workingLocation" || ev.tipo === "birthday";
+  const daConexaoOcupa = daConexao.map((ev) => ({ ...ev, ocupa: !ev.recusado && (segueOGoogle(ev) ? ev.ocupa : true) }));
+  return [daConexaoOcupa, ...dasOutras].flat();
+}
+
 // ── Horários livres ───────────────────────────────────────────────────────────
 
 /**
@@ -463,6 +563,9 @@ const sobrepoe = (a: { inicio: Date; fim: Date }, b: EventoAgenda) =>
  *
  * Olha no máximo 3 semanas à frente: agenda cheia nesse tempo devolve menos
  * dias (ou nenhum), e a IA cai no avisar_equipe.
+ *
+ * Livre é livre em todas as agendas que ocupam (ocupadosEntre), não só na da
+ * conexão. Vale para a IA e para as sugestões da ficha da oportunidade.
  */
 export async function horariosLivres(agora = new Date()): Promise<HorarioLivre[]> {
   const { diasUteis, abre, fecha, duracaoMin, antecedenciaMin } = REGRA_HORARIOS;
@@ -486,9 +589,9 @@ export async function horariosLivres(agora = new Date()): Promise<HorarioLivre[]
   }
   if (porDia.length === 0) return [];
 
-  // Uma ida ao Google para a janela inteira, e não uma por dia.
+  // Uma ida ao Google por agenda para a janela inteira, e não uma por dia.
   const ultimo = porDia[porDia.length - 1];
-  const ocupados = await eventosEntre(porDia[0][0].inicio, ultimo[ultimo.length - 1].fim);
+  const ocupados = await ocupadosEntre(porDia[0][0].inicio, ultimo[ultimo.length - 1].fim);
 
   return porDia
     .map((doDia) => doDia.filter((c) => !ocupados.some((e) => sobrepoe(c, e))))
@@ -552,6 +655,12 @@ export function marcaDoFunil(nomeDoFunil: string | null | undefined): string {
  * Confere o horário de novo logo antes de criar: entre oferecer e o lead
  * escolher, alguém pode ter marcado outra coisa ali — aí lança HorarioOcupado.
  *
+ * `conferirAgendasQueOcupam`: confere também AGENDAS_QUE_OCUPAM, as mesmas de
+ * onde saem os horários livres (ocupadosEntre). A IA passa true, porque só
+ * pode marcar o que ela ofereceu como livre. A ficha não passa: a pessoa pode
+ * decidir marcar mesmo com outro compromisso nas agendas da equipe, e só a
+ * agenda da conexão, onde as reuniões são criadas, barra.
+ *
  * `autorId` null = a IA (`quem` diz qual, para o histórico).
  */
 export async function marcarReuniao(e: {
@@ -561,6 +670,7 @@ export async function marcarReuniao(e: {
   duracaoMin?: number;
   autorId: string | null;
   quem: string;
+  conferirAgendasQueOcupam?: boolean;
 }): Promise<ReuniaoMarcada> {
   const inicio = e.inicio;
   const fim = new Date(inicio.getTime() + (e.duracaoMin ?? REGRA_HORARIOS.duracaoMin) * 60_000);
@@ -575,9 +685,6 @@ export async function marcarReuniao(e: {
       : Promise.resolve([]),
   ]);
   if (!c) throw new Error("Contato não encontrado.");
-
-  const ocupados = await eventosEntre(inicio, fim);
-  if (ocupados.some((x) => sobrepoe({ inicio, fim }, x))) throw new HorarioOcupado();
 
   const email = typeof c.email === "string" && EMAIL.test(c.email.trim()) ? c.email.trim() : null;
   const nome = (c.nome as string)?.trim() || "contato";
@@ -596,45 +703,62 @@ export async function marcarReuniao(e: {
     .filter((l) => l !== null)
     .join("\n");
 
-  const criado = await chamar<EventoGoogle>(
-    "POST",
-    (cal) => `/calendars/${cal}/events`,
-    // conferenceDataVersion=1 é o que faz o Google criar o Meet. sendUpdates:
-    // o convite por e-mail só sai quando há e-mail de verdade no cadastro.
-    { conferenceDataVersion: "1", sendUpdates: email ? "all" : "none" },
-    {
-      // Título lido dos dois lados: na agenda diz com quem é; no convite do
-      // lead diz de quem é (AMAAN ou ARCK1PRO, pelo funil: marcaDoFunil).
-      summary: `Reunião ${marcaDoFunil(funil?.nome)} com ${nome}`,
-      description: descricao,
-      start: { dateTime: inicio.toISOString(), timeZone: FUSO },
-      end: { dateTime: fim.toISOString(), timeZone: FUSO },
-      ...(email ? { attendees: [{ email, displayName: nome }] } : {}),
-      conferenceData: {
-        createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } },
-      },
-      // De onde o evento veio, para quem abrir no Google e para auditoria.
-      extendedProperties: {
-        private: { chroma_contato: e.contatoId, chroma_oportunidade: e.oportunidadeId ?? "" },
-      },
-    },
-  );
+  // UMA RESERVA DE CADA VEZ (pedido dele, 2026-10-22: "garanta que a IA sempre
+  // verifica a agenda"). Conferir e criar são duas idas ao Google, e a IA
+  // oferece os mesmos horários a todos os leads: duas reservas no mesmo horário
+  // ao mesmo tempo passariam as duas na conferência. A trava da transação (a
+  // mesma ideia de lib/ia/retomada.ts) põe em fila as reservas do CRM, da IA e
+  // da ficha: a segunda só confere depois que a primeira criou o evento e
+  // gravou o vínculo. Espera até 20 s; depois desiste com erro, que quem chamou
+  // trata como agenda que não respondeu.
+  const { id, criado } = await sql.begin(async (tx: typeof sql) => {
+    await tx`SET LOCAL lock_timeout = '20s'`;
+    await tx`SELECT pg_advisory_xact_lock(hashtext('chroma:agenda-marcar-reuniao'))`;
 
-  let id: string;
-  try {
-    const [l] = await sql`
-      INSERT INTO agenda_reunioes (google_evento_id, contato_id, oportunidade_id, inicio, fim, autor_id)
-      VALUES (${criado.id}, ${e.contatoId}, ${e.oportunidadeId}, ${inicio}, ${fim}, ${e.autorId})
-      RETURNING id`;
-    id = l.id as string;
-  } catch (erro) {
-    // Sem o vínculo o evento ficaria órfão: no Google, mas invisível no CRM e
-    // para a IA. Desfaz no Google (sem avisar o convidado) e deixa o erro subir.
-    await chamar("DELETE", (cal) => `/calendars/${cal}/events/${encodeURIComponent(criado.id)}`, {
-      sendUpdates: "none",
-    }).catch((x) => console.error("[agenda] evento ficou órfão no Google:", criado.id, x));
-    throw erro;
-  }
+    const ocupados = e.conferirAgendasQueOcupam ? await ocupadosEntre(inicio, fim) : await eventosEntre(inicio, fim);
+    if (ocupados.some((x) => sobrepoe({ inicio, fim }, x))) throw new HorarioOcupado();
+
+    const criado = await chamar<EventoGoogle>(
+      "POST",
+      (cal) => `/calendars/${cal}/events`,
+      // conferenceDataVersion=1 é o que faz o Google criar o Meet. sendUpdates:
+      // o convite por e-mail só sai quando há e-mail de verdade no cadastro.
+      { conferenceDataVersion: "1", sendUpdates: email ? "all" : "none" },
+      {
+        // Título lido dos dois lados: na agenda diz com quem é; no convite do
+        // lead diz de quem é (AMAAN ou ARCK1PRO, pelo funil: marcaDoFunil).
+        summary: `Reunião ${marcaDoFunil(funil?.nome)} com ${nome}`,
+        description: descricao,
+        start: { dateTime: inicio.toISOString(), timeZone: FUSO },
+        end: { dateTime: fim.toISOString(), timeZone: FUSO },
+        ...(email ? { attendees: [{ email, displayName: nome }] } : {}),
+        conferenceData: {
+          createRequest: { requestId: randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } },
+        },
+        // De onde o evento veio, para quem abrir no Google e para auditoria.
+        extendedProperties: {
+          private: { chroma_contato: e.contatoId, chroma_oportunidade: e.oportunidadeId ?? "" },
+        },
+      },
+    );
+
+    // O vínculo vai pela conexão comum, não pela da trava: se o COMMIT da trava
+    // falhar, o evento já existe no Google e o vínculo dele continua gravado.
+    try {
+      const [l] = await sql`
+        INSERT INTO agenda_reunioes (google_evento_id, contato_id, oportunidade_id, inicio, fim, autor_id)
+        VALUES (${criado.id}, ${e.contatoId}, ${e.oportunidadeId}, ${inicio}, ${fim}, ${e.autorId})
+        RETURNING id`;
+      return { id: l.id as string, criado };
+    } catch (erro) {
+      // Sem o vínculo o evento ficaria órfão: no Google, mas invisível no CRM e
+      // para a IA. Desfaz no Google (sem avisar o convidado) e deixa o erro subir.
+      await chamar("DELETE", (cal) => `/calendars/${cal}/events/${encodeURIComponent(criado.id)}`, {
+        sendUpdates: "none",
+      }).catch((x) => console.error("[agenda] evento ficou órfão no Google:", criado.id, x));
+      throw erro;
+    }
+  });
 
   await sql`
     INSERT INTO historico (contato_id, oportunidade_id, descricao, autor_id)

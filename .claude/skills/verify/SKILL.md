@@ -2,7 +2,7 @@
 name: verify
 description: Roda as verificações do AmaanOffice proporcionais ao que mudou (tipos, lint, scripts de teste locais, build) e mostra os resultados reais numa tabela. Use antes de declarar uma mudança pronta, antes de commit e antes de deploy. Não corrige nada, só relata.
 argument-hint: "[vazio = alterações locais | build | tudo]"
-allowed-tools: Bash(git status *), Bash(git diff *), Bash(git ls-files *), Bash(npx tsc --noEmit -p .), Bash(npx eslint *), Bash(npm run lint), Bash(npm run build), Bash(node scripts/testar-cadencia-responsavel.mjs), Bash(node --env-file=.env scripts/jiti.mjs scripts/testar-filtro-campanhas.ts), Bash(node --env-file=.env scripts/jiti.mjs scripts/testar-meta-ads.ts), Bash(node --env-file=.env scripts/jiti.mjs scripts/testar-meta-eventos.ts), Bash(node scripts/testar-hooks.mjs)
+allowed-tools: Bash(git status *), Bash(git diff *), Bash(git ls-files *), Bash(npx tsc --noEmit -p .), Bash(npx eslint *), Bash(npm run lint), Bash(npm run build), Bash(node scripts/testar-cadencia-responsavel.mjs), Bash(node --env-file=.env scripts/jiti.mjs scripts/testar-filtro-campanhas.ts), Bash(node --env-file=.env scripts/jiti.mjs scripts/testar-meta-ads.ts), Bash(node --env-file=.env scripts/jiti.mjs scripts/testar-meta-eventos.ts), Bash(node scripts/testar-hooks.mjs), Bash(node scripts/testar-agenda-ocupados.mjs)
 ---
 
 Alvo: $ARGUMENTS
@@ -28,6 +28,7 @@ o `npx` baixaria pacotes do registro.
 | Filtro de campanhas | mudou `app/inicio/filtro-campanhas.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-filtro-campanhas.ts` |
 | Meta Ads | mudou `lib/meta.ts` ou `lib/meta-ads-*` | `node --env-file=.env scripts/jiti.mjs scripts/testar-meta-ads.ts` |
 | Eventos da Meta | mudou `lib/meta-eventos.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-meta-eventos.ts` |
+| Agenda e horários da IA | mudou `lib/agenda.ts` ou `lib/google-oauth.ts` | `node scripts/testar-agenda-ocupados.mjs` |
 | Hooks do Claude Code | mudou `.claude/hooks/` ou `.claude/settings.json` | `node scripts/testar-hooks.mjs` |
 | Build | mudou `next.config.ts`, `proxy.ts`, `app/layout.tsx`, `package.json` ou `tsconfig.json`; rota ou página nova; alvo `build` ou `tudo` | `npm run build` |
 

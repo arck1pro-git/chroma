@@ -132,6 +132,10 @@ export async function marcarReuniaoDaOportunidade(
     if (e instanceof HorarioOcupado) {
       return { ok: false, mensagem: "Já tem compromisso na agenda nesse horário. Escolha outro." };
     }
+    // 55P03 = lock_timeout: a fila de reservas (lib/agenda.ts) não andou em 20 s.
+    if (e && typeof e === "object" && "code" in e && e.code === "55P03") {
+      return { ok: false, mensagem: "Outra reunião está sendo marcada agora. Tente de novo em instantes." };
+    }
     if (!(e instanceof GoogleDesconectado)) console.error("[agenda] ficha não marcou:", oportunidadeId, e);
     return { ok: false, mensagem: e instanceof Error ? e.message : String(e) };
   }

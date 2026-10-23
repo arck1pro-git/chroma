@@ -30,8 +30,10 @@ export const ESCOPO_EVENTOS = "https://www.googleapis.com/auth/calendar.events";
 export const ESCOPO_AGENDAS = "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 
 // openid + email só para saber QUAL conta foi conectada — é o que a tela mostra.
-// O de agendas é opcional: sem ele (conta conectada antes, ou caixa desmarcada
-// no consentimento) a Agenda mostra só a principal.
+// O de agendas é opcional para a tela: sem ele (conta conectada antes, ou caixa
+// desmarcada no consentimento) a Agenda mostra só a principal. Para marcar
+// reunião não é: sem a lista, os horários livres não conferem as agendas que
+// ocupam o horário (lib/agenda.ts, AGENDAS_QUE_OCUPAM) e a IA não oferece horário.
 export const ESCOPOS = ["openid", "email", ESCOPO_EVENTOS, ESCOPO_AGENDAS];
 
 /** Caminho do retorno do consentimento. A URL inteira é o que vai no Google Cloud. */
@@ -136,13 +138,29 @@ type RespostaToken = {
 };
 
 async function pedirToken(corpo: Record<string, string>): Promise<RespostaToken & { status: number }> {
-  const r = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(corpo),
-    cache: "no-store",
-  });
-  return { ...((await r.json().catch(() => ({}))) as RespostaToken), status: r.status };
+  // Com prazo: a renovação pode rodar dentro da fila de reservas de reunião
+  // (lib/agenda.ts, marcarReuniao), e um Google pendurado prenderia todas.
+  try {
+    const r = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(corpo),
+      cache: "no-store",
+      signal: AbortSignal.timeout(15_000),
+    });
+    // Resposta boa sem o corpo inteiro (prazo no meio da leitura) é falha de
+    // prazo, não "o Google recusou".
+    const dado = (await r.json().catch((x: unknown) => {
+      if (r.ok) throw x;
+      return {};
+    })) as RespostaToken;
+    return { ...dado, status: r.status };
+  } catch (e) {
+    if (e instanceof Error && e.name === "TimeoutError") {
+      throw new Error("O Google não respondeu à renovação do acesso em 15 segundos.");
+    }
+    throw e;
+  }
 }
 
 /**

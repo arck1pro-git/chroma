@@ -166,7 +166,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
 ```
 
 - **Testes:** não existe `npm test`. Os scripts de verificação que já existem simulam a rede e passam hoje:
-  `scripts/testar-cadencia-responsavel.mjs` (direto com `node`), `testar-filtro-campanhas.ts`, `testar-meta-ads.ts`
+  `scripts/testar-cadencia-responsavel.mjs` e `scripts/testar-agenda-ocupados.mjs` (direto com `node`),
+  `testar-filtro-campanhas.ts`, `testar-meta-ads.ts`
   e `testar-meta-eventos.ts` (pelo runner; este usa o DEV numa transação desfeita), e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
   falam com serviço e conta de verdade e só rodam a pedido.
