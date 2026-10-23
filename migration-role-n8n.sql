@@ -59,6 +59,16 @@ GRANT SELECT ON fluxo_execucoes     TO chroma_n8n;
 GRANT INSERT ON mensagens              TO chroma_n8n;  -- a mensagem enviada
 GRANT INSERT ON atendimentos           TO chroma_n8n;  -- a conversa, se não existir
 GRANT INSERT ON fluxo_execucao_passos  TO chroma_n8n;  -- o passo, para auditoria
+-- A linha do histórico do lead: "Avisou X no WhatsApp" (bloco de aviso) e
+-- "Saiu da automação … chegou ao fim" (nó final). Faltava: até 2026-10-23 o
+-- nó final falhava em TODA cadência desde 14/09 ("permission denied for table
+-- historico"), e as execuções ficavam 'rodando' para sempre, segurando a vaga.
+-- Aplicado no PROD em 2026-10-23.
+GRANT INSERT ON historico              TO chroma_n8n;
+-- Ler a hora da reunião (lembretes da cadência "reunião agendada", contados a
+-- partir dela). Faltava também: o primeiro lembrete parava com "permission
+-- denied for table agenda_reunioes". Aplicado no PROD em 2026-10-23.
+GRANT SELECT ON agenda_reunioes        TO chroma_n8n;
 
 -- UPDATE por COLUNA. `mensagens` precisa do casamento com o retorno da uazapi
 -- (id_externo + status), e nada além disso: o TEXTO de uma mensagem já enviada

@@ -1093,7 +1093,7 @@ export function paraWorkflow(
           UPDATE fluxo_execucoes SET
             estado = 'sucesso',
             finalizado_em = now(),
-            duracao_ms = EXTRACT(EPOCH FROM (now() - iniciado_em))::int * 1000,
+            duracao_ms = LEAST(EXTRACT(EPOCH FROM (now() - iniciado_em)) * 1000, 2147483647)::int,
             motor_execucao_id = $2
           WHERE id = $1::uuid
             AND estado IN ('pendente','rodando','esperando')
@@ -1252,7 +1252,7 @@ export function workflowDeErros(cred: CredenciaisMotor): WorkflowMotor {
               erro_msg      = left($2, 500),
               erro_no       = substring($3 from '\\[([^\\]]+)\\]$'),
               finalizado_em = now(),
-              duracao_ms    = EXTRACT(EPOCH FROM (now() - iniciado_em))::int * 1000
+              duracao_ms    = LEAST(EXTRACT(EPOCH FROM (now() - iniciado_em)) * 1000, 2147483647)::int
             WHERE motor_execucao_id = $1
               AND estado IN ('pendente','rodando','esperando')`,
           options: {

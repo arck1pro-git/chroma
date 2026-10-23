@@ -406,7 +406,10 @@ export async function desinscrever(
       estado = 'cancelada',
       erro_msg = ${motivo.slice(0, 500)},
       finalizado_em = now(),
-      duracao_ms = EXTRACT(EPOCH FROM (now() - iniciado_em))::int * 1000
+      -- Teto no maior integer: duracao_ms é integer, e a conta em milissegundos
+      -- estourava com inscrição de mais de ~24 dias (visto em 2026-10-23 ao
+      -- tirar da cadência leads inscritos em 25/09).
+      duracao_ms = LEAST(EXTRACT(EPOCH FROM (now() - iniciado_em)) * 1000, 2147483647)::int
     WHERE fluxo_id = ${fluxoId}
       AND entidade_tipo = ${entidadeTipo}
       AND entidade_id = ${entidadeId}
