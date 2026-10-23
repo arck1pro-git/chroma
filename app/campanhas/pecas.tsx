@@ -19,14 +19,6 @@ export const botaoAds =
 export const botaoPrincipalAds =
   "inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:pointer-events-none disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200";
 
-// Aba, igual à do painel de artigo e à do configurador de webhooks.
-export const abaAds = "rounded-t-lg border-b-2 px-3 py-2 text-[12px] transition";
-export const abaAtivaAds = "border-zinc-900 font-medium text-zinc-900 dark:border-zinc-50 dark:text-zinc-50";
-export const abaInativaAds = "border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50";
-
-// Cabeçalho de coluna, igual ao da tabela de contatos.
-export const rotuloColuna = "text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500";
-
 export const objetivos: Record<string, string> = {
   OUTCOME_AWARENESS: "Reconhecimento", OUTCOME_TRAFFIC: "Tráfego", OUTCOME_ENGAGEMENT: "Engajamento",
   OUTCOME_LEADS: "Leads", OUTCOME_SALES: "Vendas", OUTCOME_APP_PROMOTION: "Aplicativo",

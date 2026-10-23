@@ -23,7 +23,9 @@ import { createPortal } from "react-dom";
 //            tudo: nova oportunidade (app/funil/form-oportunidade.tsx), painel
 //            de filtros (app/funil/painel-filtros.tsx) e a confirmação de
 //            ligar a IA da etapa (app/inicio/interruptor-ia.tsx)
-//   z-[320]  modal aberto DE DENTRO de uma gaveta (FormContato)
+//   z-[320]  modal aberto DE DENTRO de uma gaveta (FormContato; e o véu da
+//            gestão do Meta Ads, app/campanhas/gestao-ads.tsx, com o painel
+//            dela em z-[330])
 //
 // Sem `document` no servidor: o snapshot do servidor é false e o portal só
 // monta depois da hidratação. Assim a ficha aberta por ?op= não quebra o SSR

@@ -1,7 +1,8 @@
 "use client";
 
-// O gráfico por dia do app: Execuções (Automações), Recebimentos (Webhooks) e
-// Atendimentos de IA (dashboard). Um componente só desde que ele pediu o mesmo
+// O gráfico por dia do app: Execuções (Automações), Recebimentos (Webhooks),
+// Atendimentos de IA (dashboard), desempenho por pessoa (Métricas) e o dia a
+// dia do Meta Ads (Campanhas). Um componente só desde que ele pediu o mesmo
 // tipo nas três telas (2026-10-05): três cópias do mesmo desenho divergiriam
 // no primeiro ajuste.
 //
@@ -13,7 +14,8 @@
 // texto) com o total do período no canto, grade em hairline, eixo com três
 // marcas limpas, tooltip com todas as séries do dia e tabela sr-only.
 //
-// Um eixo, nunca dois: as séries são todas contagens, e é a proporção entre
+// Um eixo, nunca dois: as séries de um mesmo gráfico são da mesma grandeza
+// (contagens, ou só o investido do Meta Ads, em reais), e é a proporção entre
 // elas (erro colado na base, reunião bem abaixo de atendimento) que a linha
 // deve mostrar. Segundo eixo mentiria sobre ela.
 //
@@ -43,7 +45,13 @@ export type SerieLinha<T> = {
   valor: (d: T) => number;
   /** Texto apagado depois do total na legenda — "(9 pela IA)". */
   nota?: (dados: T[]) => string | null;
+  /** Como escrever o valor no total, no tooltip e na tabela: a série em
+   *  dinheiro (o investido do Meta Ads) sai em reais. Sem ela, número em pt-BR
+   *  (separador de milhar, até duas casas). */
+  formatar?: (v: number) => string;
 };
+
+const comoNumero = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 
 function diaCurto(iso: string) {
   return iso.slice(8, 10);
@@ -150,7 +158,7 @@ export function LinhasPorDia<T extends { dia: string }>({
               {s.nome}
               {totais && (
                 <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                  {dados.reduce((t, d) => t + s.valor(d), 0)}
+                  {(s.formatar ?? comoNumero)(dados.reduce((t, d) => t + s.valor(d), 0))}
                 </span>
               )}
               {nota && <span className="text-zinc-400 dark:text-zinc-500">{nota}</span>}
@@ -195,7 +203,7 @@ export function LinhasPorDia<T extends { dia: string }>({
               <tr key={d.dia}>
                 <th scope="row">{escala ? escala.dica(d.dia) : mesCurto(d.dia)}</th>
                 {series.map((s) => (
-                  <td key={s.nome}>{s.valor(d)}</td>
+                  <td key={s.nome}>{(s.formatar ?? comoNumero)(s.valor(d))}</td>
                 ))}
               </tr>
             ))}
@@ -350,7 +358,7 @@ function Linhas<T extends { dia: string }>({
           {series.map((s) => (
             <p key={s.nome} className="flex items-center gap-2">
               <Marca serie={s} />
-              <span className="min-w-4 font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{s.valor(d)}</span>
+              <span className="min-w-4 font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{(s.formatar ?? comoNumero)(s.valor(d))}</span>
               <span className="text-zinc-500 dark:text-zinc-400">{s.nome}</span>
             </p>
           ))}

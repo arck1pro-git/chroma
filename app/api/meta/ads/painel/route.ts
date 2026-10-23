@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { exigirModuloApi } from "@/lib/auth/dal";
 import { respostaErroMeta, ErroMeta } from "@/lib/meta";
-import { carregarDetalheCampanha, carregarRelatorioAds, consultaAds, serieAds } from "@/lib/meta-ads-relatorio";
+import { carregarCriativosAds, carregarDetalheCampanha, carregarRelatorioAds, consultaAds, serieAds } from "@/lib/meta-ads-relatorio";
 import { acaoAds, executarAcaoAds, recursosAds } from "@/lib/meta-ads-gestao";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +25,9 @@ export async function GET(req: NextRequest) {
     }
     const q = consultaAds.safeParse(Object.fromEntries(req.nextUrl.searchParams));
     if (!q.success) return Response.json({ erro: q.error.issues[0].message }, { status: 400 });
+    // O ranking de criativos tem leituras próprias (insights e anúncios da
+    // conta inteira). A tela pede depois do relatório, que é quem abre a página.
+    if (req.nextUrl.searchParams.get("criativos") === "1") return Response.json(await carregarCriativosAds(q.data, crm));
     return Response.json(await carregarRelatorioAds(q.data, crm));
   } catch (e) { return respostaErroMeta(e); }
 }

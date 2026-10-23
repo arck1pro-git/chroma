@@ -43,12 +43,15 @@ export function CascaGaveta({
   aoFechar,
   children,
   depois,
+  largura = "w-[27rem]",
 }: {
   rotulo: string;
   aoFechar: () => void;
   children: React.ReactNode;
   /** O que abre POR CIMA da gaveta (o formulário do contato), fora do painel. */
   depois?: React.ReactNode;
+  /** A gaveta de campanha do Meta Ads, com métricas e anúncios, pede mais que as 27rem da ficha. */
+  largura?: string;
 }) {
   return (
     <CamadaTopo>
@@ -58,7 +61,7 @@ export function CascaGaveta({
         aria-hidden="true"
       />
       <aside
-        className="ficha-entra fixed bottom-3 right-3 top-3 z-[310] flex w-[27rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-[0_24px_64px_-12px_rgba(0,0,0,0.35)] ring-1 ring-zinc-900/10 dark:bg-zinc-950 dark:ring-white/10"
+        className={`ficha-entra fixed bottom-3 right-3 top-3 z-[310] flex ${largura} max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-[0_24px_64px_-12px_rgba(0,0,0,0.35)] ring-1 ring-zinc-900/10 dark:bg-zinc-950 dark:ring-white/10`}
         aria-label={rotulo}
       >
         {children}
