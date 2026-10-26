@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {
-  anuncioDaOrigem, campanhaPelosNomes, dividir, leadsPor, metricasAds, origemDaOportunidade, pecaDoAnuncio, pedidoDeCampanha,
+  anuncioDaOrigem, campanhaPelosNomes, dividir, idDaMeta, leadsPor, metricasAds, origemDaOportunidade, pecaDoAnuncio, pedidoDeCampanha,
   resolverOrigem, resumoCrm, situacaoDosLeads, somarMetricas, textosDoCriativo, type EntradaCrm, type OportunidadeAds,
 } from "../lib/meta-ads-calculos";
 import { acaoAds, executarAcaoAds } from "../lib/meta-ads-gestao";
@@ -115,20 +115,23 @@ function testarCalculos() {
   assert.deepEqual(textosDoCriativo(), { titulo: null, texto: null });
 
   const campanhas = [{ id: "100", name: "Captação" }, { id: "200", name: "Topo" }];
-  const conjuntos = [{ id: "j1", name: "Conjunto A", campaign_id: "100" }, { id: "j2", name: "Conjunto A", campaign_id: "200" }];
-  const anuncios = [{ id: "a1", name: "Anúncio 1", adset_id: "j1" }, { id: "a2", name: "Anúncio 1", adset_id: "j2" }, { id: "a3", name: "Anúncio 2", adset_id: "j1" }];
+  // IDs da Meta são números (idDaMeta): conjuntos 11 e 12, anúncios 21 a 23.
+  const conjuntos = [{ id: "11", name: "Conjunto A", campaign_id: "100" }, { id: "12", name: "Conjunto A", campaign_id: "200" }];
+  const anuncios = [{ id: "21", name: "Anúncio 1", adset_id: "11" }, { id: "22", name: "Anúncio 1", adset_id: "12" }, { id: "23", name: "Anúncio 2", adset_id: "11" }];
   // O mesmo nome de conjunto e de anúncio em duas campanhas: a campanha decide.
-  assert.equal(anuncioDaOrigem({ utm_campaign: "Captação", utm_term: "Conjunto A", utm_content: "Anúncio 1" }, campanhas, conjuntos, anuncios), "a1");
-  assert.equal(anuncioDaOrigem({ utm_campaign: "Topo", utm_term: "Conjunto A", utm_content: "Anúncio 1" }, campanhas, conjuntos, anuncios), "a2");
-  assert.equal(anuncioDaOrigem({ campaign_id: "100", adset_id: "j1", ad_id: "a3" }, campanhas, conjuntos, anuncios), "a3");
+  assert.equal(anuncioDaOrigem({ utm_campaign: "Captação", utm_term: "Conjunto A", utm_content: "Anúncio 1" }, campanhas, conjuntos, anuncios), "21");
+  assert.equal(anuncioDaOrigem({ utm_campaign: "Topo", utm_term: "Conjunto A", utm_content: "Anúncio 1" }, campanhas, conjuntos, anuncios), "22");
+  assert.equal(anuncioDaOrigem({ campaign_id: "100", adset_id: "11", ad_id: "23" }, campanhas, conjuntos, anuncios), "23");
   assert.equal(anuncioDaOrigem({ utm_term: "Conjunto A", utm_content: "Anúncio 1" }, campanhas, conjuntos, anuncios), null);
   assert.equal(anuncioDaOrigem({ utm_campaign: "Captação", utm_term: "Outro", utm_content: "Anúncio 1" }, campanhas, conjuntos, anuncios), null);
+  // Parâmetros automáticos: os três IDs nos utm_*, com o utm_id que não é ID de campanha.
+  assert.equal(anuncioDaOrigem({ utm_campaign: "100", utm_term: "11", utm_content: "23", utm_id: "11_v2_s04" }, campanhas, conjuntos, anuncios), "23");
   // A pessoa que veio por dois anúncios da mesma peça é um lead da peça.
-  const pecaDe: Record<string, string> = { a1: "V1", a3: "V1", a2: "V2" };
+  const pecaDe: Record<string, string> = { 21: "V1", 23: "V1", 22: "V2" };
   const entradasPeca: EntradaCrm[] = [
-    { contato_id: "c1", dia: "2026-04-01", campos: null, contato_campos: { campaign_id: "100", adset_id: "j1", ad_id: "a1" } },
-    { contato_id: "c1", dia: "2026-04-02", campos: { campaign_id: "100", adset_id: "j1", ad_id: "a3" }, contato_campos: {} },
-    { contato_id: "c2", dia: "2026-04-02", campos: { campaign_id: "200", adset_id: "j2", ad_id: "a2" }, contato_campos: {} },
+    { contato_id: "c1", dia: "2026-04-01", campos: null, contato_campos: { campaign_id: "100", adset_id: "11", ad_id: "21" } },
+    { contato_id: "c1", dia: "2026-04-02", campos: { campaign_id: "100", adset_id: "11", ad_id: "23" }, contato_campos: {} },
+    { contato_id: "c2", dia: "2026-04-02", campos: { campaign_id: "200", adset_id: "12", ad_id: "22" }, contato_campos: {} },
   ];
   const porPeca = leadsPor(entradasPeca, e => pecaDe[anuncioDaOrigem(origemDaOportunidade(e), campanhas, conjuntos, anuncios) ?? ""] ?? null);
   assert.deepEqual([...porPeca.get("V1")!], [["c1", "2026-04-01"]]);
@@ -197,6 +200,15 @@ async function main() {
   assert.equal(pedidoDeCampanha({ utm_campaign: "{{campaign.name}}", utm_term: "{{adset.name}}", utm_content: "{{ad.name}}" }), null);
   assert.deepEqual(pedidoDeCampanha({ utm_campaign: "Nome antigo", utm_term: "Conjunto A", utm_content: "Anúncio 1" }),
     { nome: "Nome antigo", anuncio: null, conjunto: null, nomeDoConjunto: "Conjunto A", nomeDoAnuncio: "Anúncio 1" });
+  // Parâmetros automáticos da Meta (conta ARCK1PRO, 2026-10-26): utm_campaign/term/content
+  // são IDs, e o utm_id "<conjunto>_v2_…" não é ID de campanha — não pode mandar.
+  const automaticos = { utm_campaign: "100", utm_term: "200", utm_content: "300", utm_id: "200_v2_s04_i97938797" };
+  assert.equal(idDaMeta(automaticos, ["campaign_id", "campanha_id", "utm_id"]), null);
+  assert.equal(idDaMeta({ campaign_id: "{{campaign.id}}", utm_id: " 100 " }, ["campaign_id", "utm_id"]), "100");
+  assert.equal(resolverOrigem(automaticos, catalogo, "campaign").id, "100");
+  assert.equal(resolverOrigem({ utm_id: "200_v2_s04" }, catalogo, "campaign").motivo, "semOrigem");
+  assert.deepEqual(pedidoDeCampanha(automaticos), { nome: "100", anuncio: "300", conjunto: "200", nomeDoConjunto: "200", nomeDoAnuncio: "300" });
+  assert.equal(origemDaOportunidade({ campos: { utm_id: "200_v2_s04" }, contato_campos: automaticos }), automaticos);
 
   // A campanha pelo conjunto e pelo anúncio: só com UMA campanha por pista, e
   // as duas concordando. Conjunto repetido em duas campanhas (campanha

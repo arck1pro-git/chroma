@@ -24,4 +24,9 @@ assert.equal(passaNoFiltroCampanhas(filtro, { campaign_id: "101" }, { campaign_i
 assert.equal(passaNoFiltroCampanhas({ ...filtro, conjunto }, { campaign_id: "100" }, { campaign_id: "100", adset_id: "200" }), false);
 assert.equal(passaNoFiltroCampanhas(filtro, {}, { utm_id: "100" }), true);
 assert.equal(passaNoFiltroCampanhas(filtro, undefined, {}), false);
-console.log("10 verificações de filtro de origem passaram.");
+// Parâmetros automáticos da Meta: o utm_id "<conjunto>_v2_…" não é ID; vale o utm_campaign (que é o ID).
+const automaticos = { utm_campaign: "100", utm_term: "200", utm_content: "300", utm_id: "200_v2_s04_i97938797" };
+assert.equal(passaNoFiltroCampanhas({ ...filtro, conjunto, anuncio }, {}, automaticos), true);
+assert.equal(passaNoFiltroCampanhas(filtro, { utm_id: "200_v2_s04" }, automaticos), true);
+assert.equal(passaNoFiltroCampanhas(filtro, {}, { ...automaticos, utm_campaign: "101" }), false);
+console.log("13 verificações de filtro de origem passaram.");

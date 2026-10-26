@@ -131,7 +131,8 @@ export const ROTULO_ORIGEM: Record<string, string> = {
   utm_campaign: "Campanha (utm_campaign)",
   utm_content: "Conteúdo (utm_content)",
   utm_term: "Termo (utm_term)",
-  utm_id: "Id da campanha (utm_id)",
+  // Nos parâmetros automáticos da Meta não é o ID da campanha ("<conjunto>_v2_…").
+  utm_id: "Identificador (utm_id)",
   campaign_id: "Id da campanha na Meta",
   campanha_id: "Id da campanha",
   campaign_name: "Campanha",

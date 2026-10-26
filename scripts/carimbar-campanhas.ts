@@ -22,10 +22,18 @@ args.forEach((a, i) => {
 
 try {
   console.log(`banco: ${new URL(process.env.DATABASE_URL!).hostname} · ${gravar ? "GRAVANDO" : "simulação (use --gravar)"}`);
-  // Candidatos: origem sem ID. Quem decide se dá para resolver é a função.
+  // Candidatos: alguma pista de origem e nenhum ID numérico (o utm_id dos
+  // parâmetros automáticos da Meta não é ID — ver idDaMeta). Quem decide se dá
+  // para resolver é a função; a pista no filtro só evita ler a base importada inteira.
   const [contatos, oportunidades] = await Promise.all([
-    sql`SELECT id FROM contatos WHERE jsonb_typeof(campos) = 'object' AND NOT (campos ?| array['campaign_id', 'campanha_id', 'utm_id'])`,
-    sql`SELECT id FROM oportunidades WHERE jsonb_typeof(campos) = 'object' AND NOT (campos ?| array['campaign_id', 'campanha_id', 'utm_id'])`,
+    sql`SELECT id FROM contatos WHERE jsonb_typeof(campos) = 'object'
+          AND campos ?| array['campaign_name', 'utm_campaign', 'adset_id', 'conjunto_id', 'adset_name', 'utm_term', 'ad_id', 'anuncio_id', 'ad_name', 'utm_content']
+          AND NOT EXISTS (SELECT 1 FROM jsonb_each(campos) AS c(k, v)
+                           WHERE k IN ('campaign_id', 'campanha_id', 'utm_id') AND jsonb_typeof(v) = 'string' AND btrim(v #>> '{}') ~ '^[0-9]+$')`,
+    sql`SELECT id FROM oportunidades WHERE jsonb_typeof(campos) = 'object'
+          AND campos ?| array['campaign_name', 'utm_campaign', 'adset_id', 'conjunto_id', 'adset_name', 'utm_term', 'ad_id', 'anuncio_id', 'ad_name', 'utm_content']
+          AND NOT EXISTS (SELECT 1 FROM jsonb_each(campos) AS c(k, v)
+                           WHERE k IN ('campaign_id', 'campanha_id', 'utm_id') AND jsonb_typeof(v) = 'string' AND btrim(v #>> '{}') ~ '^[0-9]+$')`,
   ]);
   const feitos: Carimbo[] = [];
   for (const c of contatos) feitos.push(...await carimbarCampanha({ contatoId: c.id, oportunidadeId: null }, { renomeadas, gravar }));

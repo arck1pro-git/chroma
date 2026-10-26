@@ -2,8 +2,8 @@
 // de nome.
 //
 // O PROBLEMA: o painel de campanhas e o filtro do quadro casam o lead pelo ID
-// (campaign_id, campanha_id, utm_id) e, só na falta dele, pelo NOME
-// (utm_campaign). A landing page manda o nome, e quando a campanha é renomeada
+// numérico (campaign_id, campanha_id, utm_id) e, só na falta dele, pelo NOME
+// (utm_campaign, que nos parâmetros automáticos da Meta já é o ID). A landing page manda o nome, e quando a campanha é renomeada
 // na Meta os leads que já entraram deixam de casar com ela. Foi o que houve com
 // "SCP - TOPO DE FUNIL [LEADS][CBO][LP]", renomeada para
 // "SCP - TOPO CHECKLIST [LEADS][CBO][LP1]": 33 leads ficaram sem campanha.
@@ -117,12 +117,16 @@ export async function carimbarCampanha(
     feitos.push({ tabela: l.tabela, id: l.id, nome: pedido.nome, campanhaId });
     if (!campanhaId || opcoes.gravar === false) continue;
     const novo = sql.json({ campaign_id: campanhaId } as never);
+    // "Sem ID" é sem ID NUMÉRICO, como em idDaMeta: o utm_id dos parâmetros
+    // automáticos da Meta não conta, e um campaign_id que não é número é lixo.
     if (l.tabela === "contatos") {
       await sql`UPDATE contatos SET campos = campos || ${novo}
-                 WHERE id = ${l.id} AND NOT (campos ?| array['campaign_id', 'campanha_id', 'utm_id'])`;
+                 WHERE id = ${l.id} AND NOT EXISTS (SELECT 1 FROM jsonb_each(campos) AS c(k, v)
+                   WHERE k IN ('campaign_id', 'campanha_id', 'utm_id') AND jsonb_typeof(v) = 'string' AND btrim(v #>> '{}') ~ '^[0-9]+$')`;
     } else {
       await sql`UPDATE oportunidades SET campos = campos || ${novo}
-                 WHERE id = ${l.id} AND NOT (campos ?| array['campaign_id', 'campanha_id', 'utm_id'])`;
+                 WHERE id = ${l.id} AND NOT EXISTS (SELECT 1 FROM jsonb_each(campos) AS c(k, v)
+                   WHERE k IN ('campaign_id', 'campanha_id', 'utm_id') AND jsonb_typeof(v) = 'string' AND btrim(v #>> '{}') ~ '^[0-9]+$')`;
     }
   }
   return feitos;

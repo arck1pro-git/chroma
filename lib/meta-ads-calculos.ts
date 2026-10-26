@@ -139,16 +139,31 @@ function valor(origem: OrigemAds, chaves: string[]) {
   }
   return null;
 }
+/**
+ * O primeiro ID da Meta entre as chaves: ID da Meta é só número. Os parâmetros
+ * automáticos de URL da Meta (os links da conta ARCK1PRO, 2026-10-26) mandam
+ * utm_campaign, utm_term e utm_content com os IDs de campanha, conjunto e
+ * anúncio, e utm_id = "<conjunto>_v2_s04_i…", que não é ID de nada: tomado como
+ * ID, passava por cima do utm_campaign e 46 de 109 leads ficavam sem campanha.
+ */
+export function idDaMeta(origem: OrigemAds, chaves: string[]) {
+  for (const chave of chaves) {
+    const v = origem?.[chave];
+    if (typeof v === "string" && /^\d+$/.test(v.trim())) return v.trim();
+  }
+  return null;
+}
+export const IDS_DE_CAMPANHA = ["campaign_id", "campanha_id", "utm_id"], NOMES_DE_CAMPANHA = ["campaign_name", "utm_campaign"];
 // A origem que vale: a da oportunidade, quando ela tem campanha; senão a do
 // contato. Serve à oportunidade e à entrada no CRM, que carregam os dois.
 export function origemDaOportunidade(o: { campos: OrigemAds; contato_campos: OrigemAds }) {
-  return valor(o.campos, ["campaign_id", "campanha_id", "utm_id", "campaign_name", "utm_campaign"])
-    ? o.campos : o.contato_campos;
+  return idDaMeta(o.campos, IDS_DE_CAMPANHA) || valor(o.campos, NOMES_DE_CAMPANHA) ? o.campos : o.contato_campos;
 }
+// O nome também pode ser o ID (utm_campaign={{campaign.id}}): casa com o id do objeto.
 export function resolverOrigem(origem: OrigemAds, objetos: Array<Pick<ObjetoAds, "id" | "name">>, nivel: "campaign" | "adset" | "ad") {
-  const ids = nivel === "campaign" ? ["campaign_id", "campanha_id", "utm_id"] : nivel === "adset" ? ["adset_id", "conjunto_id"] : ["ad_id", "anuncio_id"];
-  const nomes = nivel === "campaign" ? ["campaign_name", "utm_campaign"] : nivel === "adset" ? ["adset_name", "utm_term"] : ["ad_name", "utm_content"];
-  const id = valor(origem, ids), nome = valor(origem, nomes);
+  const ids = nivel === "campaign" ? IDS_DE_CAMPANHA : nivel === "adset" ? ["adset_id", "conjunto_id"] : ["ad_id", "anuncio_id"];
+  const nomes = nivel === "campaign" ? NOMES_DE_CAMPANHA : nivel === "adset" ? ["adset_name", "utm_term"] : ["ad_name", "utm_content"];
+  const id = idDaMeta(origem, ids), nome = valor(origem, nomes);
   if (!id && !nome) return { id: null, motivo: "semOrigem" as const };
   const encontrados = objetos.filter(o => id ? o.id === id : o.id === nome || o.name === nome);
   return encontrados.length === 1 ? { id: encontrados[0].id, motivo: null }
@@ -205,20 +220,20 @@ export function textosDoCriativo(criativo?: ObjetoAds["creative"]): { titulo: st
 
 // O que perguntar à Meta para gravar o ID da campanha no lead, ou null quando
 // não há o que fazer: já tem ID (que prevalece sobre o nome) ou não tem origem.
-// Conjunto e anúncio por ID só valem como número, e todo texto com macro não
-// substituída da URL ("{{adset.id}}", "{{campaign.name}}") é descartado: ele
-// chega literal quando o link é aberto fora do anúncio (prévia, link copiado).
+// IDs só valem como número (idDaMeta), e todo texto com macro não substituída
+// da URL ("{{adset.id}}", "{{campaign.name}}") é descartado: ele chega literal
+// quando o link é aberto fora do anúncio (prévia, link copiado).
 //
 // Os NOMES de conjunto e anúncio (utm_term e utm_content, na convenção dos
 // links) entraram em 2026-10-07: são a pista que sobra quando o nome da
-// campanha não é mais o atual — ver campanhaPelosNomes.
+// campanha não é mais o atual — ver campanhaPelosNomes. Numéricos, os mesmos
+// campos são os IDs do conjunto e do anúncio (parâmetros automáticos da Meta).
 export function pedidoDeCampanha(campos: OrigemAds) {
-  if (valor(campos, ["campaign_id", "campanha_id", "utm_id"])) return null;
-  const numero = (chaves: string[]) => { const v = valor(campos, chaves); return v && /^\d+$/.test(v) ? v : null; };
+  if (idDaMeta(campos, IDS_DE_CAMPANHA)) return null;
   const texto = (chaves: string[]) => { const v = valor(campos, chaves); return v && !/\{\{.*\}\}/.test(v) ? v : null; };
   const pedido = {
-    nome: texto(["campaign_name", "utm_campaign"]),
-    anuncio: numero(["ad_id", "anuncio_id"]), conjunto: numero(["adset_id", "conjunto_id"]),
+    nome: texto(NOMES_DE_CAMPANHA),
+    anuncio: idDaMeta(campos, ["ad_id", "anuncio_id", "utm_content"]), conjunto: idDaMeta(campos, ["adset_id", "conjunto_id", "utm_term"]),
     nomeDoConjunto: texto(["adset_name", "utm_term"]), nomeDoAnuncio: texto(["ad_name", "utm_content"]),
   };
   return Object.values(pedido).some(Boolean) ? pedido : null;
