@@ -641,6 +641,7 @@ export default function Inicio({
   cadenciaInicial,
   fluxosParaInscricao,
   graficoIa,
+  euId,
 }: {
   dados: DadosFunil;
   // A cadência de cada etapa (a automação por trás das subetapas) e as
@@ -663,6 +664,9 @@ export default function Inicio({
   // já no escopo de quem está vendo. Todos os funis vêm de uma vez: trocar de
   // funil não busca de novo.
   graficoIa: Record<string, IaDoFunil>;
+  // Quem está logado, da sessão (page.tsx): só as anotações dele ganham o
+  // botão de apagar. Quem garante é a ação, que confere o autor no servidor.
+  euId: string;
 }) {
   const {
     funis,
@@ -1416,6 +1420,7 @@ export default function Inicio({
           etapaPorId={dados.etapaPorId}
           funilPorId={dados.funilPorId}
           usuarioPorId={usuarioPorId}
+          euId={euId}
           camposContato={dados.camposContato}
           ias={dados.ias}
           aoAbrirOportunidade={abrirOportunidade}
@@ -1443,6 +1448,7 @@ export default function Inicio({
           etapaPorId={dados.etapaPorId}
           funilPorId={dados.funilPorId}
           usuarioPorId={usuarioPorId}
+          euId={euId}
           oportunidadesDoContato={dados.oportunidadesDoContato}
           historicoDoContato={dados.historicoDoContato}
           anotacoesDoContato={dados.anotacoesDoContato}

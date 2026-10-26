@@ -10,11 +10,16 @@
 //
 // Quem usa passa key={contatoId}: trocar de contato descarta o rascunho em vez
 // de levá-lo para o contato seguinte.
+//
+// APAGAR (2026-10-26): a lixeira aparece só na nota de quem está logado
+// (`euId`), com confirmação na própria nota. Quem garante é o servidor
+// (apagarAnotacao confere o autor no DELETE); aqui é só não oferecer o botão
+// a quem não pode.
 import { useState, useTransition } from "react";
-import { Bot } from "lucide-react";
+import { Bot, Trash2 } from "lucide-react";
 import type { Anotacao, Usuario } from "@/lib/entidades";
 import { dataHora } from "@/lib/formato";
-import { adicionarAnotacao } from "../contatos/actions";
+import { adicionarAnotacao, apagarAnotacao } from "../contatos/actions";
 import BotaoDitado, { juntarDitado } from "./botao-ditado";
 import { Avatar, BOTAO_PRIMARIO, BOTAO_SECUNDARIO, MaisMenos, Secao, Vazio } from "./gaveta";
 
@@ -27,17 +32,23 @@ export function AnotacoesContato({
   nome,
   anotacoes,
   usuarioPorId,
+  euId,
 }: {
   contatoId: string;
   nome?: string;
   anotacoes: Anotacao[];
   usuarioPorId: Map<string, Usuario>;
+  /** Quem está logado: só a nota dele ganha o botão de apagar. */
+  euId: string;
 }) {
   const [escrevendo, setEscrevendo] = useState(false);
   const [texto, setTexto] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciarSalvamento] = useTransition();
   const [todas, setTodas] = useState(false);
+  // Some na hora, sem esperar a lista nova do servidor (a gaveta recarrega a ficha depois).
+  const [apagadas, setApagadas] = useState<ReadonlySet<string>>(new Set());
+  const lista = apagadas.size ? anotacoes.filter((a) => !apagadas.has(a.id)) : anotacoes;
 
   function fechar() {
     setEscrevendo(false);
@@ -69,10 +80,10 @@ export function AnotacoesContato({
   }
 
   const primeiroNome = nome?.trim().split(/\s+/)[0];
-  const vistas = todas ? anotacoes : anotacoes.slice(0, VISIVEIS);
+  const vistas = todas ? lista : lista.slice(0, VISIVEIS);
 
   return (
-    <Secao titulo="Anotações" contagem={anotacoes.length}>
+    <Secao titulo="Anotações" contagem={lista.length}>
       {escrevendo ? (
         <div className="surge mb-3 rounded-xl ring-1 ring-zinc-300 focus-within:ring-2 focus-within:ring-zinc-900/20 dark:ring-zinc-700 dark:focus-within:ring-white/20">
           <textarea
@@ -131,17 +142,22 @@ export function AnotacoesContato({
         </div>
       )}
 
-      {anotacoes.length === 0 ? (
+      {lista.length === 0 ? (
         !escrevendo && <Vazio>Nada anotado ainda</Vazio>
       ) : (
         <>
           <ul className="flex flex-col gap-2">
             {vistas.map((a) => (
-              <Nota key={a.id} anotacao={a} usuarioPorId={usuarioPorId} />
+              <Nota
+                key={a.id}
+                anotacao={a}
+                usuarioPorId={usuarioPorId}
+                aoApagar={a.autor_id && a.autor_id === euId ? () => setApagadas((s) => new Set(s).add(a.id)) : undefined}
+              />
             ))}
           </ul>
-          {anotacoes.length > VISIVEIS && (
-            <MaisMenos todos={todas} resto={anotacoes.length - VISIVEIS} aoAlternar={() => setTodas((v) => !v)} />
+          {lista.length > VISIVEIS && (
+            <MaisMenos todos={todas} resto={lista.length - VISIVEIS} aoAlternar={() => setTodas((v) => !v)} />
           )}
         </>
       )}
@@ -149,7 +165,86 @@ export function AnotacoesContato({
   );
 }
 
-function Nota({ anotacao: a, usuarioPorId }: { anotacao: Anotacao; usuarioPorId: Map<string, Usuario> }) {
+/**
+ * A lixeira da nota de quem está logado, com a confirmação ali mesmo, na linha
+ * do autor. Também serve à linha do tempo de /contatos (app/contatos/atividade.tsx).
+ * `aoApagar` roda depois que o servidor apagou: tirar a nota da tela, recarregar.
+ */
+export function ApagarAnotacao({ anotacaoId, aoApagar }: { anotacaoId: string; aoApagar: () => void }) {
+  const [confirmando, setConfirmando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [apagando, iniciar] = useTransition();
+
+  function apagar() {
+    setErro(null);
+    iniciar(async () => {
+      try {
+        const r = await apagarAnotacao(anotacaoId);
+        if (!r.ok) {
+          setErro(r.erro);
+          return;
+        }
+        aoApagar();
+      } catch {
+        setErro("Não foi possível apagar. Tente de novo.");
+      }
+    });
+  }
+
+  if (!confirmando) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirmando(true)}
+        title="Apagar anotação"
+        aria-label="Apagar anotação"
+        className="ml-auto rounded-md p-1 text-zinc-400 transition hover:bg-red-50 hover:text-red-600 dark:text-zinc-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+      >
+        <Trash2 className="size-3.5" aria-hidden="true" />
+      </button>
+    );
+  }
+  // Linha inteira (w-full, numa linha que quebra): a pergunta não aperta o nome e a data do autor.
+  return (
+    <span className="flex w-full items-center justify-end gap-1">
+      {erro ? (
+        <span role="alert" className="text-red-600 dark:text-red-400">{erro}</span>
+      ) : (
+        <span className="text-zinc-600 dark:text-zinc-300">Apagar esta anotação?</span>
+      )}
+      <button
+        type="button"
+        onClick={apagar}
+        disabled={apagando}
+        className="rounded-md px-1.5 py-0.5 font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-500/10"
+      >
+        {apagando ? "Apagando…" : "Apagar"}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setConfirmando(false);
+          setErro(null);
+        }}
+        disabled={apagando}
+        className="rounded-md px-1.5 py-0.5 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+      >
+        Cancelar
+      </button>
+    </span>
+  );
+}
+
+function Nota({
+  anotacao: a,
+  usuarioPorId,
+  aoApagar,
+}: {
+  anotacao: Anotacao;
+  usuarioPorId: Map<string, Usuario>;
+  /** Só na nota de quem está logado; sem ele, a lixeira não aparece. */
+  aoApagar?: () => void;
+}) {
   const [aberta, setAberta] = useState(false);
   // A IA não é usuário: as anotações dela (o resumo do atendimento,
   // lib/ia/atendente.ts) vêm sem autor e com 🤖 no começo. A primeira linha
@@ -171,7 +266,7 @@ function Nota({ anotacao: a, usuarioPorId }: { anotacao: Anotacao; usuarioPorId:
           : "bg-amber-50/80 ring-1 ring-inset ring-amber-100/80 dark:bg-amber-400/[0.06] dark:ring-amber-400/10"
       }`}
     >
-      <p className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+      <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
         {daIa ? (
           <span className="flex size-5 items-center justify-center rounded-full bg-violet-600 text-white dark:bg-violet-500">
             <Bot className="size-3" aria-hidden="true" />
@@ -185,6 +280,7 @@ function Nota({ anotacao: a, usuarioPorId }: { anotacao: Anotacao; usuarioPorId:
         {/* anotação se edita (o histórico não) — marcar isso evita discussão
             sobre "eu não escrevi assim" */}
         {a.data_atualizacao && <span>· editada</span>}
+        {aoApagar && <ApagarAnotacao anotacaoId={a.id} aoApagar={aoApagar} />}
       </p>
       {titulo && <p className="mt-1.5 text-[12.5px] font-medium leading-snug text-zinc-900 dark:text-zinc-50">{titulo}</p>}
       <p

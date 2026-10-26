@@ -45,6 +45,8 @@ export type ContextoDaFicha = {
   camposContato: CampoPersonalizado[];
   usuarios: { id: string; nome: string; iniciais: string }[];
   ias: Ia[];
+  /** Quem está logado: só as anotações dele podem ser apagadas. */
+  euId: string;
 };
 
 const botaoIcone =
@@ -327,7 +329,7 @@ export default function Ficha({
           divide a tela com a barra e a lista), não da janela. */}
       <div className="@container">
         <div className="grid gap-x-10 gap-y-8 px-6 py-6 @min-[50rem]:grid-cols-[minmax(0,1fr)_18.5rem]">
-          <Atividade ficha={ficha} nomeDoAutor={nomeDoAutor} aoMudar={aoMudar} />
+          <Atividade ficha={ficha} nomeDoAutor={nomeDoAutor} euId={contexto.euId} aoMudar={aoMudar} />
           <Lateral
             ficha={ficha}
             etapas={etapas}

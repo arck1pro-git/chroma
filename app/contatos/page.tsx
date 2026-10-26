@@ -35,7 +35,7 @@ export default async function ContatosPage({
 }: {
   searchParams: Promise<{ contato?: string; q?: string }>;
 }) {
-  await exigirModulo("contatos");
+  const { usuario } = await exigirModulo("contatos");
   const { contato: escolhidoBruto, q } = await searchParams;
   const escolhido = typeof escolhidoBruto === "string" && ehUuid(escolhidoBruto) ? escolhidoBruto : null;
   const termo = typeof q === "string" ? q.slice(0, 120) : "";
@@ -106,6 +106,7 @@ export default async function ContatosPage({
       camposContato={camposPersonalizados.filter((c) => c.entidade === "contato")}
       usuarios={usuarios as unknown as { id: string; nome: string; iniciais: string }[]}
       ias={ias as unknown as Ia[]}
+      euId={usuario.id}
     />
   );
 }

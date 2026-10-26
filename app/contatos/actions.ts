@@ -10,6 +10,7 @@ import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import {
   atualizarContatoRegistrando,
+  registrarAnotacaoApagada,
   registrarContatoCriado,
   registrarTag,
 } from "@/lib/historico";
@@ -53,7 +54,7 @@ export type NovoContato = {
 // Recusa volta como `{ ok: false, erro }` (lib/resultado-acao.ts): em produção
 // a mensagem de um erro lançado não chega à tela.
 
-/** Anotação é append-only nesta interface: cria, mas não oferece edição ou exclusão. */
+/** Cria a anotação. Edição não há; apagar é só de quem escreveu (apagarAnotacao). */
 export async function adicionarAnotacao(
   contatoId: string,
   textoBruto: string,
@@ -64,6 +65,25 @@ export async function adicionarAnotacao(
   if (!texto) return { ok: false, erro: "Escreva uma anotação." };
   await sql`INSERT INTO anotacoes (contato_id, texto, autor_id)
             VALUES (${contatoId}::uuid, ${texto}, ${usuario.id}::uuid)`;
+  revalidatePath("/");
+  revalidatePath("/contatos");
+  return { ok: true };
+}
+
+/**
+ * Apaga a anotação — só quem a escreveu (pedido dele, 2026-10-26). O autor vai
+ * na condição do próprio DELETE: o id que vem da tela não decide nada sozinho,
+ * e anotação da IA (sem autor) não se apaga por aqui.
+ */
+export async function apagarAnotacao(anotacaoId: string): Promise<ResultadoAcao> {
+  const { usuario } = await exigirAlgumModulo("inicio", "contatos");
+  if (!ehUuid(anotacaoId)) return { ok: false, erro: "Anotação inválida." };
+  const [apagada] = await sql`
+    DELETE FROM anotacoes WHERE id = ${anotacaoId}::uuid AND autor_id = ${usuario.id}::uuid
+    RETURNING contato_id`;
+  // Não distingue "já apagada" (outra aba, nova tentativa) de "não é sua": uma consulta a mais por nada.
+  if (!apagada) return { ok: false, erro: "Esta anotação já foi apagada ou não é sua." };
+  await registrarAnotacaoApagada(apagada.contato_id as string, usuario.id);
   revalidatePath("/");
   revalidatePath("/contatos");
   return { ok: true };

@@ -18,10 +18,10 @@
 // anotação seria trocar um problema pequeno por um grande. O erro vai para o
 // log do servidor e a ação segue — ver `aSalvo` no fim do arquivo.
 //
-// AUTOR: as linhas nascem sem `autor_id`. Este CRM ainda não tem sessão — o
-// "usuário atual" do chat é `usuarios[0]` —, e carimbar um usuário escolhido
-// por acaso seria inventar responsável. A ficha já mostra "Sistema" quando o
-// autor é nulo. Quando houver login, é só passar o id para cá.
+// AUTOR: as linhas nascem sem `autor_id`, de quando o CRM não tinha sessão e
+// carimbar um usuário escolhido por acaso seria inventar responsável; a ficha
+// mostra "Sistema" quando o autor é nulo. Com o login, quem tem o id da sessão
+// passa para cá — registrarAnotacaoApagada já faz isso.
 import { listaUuid, sql } from "@/lib/db";
 
 /** Roda o registro sem deixar o erro subir para quem chamou. */
@@ -342,5 +342,17 @@ export async function registrarTag(
       SELECT c.id, 'Tag "' || t.nome || '" ' || ${acao}
       FROM contatos c CROSS JOIN tags t
       WHERE c.id = ${contatoId} AND t.id = ${tagId}`,
+  );
+}
+
+/**
+ * "Anotação apagada", com quem apagou (só o autor apaga, app/contatos/actions.ts).
+ * O texto não vem junto: foi para tirá-lo da ficha que apagaram. Fica o fato.
+ */
+export async function registrarAnotacaoApagada(contatoId: string, autorId: string) {
+  await aSalvo("anotação apagada", () =>
+    sql`
+      INSERT INTO historico (contato_id, descricao, autor_id)
+      VALUES (${contatoId}, 'Anotação apagada', ${autorId})`,
   );
 }

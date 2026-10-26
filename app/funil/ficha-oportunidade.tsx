@@ -95,6 +95,7 @@ export default function FichaOportunidade({
   etapaPorId,
   funilPorId,
   usuarioPorId,
+  euId,
   oportunidadesDoContato,
   historicoDoContato,
   anotacoesDoContato,
@@ -112,6 +113,8 @@ export default function FichaOportunidade({
   etapaPorId: Map<string, Etapa>;
   funilPorId: Map<string, Funil>;
   usuarioPorId: Map<string, Usuario>;
+  /** Quem está logado (apagar anotação é só de quem escreveu). */
+  euId: string;
   oportunidadesDoContato: Map<string, Oportunidade[]>;
   historicoDoContato: Map<string, Historico[]>;
   anotacoesDoContato: Map<string, Anotacao[]>;
@@ -473,6 +476,7 @@ export default function FichaOportunidade({
               etapaPorId={etapaPorId}
               funilPorId={funilPorId}
               usuarioPorId={usuarioPorId}
+              euId={euId}
               aoAbrirOportunidade={aoAbrirOportunidade}
             />
           </>

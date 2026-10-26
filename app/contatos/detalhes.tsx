@@ -138,12 +138,15 @@ export function SecoesContato({
   etapaPorId,
   funilPorId,
   usuarioPorId,
+  euId,
   aoAbrirOportunidade,
 }: {
   contato: Contato;
   oportunidades: Oportunidade[];
   anotacoes: Anotacao[];
   historico: Historico[];
+  /** Quem está logado: só as anotações dele podem ser apagadas. */
+  euId: string;
   /** Só a ficha da oportunidade tem as conversas na mão; sem elas, a seção some. */
   atendimentos?: Atendimento[];
   camposContato: CampoPersonalizado[];
@@ -248,6 +251,7 @@ export function SecoesContato({
         nome={contato.nome}
         anotacoes={anotacoes}
         usuarioPorId={usuarioPorId}
+        euId={euId}
       />
 
       <ObjecoesDoHistorico historico={historico} />

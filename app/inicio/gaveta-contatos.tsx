@@ -124,6 +124,7 @@ export default function GavetaContatos({
   etapaPorId,
   funilPorId,
   usuarioPorId,
+  euId,
   camposContato,
   ias,
   aoAbrirOportunidade,
@@ -136,6 +137,8 @@ export default function GavetaContatos({
   etapaPorId: Map<string, Etapa>;
   funilPorId: Map<string, Funil>;
   usuarioPorId: Map<string, Usuario>;
+  /** Quem está logado (apagar anotação é só de quem escreveu). */
+  euId: string;
   camposContato: CampoPersonalizado[];
   ias: Ia[];
   aoAbrirOportunidade: (id: string) => void;
@@ -414,6 +417,7 @@ export default function GavetaContatos({
               etapaPorId={etapaPorId}
               funilPorId={funilPorId}
               usuarioPorId={usuarioPorId}
+              euId={euId}
               aoAbrirOportunidade={aoAbrirOportunidade}
             />
 

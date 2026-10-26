@@ -33,13 +33,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { FichaContato, MensagemDaFicha } from "@/lib/contatos-ficha";
+import { ApagarAnotacao } from "../components/anotacoes-contato";
 import { adicionarAnotacao } from "./actions";
 import { assuntoDoHistorico, diaDe, hora, lerObjecao, rotuloDoDia, Selo, tempo, type Assunto, type Objecao } from "./pecas";
 
 type Item = { id: string; quando: string; assunto: Assunto } & (
   | { tipo: "conversa"; dia: FichaContato["dias"][number] }
   | { tipo: "historico"; descricao: string; autor: string | null }
-  | { tipo: "nota"; texto: string; autor: string }
+  | { tipo: "nota"; texto: string; autor: string; anotacaoId: string; minha: boolean }
   | { tipo: "video"; video: FichaContato["videos"][number] }
   | { tipo: "captacao"; captacao: FichaContato["origem"]["captacoes"][number] }
   | { tipo: "campanha"; campanha: FichaContato["campanhas"][number] }
@@ -67,7 +68,7 @@ const CANAL: Record<string, string> = {
 
 const POR_VEZ = 30;
 
-function montarItens(ficha: FichaContato, nomeDoAutor: (id: string) => string): Item[] {
+function montarItens(ficha: FichaContato, nomeDoAutor: (id: string) => string, euId: string): Item[] {
   const itens: Item[] = [];
   for (const d of ficha.dias) {
     itens.push({ id: `c${d.atendimentoId}${d.dia}`, quando: d.ultimaEm, assunto: "conversa", tipo: "conversa", dia: d });
@@ -80,7 +81,10 @@ function montarItens(ficha: FichaContato, nomeDoAutor: (id: string) => string): 
   }
   for (const a of ficha.anotacoes) {
     // Sem autor é a IA (o resumo que a IA comercial grava ao marcar reunião).
-    itens.push({ id: `n${a.id}`, quando: a.data_criacao, assunto: "nota", tipo: "nota", texto: a.texto, autor: a.autor_id ? nomeDoAutor(a.autor_id) : "IA" });
+    itens.push({
+      id: `n${a.id}`, quando: a.data_criacao, assunto: "nota", tipo: "nota", texto: a.texto,
+      autor: a.autor_id ? nomeDoAutor(a.autor_id) : "IA", anotacaoId: a.id, minha: Boolean(a.autor_id) && a.autor_id === euId,
+    });
   }
   for (const v of ficha.videos) {
     itens.push({ id: `v${v.id}`, quando: v.ultima, assunto: "video", tipo: "video", video: v });
@@ -97,10 +101,13 @@ function montarItens(ficha: FichaContato, nomeDoAutor: (id: string) => string): 
 export default function Atividade({
   ficha,
   nomeDoAutor,
+  euId,
   aoMudar,
 }: {
   ficha: FichaContato;
   nomeDoAutor: (id: string) => string;
+  /** Quem está logado: só a nota dele ganha a lixeira. */
+  euId: string;
   aoMudar: () => void;
 }) {
   const [filtro, setFiltro] = useState<Assunto | "tudo">("tudo");
@@ -109,15 +116,27 @@ export default function Atividade({
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, iniciar] = useTransition();
   const campoRef = useRef<HTMLTextAreaElement>(null);
+  // A nota apagada some na hora; o aoMudar recarrega a ficha (com o "Anotação apagada" no histórico).
+  const [apagadas, setApagadas] = useState<ReadonlySet<string>>(new Set());
 
-  const itens = useMemo(() => montarItens(ficha, nomeDoAutor), [ficha, nomeDoAutor]);
+  const itens = useMemo(
+    () => montarItens(ficha, nomeDoAutor, euId).filter((i) => !(i.tipo === "nota" && apagadas.has(i.anotacaoId))),
+    [ficha, nomeDoAutor, euId, apagadas],
+  );
+  const aoApagarNota = (id: string) => {
+    setApagadas((s) => new Set(s).add(id));
+    aoMudar();
+  };
   const contagem = useMemo(() => {
     const c = new Map<Assunto, number>();
     for (const i of itens) c.set(i.assunto, (c.get(i.assunto) ?? 0) + 1);
     return c;
   }, [itens]);
 
-  const filtrados = filtro === "tudo" ? itens : itens.filter((i) => i.assunto === filtro);
+  // Assunto que ficou sem item (a última nota apagada) volta para "Tudo": o chip
+  // dele some, e a linha do tempo não pode ficar em branco presa a ele.
+  const filtroAtivo = filtro !== "tudo" && !contagem.get(filtro) ? "tudo" : filtro;
+  const filtrados = filtroAtivo === "tudo" ? itens : itens.filter((i) => i.assunto === filtroAtivo);
   const visiveis = filtrados.slice(0, quantos);
 
   // Agrupados por dia, na ordem em que já vêm (do mais novo).
@@ -181,7 +200,7 @@ export default function Atividade({
         </div>
         {nota && (
           <div className="flex items-center justify-between gap-2 border-t border-zinc-100 px-3 py-2 dark:border-zinc-800">
-            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">Ctrl + Enter para salvar · fica no histórico, ninguém edita</span>
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">Ctrl + Enter para salvar · só você pode apagar depois</span>
             <button
               type="submit"
               disabled={salvando}
@@ -202,19 +221,19 @@ export default function Atividade({
               key={f.valor}
               type="button"
               role="tab"
-              aria-selected={filtro === f.valor}
+              aria-selected={filtroAtivo === f.valor}
               onClick={() => {
                 setFiltro(f.valor);
                 setQuantos(POR_VEZ);
               }}
               className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
-                filtro === f.valor
+                filtroAtivo === f.valor
                   ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                   : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
               }`}
             >
               {f.rotulo}
-              <span className={`ml-1 tabular-nums ${filtro === f.valor ? "opacity-60" : "text-zinc-400 dark:text-zinc-600"}`}>{f.n}</span>
+              <span className={`ml-1 tabular-nums ${filtroAtivo === f.valor ? "opacity-60" : "text-zinc-400 dark:text-zinc-600"}`}>{f.n}</span>
             </button>
           ))}
         </div>
@@ -235,7 +254,7 @@ export default function Atividade({
               </h4>
               <ol>
                 {g.itens.map((item, i) => (
-                  <Linha key={item.id} item={item} ultimo={i === g.itens.length - 1} primeiroNome={primeiroNome} />
+                  <Linha key={item.id} item={item} ultimo={i === g.itens.length - 1} primeiroNome={primeiroNome} aoApagarNota={aoApagarNota} />
                 ))}
               </ol>
             </section>
@@ -255,7 +274,17 @@ export default function Atividade({
   );
 }
 
-function Linha({ item, ultimo, primeiroNome }: { item: Item; ultimo: boolean; primeiroNome: string }) {
+function Linha({
+  item,
+  ultimo,
+  primeiroNome,
+  aoApagarNota,
+}: {
+  item: Item;
+  ultimo: boolean;
+  primeiroNome: string;
+  aoApagarNota: (id: string) => void;
+}) {
   const Icone = ICONE[item.assunto];
   const objecao = item.tipo === "historico" ? lerObjecao(item.descricao) : null;
   return (
@@ -271,7 +300,7 @@ function Linha({ item, ultimo, primeiroNome }: { item: Item; ultimo: boolean; pr
         <Icone className="size-3.5" aria-hidden="true" />
       </span>
       <div className="min-w-0 pt-1">
-        <Conteudo item={item} objecao={objecao} primeiroNome={primeiroNome} />
+        <Conteudo item={item} objecao={objecao} primeiroNome={primeiroNome} aoApagarNota={aoApagarNota} />
       </div>
     </li>
   );
@@ -293,10 +322,12 @@ function Conteudo({
   item,
   objecao,
   primeiroNome,
+  aoApagarNota,
 }: {
   item: Item;
   objecao: Objecao | null;
   primeiroNome: string;
+  aoApagarNota: (id: string) => void;
 }) {
   switch (item.tipo) {
     case "conversa":
@@ -335,7 +366,14 @@ function Conteudo({
         </>
       );
     case "nota":
-      return <Nota texto={item.texto} autor={item.autor} quando={item.quando} />;
+      return (
+        <Nota
+          texto={item.texto}
+          autor={item.autor}
+          quando={item.quando}
+          apagar={item.minha ? { anotacaoId: item.anotacaoId, aoApagar: () => aoApagarNota(item.anotacaoId) } : undefined}
+        />
+      );
     case "video": {
       const v = item.video;
       const fracao = v.duracao ? Math.min(1, v.cobertura / v.duracao) : null;
@@ -394,8 +432,21 @@ function Conteudo({
   }
 }
 
-/** Nota longa (o resumo da IA passa de dez linhas) vem dobrada, com "ver tudo". */
-function Nota({ texto, autor, quando }: { texto: string; autor: string; quando: string }) {
+/**
+ * Nota longa (o resumo da IA passa de dez linhas) vem dobrada, com "ver tudo".
+ * `apagar` só vem na nota de quem está logado: a lixeira fica ao lado do autor.
+ */
+function Nota({
+  texto,
+  autor,
+  quando,
+  apagar,
+}: {
+  texto: string;
+  autor: string;
+  quando: string;
+  apagar?: { anotacaoId: string; aoApagar: () => void };
+}) {
   const [aberta, setAberta] = useState(false);
   const longa = texto.length > 320 || texto.split(/\r?\n/).length > 6;
   return (
@@ -414,7 +465,10 @@ function Nota({ texto, autor, quando }: { texto: string; autor: string; quando: 
           </button>
         )}
       </div>
-      <Meta quando={quando}>{autor === "IA" ? "resumo da IA" : `nota de ${autor}`}</Meta>
+      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+        <Meta quando={quando}>{autor === "IA" ? "resumo da IA" : `nota de ${autor}`}</Meta>
+        {apagar && <ApagarAnotacao anotacaoId={apagar.anotacaoId} aoApagar={apagar.aoApagar} />}
+      </div>
     </>
   );
 }

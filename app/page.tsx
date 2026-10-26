@@ -85,6 +85,7 @@ export default async function Home({
       cadenciaInicial={demonstracao ? FLUXO_DEMO : um(cadencia)}
       fluxosParaInscricao={fluxos}
       graficoIa={graficoIa}
+      euId={usuario.id}
     />
   );
 }
