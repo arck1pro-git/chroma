@@ -413,3 +413,36 @@ export function eventoAoEntrarNaEtapa(oportunidadeId: string, etapaId: string): 
     void tarefa();
   }
 }
+
+/**
+ * O mesmo para um lote (a seleção do quadro movida de uma vez, 2026-10-26): UM
+ * after() que lê a etapa uma vez e, se ela tem evento e é produção, envia de 5
+ * em 5. Seiscentos after() soltos disputariam o pool do banco e as leituras de
+ * pixel na Meta ao mesmo tempo.
+ */
+export function eventosAoEntrarNaEtapa(oportunidadeIds: string[], etapaId: string): void {
+  if (oportunidadeIds.length === 0) return;
+  const tarefa = async () => {
+    try {
+      const [etapa] = await sql`SELECT meta_evento FROM etapas WHERE id = ${etapaId}`;
+      if (!etapa?.meta_evento || process.env.VERCEL_ENV !== "production") return;
+      for (let i = 0; i < oportunidadeIds.length; i += 5) {
+        await Promise.all(oportunidadeIds.slice(i, i + 5).map(async (id) => {
+          try {
+            const r = await dispararEventoDaEtapa(id, etapaId);
+            if (r.estado === "erro") console.error(`[meta-eventos] ${r.evento} de ${id}: ${r.erro}`);
+          } catch (e) {
+            console.error("[meta-eventos] falhou ao preparar o evento:", e);
+          }
+        }));
+      }
+    } catch (e) {
+      console.error("[meta-eventos] falhou ao preparar os eventos do lote:", e);
+    }
+  };
+  try {
+    after(tarefa);
+  } catch {
+    void tarefa();
+  }
+}

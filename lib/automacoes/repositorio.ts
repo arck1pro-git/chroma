@@ -186,7 +186,8 @@ export async function criarFluxoDaEtapa(nome: string, etapaId: string) {
 }
 
 /**
- * Inscreve UMA oportunidade na cadência da etapa em que ela acabou de entrar.
+ * Inscreve UMA oportunidade (ou a seleção do quadro movida de uma vez, desde
+ * 2026-10-26) na cadência da etapa em que ela acabou de entrar.
  *
  * É o que dá sentido a "as próximas que entrarem": sem isto, card movido para a
  * etapa depois da publicação ficava de fora até alguém publicar de novo. Agora
@@ -202,10 +203,8 @@ export async function criarFluxoDaEtapa(nome: string, etapaId: string) {
  * Devolve o que o motor precisa para começar, ou null quando não há o que
  * fazer. Quem dispara é quem chamou: este módulo não fala com o n8n.
  */
-export async function inscreverNaCadenciaDaEtapa(
-  oportunidadeId: string,
-  etapaId: string,
-) {
+/** A cadência da etapa que está pegando quem entra: publicada, não arquivada e com motor. */
+async function cadenciaRodandoDaEtapa(etapaId: string) {
   const [fluxo] = await sql`
     SELECT id, versao_publicada_id, motor_webhook_caminho, motor_webhook_segredo
     FROM fluxos
@@ -214,6 +213,38 @@ export async function inscreverNaCadenciaDaEtapa(
       AND arquivado_em IS NULL
       AND versao_publicada_id IS NOT NULL
       AND motor_webhook_caminho IS NOT NULL`;
+  return fluxo ?? null;
+}
+
+/**
+ * Quantas destas oportunidades ENTRARIAM na cadência da etapa se fossem movidas
+ * para ela agora: abertas, vindas de outra etapa e ainda não dentro do fluxo.
+ * É a conta que a seleção do quadro mostra antes de mover (cada uma recebe
+ * mensagem de verdade).
+ */
+export async function quantasEntrariamNaCadencia(oportunidadeIds: string[], etapaId: string): Promise<number> {
+  if (oportunidadeIds.length === 0) return 0;
+  const fluxo = await cadenciaRodandoDaEtapa(etapaId);
+  if (!fluxo) return 0;
+  const [r] = await sql`
+    SELECT count(*)::int AS n FROM oportunidades o
+     WHERE o.id = ANY(string_to_array(${listaUuid(oportunidadeIds)}, ',')::uuid[])
+       AND o.status = 'aberta'
+       AND o.etapa_id IS DISTINCT FROM ${etapaId}::uuid
+       AND NOT EXISTS (
+         SELECT 1 FROM fluxo_execucoes x
+          WHERE x.fluxo_id = ${fluxo.id} AND x.entidade_tipo = 'oportunidade' AND x.entidade_id = o.id
+            AND x.estado IN ('pendente','rodando','esperando','pausada'))`;
+  return r.n as number;
+}
+
+export async function inscreverNaCadenciaDaEtapa(
+  oportunidadeId: string | string[],
+  etapaId: string,
+) {
+  const ids = typeof oportunidadeId === "string" ? [oportunidadeId] : oportunidadeId;
+  if (ids.length === 0) return null;
+  const fluxo = await cadenciaRodandoDaEtapa(etapaId);
   if (!fluxo) return null;
 
   const inscritos = (await sql`
@@ -225,7 +256,7 @@ export async function inscreverNaCadenciaDaEtapa(
     FROM oportunidades o
     CROSS JOIN fluxos f
     WHERE f.id = ${fluxo.id}
-      AND o.id = ${oportunidadeId}
+      AND o.id = ANY(string_to_array(${listaUuid(ids)}, ',')::uuid[])
       AND o.etapa_id = ${etapaId}
       AND o.status = 'aberta'
     ON CONFLICT (fluxo_id, entidade_tipo, entidade_id)

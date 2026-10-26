@@ -1346,6 +1346,9 @@ export default function Inicio({
 
       <BarraSelecao
         selecionados={[...selecionados]}
+        // Etapas do funil aberto. Se a escolhida tem cadência, quem pede
+        // confirmação é o servidor (moverParaEtapa), com a conta real.
+        etapas={etapasDoFunil.map((e) => ({ id: e.id, nome: e.nome }))}
         usuarios={usuarios}
         segmentos={segmentos}
         fluxos={fluxosParaInscricao}

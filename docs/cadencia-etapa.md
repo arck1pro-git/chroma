@@ -44,9 +44,13 @@ escrever (à mão ou por prompt) → Salvar → [Rodando | Pausada] → Disparar
   Cadência nova nasce **pausada**; salvar de novo não liga sozinha o que estava
   parado, nem para o que estava rodando.
 - **Disparar** inscreve as oportunidades **abertas** da etapa: uma linha em
-  `fluxo_execucoes` por oportunidade e um POST no webhook por inscrição. É a
-  única ação em lote, e só funciona com a cadência rodando — pausada, o motor
-  nem reconhece o webhook (404).
+  `fluxo_execucoes` por oportunidade e um POST no webhook por inscrição. Só
+  funciona com a cadência rodando — pausada, o motor nem reconhece o webhook
+  (404).
+- **Mover em lote** (barra de seleção do quadro, "Etapa", desde 2026-10-26)
+  também inscreve: as que mudam para a etapa entram na cadência, como no
+  arraste. O servidor conta quantas entrariam e pede confirmação antes; acima de
+  50 de uma vez, recusa (`moverParaEtapa` em `app/funil/actions.ts`).
 
 Clicar duas vezes em Disparar não duplica envio: quem já está dentro do fluxo é
 barrado pelo índice parcial `ux_execucao_ativa_por_entidade` — o segundo clique

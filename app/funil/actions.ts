@@ -14,6 +14,7 @@ import {
   dadosDeDisparo,
   inscreverOportunidades,
   pausarExecucao,
+  quantasEntrariamNaCadencia,
   retomarExecucao,
   type AutomacaoDaEntidade,
 } from "@/lib/automacoes/repositorio";
@@ -23,7 +24,7 @@ import {
   ehDuplicadaNoFunil,
   jaTemAberta,
 } from "@/lib/oportunidades";
-import { entrarNaCadencia, moverOportunidadeDeEtapa } from "@/lib/mover-etapa";
+import { entrarNaCadencia, moverOportunidadeDeEtapa, moverOportunidadesDeEtapa } from "@/lib/mover-etapa";
 import type { ResultadoAcao } from "@/lib/resultado-acao";
 import {
   registrarOportunidadeCriada,
@@ -424,7 +425,8 @@ function idsValidos(ids: unknown): string[] {
   return [...new Set(limpos)].slice(0, TETO_LOTE);
 }
 
-export type ResultadoLote = { ok: boolean; mensagem: string };
+/** `confirmar`: a ação não rodou e pede confirmação — é quantas vão receber mensagem (mover para etapa com cadência). */
+export type ResultadoLote = { ok: boolean; mensagem: string; confirmar?: number };
 
 /** Passa as oportunidades selecionadas para outro responsável. */
 export async function moverParaResponsavel(
@@ -452,6 +454,64 @@ export async function moverParaResponsavel(
     ok: true,
     mensagem: `${linhas.length} ${linhas.length === 1 ? "oportunidade movida" : "oportunidades movidas"}.`,
   };
+}
+
+/**
+ * Move as oportunidades selecionadas para uma etapa — o arraste em lote
+ * (pedido dele, 2026-10-26), com o que o arraste traz: histórico, cadência da
+ * etapa e evento da Meta (lib/mover-etapa.ts).
+ *
+ * Só as do MESMO funil da etapa: trocar de funil é outra operação, e o índice
+ * de uma oportunidade aberta por contato em cada funil recusaria parte do lote
+ * no meio do caminho. As de outro funil ficam onde estão, e o aviso conta.
+ *
+ * CADÊNCIA: entrar na etapa é entrar na cadência dela, e isso manda WhatsApp de
+ * verdade. Quem decide se pede confirmação é o SERVIDOR, com a conta real (a
+ * tela de quem não tem o módulo Automações nem sabe que a etapa tem cadência):
+ * havendo quem entraria e sem `confirmado`, nada é movido e volta `confirmar`.
+ * Acima de LIMITE_CADENCIA_LOTE de uma vez, recusa — o número compartilhado já
+ * foi bloqueado por envio em massa (2026-10-23).
+ */
+const LIMITE_CADENCIA_LOTE = 50;
+
+export async function moverParaEtapa(
+  oportunidadeIds: string[],
+  etapaId: string,
+  confirmado = false,
+): Promise<ResultadoLote> {
+  const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
+  if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
+  if (!ehUuid(etapaId)) return { ok: false, mensagem: "Etapa inválida." };
+
+  const [etapa] = await sql`SELECT id, funil_id, nome FROM etapas WHERE id = ${etapaId}`;
+  if (!etapa) return { ok: false, mensagem: "Etapa não encontrada." };
+
+  const doFunil = (await sql`
+    SELECT id FROM oportunidades
+     WHERE id = ANY(string_to_array(${listaUuid(ids)}, ',')::uuid[])
+       AND funil_id = ${etapa.funil_id}`).map((l) => l.id as string);
+  if (doFunil.length === 0) return { ok: false, mensagem: "Nenhuma das selecionadas é do funil desta etapa." };
+
+  const entrariam = await quantasEntrariamNaCadencia(doFunil, etapaId);
+  if (entrariam > LIMITE_CADENCIA_LOTE) {
+    return {
+      ok: false,
+      mensagem: `${entrariam} entrariam na cadência de “${etapa.nome}” de uma vez. Para não arriscar o número, mova no máximo ${LIMITE_CADENCIA_LOTE} por vez para esta etapa.`,
+    };
+  }
+  if (entrariam > 0 && !confirmado) return { ok: false, mensagem: "", confirmar: entrariam };
+
+  const mudaram = await moverOportunidadesDeEtapa(doFunil, etapaId, etapa.funil_id as string);
+  revalidatePath("/");
+
+  const partes = [
+    `${mudaram.length} ${mudaram.length === 1 ? "oportunidade movida" : "oportunidades movidas"} para “${etapa.nome}”.`,
+  ];
+  const jaEstavam = doFunil.length - mudaram.length;
+  if (jaEstavam > 0) partes.push(`${jaEstavam} já ${jaEstavam === 1 ? "estava" : "estavam"} nela.`);
+  const outroFunil = ids.length - doFunil.length;
+  if (outroFunil > 0) partes.push(`${outroFunil} de outro funil ${outroFunil === 1 ? "ficou" : "ficaram"} onde ${outroFunil === 1 ? "estava" : "estavam"}.`);
+  return { ok: true, mensagem: partes.join(" ") };
 }
 
 /**

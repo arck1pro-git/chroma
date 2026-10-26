@@ -10,28 +10,35 @@
 // peneiram os ids de novo — o que chega do navegador nunca é confiável, mesmo
 // tendo saído daqui.
 import { useState, useTransition } from "react";
-import { Download, Send, Trash2, Users, UserCog, X } from "lucide-react";
+import { Columns3, Download, Send, Trash2, Users, UserCog, X } from "lucide-react";
 import type { Segmento, Usuario } from "@/lib/entidades";
 import {
   adicionarASegmento,
   excluirOportunidades,
   exportarOportunidades,
   inscreverEmFluxo,
+  moverParaEtapa,
   moverParaResponsavel,
 } from "./actions";
 
 export type FluxoDisponivel = { id: string; nome: string };
 
-type Painel = "responsavel" | "segmento" | "fluxo" | null;
+/** Uma etapa do funil aberto, destino do "Mover para a etapa". */
+export type EtapaDestino = { id: string; nome: string };
+
+type Painel = "etapa" | "responsavel" | "segmento" | "fluxo" | null;
 
 export default function BarraSelecao({
   selecionados,
+  etapas,
   usuarios,
   segmentos,
   fluxos,
   aoLimpar,
 }: {
   selecionados: string[];
+  /** As etapas do funil aberto, na ordem do quadro. */
+  etapas: EtapaDestino[];
   usuarios: Usuario[];
   segmentos: Segmento[];
   fluxos: FluxoDisponivel[];
@@ -40,6 +47,10 @@ export default function BarraSelecao({
   const [painel, setPainel] = useState<Painel>(null);
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [armado, setArmado] = useState(false);
+  // Etapa com cadência à espera do "Mover": mover é desfazível, a mensagem que
+  // a cadência manda não é. Quem diz que precisa confirmar, e quantas recebem,
+  // é o servidor (moverParaEtapa) — só o botão "Mover" daqui confirma.
+  const [confirmando, setConfirmando] = useState<{ etapa: EtapaDestino; quantas: number } | null>(null);
   const [ocupado, comecar] = useTransition();
 
   if (selecionados.length === 0) return null;
@@ -49,12 +60,27 @@ export default function BarraSelecao({
   function abrir(qual: Painel) {
     setAviso(null);
     setArmado(false);
+    setConfirmando(null);
     setPainel((atual) => (atual === qual ? null : qual));
   }
 
+  function moverPara(etapa: EtapaDestino, confirmado = false) {
+    comecar(async () => {
+      const r = await moverParaEtapa(selecionados, etapa.id, confirmado);
+      if (r.confirmar) {
+        setAviso(null);
+        setConfirmando({ etapa, quantas: r.confirmar });
+        return;
+      }
+      setConfirmando(null);
+      setAviso({ ok: r.ok, texto: r.mensagem });
+      setPainel(null);
+    });
+  }
+
   /**
-   * Excluir é a única ação daqui que não dá para desfazer, e por isso é a única
-   * em dois cliques: o primeiro arma o botão, o segundo apaga. Um `confirm()`
+   * Excluir não dá para desfazer, e por isso é em dois cliques (como mover para
+   * etapa com cadência, que manda mensagem): o primeiro arma o botão, o segundo apaga. Um `confirm()`
    * faria o mesmo, mas a contagem fica no próprio botão — "Excluir 12?" é a
    * pergunta inteira, sem tirar os olhos do quadro.
    *
@@ -115,13 +141,20 @@ export default function BarraSelecao({
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-center px-4">
-      <div className="pointer-events-auto w-full max-w-3xl rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="pointer-events-auto w-full max-w-4xl rounded-2xl border border-zinc-200 bg-white p-2 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="ml-1.5 mr-1 text-[12px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
             {n} {n === 1 ? "selecionada" : "selecionadas"}
           </span>
 
           <Botao Icone={Download} rotulo="Exportar" onClick={exportar} ocupado={ocupado} />
+          <Botao
+            Icone={Columns3}
+            rotulo="Etapa"
+            onClick={() => abrir("etapa")}
+            ativo={painel === "etapa"}
+            ocupado={ocupado}
+          />
           <Botao
             Icone={UserCog}
             rotulo="Responsável"
@@ -168,6 +201,44 @@ export default function BarraSelecao({
             Limpar
           </button>
         </div>
+
+        {painel === "etapa" && (
+          <Escolha
+            rotulo="Mover para a etapa"
+            vazio="Nenhuma etapa neste funil."
+            opcoes={etapas}
+            desligado={ocupado}
+            aoEscolher={(id) => {
+              const etapa = etapas.find((e) => e.id === id);
+              if (etapa) moverPara(etapa);
+            }}
+          />
+        )}
+
+        {confirmando && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-zinc-200 px-1.5 pt-1.5 dark:border-zinc-800">
+            <p className="mr-auto text-[11.5px] text-amber-700 dark:text-amber-500">
+              {confirmando.quantas} {confirmando.quantas === 1 ? "entra" : "entram"} na cadência de “{confirmando.etapa.nome}” e
+              {confirmando.quantas === 1 ? " recebe" : " recebem"} as mensagens dela. Mover mesmo assim?
+            </p>
+            <button
+              type="button"
+              onClick={() => moverPara(confirmando.etapa, true)}
+              disabled={ocupado}
+              className="rounded-lg bg-zinc-900 px-2.5 py-1 text-[12px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              Mover
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmando(null)}
+              disabled={ocupado}
+              className="rounded-lg px-2 py-1 text-[12px] text-zinc-500 transition hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
 
         {painel === "responsavel" && (
           <Escolha
@@ -250,17 +321,22 @@ function Botao({
 
 // Lista de opções que aparece abaixo da barra. Um clique = a ação inteira: com
 // seleção + confirmar seriam dois cliques para o mesmo resultado, e o aviso de
-// retorno já diz o que aconteceu.
+// retorno já diz o que aconteceu. A exceção é a etapa com cadência: aí o
+// servidor devolve `confirmar` e quem executa é o botão "Mover" da barra.
+// `desligado` enquanto uma ação roda: um segundo clique num lote longo
+// entraria na fila e repetiria a ação.
 function Escolha({
   rotulo,
   opcoes,
   aoEscolher,
   vazio,
+  desligado = false,
 }: {
   rotulo: string;
   opcoes: { id: string; nome: string }[];
   aoEscolher: (id: string) => void;
   vazio?: string;
+  desligado?: boolean;
 }) {
   return (
     <div className="mt-1.5 border-t border-zinc-200 pt-1.5 dark:border-zinc-800">
@@ -278,7 +354,8 @@ function Escolha({
               key={o.id || "nenhum"}
               type="button"
               onClick={() => aoEscolher(o.id)}
-              className="rounded-lg border border-zinc-200 px-2 py-1 text-[12px] text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              disabled={desligado}
+              className="rounded-lg border border-zinc-200 px-2 py-1 text-[12px] text-zinc-700 transition hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
             >
               {o.nome}
             </button>

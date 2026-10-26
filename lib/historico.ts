@@ -83,14 +83,31 @@ export async function moverEtapaRegistrando(
   funilId: string,
   complemento = "",
 ): Promise<boolean> {
+  return (await moverEtapaRegistrandoLote([oportunidadeId], etapaId, funilId, complemento)).length > 0;
+}
+
+/**
+ * O mesmo para uma lista — a seleção do quadro movida de uma vez (2026-10-26):
+ * um UPDATE e todas as linhas de histórico na mesma consulta, pela mesma razão
+ * de cima. Devolve as que mudaram de etapa.
+ */
+export async function moverEtapaRegistrandoLote(
+  oportunidadeIds: string[],
+  etapaId: string,
+  funilId: string,
+  complemento = "",
+): Promise<string[]> {
+  if (oportunidadeIds.length === 0) return [];
+  const ids = listaUuid(oportunidadeIds);
   const registradas = await sql`
     WITH antes AS (
-      SELECT id, contato_id, etapa_id FROM oportunidades WHERE id = ${oportunidadeId}
+      SELECT id, contato_id, etapa_id FROM oportunidades
+       WHERE id = ANY(string_to_array(${ids}, ',')::uuid[])
     ),
     movida AS (
       UPDATE oportunidades
       SET etapa_id = ${etapaId}, funil_id = ${funilId}
-      WHERE id = ${oportunidadeId}
+      WHERE id = ANY(string_to_array(${ids}, ',')::uuid[])
       RETURNING id
     )
     INSERT INTO historico (contato_id, oportunidade_id, descricao)
@@ -103,7 +120,7 @@ export async function moverEtapaRegistrando(
     LEFT JOIN etapas para ON para.id = ${etapaId}
     WHERE a.etapa_id IS DISTINCT FROM ${etapaId}::uuid
     RETURNING oportunidade_id`;
-  return registradas.length > 0;
+  return registradas.map((r) => r.oportunidade_id as string);
 }
 
 // ── Fluxo ───────────────────────────────────────────────────────────────────

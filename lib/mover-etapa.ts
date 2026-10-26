@@ -5,8 +5,8 @@
 import "server-only";
 import { inscreverNaCadenciaDaEtapa } from "@/lib/automacoes/repositorio";
 import { dispararInscritos } from "@/lib/automacoes/disparo";
-import { moverEtapaRegistrando } from "@/lib/historico";
-import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
+import { moverEtapaRegistrando, moverEtapaRegistrandoLote } from "@/lib/historico";
+import { eventoAoEntrarNaEtapa, eventosAoEntrarNaEtapa } from "@/lib/meta-eventos";
 
 /**
  * Move, registra no histórico, inscreve na cadência da etapa e manda o evento
@@ -30,7 +30,25 @@ export async function moverOportunidadeDeEtapa(
 }
 
 /**
- * Põe a oportunidade na cadência da etapa e manda o motor começar.
+ * O mesmo para a seleção do quadro (2026-10-26): um UPDATE com o histórico,
+ * uma inscrição na cadência e um disparo para o lote inteiro. Um por um, uma
+ * coluna de 600 cards estouraria o tempo da função. Devolve as que mudaram.
+ */
+export async function moverOportunidadesDeEtapa(
+  oportunidadeIds: string[],
+  etapaId: string,
+  funilId: string,
+): Promise<string[]> {
+  const mudaram = await moverEtapaRegistrandoLote(oportunidadeIds, etapaId, funilId);
+  // Só as que MUDARAM entram na cadência: a que já estava na etapa e saiu da
+  // cadência (cancelada, concluída) não pode voltar a receber por causa do lote.
+  await entrarNaCadencia(mudaram, etapaId);
+  eventosAoEntrarNaEtapa(mudaram, etapaId);
+  return mudaram;
+}
+
+/**
+ * Põe a oportunidade (ou a lista) na cadência da etapa e manda o motor começar.
  *
  * NÃO DERRUBA QUEM CHAMOU: mover o card é a ação; a cadência é consequência.
  * Se o n8n estiver fora do ar, o card fica na etapa nova do mesmo jeito e a
@@ -38,7 +56,7 @@ export async function moverOportunidadeDeEtapa(
  *
  * Exportada porque criar a oportunidade direto numa etapa também é entrar nela.
  */
-export async function entrarNaCadencia(oportunidadeId: string, etapaId: string) {
+export async function entrarNaCadencia(oportunidadeId: string | string[], etapaId: string) {
   try {
     const r = await inscreverNaCadenciaDaEtapa(oportunidadeId, etapaId);
     if (r) await dispararInscritos(r.fluxo, "oportunidade", r.inscritos);
