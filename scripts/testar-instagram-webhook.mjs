@@ -39,8 +39,10 @@ const lote = (messaging, changes = []) => ({
   object: "instagram", entry: [{ id: conta, time: Date.now(), messaging, changes }],
 });
 
-function ambiente() {
+function ambiente({ falharComentarios = true } = {}) {
   const gravadas = new Map();
+  const comentarios = new Map();
+  const candidatos = [];
   const falhas = new Set();
   const contatos = new Set();
   const ia = [];
@@ -60,7 +62,11 @@ function ambiente() {
         return [{ id }];
       }
       if (consulta.includes("INSERT INTO instagram_comentarios")) {
-        throw new Error("banco temporariamente indisponível");
+        if (falharComentarios) throw new Error("banco temporariamente indisponível");
+        const id = valores[3];
+        if (comentarios.has(id)) return [];
+        comentarios.set(id, valores[7]);
+        return [{ id: `comentario-${id}` }];
       }
       throw new Error(`SQL sem mock: ${consulta}`);
     } },
@@ -87,15 +93,33 @@ function ambiente() {
       responderComIa: async (atendimentoId, mensagemId) => { ia.push({ atendimentoId, mensagemId }); },
       alternarIaPelaPalavra: async () => {},
     },
-    "@/lib/ia/comentarios": { responderComentarioComIa: async () => {} },
+    "@/lib/ia/comentarios": { responderComentarioComIa: async (id) => { candidatos.push(id); } },
   });
   const receber = async (valor, cabecalho) => {
     const bytes = Buffer.from(typeof valor === "string" ? valor : JSON.stringify(valor));
     const hmac = `sha256=${crypto.createHmac("sha256", segredo).update(bytes).digest("hex")}`;
     return core.receberWebhookInstagram(bytes, cabecalho ?? hmac, segredo);
   };
-  return { receber, falhas, gravadas, ia, perfis, tentativas };
+  return { receber, falhas, gravadas, comentarios, candidatos, ia, perfis, tentativas };
 }
+
+test("recebe comentários automaticamente antes de avaliar regras e não duplica na reentrega", async () => {
+  const a = ambiente({ falharComentarios: false });
+  const payload = lote([], [{ field: "comments", value: {
+    id: "300", text: "Quero", from: { id: "200" }, media: { id: "400" },
+  } }]);
+  payload.entry[0].time = Math.floor(Date.now() / 1000);
+  const r = await a.receber(payload);
+  assert.equal(r.status, 200);
+  assert.equal(a.comentarios.get("300"), "Quero", "persistência independe de regra ligada");
+  assert.equal(a.candidatos.length, 0, "ação só depois da persistência");
+  await r.depois();
+  assert.deepEqual(a.candidatos, ["comentario-300"]);
+  const repetido = await a.receber(payload);
+  assert.equal(repetido.depois, null);
+  assert.equal(a.comentarios.size, 1);
+  assert.equal(a.candidatos.length, 1);
+});
 
 test("assinatura real válida confirma payloads inválidos e eventos ignoráveis com 200", async () => {
   const a = ambiente();

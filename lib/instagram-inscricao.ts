@@ -1,5 +1,5 @@
-// Liga o recebimento do Instagram no app da Meta (2026-10-26). PRONTA E NÃO
-// EXECUTADA: é ação externa no app compartilhado com o WhatsApp Cloud e os
+// Liga o recebimento do Instagram no app da Meta (2026-10-26).
+// É ação externa no app compartilhado com o WhatsApp Cloud e os
 // leads, e só roda com o OK dele (CLAUDE.md, seção 6). Nenhuma tela chama isto.
 //
 // Duas peças, idempotentes (rodar de novo só refaz o que faltar):
@@ -9,11 +9,10 @@
 //      assinatura que existe: se ela aponta para OUTRO endereço, recusa (pode
 //      ser de outro sistema; mesma trava de ligarRecebimento em
 //      lib/meta-leads.ts). Os campos que já existirem são mantidos;
-//   2. a CONFERÊNCIA de que o app está instalado em cada uma das três PÁGINAS
-//      (subscribed_apps): sem isso a Meta não entrega evento do Instagram
-//      ligado à página. Só lê: página sem o app entra no relatório como
-//      "instalar à mão" (revisão de segurança, 2026-10-26). Instalar mexeria nos
-//      eventos de página que o app já recebe (leads), e isso é decisão dele.
+//   2. a assinatura de CADA CONTA do Instagram em subscribed_apps. Conferir
+//      só a instalação na página era insuficiente: podia haver apenas leadgen.
+//      Os campos da conta são preservados. As páginas são apenas conferidas:
+//      não alteramos seus eventos de leads nem assinaturas de outros apps.
 // Nada é mexido no objeto "page" nem no "whatsapp_business_account" do app.
 //
 // Fora da Meta, o que falta para o direct funcionar: na conta do Instagram,
@@ -32,6 +31,28 @@ const CAMPOS_INSTAGRAM = ["messages", "comments"];
 type AssinaturaApp = { object: string; callback_url: string; active: boolean; fields: Array<{ name: string }> };
 
 export const CALLBACK_INSTAGRAM = `${ENDERECO_DO_CRM}/api/meta/instagram/webhook`;
+
+type AppInscrito = { id?: string; app_id?: string; subscribed_fields?: string[] };
+
+/** Sempre recebe; quem decide responder é a regra ligada, nunca a inscrição. */
+export async function inscreverContaInstagram(contaId: string, appId: string, token: string): Promise<boolean> {
+  // Não aceitar ids arbitrários, mesmo em scripts operacionais.
+  if (!PERFIS.some((p) => p.instagramId === contaId)) throw new ErroMeta("Conta do Instagram inválida.");
+  const ler = () => requisicao<{ data: AppInscrito[] }>(`${contaId}/subscribed_apps`, { accessToken: token });
+  const antes = await ler();
+  const campos = antes.data.find((a) => (a.app_id ?? a.id) === appId)?.subscribed_fields ?? [];
+  if (CAMPOS_INSTAGRAM.every((c) => campos.includes(c))) return false;
+  await requisicao(`${contaId}/subscribed_apps`, {
+    method: "POST", accessToken: token,
+    params: { subscribed_fields: [...new Set([...campos, ...CAMPOS_INSTAGRAM])].join(",") },
+  });
+  const depois = await ler();
+  const gravados = depois.data.find((a) => (a.app_id ?? a.id) === appId)?.subscribed_fields ?? [];
+  if (!CAMPOS_INSTAGRAM.every((c) => gravados.includes(c))) {
+    throw new ErroMeta("A Meta não confirmou a assinatura de mensagens e comentários nesta conta.");
+  }
+  return true;
+}
 
 /**
  * Devolve o que foi feito e o que falta fazer à mão, em frases curtas. Lança
@@ -71,6 +92,9 @@ export async function inscreverInstagramNoApp(): Promise<string[]> {
 
   for (const p of PERFIS) {
     const token = await tokenDaPaginaDoPerfil(p.paginaId);
+    if (await inscreverContaInstagram(p.instagramId, appId, token)) {
+      feito.push(`recebimento automático de mensagens e comentários ativado: ${p.nome}`);
+    }
     const apps = await requisicao<{ data: Array<{ id: string; subscribed_fields?: string[] }> }>(
       `${p.paginaId}/subscribed_apps`,
       { accessToken: token },

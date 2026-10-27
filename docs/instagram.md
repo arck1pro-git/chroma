@@ -101,10 +101,17 @@ Recebimento depende da assinatura do Instagram na Meta; criar uma regra não alt
 5. Assinar o objeto `instagram` no app da Meta, pela função `inscreverInstagramNoApp()` de
    `lib/instagram-inscricao.ts`.
    - Ela recusa se o objeto já aponta para outro callback.
+   - Inscreve também cada conta em `/{instagramId}/subscribed_apps` para `messages,comments`.
+     A assinatura só no app e a instalação em página com `leadgen` não bastam.
+     Confere a resposta (`app_id` no Instagram) e preserva campos anteriores.
    - Não mexe nas assinaturas page e whatsapp, nem instala o app em página.
    - O app é compartilhado com o WhatsApp oficial e os leads.
 6. A IA de comentários nasce desligada. Admin ou TI ligam por conta ou por postagem na tela.
    - Já existe outro robô respondendo essas contas: conferir antes de ligar, senão os dois respondem.
+
+O recebimento fica sempre ativo nas três contas, mesmo sem automação ligada. O webhook grava
+o comentário primeiro; só depois consulta a regra efetiva e executa se estiver ligada e corresponder.
+Comentários antigos importados pelo botão de busca não disparam respostas retroativas.
 
 Verificação: `node --env-file=.env scripts/jiti.mjs scripts/testar-instagram.ts`.
 
