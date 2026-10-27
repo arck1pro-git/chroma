@@ -16,6 +16,7 @@ export type ContaInstagram = {
 
 /** Uma postagem da conta, lida da Graph API (não fica no banco). */
 export type PostagemInstagram = {
+  produto?: string | null;
   id: string;
   legenda: string;
   /** IMAGE, VIDEO, CAROUSEL_ALBUM… como a Meta devolve. */

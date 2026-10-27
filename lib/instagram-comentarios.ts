@@ -292,10 +292,14 @@ export async function marcarComentariosLidos(contaId: string, midiaId: string, i
 
 /**
  * Grava os comentários recentes da postagem que o webhook não trouxe (os de
- * antes da inscrição, ou um evento perdido). Nunca dispara a IA: comentário
- * achado aqui é velho por definição. Oculto pela Meta não entra.
+ * antes da inscrição, ou um evento perdido). Busca manual só importa; o
+ * agendador marca candidatos recentes para a fila persistida. Oculto não entra.
  */
-export async function sincronizarComentarios(contaId: string, midiaId: string): Promise<{ novos: number }> {
+export async function sincronizarComentarios(
+  contaId: string, midiaId: string,
+  automatico = false,
+  midiaTipo: string | null = null,
+): Promise<{ novos: number }> {
   const perfil = perfilDaConta(contaId);
   if (!perfil) throw new Recusa("Conta do Instagram inválida.");
   if (!ehIdMeta(midiaId)) throw new Recusa("Postagem inválida.");
@@ -324,20 +328,22 @@ export async function sincronizarComentarios(contaId: string, midiaId: string): 
   // app do celular. O contato só é ligado se já existir (contato nasce no direct).
   const novos = await sql`
     INSERT INTO instagram_comentarios
-      (conta_id, midia_id, comentario_id, pai_id, autor_id, autor_usuario, texto, da_conta,
-       enviada_por, lido_em, data_criacao, contato_id)
-    SELECT ${perfil.instagramId}, ${midiaId}, x.comentario_id, x.pai_id, x.autor_id, x.autor_usuario,
+      (conta_id, midia_id, midia_tipo, comentario_id, pai_id, autor_id, autor_usuario, texto, da_conta,
+       enviada_por, lido_em, data_criacao, contato_id, automacao_pendente)
+    SELECT ${perfil.instagramId}, ${midiaId}, ${midiaTipo}, x.comentario_id, x.pai_id, x.autor_id, x.autor_usuario,
            coalesce(x.texto, ''), x.da_conta,
            CASE WHEN x.da_conta THEN 'aparelho' END,
            CASE WHEN x.da_conta THEN now() END,
            coalesce(x.quando, now()),
            (SELECT c.id FROM contatos c
-             WHERE c.campos ? 'instagram_id' AND c.campos->>'instagram_id' = x.autor_id)
+             WHERE c.campos ? 'instagram_id' AND c.campos->>'instagram_id' = x.autor_id),
+           ${automatico} AND NOT x.da_conta AND x.pai_id IS NULL
+             AND coalesce(x.quando >= now() - interval '10 minutes', false)
       FROM jsonb_to_recordset(${sql.json(linhas)})
         AS x(comentario_id text, pai_id text, autor_id text, autor_usuario text, texto text,
              da_conta boolean, quando timestamptz)
     ON CONFLICT (comentario_id) DO NOTHING
-    RETURNING id`;
+    RETURNING id, da_conta, pai_id, data_criacao`;
   return { novos: novos.length };
 }
 

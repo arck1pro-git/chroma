@@ -352,12 +352,12 @@ async function registrarComentario(bruto: unknown, perfil: Perfil, quando: Date 
   const [nova] = await sql`
     INSERT INTO instagram_comentarios
       (conta_id, midia_id, midia_tipo, comentario_id, pai_id, autor_id, autor_usuario, texto, da_conta,
-       contato_id, data_criacao)
+       contato_id, data_criacao, automacao_pendente)
     VALUES
       (${perfil.instagramId}, ${v.media.id}, ${midiaTipo}, ${v.id}, ${v.parent_id ?? null}, ${v.from.id},
        ${usuarioValido(v.from.username)}, ${texto}, false,
        (SELECT id FROM contatos WHERE campos ? 'instagram_id' AND campos->>'instagram_id' = ${v.from.id}),
-       ${quando ?? new Date()})
+       ${quando ?? new Date()}, ${!v.parent_id && !!quando && Date.now() - quando.getTime() <= COMENTARIO_RECENTE_MS})
     ON CONFLICT (comentario_id) DO NOTHING
     RETURNING id`;
   // Só o que inseriu AGORA, raiz e de evento recente (sem a hora do evento, não).

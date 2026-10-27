@@ -113,6 +113,19 @@ O recebimento fica sempre ativo nas três contas, mesmo sem automação ligada. 
 o comentário primeiro; só depois consulta a regra efetiva e executa se estiver ligada e corresponder.
 Comentários antigos importados pelo botão de busca não disparam respostas retroativas.
 
+### Conferência de entregas ausentes
+
+O agendador `[Chroma] Instagram · conferir comentarios` chama, a cada minuto, o
+`POST /api/meta/instagram/varrer`, protegido por `CRM_SERVICE_TOKEN`. Não depende do Chat aberto.
+Confere as dez publicações recentes com comentários de cada conta e todas as publicações
+com regra própria. Importa os comentários ausentes mesmo sem regra ligada. Só os recém-inseridos,
+de terceiros, raiz e com até dez minutos são avaliados pela automação normal; ela continua
+conferindo regra ligada, palavras, atendimento humano e reservas. Antigos ficam visíveis sem envio.
+Uma trava no banco impede duas rodadas simultâneas. Candidatos ficam marcados em
+`instagram_comentarios.automacao_pendente` até avaliação ou expiração; um timeout não perde
+os itens que ainda esperam. Aplicar `migration-instagram-fila.sql` antes do deploy.
+O webhook continua sendo o caminho imediato e também marca candidatos para recuperação.
+
 Verificação: `node --env-file=.env scripts/jiti.mjs scripts/testar-instagram.ts`.
 
 Sem banco nem contas reais: `node --test scripts/testar-chat-ui.mjs scripts/testar-instagram-webhook.mjs`.

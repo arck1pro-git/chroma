@@ -78,6 +78,8 @@ const SERVICO_EXATAS = new Set([
   "/api/ia/retomar",
   // A varredura dos formulários da Meta (lib/meta-leads.ts), de 5 em 5 minutos.
   "/api/meta/leads/varrer",
+  // Conferência autenticada dos comentários perdidos pelo webhook da Meta.
+  "/api/meta/instagram/varrer",
   // Os posts agendados das redes (lib/social/posts.ts), a cada minuto.
   "/api/social/publicar",
 ]);

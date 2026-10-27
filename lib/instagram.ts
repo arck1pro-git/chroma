@@ -178,6 +178,7 @@ type MidiaBruta = {
   id: string;
   caption?: string;
   media_type?: string;
+  media_product_type?: string;
   thumbnail_url?: string;
   media_url?: string;
   permalink?: string;
@@ -200,7 +201,7 @@ export async function postagensDaConta(perfil: Perfil, forcar = false): Promise<
     async () => {
       const r = await requisicao<{ data?: MidiaBruta[] }>(`${perfil.instagramId}/media`, {
         params: {
-          fields: "id,caption,media_type,thumbnail_url,media_url,permalink,timestamp,comments_count",
+          fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,comments_count",
           limit: "30",
         },
       });
@@ -211,6 +212,7 @@ export async function postagensDaConta(perfil: Perfil, forcar = false): Promise<
             id: m.id,
             legenda: (m.caption ?? "").slice(0, 2200),
             tipo: m.media_type ?? "",
+            produto: m.media_product_type ?? null,
             // Vídeo: media_url é o mp4; a miniatura é a capa.
             miniatura: m.media_type === "VIDEO" ? (m.thumbnail_url ?? null) : (m.media_url ?? m.thumbnail_url ?? null),
             link: m.permalink ?? "",

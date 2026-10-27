@@ -218,7 +218,7 @@ async function decidir(e: { texto: string; legenda: string; usuario: string | nu
  * Nunca lança: roda depois da resposta ao webhook. Toda desistência vai para o
  * log com o motivo (sem o texto do comentário).
  */
-export async function responderComentarioComIa(linhaId: string): Promise<void> {
+export async function responderComentarioComIa(linhaId: string): Promise<void | false> {
   const nao = (porque: string) => console.info(`[ia comentários] não respondeu ${linhaId}: ${porque}`);
   try {
     const linha = await linhaDoComentario(linhaId);
@@ -315,6 +315,7 @@ export async function responderComentarioComIa(linhaId: string): Promise<void> {
     }
   } catch (e) {
     console.error("[ia comentários] falhou:", linhaId, motivoDoErro(e));
+    return false;
   }
 }
 
