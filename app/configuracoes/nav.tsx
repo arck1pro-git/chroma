@@ -27,10 +27,10 @@ import {
   Smartphone,
   Tag as TagIcon,
   Users,
-  type LucideIcon,
-} from "lucide-react";
+  type TipoIcone,
+} from "@/app/components/icones";
 
-type Item = { href: string; rotulo: string; Icone: LucideIcon };
+type Item = { href: string; rotulo: string; Icone: TipoIcone };
 
 const USUARIOS: Item = { href: "/configuracoes/usuarios", rotulo: "Usuários", Icone: Users };
 

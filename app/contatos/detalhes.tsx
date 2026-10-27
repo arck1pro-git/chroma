@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { Camera, ChevronRight, Mail, MessageCircle, type LucideIcon } from "lucide-react";
 import type {
   Anotacao,
   Atendimento,
@@ -17,6 +16,7 @@ import type {
 } from "@/lib/entidades";
 import { brl, brlCurto, dataDoInstante, localizacao } from "@/lib/formato";
 import { telefoneLegivel } from "@/lib/telefone";
+import { Camera, ChevronRight, Mail, MessageCircle, type TipoIcone } from "@/app/components/icones";
 import { AnotacoesContato } from "../components/anotacoes-contato";
 import { CamposDoContato } from "../components/campos-personalizados";
 import {
@@ -103,7 +103,7 @@ export function CamposContato({
   );
 }
 
-const CANAL: Record<Atendimento["canal"], { rotulo: string; Icone: LucideIcon }> = {
+const CANAL: Record<Atendimento["canal"], { rotulo: string; Icone: TipoIcone }> = {
   whatsapp: { rotulo: "WhatsApp", Icone: MessageCircle },
   whatsapp_oficial: { rotulo: "WhatsApp API", Icone: MessageCircle },
   instagram: { rotulo: "Instagram", Icone: Camera },

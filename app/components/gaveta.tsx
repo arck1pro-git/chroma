@@ -11,6 +11,8 @@
 // Tablet não tem hover (ver a memória do layout deitado): nada aqui depende do
 // mouse para aparecer — o copiar fica sempre à vista, só apagado.
 import { useState } from "react";
+import type { Etapa, Historico, Segmento, Tag, Usuario } from "@/lib/entidades";
+import { dataHora, iniciais } from "@/lib/formato";
 import {
   Bot,
   CalendarCheck2,
@@ -23,10 +25,8 @@ import {
   StickyNote,
   TrendingUp,
   Workflow,
-  type LucideIcon,
-} from "lucide-react";
-import type { Etapa, Historico, Segmento, Tag, Usuario } from "@/lib/entidades";
-import { dataHora, iniciais } from "@/lib/formato";
+  type TipoIcone,
+} from "./icones";
 import { assuntoDoHistorico, lerObjecao, Selo, type Assunto } from "../contatos/pecas";
 import CamadaTopo from "./camada-topo";
 import { tintaDe } from "./tinta";
@@ -84,7 +84,7 @@ export function BotaoIcone({
   disabled,
   className = "",
 }: {
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   rotulo: string;
   onClick?: () => void;
   disabled?: boolean;
@@ -111,7 +111,7 @@ export function AcaoSecao({
   onClick,
   disabled,
 }: {
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
@@ -229,7 +229,7 @@ export const LINHA =
 export const LINHA_FIXA = "-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-lg px-2 py-2";
 
 /** O ícone redondo no começo de uma linha (canal, reunião, automação). */
-export function IconeLinha({ Icone, tom = "neutro" }: { Icone: LucideIcon; tom?: "neutro" | "ativo" }) {
+export function IconeLinha({ Icone, tom = "neutro" }: { Icone: TipoIcone; tom?: "neutro" | "ativo" }) {
   return (
     <span
       className={`flex size-8 shrink-0 items-center justify-center rounded-full ${
@@ -359,7 +359,7 @@ export function ObjecoesDoHistorico({ historico, limite = 3 }: { historico: Hist
   );
 }
 
-const ICONE_ASSUNTO: Record<Assunto, LucideIcon> = {
+const ICONE_ASSUNTO: Record<Assunto, TipoIcone> = {
   conversa: MessageCircle,
   negocio: TrendingUp,
   ia: Bot,

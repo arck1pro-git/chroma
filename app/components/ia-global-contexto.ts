@@ -26,14 +26,6 @@ export type CanalIaFixa = {
 
 export const IaFixa = createContext<CanalIaFixa | null>(null);
 
-/**
- * O "+" de Análises da barra, para o TI: abre o painel fixo numa conversa
- * nova SEM navegar. Por URL (?ia=nova) havia corrida — a navegação do clique
- * terminava depois da limpeza do parâmetro e o devolvia, e o segundo "+" não
- * fazia nada.
- */
-export const EVENTO_NOVA_ANALISE = "chroma:ia-nova";
-
 /** O canal, quando o painel fixo está ligado (só para o TI); null nos demais. */
 export function useIaFixa() {
   return useContext(IaFixa);

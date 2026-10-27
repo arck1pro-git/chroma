@@ -25,7 +25,7 @@
 // período ficam na URL (?pessoa=, ?ver=, ?periodo=) pelo history do navegador
 // — sem ida ao servidor — para o link abrir no mesmo lugar.
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp } from "@/app/components/icones";
 import type { Aberta, MetricasDemandas, PessoaDasMetricas, Recorte } from "./demandas";
 import FichaPessoa from "./ficha-pessoa";
 import {

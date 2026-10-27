@@ -24,8 +24,8 @@ import {
   Trash2,
   Type,
   UserRound,
-  type LucideIcon,
-} from "lucide-react";
+  type TipoIcone,
+} from "@/app/components/icones";
 import type { CampoPersonalizado } from "../dados";
 import {
   criarCampoPersonalizado,
@@ -35,7 +35,7 @@ import {
 import { botao, botaoFantasma, campoTexto, rotuloCampo, textoAjuda } from "./ui";
 import { BotaoIcone, Cabecalho, Erro, Painel, Vazio } from "./pecas";
 
-const TIPOS_CAMPO: { valor: CampoPersonalizado["tipo"]; rotulo: string; Icone: LucideIcon }[] = [
+const TIPOS_CAMPO: { valor: CampoPersonalizado["tipo"]; rotulo: string; Icone: TipoIcone }[] = [
   { valor: "texto", rotulo: "Texto", Icone: Type },
   { valor: "numero", rotulo: "Número", Icone: Hash },
   { valor: "data", rotulo: "Data", Icone: CalendarDays },

@@ -10,7 +10,6 @@
 // lib/artigo.ts. Não há "recalcular" nem salvar no meio: o que está na tela é o
 // que aquele texto produz.
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Copy, ExternalLink } from "lucide-react";
 import {
   ARTIGO_STATUS,
   ARTIGO_STATUS_LABEL,
@@ -27,6 +26,7 @@ import {
   type ArtigoStatus,
   type Blog,
 } from "@/lib/artigo";
+import { AlertTriangle, CheckCircle2, Copy, ExternalLink } from "@/app/components/icones";
 import {
   BotaoExcluir,
   BotaoSalvar,

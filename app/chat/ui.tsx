@@ -3,6 +3,7 @@
 // Peças visuais do /chat, compartilhadas pelas colunas (canais, lista,
 // conversa, comentários do Instagram). Nada aqui fala com o servidor.
 import { Fragment, useState, type ComponentType, type ReactNode } from "react";
+import { horaCurta, iniciais } from "@/lib/formato";
 import {
   Bot,
   Camera,
@@ -14,8 +15,7 @@ import {
   Layers,
   Smartphone,
   TriangleAlert,
-} from "lucide-react";
-import { horaCurta, iniciais } from "@/lib/formato";
+} from "@/app/components/icones";
 import type { AbaInstagram, CanalChat, ConversaResumo, EstadoCanal, TipoCanal } from "./tipos";
 import type { StatusMensagem } from "@/lib/entidades";
 import { telefoneLegivel } from "@/lib/telefone";
@@ -26,8 +26,9 @@ import { telefoneLegivel } from "@/lib/telefone";
 // ler: verde é o comercial (gente, WhatsApp Web), violeta é automação e IA
 // (a API oficial), rosa é o Instagram (direct e comentários, desde
 // 2026-10-26). As cores seguem o canal pela tela inteira — trilho, lista,
-// cabeçalho da conversa e os balões que a automação mandou. A lucide não tem
-// mais logo de marca: o Instagram é a câmera, como na ficha do contato.
+// cabeçalho da conversa e os balões que a automação mandou. Os ícones do
+// projeto (app/components/icones.tsx) não incluem logo de marca: o Instagram é
+// a câmera, como na ficha do contato.
 
 export const PAPEL: Record<
   TipoCanal,

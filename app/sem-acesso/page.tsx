@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { Lock } from "lucide-react";
 import { exigirLogin } from "@/lib/auth/dal";
+import { Lock } from "@/app/components/icones";
 import { sair } from "@/app/login/acoes";
 
 export const metadata: Metadata = {

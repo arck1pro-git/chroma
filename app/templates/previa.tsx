@@ -9,6 +9,7 @@
 // botões o WhatsApp mostra dois e esconde o resto em "Ver todas as opções" — a
 // prévia faz o mesmo, para não prometer uma tela que o contato não vê.
 import { Fragment, useState, type ReactNode } from "react";
+import type { ConteudoTemplate } from "@/lib/templates-whatsapp";
 import {
   Copy,
   ExternalLink,
@@ -20,11 +21,10 @@ import {
   Phone,
   Reply,
   Video,
-  type LucideIcon,
-} from "lucide-react";
-import type { ConteudoTemplate } from "@/lib/templates-whatsapp";
+  type TipoIcone,
+} from "@/app/components/icones";
 
-const ICONE_BOTAO: Record<string, LucideIcon> = {
+const ICONE_BOTAO: Record<string, TipoIcone> = {
   QUICK_REPLY: Reply,
   URL: ExternalLink,
   PHONE_NUMBER: Phone,
@@ -34,7 +34,7 @@ const ICONE_BOTAO: Record<string, LucideIcon> = {
 
 // A mídia do cabeçalho só existe no disparo (cada envio manda a sua): a prévia
 // mostra o lugar dela, não um arquivo.
-const MIDIA: Record<string, { Icone: LucideIcon; rotulo: string }> = {
+const MIDIA: Record<string, { Icone: TipoIcone; rotulo: string }> = {
   IMAGE: { Icone: ImagemIcone, rotulo: "Imagem enviada no disparo" },
   VIDEO: { Icone: Video, rotulo: "Vídeo enviado no disparo" },
   DOCUMENT: { Icone: FileText, rotulo: "Documento enviado no disparo" },

@@ -3,8 +3,8 @@
 // Criar oportunidade a partir da conversa: o contato é fixo (o dela); aqui se
 // escolhe funil, etapa, nome, valor e responsável.
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Wallet, X } from "lucide-react";
 import type { Contato, Etapa, Funil, Usuario } from "@/lib/entidades";
+import { Wallet, X } from "@/app/components/icones";
 import { criarOportunidade } from "./actions";
 
 const campoModal =

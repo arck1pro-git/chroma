@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FlaskConical, Loader2 } from "lucide-react";
+import { FlaskConical, Loader2 } from "@/app/components/icones";
 import type { AbaInstagram, DadosChat, MensagemChat } from "./tipos";
 import {
   assumirAtendimento,

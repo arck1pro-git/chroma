@@ -13,8 +13,18 @@
 // pessoa escrever. E é SÓ TEXTO — sem anexo da biblioteca, sem template; o
 // servidor recusa os dois também (lib/conversa-envio.ts).
 import { useEffect, useRef, useState, useTransition } from "react";
-import { FileText, LayoutTemplate, Loader2, Lock, Paperclip, RotateCcw, SendHorizonal, Timer, X } from "lucide-react";
 import type { Documento } from "@/lib/documentos";
+import {
+  FileText,
+  LayoutTemplate,
+  Loader2,
+  Lock,
+  Paperclip,
+  RotateCcw,
+  SendHorizonal,
+  Timer,
+  X,
+} from "@/app/components/icones";
 import type { ConversaResumo } from "./tipos";
 import { duracao, restanteDaJanela, tipoDaConversa } from "./ui";
 

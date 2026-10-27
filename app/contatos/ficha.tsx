@@ -16,11 +16,22 @@
 // ficha). Editar é um ícone; excluir mora no menu "mais", em dois passos.
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { Clock, Mail, MapPin, MessagesSquare, MoreHorizontal, Pencil, Phone, Plus, Trash2, X } from "lucide-react";
 import type { EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
 import type { Ia } from "@/lib/ia/catalogo";
 import type { CampoPersonalizado, Etapa, Funil } from "@/lib/entidades";
 import { iniciais } from "@/lib/formato";
+import {
+  Clock,
+  Mail,
+  MapPin,
+  MessagesSquare,
+  MoreHorizontal,
+  Pencil,
+  Phone,
+  Plus,
+  Trash2,
+  X,
+} from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import FormContato from "./form-contato";
 import {

@@ -14,13 +14,21 @@
 // Meta × CRM no mesmo par de cores do módulo inteiro: a ponta clara do azul é a
 // Meta (onde o lead nasce), a escura é o CRM (onde ele fica).
 import { useState } from "react";
-import {
-  BadgeDollarSign, Contact, Eye, Handshake, Image as IconeImagem, Megaphone, MousePointerClick, Trophy, Wallet,
-  type LucideIcon,
-} from "lucide-react";
 import { formatarMetrica, metrica, teveResultado, type ContextoMetrica, type LinhaMetricas } from "@/lib/meta-ads-metricas";
 import type { CriativosAds, LeadsCrm, RelatorioAds } from "@/lib/meta-ads-tipos";
 import { dividir } from "@/lib/meta-ads-calculos";
+import {
+  BadgeDollarSign,
+  Contact,
+  Eye,
+  Handshake,
+  Image as IconeImagem,
+  Megaphone,
+  MousePointerClick,
+  Trophy,
+  Wallet,
+  type TipoIcone,
+} from "@/app/components/icones";
 import { LinhasPorDia, type SerieLinha } from "../components/grafico-linhas";
 import CartaoRanking, { campanhaComoItem, criativoComoItem } from "./ranking-ads";
 import { CartaoKpi, GradeMetricas, Segmentado, Variacao, periodoCurto } from "./metricas-ui";
@@ -56,7 +64,7 @@ export default function VisaoGeralAds({ r, criativos, carregandoCriativos, erroC
 
   // O detalhe de cada cartão é curto de propósito: na tela com as duas barras
   // laterais o cartão tem ~150 px de texto, e o resto está na grade de baixo.
-  const kpis: Array<{ chave: string; Icone: LucideIcon; rotulo?: string; detalhe: string; destaque?: boolean }> = crm ? [
+  const kpis: Array<{ chave: string; Icone: TipoIcone; rotulo?: string; detalhe: string; destaque?: boolean }> = crm ? [
     { chave: "gasto", Icone: Wallet, detalhe: `CPM ${fmt("cpm")}` },
     { chave: "leadsCrm", Icone: Contact, destaque: true, detalhe: `de ${fmt("leads")} na Meta (${fmt("aproveitamento")})` },
     { chave: "custoLeadCrm", Icone: BadgeDollarSign, destaque: true, detalhe: `Na Meta: ${fmt("custoPorLead")}` },

@@ -21,13 +21,13 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Check, CloudUpload, MousePointerClick, Save, TriangleAlert } from "lucide-react";
 import { blocoPorTipo } from "@/lib/automacoes/catalogo";
 import { NO_ENTRADA, type DefinicaoFluxo } from "@/lib/automacoes/tipos";
 import {
   paraCanvas as definicaoParaCanvas,
   paraDefinicao as canvasParaDefinicao,
 } from "@/lib/automacoes/canvas";
+import { Check, CloudUpload, MousePointerClick, Save, TriangleAlert } from "@/app/components/icones";
 import ChatIa from "../components/chat-ia";
 import { publicar, salvarRascunho } from "./acoes";
 import NoBloco, { type NoDeBloco } from "./no-bloco";

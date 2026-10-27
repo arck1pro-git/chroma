@@ -11,11 +11,11 @@
 // o que mais fazia a ficha parecer formulário.
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, CalendarCheck2 } from "lucide-react";
 import type { EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
 import type { Ia } from "@/lib/ia/catalogo";
 import type { CampoPersonalizado, Contato, Etapa, Funil, Oportunidade } from "@/lib/entidades";
 import { dataDoInstante } from "@/lib/formato";
+import { ArrowUpRight, CalendarCheck2 } from "@/app/components/icones";
 import { CamposDoContato } from "../components/campos-personalizados";
 import IaDoContato from "../inicio/ia-contato";
 import { dinheiro, hora, lerObjecao, ReguaDoFunil, Selo, tempo, TituloDeGrupo, type Tom } from "./pecas";

@@ -2,8 +2,9 @@ import { exigirModulo } from "@/lib/auth/dal";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { sql } from "@/lib/db";
-import { lerDefinicao } from "@/lib/campanhas-whatsapp";
+import { lerDefinicao, numeroDaConta, recusaDoTemplate } from "@/lib/campanhas-whatsapp";
 import { telefonesMeta, templatesMeta, wabasMeta } from "@/lib/meta";
+import { DADOS_NA_CAMPANHA, LIMITE, lerTemplate, variaveisDoTemplate } from "@/lib/templates-whatsapp";
 
 const acao = z.discriminatedUnion("tipo", [
   z.object({ tipo: z.literal("registrar_lead") }),
@@ -25,24 +26,30 @@ export function ferramentasDeCampanhas(usuarioId: string) {
         sql`SELECT id,nome,funil_id FROM etapas ORDER BY nome`, wabasMeta(),
       ]);
       const telefones=(await Promise.all(wabas.map(w=>telefonesMeta(w.id)))).flat();
-      const templates=(await Promise.all(wabas.map(w=>templatesMeta(w.id)))).flat().filter(t=>t.status==="APPROVED");
-      return JSON.stringify({segmentos,tags,funis,etapas,wabas,telefones,templates:templates.map(t=>({id:t.id,nome:t.name,idioma:t.language,categoria:t.category}))});
+      const templates=(await Promise.all(wabas.map(w=>templatesMeta(w.id)))).flat().filter(t=>t.status==="APPROVED").map(lerTemplate);
+      // O texto e quantas variáveis cada template pede: sem isso a IA não sabe o que pôr em {{1}}, {{2}}.
+      return JSON.stringify({segmentos,tags,funis,etapas,wabas,telefones,templates:templates.map(t=>({id:t.id,nome:t.nome,idioma:t.idioma,categoria:t.categoria,cabecalho:t.cabecalho?.texto??null,corpo:t.corpo,variaveis:variaveisDoTemplate(t)}))});
     },
   });
   const listar = betaZodTool({name:"listar_campanhas",description:"Lista campanhas e rascunhos existentes.",inputSchema:z.object({}),run:async()=>JSON.stringify(await sql`SELECT id,nome,status,segmento_nome,template_nome,definicao FROM campanhas_whatsapp ORDER BY data_criacao DESC LIMIT 50`)});
   const escrever = betaZodTool({
     name:"criar_rascunho_campanha",
     description:"Cria um rascunho completo. Não ativa nem envia. Use ids reais de listar_alvos_campanha.",
-    inputSchema:z.object({nome:z.string(),segmento_ids:z.array(z.string()).min(1),waba_id:z.string(),telefone_id:z.string(),telefone_exibicao:z.string(),template_nome:z.string(),template_idioma:z.string(),espera_minutos:z.number().min(5).max(43200),ao_responder:z.array(acao),ao_expirar:z.array(acao)}),
+    inputSchema:z.object({nome:z.string(),segmento_ids:z.array(z.string()).min(1),waba_id:z.string(),telefone_id:z.string(),telefone_exibicao:z.string(),template_nome:z.string(),template_idioma:z.string(),espera_minutos:z.number().min(5).max(43200),
+      variaveis:z.object({cabecalho:z.array(z.string()).max(1),corpo:z.array(z.string()).max(20)}).optional().describe("Valor de cada {{n}} do template, na ordem: texto fixo ou marca de dado do contato."),
+      ao_responder:z.array(acao),ao_expirar:z.array(acao)}),
     run:async entrada=>{
       await exigirModulo("campanhas", "criar");
       const ids=[...new Set(entrada.segmento_ids)];
       const segmentos=await sql`SELECT id,nome FROM segmentos WHERE id=ANY(string_to_array(${ids.join(",")}, ',')::uuid[]) ORDER BY nome`;
       if(segmentos.length!==ids.length)return "RECUSADO: um dos segmentos não existe.";
-      const templates=await templatesMeta(entrada.waba_id);
-      if(!templates.some(t=>t.name===entrada.template_nome&&t.language===entrada.template_idioma&&t.status==="APPROVED"))return "RECUSADO: template não está aprovado ou não existe nessa WABA.";
-      const definicao=lerDefinicao({...entrada,template_nome:entrada.template_nome,template_idioma:entrada.template_idioma});
-      const [nova]=await sql`INSERT INTO campanhas_whatsapp (nome,segmento_id,segmento_nome,template_nome,template_idioma,waba_id,telefone_id,telefone_exibicao,status,definicao,criado_por) VALUES (${entrada.nome.slice(0,160)},${ids[0]}::uuid,${segmentos.map(s=>s.nome).join(", ")},${entrada.template_nome},${entrada.template_idioma},${entrada.waba_id},${entrada.telefone_id},${entrada.telefone_exibicao},'rascunho',${JSON.stringify(definicao)}::jsonb,${usuarioId}::uuid) RETURNING id`;
+      const definicao=lerDefinicao(entrada);
+      const recusa=await recusaDoTemplate(entrada.waba_id,definicao);
+      if(recusa)return `RECUSADO: ${recusa}`;
+      // O número vem do modelo: só vale um da conta, e o nome exibido sai da Meta.
+      const telefone=await numeroDaConta(entrada.waba_id,entrada.telefone_id);
+      if(!telefone)return "RECUSADO: esse número não pertence à conta do WhatsApp. Use um de listar_alvos_campanha.";
+      const [nova]=await sql`INSERT INTO campanhas_whatsapp (nome,segmento_id,segmento_nome,template_nome,template_idioma,waba_id,telefone_id,telefone_exibicao,status,definicao,criado_por) VALUES (${entrada.nome.slice(0,160)},${ids[0]}::uuid,${segmentos.map(s=>s.nome).join(", ")},${entrada.template_nome},${entrada.template_idioma},${entrada.waba_id},${telefone.id},${telefone.display_phone_number},'rascunho',${sql.json(definicao as never)},${usuarioId}::uuid) RETURNING id`;
       for(const segmentoId of ids)await sql`INSERT INTO campanha_whatsapp_segmentos(campanha_id,segmento_id) VALUES(${nova.id}::uuid,${segmentoId}::uuid) ON CONFLICT DO NOTHING`;
       gravou=true;return `Fluxo criado com id ${nova.id}. Ele não aparece em Automações; ao clicar em Ativar, ganha um workflow executor próprio no n8n e passa a inscrever também contatos novos dos segmentos.`;
     },
@@ -57,7 +64,8 @@ Antes de criar, chame listar_alvos_campanha. Use somente ids retornados. Faça o
 
 Ações: registrar_lead; adicionar_tag; adicionar_segmento; criar_oportunidade (funil, etapa e nome; {{nome}} pode entrar no nome).
 Prazo entre 5 minutos e 30 dias. Se o usuário não disser, use 1 dia (1440).
-Não crie texto livre: a mensagem é um template aprovado. Se não houver template adequado, explique que ele deve ser criado no módulo Templates.
+Variáveis: preencha exatamente as {{n}} que o template pede (a quantidade está em "variaveis" de listar_alvos_campanha), na ordem, cada uma com um dado do contato — ${DADOS_NA_CAMPANHA.map((d) => `{{${d.chave}}} (${d.rotulo.toLowerCase()})`).join(", ")} — ou com um texto fixo curto (até ${LIMITE.valorFixo} caracteres, sem link). Não existe outra marca: e-mail e telefone do contato não vão em campanha. Se não souber o que vai numa variável, pergunte antes de criar. Contato sem o dado escolhido fica de fora do disparo, com a falha registrada.
+A mensagem em si é um template aprovado: fora das variáveis, não escreva texto. Se não houver template adequado, explique que ele deve ser criado no módulo Templates.
 Você nunca dispara sem confirmação humana. A ferramenta cria o fluxo de campanha fora do módulo Automações. No fim resuma o fluxo e diga para revisar e clicar em Ativar; esse clique cria e liga o workflow executor próprio no n8n.`;
 
 export const SISTEMA_CAMPANHAS = `Você monta RASCUNHOS de campanhas oficiais de WhatsApp no AmaanOffice. Responda em português do Brasil.

@@ -1,6 +1,6 @@
-import { Bot, Clock, Hand, User } from "lucide-react";
 import type { Contato, Oportunidade, Tag, Usuario } from "@/lib/entidades";
 import { brl, localizacao } from "@/lib/formato";
+import { Bot, Clock, Hand, User } from "@/app/components/icones";
 
 // Cartão de oportunidade do kanban. Arquivo próprio porque dois lugares montam
 // o mesmo cartão — o quadro da tela inicial e as colunas do painel de

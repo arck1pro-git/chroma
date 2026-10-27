@@ -4,8 +4,8 @@
 // título, contador e dica, o botão da barra de formatação, o contador de
 // caracteres, o campo de exemplo de variável e a linha de situação do rodapé.
 // Sem estado próprio: o editor decide, estas só desenham.
-import { CircleCheck, type LucideIcon } from "lucide-react";
 import { LIMITE } from "@/lib/templates-whatsapp";
+import { CircleCheck, type TipoIcone } from "@/app/components/icones";
 
 /** A linha do rodapé do editor: o erro da Meta, o que falta, ou que está pronto. */
 export function Situacao({ erro, problema, comAvisos }: { erro: string | null; problema?: string; comAvisos: boolean }) {
@@ -90,7 +90,7 @@ export function Ferramenta({
   somenteIcone,
   disabled,
 }: {
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   rotulo: string;
   onClick: () => void;
   somenteIcone?: boolean;

@@ -7,7 +7,7 @@
 //
 // Para sozinho em 3 minutos: é o que cabe no limite de corpo da Vercel.
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Mic, Square } from "lucide-react";
+import { Loader2, Mic, Square } from "./icones";
 
 const TETO_SEGUNDOS = 180;
 

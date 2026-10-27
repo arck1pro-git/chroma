@@ -28,7 +28,7 @@
 // caminho com menos risco: os controles seguem um componente só, usado por
 // quem mais precisar, e mudar a apresentação não toca a regra de filtro.
 import { useEffect, useRef, type ReactNode } from "react";
-import { SlidersHorizontal, X } from "lucide-react";
+import { SlidersHorizontal, X } from "@/app/components/icones";
 import BarraFiltros from "./barra-filtros";
 import CamadaTopo from "../components/camada-topo";
 import { contarFiltrosAtivos, filtrosVazios, type Filtros } from "./filtros";

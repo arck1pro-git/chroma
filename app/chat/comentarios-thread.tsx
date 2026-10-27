@@ -19,6 +19,9 @@
 // Abrir a postagem marca os comentários dela como lidos, inclusive quando chega
 // comentário novo com ela aberta — o mesmo "abriu = leu" da conversa.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
+import { dataDoInstante, dataHora, horaCurta } from "@/lib/formato";
+import type { IaResumo } from "@/lib/ia/catalogo";
+import type { ComentarioInstagram, ContaInstagram, PostagemInstagram, RegraIaInstagram } from "@/lib/instagram-tipos";
 import {
   ArrowLeft,
   ExternalLink,
@@ -30,10 +33,7 @@ import {
   Smartphone,
   Sparkles,
   X,
-} from "lucide-react";
-import { dataDoInstante, dataHora, horaCurta } from "@/lib/formato";
-import type { IaResumo } from "@/lib/ia/catalogo";
-import type { ComentarioInstagram, ContaInstagram, PostagemInstagram, RegraIaInstagram } from "@/lib/instagram-tipos";
+} from "@/app/components/icones";
 import { comentariosAnteriores, marcarComentariosLidos, responderComentario, sincronizarComentarios } from "./acoes-instagram";
 import { RegraIaComentarios } from "./regras-ia-instagram";
 import { Avatar, MiniaturaPostagem, diaDe } from "./ui";

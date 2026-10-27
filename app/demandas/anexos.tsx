@@ -7,7 +7,7 @@
 //     para quem criou, anexar mais e tirar.
 // O arquivo abre por /api/demandas/anexos/<id>, que confere quem pode ver.
 import { useRef, useState, useTransition } from "react";
-import { Download, FileText, ImageIcon, Paperclip, X } from "lucide-react";
+import { Download, FileText, ImageIcon, Paperclip, X } from "@/app/components/icones";
 import { adicionarAnexoDemanda, removerAnexoDemanda } from "./acoes";
 import { subirAnexo, tamanhoEmTexto } from "./anexos-envio";
 import {

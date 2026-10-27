@@ -12,9 +12,9 @@
 // no title, o que mede. A última linha é a CONTA, lida da Meta — alcance e
 // frequência não somam campanhas.
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowDownToLine, ArrowUp, Megaphone } from "lucide-react";
 import { formatarMetrica, linhasCsv, metrica, teveResultado, VISOES, type ContextoMetrica, type LinhaMetricas } from "@/lib/meta-ads-metricas";
 import type { RelatorioAds } from "@/lib/meta-ads-tipos";
+import { ArrowDown, ArrowDownToLine, ArrowUp, Megaphone } from "@/app/components/icones";
 import { CampoBusca } from "../components/filtros-ui";
 import { Segmentado } from "./metricas-ui";
 import { Vazio, botaoAds, entregaLegivel, objetivos } from "./pecas";

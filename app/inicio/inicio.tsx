@@ -32,7 +32,18 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bot, Check, EyeOff, Funnel, Layers, LifeBuoy, ListTree, Minus, Plus, Users } from "lucide-react";
+import {
+  Bot,
+  Check,
+  EyeOff,
+  Funnel,
+  Layers,
+  LifeBuoy,
+  ListTree,
+  Minus,
+  Plus,
+  Users,
+} from "@/app/components/icones";
 import { definirOcultarLeads } from "./acoes-ia";
 import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "@/lib/entidades";
 import type { DadosFunil } from "@/lib/funil";
@@ -1368,7 +1379,8 @@ export default function Inicio({
         // mostrar a cadência nova sem F5. Para quem só lê, nunca dispara.
         aoAplicar={() => router.refresh()}
 
-        // Quem abre a análise aqui é o "+" da sidebar, ao lado de "Análises".
+        // O botão flutuante é a porta da análise aqui (o "+" da barra lateral
+        // saiu em 2026-10-27, junto com a lista de conversas).
         botaoFlutuante
         // Com uma cadência aberta, o ?ia= é dela — passar aqui também abriria
         // dois painéis na mesma conversa, e o escopo do funil nem acharia a

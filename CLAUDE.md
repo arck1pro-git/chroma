@@ -17,7 +17,7 @@ seu divergirem, vale o que está aqui. O diagnóstico da estrutura atual e a dir
 | Camada | Tecnologia |
 |---|---|
 | Framework | Next.js 16.3 (App Router), React 19.2, TypeScript estrito |
-| Estilo | Tailwind v4 (paleta zinc), ícones `lucide-react`, gráficos `chart.js`; sem biblioteca de componentes |
+| Estilo | Tailwind v4 (paleta zinc), ícones Font Awesome Free Solid por `app/components/icones.tsx`, gráficos `chart.js`; sem biblioteca de componentes |
 | Banco | Postgres no Neon, via `postgres.js` (`lib/db.ts`); sem ORM |
 | Arquivos | Supabase Storage (`lib/armazenamento.ts`), buckets privados |
 | Sessão | JWT HS256 em cookie (`jose`), senha com scrypt |
@@ -149,7 +149,9 @@ segredo ou banco importa `server-only`.
 não óbvias, com data (AAAA-MM-DD) e motivo quando for decisão de produto. Comentário explica o porquê, não repete o
 código. Comentário desatualizado se corrige junto da mudança.
 
-**Interface.** Tailwind v4 em zinc, `dark:` em tudo que tem cor, ícones lucide. Reaproveitar `app/components/`
+**Interface.** Tailwind v4 em zinc, `dark:` em tudo que tem cor. Ícone vem sempre de `app/components/icones.tsx`
+(Font Awesome Free Solid, desde 2026-10-27): ícone novo entra lá, com nome, e as telas não importam o pacote direto.
+Reaproveitar `app/components/`
 antes de criar peça nova. Minimalista: uma faixa por assunto, nada duplicado. Tem que caber em tablet deitado
 (1024×768, variante `tela-baixa:`). Classe montada em runtime precisa constar no `@source inline` do
 `app/globals.css`. Atualização ao vivo pendura no polling existente.
@@ -172,7 +174,7 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   `testar-filtro-campanhas.ts`, `testar-meta-ads.ts`, `testar-meta-eventos.ts` (pelo runner; este usa o DEV numa
   transação desfeita) e `testar-instagram.ts` (pelo runner; webhook, IA de comentário e envio do Instagram contra o
   DEV com Graph e modelo falsos, cenário marcado e apagado no fim), `testar-templates-whatsapp.ts` (pelo runner,
-  sem `.env`: as regras do editor de templates que a rota aplica antes de criar na Meta) e `scripts/testar-hooks.mjs`
+  sem `.env`: as regras do editor de templates e as do envio, com dado do contato saneado, no chat e nas campanhas) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
   falam com serviço e conta de verdade e só rodam a pedido.
 - **Script novo de verificação:** chama as funções reais pelo runner acima, contra o banco DEV: cria o cenário com

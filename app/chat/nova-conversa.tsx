@@ -9,7 +9,7 @@
 // Só números de WhatsApp: no Instagram a conversa nasce quando a pessoa manda
 // direct ou é chamada a partir de um comentário (2026-10-26), nunca daqui.
 import { useEffect, useState, useTransition } from "react";
-import { Loader2, MessageSquarePlus, Search, X } from "lucide-react";
+import { Loader2, MessageSquarePlus, Search, X } from "@/app/components/icones";
 import { buscarContatos, iniciarConversa, type ContatoBusca } from "./actions";
 import type { CanalChat } from "./tipos";
 import { Avatar, ESTADO, PAPEL, formatarTelefone } from "./ui";

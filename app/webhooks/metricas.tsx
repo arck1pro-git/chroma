@@ -12,6 +12,7 @@
 // dentro da lista, porque ele só interessa quando a resposta da terceira
 // pergunta é "ninguém".
 import { useMemo, useState, useTransition } from "react";
+import type { DetalheWebhook } from "@/lib/webhooks-dados";
 import {
   Check,
   ChevronDown,
@@ -24,9 +25,8 @@ import {
   Sparkles,
   TrendingUp,
   TriangleAlert,
-  type LucideIcon,
-} from "lucide-react";
-import type { DetalheWebhook } from "@/lib/webhooks-dados";
+  type TipoIcone,
+} from "@/app/components/icones";
 import { RecebimentosPorDia } from "./graficos";
 import { girarSegredo } from "./acoes";
 import {
@@ -104,7 +104,7 @@ function Bloco({
   children,
 }: {
   titulo: string;
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   contagem?: number;
   /** Sem respiro interno: para a tabela, que desenha as próprias células. */
   plano?: boolean;

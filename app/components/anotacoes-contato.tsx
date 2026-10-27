@@ -16,9 +16,9 @@
 // (apagarAnotacao confere o autor no DELETE); aqui é só não oferecer o botão
 // a quem não pode.
 import { useState, useTransition } from "react";
-import { Bot, Trash2 } from "lucide-react";
 import type { Anotacao, Usuario } from "@/lib/entidades";
 import { dataHora } from "@/lib/formato";
+import { Bot, Trash2 } from "./icones";
 import { adicionarAnotacao, apagarAnotacao } from "../contatos/actions";
 import BotaoDitado, { juntarDitado } from "./botao-ditado";
 import { Avatar, BOTAO_PRIMARIO, BOTAO_SECUNDARIO, MaisMenos, Secao, Vazio } from "./gaveta";

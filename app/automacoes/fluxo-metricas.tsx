@@ -11,8 +11,8 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { CircleCheck, CircleX, Hourglass, MousePointerClick } from "lucide-react";
 import { dataHora } from "@/lib/formato";
+import { CircleCheck, CircleX, Hourglass, MousePointerClick } from "@/app/components/icones";
 import NoMetrica, { type NoDeMetrica } from "./no-metrica";
 import type { DetalheFluxo } from "./dados";
 

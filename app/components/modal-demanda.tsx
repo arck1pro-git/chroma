@@ -31,8 +31,8 @@ import {
   UserRound,
   Users,
   X,
-  type LucideIcon,
-} from "lucide-react";
+  type TipoIcone,
+} from "./icones";
 import CamadaTopo from "./camada-topo";
 import BotaoDitado, { juntarDitado } from "./botao-ditado";
 import { EscolherAnexos } from "../demandas/anexos";
@@ -62,7 +62,7 @@ export type Destino = {
    * O ícone da opção no seletor. Sem ele: o chamado ganha a boia, "todos" as
    * pessoas, e quem está num grupo (a equipe) ganha as iniciais do nome.
    */
-  Icone?: LucideIcon;
+  Icone?: TipoIcone;
 };
 
 // [color-scheme]: o calendário do campo de prazo é desenhado pelo navegador, e

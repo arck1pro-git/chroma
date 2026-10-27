@@ -12,9 +12,19 @@
 // mensagem deles. Criar IA não é aqui — é a gaveta do botão IA, no topo; sem
 // nenhuma criada, o diálogo leva até lá.
 import { useEffect, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
-import { ArrowRightLeft, BookOpen, Bot, Check, Hand, Loader2, MessageCircle, Plus, X } from "lucide-react";
 import { realceDoTom, solidoDoTom } from "@/lib/cores-funil";
 import type { Ia } from "@/lib/ia/catalogo";
+import {
+  ArrowRightLeft,
+  BookOpen,
+  Bot,
+  Check,
+  Hand,
+  Loader2,
+  MessageCircle,
+  Plus,
+  X,
+} from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import type { Etapa } from "@/lib/entidades";
 import { definirIaDaEtapa } from "./acoes-ia";

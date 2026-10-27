@@ -10,8 +10,8 @@
 // peneiram os ids de novo — o que chega do navegador nunca é confiável, mesmo
 // tendo saído daqui.
 import { useState, useTransition } from "react";
-import { Columns3, Download, Send, Trash2, Users, UserCog, X } from "lucide-react";
 import type { Segmento, Usuario } from "@/lib/entidades";
+import { Columns3, Download, Send, Trash2, Users, UserCog, X } from "@/app/components/icones";
 import {
   adicionarASegmento,
   excluirOportunidades,

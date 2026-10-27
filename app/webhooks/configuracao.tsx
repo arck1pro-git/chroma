@@ -21,6 +21,7 @@
 // etapa trava a outra: bloquear "Continuar" faria de quem só veio corrigir uma
 // tag refém do formulário inteiro.
 import { useEffect, useRef, useState, useTransition } from "react";
+import type { Alvos, DetalheWebhook } from "@/lib/webhooks-dados";
 import {
   ArrowLeft,
   ArrowRight,
@@ -34,9 +35,8 @@ import {
   TriangleAlert,
   Workflow,
   X,
-  type LucideIcon,
-} from "lucide-react";
-import type { Alvos, DetalheWebhook } from "@/lib/webhooks-dados";
+  type TipoIcone,
+} from "@/app/components/icones";
 import {
   adicionarAcao,
   configurarCriarLead,
@@ -71,7 +71,7 @@ export type ChavePasso = "campos" | "acoes";
 export const PASSOS: {
   chave: ChavePasso;
   rotulo: string;
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   titulo: string;
   descricao: string;
 }[] = [

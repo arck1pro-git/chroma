@@ -21,10 +21,10 @@
 // primeiro resultado. Quem atende o dia todo não tira a mão do teclado.
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clapperboard, Plus, Search, UsersRound } from "lucide-react";
 import type { ContatoNaLista, EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
 import { MIN_DIGITOS, MIN_LETRAS, prepararTermo } from "@/lib/contatos-termo";
 import { iniciais } from "@/lib/formato";
+import { Clapperboard, Plus, Search, UsersRound } from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import FormContato from "./form-contato";
 import { criarContato } from "./actions";

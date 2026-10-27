@@ -1,8 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, CalendarCheck2, ChevronDown, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import type { AgendaGoogle, ReuniaoDoSistema } from "@/lib/agenda";
+import {
+  Bot,
+  CalendarCheck2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Sparkles,
+} from "@/app/components/icones";
 import {
   DIAS_CURTOS,
   diaDe,

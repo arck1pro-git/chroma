@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Users, X } from "lucide-react";
+import { Users, X } from "@/app/components/icones";
 import { SeletorMenu } from "../components/filtros-ui";
 import CamadaTopo from "../components/camada-topo";
 import BuscaContato, { type ContatoEscolhido } from "../components/busca-contato";

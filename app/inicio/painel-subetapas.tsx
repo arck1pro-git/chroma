@@ -10,8 +10,6 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { INSTANCIA_RESPONSAVEL, USUARIO_RESPONSAVEL } from "@/lib/automacoes/saida";
-import SeletorRemetente from "./seletor-remetente";
-import Link from "next/link";
 import {
   AlertTriangle,
   BellRing,
@@ -31,8 +29,10 @@ import {
   UserMinus,
   UserRound,
   X,
-  type LucideIcon,
-} from "lucide-react";
+  type TipoIcone,
+} from "@/app/components/icones";
+import SeletorRemetente from "./seletor-remetente";
+import Link from "next/link";
 import type { Contato, Etapa, Oportunidade, Tag, Usuario } from "@/lib/entidades";
 import { brl } from "@/lib/formato";
 import CartaoOportunidade from "../funil/cartao";
@@ -97,7 +97,7 @@ type Robo = (contato: Contato | undefined) => string | null;
 //   · quem está parado numa espera aparece como nome, não como um cartão
 //     espremido em 144px.
 
-const CANAIS: Record<string, { Icone: LucideIcon; rotulo: string }> = {
+const CANAIS: Record<string, { Icone: TipoIcone; rotulo: string }> = {
   whatsapp: { Icone: MessageSquareText, rotulo: "WhatsApp" },
   email: { Icone: Mail, rotulo: "E-mail" },
   // "Aviso", não "Ligação": o motor não disca — manda um WhatsApp para alguém

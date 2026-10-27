@@ -7,10 +7,10 @@
 // Ligado/desligado aqui é ajuste MANUAL do contato e vale em qualquer etapa;
 // "voltar a seguir a etapa" limpa o ajuste. Desligado também é o que a própria
 // IA marca quando passa a conversa para a equipe — e aqui é onde se religa.
-import { Bot } from "lucide-react";
 import { textoDoTom } from "@/lib/cores-funil";
 import type { Ia } from "@/lib/ia/catalogo";
 import type { Contato, Etapa, Funil, Oportunidade } from "@/lib/entidades";
+import { Bot } from "@/app/components/icones";
 import { InterruptorIaContato } from "../components/interruptor-ia-contato";
 import { iaDoCard } from "../funil/ia";
 import { definirIaDoContato } from "./acoes-ia";

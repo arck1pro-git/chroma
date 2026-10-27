@@ -13,8 +13,8 @@
 // agrupado mostra os passos da MINHA cópia (quando eu também recebi) e, ao lado
 // de cada um, quantas pessoas já o fizeram.
 import { useRef, useState, useTransition } from "react";
-import { Check, CircleCheck, Plus, X } from "lucide-react";
 import { TETO_ITENS, TETO_TEXTO_ITEM, type Demanda, type ItemDemanda, type ResultadoDemanda } from "@/lib/demandas-tipos";
+import { Check, CircleCheck, Plus, X } from "@/app/components/icones";
 import { horaDe } from "./datas";
 
 export type MontarChecklist = {

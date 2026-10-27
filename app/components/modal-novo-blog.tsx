@@ -4,7 +4,7 @@
 // pelo "+ Novo blog" da barra lateral.
 //
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { X } from "./icones";
 
 /** O que a barra precisa saber do blog recém-criado. */
 export type BlogCriado = { id: number; nome: string };

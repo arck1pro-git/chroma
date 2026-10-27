@@ -24,8 +24,8 @@
 // o caminho do teclado e do toque.
 import { useEffect, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import { ArrowDown, CalendarClock, Check, Flag, LifeBuoy, Paperclip } from "lucide-react";
 import type { Demanda } from "@/lib/demandas-tipos";
+import { ArrowDown, CalendarClock, Check, Flag, LifeBuoy, Paperclip } from "@/app/components/icones";
 import { tintaDe } from "../components/tinta";
 import type { ColunaId, Quadro } from "./colunas";
 import { haQuanto, horaDe, prazoEmTexto, TOM_PRAZO } from "./datas";

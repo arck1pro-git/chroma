@@ -8,9 +8,9 @@
 // conversa correndo antes de prometer algo.
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Check, Copy, Mail, MapPin, Phone, Plus, Wallet, X } from "lucide-react";
 import type { Etapa, Funil } from "@/lib/entidades";
 import { brl, localizacao } from "@/lib/formato";
+import { Check, Copy, Mail, MapPin, Phone, Plus, Wallet, X } from "@/app/components/icones";
 import { InterruptorIaContato } from "../components/interruptor-ia-contato";
 import type { IaResumo } from "@/lib/ia/catalogo";
 import type { CanalChat, ConversaAberta, TipoCanal } from "./tipos";

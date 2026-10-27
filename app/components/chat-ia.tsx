@@ -2,16 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  ArrowUp,
-  Loader2,
-  MessagesSquare,
-  Plus,
-  Trash2,
-  X,
-} from "lucide-react";
 import { dataHora } from "@/lib/formato";
+import { AlertTriangle, ArrowUp, Loader2, MessagesSquare, Plus, Trash2, X } from "./icones";
 import {
   apagarConversaIa,
   conversasDaBarra,
@@ -21,7 +13,7 @@ import {
   lerConversaIaPorId,
   listarConversasIa,
 } from "./acoes-ia";
-import { EVENTO_NOVA_ANALISE, useIaFixa, type CanalIaFixa } from "./ia-global-contexto";
+import { useIaFixa, type CanalIaFixa } from "./ia-global-contexto";
 import { lugarDoEscopo } from "@/lib/ia/navegacao";
 import TextoIa from "./texto-ia";
 import { tomEscuro } from "@/lib/cores-funil";
@@ -343,20 +335,6 @@ export function PainelIa({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversaInicial]);
   /* eslint-enable react-hooks/set-state-in-effect */
-
-  // O "+" da barra, no painel fixo do TI (ver EVENTO_NOVA_ANALISE).
-  useEffect(() => {
-    if (!global) return;
-    const aoPedirNova = () => {
-      abrirComLista();
-      novaConversa();
-    };
-    window.addEventListener(EVENTO_NOVA_ANALISE, aoPedirNova);
-    return () => window.removeEventListener(EVENTO_NOVA_ANALISE, aoPedirNova);
-    // abrirComLista/novaConversa são recriadas a cada render; o que importa é
-    // o painel ser o fixo.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [global]);
 
   // Fechar o painel corta a resposta em andamento: sem isto o modelo continua
   // gerando (e sendo cobrado) para uma tela que ninguém está vendo.

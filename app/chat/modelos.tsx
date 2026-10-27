@@ -7,8 +7,8 @@
 // prévia é montado com o que está sendo digitado — é a melhor revisão possível
 // antes de mandar algo que não dá para editar depois.
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { ArrowLeft, LayoutTemplate, Loader2, Lock, Search, SendHorizonal, X } from "lucide-react";
-import { ROTULO_CATEGORIA as CATEGORIA } from "@/lib/templates-whatsapp";
+import { DADOS_DO_CONTATO, ROTULO_CATEGORIA as CATEGORIA, type DadosDoContato } from "@/lib/templates-whatsapp";
+import { ArrowLeft, LayoutTemplate, Loader2, Lock, Search, SendHorizonal, X } from "@/app/components/icones";
 import { enviarTemplate, listarTemplates } from "./actions";
 import type { TemplateChat } from "./tipos";
 import { TextoWhatsApp } from "./ui";
@@ -31,6 +31,7 @@ export function SeletorTemplates({
   aoEnviado: () => void;
 }) {
   const [templates, setTemplates] = useState<TemplateChat[] | null>(null);
+  const [contato, setContato] = useState<DadosDoContato | null>(null);
   const [erroLista, setErroLista] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
   const [escolhido, setEscolhido] = useState<TemplateChat | null>(null);
@@ -44,7 +45,10 @@ export function SeletorTemplates({
     listarTemplates(atendimentoId).then((r) => {
       if (!vivo) return;
       if (r.erro) setErroLista(r.erro);
-      else setTemplates(r.templates ?? []);
+      else {
+        setTemplates(r.templates ?? []);
+        setContato(r.contato ?? null);
+      }
     });
     return () => {
       vivo = false;
@@ -66,10 +70,11 @@ export function SeletorTemplates({
   function escolher(t: TemplateChat) {
     setEscolhido(t);
     setErro(null);
-    // O primeiro campo do corpo quase sempre é o nome — já vem preenchido.
-    const primeiroNome = nomeContato.split(/\s+/)[0] ?? "";
+    // O primeiro campo do corpo quase sempre é o nome — já vem preenchido. Os
+    // outros dados do contato ficam no menu de cada campo.
+    const primeiroNome = contato?.primeiro_nome ?? "";
     setCabecalho(Array.from({ length: t.variaveisCabecalho }, () => ""));
-    setCorpo(Array.from({ length: t.variaveisCorpo }, (_, i) => (i === 0 && !/^\d/.test(primeiroNome) ? primeiroNome : "")));
+    setCorpo(Array.from({ length: t.variaveisCorpo }, (_, i) => (i === 0 ? primeiroNome : "")));
   }
 
   const completo =
@@ -223,10 +228,10 @@ export function SeletorTemplates({
                       <div className="flex flex-col gap-3">
                         <p className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">Variáveis</p>
                         {cabecalho.map((v, i) => (
-                          <Campo key={`c${i}`} rotulo={`Cabeçalho {{${i + 1}}}`} valor={v} aoMudar={(x) => setCabecalho((a) => a.map((y, j) => (j === i ? x : y)))} />
+                          <Campo key={`c${i}`} rotulo={`Cabeçalho {{${i + 1}}}`} valor={v} contato={contato} aoMudar={(x) => setCabecalho((a) => a.map((y, j) => (j === i ? x : y)))} />
                         ))}
                         {corpo.map((v, i) => (
-                          <Campo key={`b${i}`} rotulo={`{{${i + 1}}}`} valor={v} aoMudar={(x) => setCorpo((a) => a.map((y, j) => (j === i ? x : y)))} />
+                          <Campo key={`b${i}`} rotulo={`{{${i + 1}}}`} valor={v} contato={contato} aoMudar={(x) => setCorpo((a) => a.map((y, j) => (j === i ? x : y)))} />
                         ))}
                       </div>
                     )
@@ -254,16 +259,53 @@ export function SeletorTemplates({
   );
 }
 
-function Campo({ rotulo, valor, aoMudar }: { rotulo: string; valor: string; aoMudar: (v: string) => void }) {
+/**
+ * Um {{n}}: texto livre, ou um dado do contato pelo menu ao lado — que põe o
+ * VALOR no campo (aqui o contato é um só), para a prévia mostrar o que vai.
+ * Dado vazio no cadastro aparece no menu, desabilitado.
+ */
+function Campo({
+  rotulo,
+  valor,
+  contato,
+  aoMudar,
+}: {
+  rotulo: string;
+  valor: string;
+  contato: DadosDoContato | null;
+  aoMudar: (v: string) => void;
+}) {
   return (
-    <label className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1">
       <span className="font-mono text-[11.5px] text-zinc-500">{rotulo}</span>
-      <input
-        type="text"
-        value={valor}
-        onChange={(e) => aoMudar(e.target.value)}
-        className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[13px] text-zinc-900 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
-      />
-    </label>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={valor}
+          onChange={(e) => aoMudar(e.target.value)}
+          aria-label={`Valor de ${rotulo}`}
+          className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[13px] text-zinc-900 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
+        />
+        {contato && (
+          <select
+            value=""
+            onChange={(e) => {
+              const chave = e.target.value as keyof DadosDoContato;
+              if (chave) aoMudar(contato[chave]);
+            }}
+            aria-label={`Preencher ${rotulo} com um dado do contato`}
+            className="w-28 shrink-0 cursor-pointer rounded-lg border border-zinc-200 bg-white px-2 py-2 text-[12px] text-zinc-600 outline-none transition hover:bg-zinc-50 focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            <option value="">Contato…</option>
+            {DADOS_DO_CONTATO.map((d) => (
+              <option key={d.chave} value={d.chave} disabled={!contato[d.chave]}>
+                {d.rotulo}
+                {contato[d.chave] ? `: ${contato[d.chave]}` : " (vazio)"}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    </div>
   );
 }

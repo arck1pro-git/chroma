@@ -34,15 +34,7 @@
 // para sozinho ao conectar. Sem ele não há como saber que o celular escaneou.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Loader2,
-  MessageCircleOff,
-  Plus,
-  QrCode,
-  RefreshCw,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Loader2, MessageCircleOff, Plus, QrCode, RefreshCw, Trash2, X } from "./icones";
 import { whatsappNoSelo, type EstadoWpp, type WhatsAppNoSelo } from "./acoes-wpp";
 import {
   consultarConexao,

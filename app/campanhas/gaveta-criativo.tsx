@@ -8,9 +8,18 @@
 // Meta. A prévia é a miniatura de 480 px da Meta; o vídeo de verdade abre no
 // Instagram, pelo link do post, quando há.
 import { useEffect, useState } from "react";
-import { ArrowUpRight, BadgeDollarSign, Clapperboard, Contact, Megaphone, MousePointerClick, Wallet, X } from "lucide-react";
 import { formatarMetrica, metrica, type ContextoMetrica } from "@/lib/meta-ads-metricas";
 import type { CriativoAds } from "@/lib/meta-ads-tipos";
+import {
+  ArrowUpRight,
+  BadgeDollarSign,
+  Clapperboard,
+  Contact,
+  Megaphone,
+  MousePointerClick,
+  Wallet,
+  X,
+} from "@/app/components/icones";
 import { BotaoIcone, CascaGaveta, CorpoGaveta, LINHA, Secao, Vazio } from "../components/gaveta";
 import { CartaoKpi, GradeMetricas, Miniatura, Qualidade } from "./metricas-ui";
 import { entregaLegivel } from "./pecas";

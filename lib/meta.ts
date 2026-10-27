@@ -268,11 +268,15 @@ async function buscarWabas(): Promise<WabaMeta[]> {
   return [...new Map(porNegocio.flat().map((w) => [w.id, w])).values()];
 }
 
-// O id da conta entra no CAMINHO da Graph, assinado com o token de sistema: sem
-// esta conferência, um "123/outro_no?method=delete#" vindo de rota ou da IA
-// alcançaria qualquer nó que o token enxerga (achado da revisão de 2026-10-27).
+// Os ids da conta e do número entram no CAMINHO da Graph, assinados com o token
+// de sistema: sem esta conferência, um "123/outro_no?method=delete#" vindo de
+// rota, de campanha gravada ou da IA alcançaria qualquer nó que o token enxerga
+// (achados das revisões de 2026-10-27).
 function conferirConta(wabaId: string) {
   if (!/^\d+$/.test(wabaId)) throw new ErroMeta("Conta do WhatsApp inválida.", undefined, 400);
+}
+function conferirNumero(telefoneId: string) {
+  if (!/^\d+$/.test(telefoneId)) throw new ErroMeta("Número do WhatsApp inválido.", undefined, 400);
 }
 
 export async function telefonesMeta(wabaId: string): Promise<TelefoneMeta[]> {
@@ -308,6 +312,7 @@ export async function enviarTemplateMeta(telefoneId: string, entrada: {
   to: string; name: string; language: string;
   components?: Array<Record<string, unknown>>;
 }) {
+  conferirNumero(telefoneId);
   // No dev, só para os números liberados (lib/destino-permitido.ts).
   conferirDestino(entrada.to);
   return requisicao<{ messages?: Array<{ id: string }> }>(`${telefoneId}/messages`, {
@@ -334,6 +339,7 @@ export async function enviarTemplateMeta(telefoneId: string, entrada: {
 // transporte.
 
 export async function enviarTextoMeta(telefoneId: string, para: string, corpo: string) {
+  conferirNumero(telefoneId);
   conferirDestino(para);
   return requisicao<{ messages?: Array<{ id: string }> }>(`${telefoneId}/messages`, {
     method: "POST",
@@ -360,6 +366,7 @@ export async function subirMidiaMeta(
   mime: string,
   arquivoNome: string,
 ): Promise<string> {
+  conferirNumero(telefoneId);
   const form = new FormData();
   form.append("messaging_product", "whatsapp");
   form.append("type", mime);
@@ -391,6 +398,7 @@ export async function enviarMidiaMeta(
   midiaId: string,
   opcoes: { legenda?: string; arquivoNome?: string } = {},
 ) {
+  conferirNumero(telefoneId);
   conferirDestino(para);
   const midia: Record<string, string> = { id: midiaId };
   // Áudio não aceita legenda na Cloud API — mandar derruba o envio inteiro.
@@ -430,6 +438,7 @@ export async function baixarMidiaMeta(midiaId: string): Promise<{ bytes: Uint8Ar
 
 /** A foto de perfil do número (a que o cliente vê). URL assinada: expira. */
 export async function fotoDoTelefoneMeta(telefoneId: string): Promise<string | null> {
+  conferirNumero(telefoneId);
   const r = await requisicao<{ data?: Array<{ profile_picture_url?: string }> }>(
     `${telefoneId}/whatsapp_business_profile`,
     { params: { fields: "profile_picture_url" } },

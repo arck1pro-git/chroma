@@ -1,19 +1,28 @@
-// As regras do editor de templates (lib/templates-whatsapp.ts), que a rota
-// app/api/meta/templates aplica antes de criar o template na Meta. Puro: sem
-// banco, sem rede e sem .env.
+// As regras de lib/templates-whatsapp.ts: as do editor de templates, que a rota
+// app/api/meta/templates aplica antes de criar o template na Meta, e as do envio
+// — variáveis com dado do contato no chat e nas campanhas. Puro: sem banco, sem
+// rede e sem .env.
 //
 //   node scripts/jiti.mjs scripts/testar-templates-whatsapp.ts
 import assert from "node:assert/strict";
 import {
+  ajustarValores,
   avisosDo,
+  componentesDoEnvio,
   componentesDoRascunho,
+  dadoDoValor,
+  dadosDoContato,
   emGrupos,
   lerTemplate,
   nomeDeTemplate,
+  problemaNoEnvio,
   problemasDo,
   rascunhoDe,
-  soPorCampanhas,
+  semEnvioPeloCrm,
   telefoneDoBotao,
+  textoParaRevisao,
+  valoresIniciais,
+  valoresParaContato,
   variaveisDo,
   type Rascunho,
 } from "@/lib/templates-whatsapp";
@@ -152,9 +161,86 @@ caso("lerTemplate entende o JSON da Meta", () => {
   assert.equal(completo.botoes[0].destino, "https://x.com/{{1}}");
   assert.equal(lerTemplate(meta({ rejected_reason: "NONE" })).motivoRejeicao, null);
 });
-caso("cabeçalho de mídia ou link variável só sai por Campanhas", () => {
-  assert.equal(soPorCampanhas(completo), true);
-  assert.equal(soPorCampanhas(lerTemplate(meta({ components: [{ type: "BODY", text: "Oi" }] }))), false);
+caso("cabeçalho de mídia ou link variável o CRM não envia", () => {
+  assert.equal(semEnvioPeloCrm(completo), true);
+  assert.equal(semEnvioPeloCrm(lerTemplate(meta({ components: [{ type: "BODY", text: "Oi" }] }))), false);
+});
+
+// ── Envio: variáveis com dado do contato ────────────────────────────────────
+const ana = dadosDoContato({ nome: "Ana Maria Souza", whatsapp: "+55 (47) 99999-0000", email: " ana@exemplo.com ", cidade: null });
+const doisCampos = lerTemplate(meta({ components: [
+  { type: "HEADER", format: "TEXT", text: "Oi {{1}}" },
+  { type: "BODY", text: "Olá {{1}}, seu atendimento é {{2}}." },
+] }));
+caso("dados do contato: primeiro nome, só dígitos, sem espaço sobrando", () => {
+  assert.deepEqual(ana, { primeiro_nome: "Ana", nome: "Ana Maria Souza", numero: "5547999990000", email: "ana@exemplo.com", cidade: "" });
+  assert.equal(dadosDoContato({ nome: "+55 47 99999-0000" }).primeiro_nome, "");
+  assert.equal(dadosDoContato({ cidade: "São Bento do Sul" }).cidade, "São Bento do Sul");
+  assert.equal(dadosDoContato({ nome: "José d'Ávila" }).primeiro_nome, "José");
+});
+caso("nome de formulário público com link, domínio, número ou marca vira vazio", () => {
+  for (const nome of ["golpe.com/pix", "Ana golpe.com", "Ana https://x.io", "Ana www.x", "joao@x.com", "(47) 99999-0000",
+    "Ana *promo*", "Ana 2", "Sem nome", "Contato do Instagram", "A".repeat(61), "{{nome}}"]) {
+    const d = dadosDoContato({ nome });
+    assert.equal(d.primeiro_nome, "", nome);
+    assert.equal(d.nome, "", nome);
+  }
+  assert.equal(dadosDoContato({ cidade: "www.golpe.com" }).cidade, "");
+  assert.equal(dadosDoContato({ email: "não é e-mail" }).email, "");
+});
+caso("marcas viram os dados do contato; texto fixo passa igual", () => {
+  assert.deepEqual(valoresParaContato({ cabecalho: ["{{primeiro_nome}}"], corpo: ["Sra. {{nome}}", "amanhã\n às  10h"] }, ana), {
+    cabecalho: ["Ana"],
+    corpo: ["Sra. Ana Maria Souza", "amanhã às 10h"],
+  });
+});
+caso("contato sem o dado não vai com variável vazia", () => {
+  assert.deepEqual(valoresParaContato({ cabecalho: [], corpo: ["{{primeiro_nome}}", "{{cidade}}"] }, ana), { falta: "cidade para a {{2}}" });
+  assert.deepEqual(valoresParaContato({ cabecalho: [], corpo: ["  "] }, ana), { falta: "valor para a {{1}}" });
+});
+caso("parâmetros no formato do envio da Graph API", () =>
+  assert.deepEqual(componentesDoEnvio({ cabecalho: ["Ana"], corpo: ["Ana", "amanhã"] }), [
+    { type: "header", parameters: [{ type: "text", text: "Ana" }] },
+    { type: "body", parameters: [{ type: "text", text: "Ana" }, { type: "text", text: "amanhã" }] },
+  ]));
+caso("campanha: começa com o primeiro nome na {{1}} e confere cada variável", () => {
+  const inicio = valoresIniciais(doisCampos);
+  assert.deepEqual(inicio, { cabecalho: [""], corpo: ["{{primeiro_nome}}", ""] });
+  assert.match(problemaNoEnvio(doisCampos, inicio) ?? "", /\{\{1\}\} do cabeçalho/);
+  assert.match(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{primeiro_nome}}", ""] }) ?? "", /\{\{2\}\}/);
+  assert.match(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{apelido}}", "x"] }) ?? "", /não é dado do contato/);
+  assert.equal(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{primeiro_nome}}", "pela manhã"] }), null);
+  assert.match(problemaNoEnvio(completo, { cabecalho: [], corpo: ["Ana"] }) ?? "", /mídia/);
+});
+caso("campanha: marca com erro de digitação não sai literal", () => {
+  for (const errada of ["{{Primeiro_nome}}", "{{ primeiro_nome }}", "{{primeiro nome}}", "{{1}}", "Olá }}"])
+    assert.match(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: [errada, "x"] }) ?? "", /não é dado do contato/, errada);
+});
+caso("campanha: e-mail e WhatsApp do contato só pelo chat", () => {
+  assert.match(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{email}}", "x"] }) ?? "", /não vai em campanha/);
+  assert.match(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["Fale no {{numero}}", "x"] }) ?? "", /não vai em campanha/);
+});
+caso("campanha: valor a mais barra; sobra vazia é cortada no disparo", () => {
+  const umaSo = lerTemplate(meta({ components: [{ type: "BODY", text: "Olá {{1}}, tudo bem?" }] }));
+  assert.match(problemaNoEnvio(umaSo, { cabecalho: [], corpo: ["{{primeiro_nome}}", "extra"] }) ?? "", /sobrou valor/);
+  assert.match(problemaNoEnvio(umaSo, { cabecalho: ["Ana"], corpo: ["{{primeiro_nome}}"] }) ?? "", /não tem variável do cabeçalho/);
+  const comSobraVazia = { cabecalho: [""], corpo: ["{{primeiro_nome}}", ""] };
+  assert.equal(problemaNoEnvio(umaSo, comSobraVazia), null);
+  assert.deepEqual(ajustarValores(comSobraVazia, { cabecalho: 0, corpo: 1 }), { cabecalho: [], corpo: ["{{primeiro_nome}}"] });
+});
+caso("campanha: texto fixo longo barra", () =>
+  assert.match(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{primeiro_nome}}", "x".repeat(201)] }) ?? "", /até 200/));
+caso("variável com nome ({{first_name}}) o CRM não envia", () =>
+  assert.equal(semEnvioPeloCrm(lerTemplate(meta({ components: [{ type: "BODY", text: "Hi {{first_name}}, ok?" }] }))), true));
+caso("mensagem para conferir antes de ativar", () =>
+  assert.equal(
+    textoParaRevisao(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{primeiro_nome}}", "pela manhã"] }),
+    "Oi [Nome completo do contato]\n\nOlá [Primeiro nome do contato], seu atendimento é pela manhã.",
+  ));
+caso("o seletor reconhece valor que é só um dado do contato", () => {
+  assert.equal(dadoDoValor("{{email}}"), "email");
+  assert.equal(dadoDoValor("Sra. {{nome}}"), null);
+  assert.equal(dadoDoValor("{{apelido}}"), null);
 });
 caso("duplicar: próximo nome livre, botões agrupados e o que ficou de fora", () => {
   const { rascunho, deFora } = rascunhoDe(completo, new Set(["x_v2"]));

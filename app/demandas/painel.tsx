@@ -68,8 +68,8 @@ import {
   Send,
   Users,
   X,
-  type LucideIcon,
-} from "lucide-react";
+  type TipoIcone,
+} from "@/app/components/icones";
 import { SeletorMenu } from "../components/filtros-ui";
 import { criarPreferencia } from "../components/preferencia-local";
 import ModalDemanda, { type Destino } from "../components/modal-demanda";
@@ -1045,7 +1045,7 @@ function Vazio({
   tom,
   children,
 }: {
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   titulo: string;
   texto: string;
   tom?: "ok";

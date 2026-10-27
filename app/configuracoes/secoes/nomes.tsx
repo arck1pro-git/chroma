@@ -26,8 +26,8 @@ import {
   Tag as TagIcon,
   Trash2,
   X,
-  type LucideIcon,
-} from "lucide-react";
+  type TipoIcone,
+} from "@/app/components/icones";
 import {
   criarSegmento,
   criarTag,
@@ -48,7 +48,7 @@ const BUSCA_A_PARTIR_DE = 9;
 type Variante = {
   titulo: string;
   descricao: string;
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   /** "tag" / "segmento", no meio da frase. */
   item: string;
   /** "a" / "o": "a tag", "o segmento"; "Nenhuma" / "Nenhum". */

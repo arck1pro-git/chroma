@@ -27,7 +27,7 @@
 // o quadro ganha a altura do gráfico. A escolha é do aparelho, e quem nunca
 // escolheu numa tela baixa (tablet deitado, notebook de 768) já abre
 // minimizado: ali o gráfico custava um cartão inteiro por coluna.
-import { Bot, CalendarCheck2, ChevronDown, ChevronUp } from "lucide-react";
+import { Bot, CalendarCheck2, ChevronDown, ChevronUp } from "@/app/components/icones";
 import { LinhasPorDia, type SerieLinha } from "../components/grafico-linhas";
 import { criarPreferencia, TELA_BAIXA } from "../components/preferencia-local";
 import type { DiaIa, IaDoFunil } from "./atendimentos-ia";

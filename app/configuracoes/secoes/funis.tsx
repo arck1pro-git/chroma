@@ -38,6 +38,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import type { Etapa, Funil } from "@/lib/entidades";
 import {
   Check,
   ChevronDown,
@@ -50,8 +51,7 @@ import {
   Trash2,
   Users,
   X,
-} from "lucide-react";
-import type { Etapa, Funil } from "@/lib/entidades";
+} from "@/app/components/icones";
 import type { VinculosDaEtapa } from "../dados";
 import { TOM_PADRAO, tomDaEtapa } from "@/lib/cores-funil";
 import { EVENTOS_META_PADRAO, ehEventoPadrao, NOME_EVENTO_META } from "@/lib/meta-eventos-nomes";

@@ -10,8 +10,8 @@
 // estar logado no navegador numa conta Google com acesso à pasta. O TEXTO vem
 // pelo CRM (conta de serviço), então as anotações abrem para qualquer um.
 import { useEffect, useState } from "react";
-import { ExternalLink, FileText, Video, X } from "lucide-react";
 import type { Gravacao } from "@/lib/gravacoes";
+import { ExternalLink, FileText, Video, X } from "./icones";
 import { conteudoDeGravacao, type ConteudoPedido } from "../gravacoes/acoes";
 import CamadaTopo from "./camada-topo";
 import TextoIa from "./texto-ia";

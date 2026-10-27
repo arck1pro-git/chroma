@@ -15,7 +15,6 @@
 // Os filtros só mostram assunto que existe — chip de "Vídeos (0)" é ruído.
 import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import BotaoDitado, { juntarDitado } from "../components/botao-ditado";
 import {
   ArrowUpRight,
   Bot,
@@ -30,8 +29,9 @@ import {
   StickyNote,
   TrendingUp,
   Workflow,
-  type LucideIcon,
-} from "lucide-react";
+  type TipoIcone,
+} from "@/app/components/icones";
+import BotaoDitado, { juntarDitado } from "../components/botao-ditado";
 import type { FichaContato, MensagemDaFicha } from "@/lib/contatos-ficha";
 import { ApagarAnotacao } from "../components/anotacoes-contato";
 import { adicionarAnotacao } from "./actions";
@@ -46,7 +46,7 @@ type Item = { id: string; quando: string; assunto: Assunto } & (
   | { tipo: "campanha"; campanha: FichaContato["campanhas"][number] }
 );
 
-const ASSUNTOS: { valor: Assunto; rotulo: string; Icone: LucideIcon }[] = [
+const ASSUNTOS: { valor: Assunto; rotulo: string; Icone: TipoIcone }[] = [
   { valor: "conversa", rotulo: "Conversas", Icone: MessageCircle },
   { valor: "negocio", rotulo: "Negócio", Icone: TrendingUp },
   { valor: "ia", rotulo: "IA", Icone: Bot },
@@ -57,7 +57,7 @@ const ASSUNTOS: { valor: Assunto; rotulo: string; Icone: LucideIcon }[] = [
   { valor: "entrada", rotulo: "Entrada", Icone: Inbox },
   { valor: "sistema", rotulo: "Sistema", Icone: History },
 ];
-const ICONE = Object.fromEntries(ASSUNTOS.map((a) => [a.valor, a.Icone])) as Record<Assunto, LucideIcon>;
+const ICONE = Object.fromEntries(ASSUNTOS.map((a) => [a.valor, a.Icone])) as Record<Assunto, TipoIcone>;
 
 const CANAL: Record<string, string> = {
   whatsapp: "WhatsApp",

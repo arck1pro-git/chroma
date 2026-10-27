@@ -27,6 +27,7 @@
 // avatar, numa faixa própria; e o painel de conexão põe o QR ao lado dos
 // passos de como escaneá-lo, em vez de um bloco de texto embaixo.
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import type { ResultadoAcao } from "@/lib/resultado-acao";
 import {
   Check,
   CheckCircle2,
@@ -41,8 +42,7 @@ import {
   Trash2,
   Webhook,
   X,
-} from "lucide-react";
-import type { ResultadoAcao } from "@/lib/resultado-acao";
+} from "@/app/components/icones";
 import type { InstanciaUazapi, UsuarioConfig } from "../dados";
 import {
   consultarConexao,

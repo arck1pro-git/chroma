@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
-import { Bot, CalendarCheck2 } from "lucide-react";
 import type { AgendaGoogle, EventoAgenda, ReuniaoDoSistema } from "@/lib/agenda";
+import { Bot, CalendarCheck2 } from "@/app/components/icones";
 
 // O que todas as visões dividem para desenhar um evento.
 

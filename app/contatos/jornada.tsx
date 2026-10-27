@@ -10,6 +10,8 @@
 //
 // Só entra marco que existe: lead que chegou ontem pelo WhatsApp tem uma
 // jornada curta, e está certo que pareça curta.
+import type { EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
+import { dataDoInstante } from "@/lib/formato";
 import {
   CalendarCheck2,
   Clapperboard,
@@ -20,15 +22,13 @@ import {
   ThumbsDown,
   Trophy,
   UserPlus,
-  type LucideIcon,
-} from "lucide-react";
-import type { EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
-import { dataDoInstante } from "@/lib/formato";
+  type TipoIcone,
+} from "@/app/components/icones";
 import { dinheiro } from "./pecas";
 
 type Marco = {
   chave: string;
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   rotulo: string;
   detalhe: string | null;
   quando: string | null;

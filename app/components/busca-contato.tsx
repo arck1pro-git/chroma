@@ -6,9 +6,9 @@
 // aparece quando é pesquisado). A busca é a mesma da gaveta de contatos
 // (buscarContatos → lib/contatos-busca.ts).
 import { useEffect, useState } from "react";
-import { Loader2, Search, User, X } from "lucide-react";
 import type { ContatoEncontrado } from "@/lib/contatos-busca";
 import { MIN_DIGITOS, MIN_LETRAS, prepararTermo } from "@/lib/contatos-termo";
+import { Loader2, Search, User, X } from "./icones";
 import { buscarContatos } from "../contatos/actions";
 
 export type ContatoEscolhido = { id: string; nome: string; detalhe?: string };

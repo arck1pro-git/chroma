@@ -1,10 +1,10 @@
 // De qual TELA é cada conversa de IA.
 //
-// A sidebar lista as conversas de todos os painéis juntos, como no ChatGPT. Mas
-// aqui uma conversa não é uma tela própria: ela aconteceu DENTRO de um lugar do
-// CRM — o quadro da raiz, o editor de um fluxo, o painel de cadência de uma
-// etapa. Clicar tem que levar de volta àquele lugar, com o painel aberto na
-// conversa certa.
+// Uma conversa não é uma tela própria: ela aconteceu DENTRO de um lugar do CRM
+// — o quadro da raiz, o editor de um fluxo, o painel de cadência de uma etapa.
+// A lista de conversas do painel de IA (app/components/chat-ia.tsx) mostra esse
+// lugar ao lado de cada uma. Até 2026-10-27 a barra lateral também listava as
+// conversas e levava de volta a elas (rotaDaConversa); saiu a pedido dele.
 //
 // O que carrega essa informação é `ia_conversas.escopo`, que já existia para
 // separar as listas. Os formatos:
@@ -20,45 +20,15 @@
 //
 // ⚠ O escopo do editor era só 'automacoes', sem o id — o que tornava
 // impossível saber a qual fluxo a conversa pertencia. Passou a carregar o id
-// (app/automacoes/builder.tsx). Conversas gravadas com o formato antigo caem no
-// fallback de `rotaDaConversa` e abrem a lista de automações, que é o mais
-// perto que dá para chegar sem a informação.
+// (app/automacoes/builder.tsx).
 
 export type EscopoConversa = string;
 
-/** O rótulo do lugar, para a sidebar mostrar de onde veio a conversa. */
+/** O rótulo do lugar, para a lista de conversas mostrar de onde veio cada uma. */
 export function lugarDoEscopo(escopo: EscopoConversa): string {
   if (escopo === "funil") return "Funil";
   if (escopo === "webhooks") return "Webhooks";
   if (escopo.startsWith("cadencia:")) return "Cadência";
   if (escopo.startsWith("automacoes")) return "Automação";
   return "CRM";
-}
-
-/**
- * A URL que reabre a conversa no lugar onde ela foi feita.
- *
- * `?ia=<id>` é lido pela tela de destino, que abre o painel já naquela conversa
- * (ver o prop `conversaInicial` de app/components/chat-ia.tsx).
- */
-export function rotaDaConversa(escopo: EscopoConversa, id: string): string {
-  if (escopo.startsWith("cadencia:")) {
-    const fluxoId = escopo.slice("cadencia:".length);
-    // A cadência mora num painel da raiz, não em rota própria: a raiz abre o
-    // painel daquele fluxo por ?cadencia=.
-    return `/?cadencia=${encodeURIComponent(fluxoId)}&ia=${id}`;
-  }
-
-  if (escopo.startsWith("automacoes:")) {
-    const fluxoId = escopo.slice("automacoes:".length);
-    return `/automacoes/${encodeURIComponent(fluxoId)}?ia=${id}`;
-  }
-
-  if (escopo === "webhooks") return `/webhooks?ia=${id}`;
-
-  // 'automacoes' sem id (formato antigo): sem saber o fluxo, a lista é o
-  // destino honesto. Abrir um fluxo qualquer seria pior que não abrir nenhum.
-  if (escopo === "automacoes") return "/automacoes";
-
-  return `/?ia=${id}`;
 }

@@ -12,7 +12,7 @@
 // tabela: dá para passar a equipe inteira sem fechar a ficha — é o "ver o
 // desempenho de cada um" que ele pediu em 2026-10-08.
 import { useEffect, useRef } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import type { Aberta, PessoaDasMetricas, Recorte } from "./demandas";
 import { Agora, Avatar, Grafico, NaMesa, TresPeriodos, type Visao } from "./pecas";

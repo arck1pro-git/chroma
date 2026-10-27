@@ -4,8 +4,8 @@
 // meet@arck1pro.com (lib/gravacoes.ts), da mais nova para a mais antiga, com
 // busca pelo nome. Clicar abre o visor — vídeo e anotações do Gemini.
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Search, Sparkles, Video, X } from "lucide-react";
 import type { Gravacao } from "@/lib/gravacoes";
+import { FileText, Search, Sparkles, Video, X } from "@/app/components/icones";
 import { listarGravacoes, type ListaDeGravacoes } from "../gravacoes/acoes";
 import { BotaoIcone, Carregando, CascaGaveta, CorpoGaveta, IconeLinha, LINHA, Vazio } from "../components/gaveta";
 import VisorGravacao, { quandoDaGravacao, tituloDaGravacao } from "../components/visor-gravacao";

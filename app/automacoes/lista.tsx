@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogIn, Plus, Search, SearchX, Workflow } from "lucide-react";
+import { LogIn, Plus, Search, SearchX, Workflow } from "@/app/components/icones";
 import { criarFluxo } from "./acoes";
 import { normalizar } from "../filtros-comuns";
 import { dataCurta } from "@/lib/formato";

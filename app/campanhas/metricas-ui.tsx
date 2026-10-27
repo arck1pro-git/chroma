@@ -9,10 +9,19 @@
 // COR SÓ ONDE HÁ JULGAMENTO: a seta é verde quando a métrica melhorou e
 // vermelha quando piorou, pelo `melhor` do catálogo (custo que sobe é ruim,
 // lead que sobe é bom). Investido e impressões não têm lado: a seta fica cinza.
-import { ArrowDownRight, ArrowUpRight, Clapperboard, Image as IconeImagem, Layers, Minus, Trophy, type LucideIcon } from "lucide-react";
 import { GRUPOS, METRICAS, formatarMetrica, variacao, type ContextoMetrica, type GrupoMetrica, type LinhaMetricas } from "@/lib/meta-ads-metricas";
 import { criteriosDisponiveis } from "@/lib/meta-ads-ranking";
 import type { TipoCriativoAds } from "@/lib/meta-ads-tipos";
+import {
+  Clapperboard,
+  Image as IconeImagem,
+  Layers,
+  Minus,
+  TrendingDown,
+  TrendingUp,
+  Trophy,
+  type TipoIcone,
+} from "@/app/components/icones";
 import { SeletorMenu } from "../components/filtros-ui";
 
 const decimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
@@ -26,7 +35,7 @@ export function Variacao({ atual, anterior, melhor, rotuloAnterior }: {
   const estavel = Math.abs(v) < 0.5;
   const subiu = v > 0;
   const bom = melhor === null || estavel ? null : (melhor === "maior") === subiu;
-  const Icone = estavel ? Minus : subiu ? ArrowUpRight : ArrowDownRight;
+  const Icone = estavel ? Minus : subiu ? TrendingUp : TrendingDown;
   const cor = bom === null ? "text-zinc-500 dark:text-zinc-400"
     : bom ? "text-emerald-700 dark:text-emerald-400" : "text-rose-700 dark:text-rose-400";
   const texto = estavel ? "estável" : `${subiu ? "+" : "−"}${decimal.format(Math.min(Math.abs(v), 999))}%`;
@@ -42,7 +51,7 @@ export function Variacao({ atual, anterior, melhor, rotuloAnterior }: {
 
 /** O número grande do topo: rótulo, valor, variação e uma linha de contexto. */
 export function CartaoKpi({ Icone, rotulo, valor, variacao: seta, detalhe, ordem, destaque }: {
-  Icone: LucideIcon; rotulo: string; valor: string; variacao?: React.ReactNode; detalhe?: React.ReactNode; ordem: number; destaque?: boolean;
+  Icone: TipoIcone; rotulo: string; valor: string; variacao?: React.ReactNode; detalhe?: React.ReactNode; ordem: number; destaque?: boolean;
 }) {
   return (
     <div style={{ animationDelay: `${ordem * 26}ms` }}
@@ -104,7 +113,7 @@ export function GradeMetricas({ linha, anterior, ctx, grupos, colunas = "grid-co
   );
 }
 
-const ICONE_TIPO: Record<TipoCriativoAds, LucideIcon> = { video: Clapperboard, imagem: IconeImagem, outro: Layers };
+const ICONE_TIPO: Record<TipoCriativoAds, TipoIcone> = { video: Clapperboard, imagem: IconeImagem, outro: Layers };
 
 /**
  * A miniatura do criativo. <img> e não next/image: a origem é a CDN da Meta,

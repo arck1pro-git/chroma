@@ -28,7 +28,7 @@ o `npx` baixaria pacotes do registro.
 | Filtro de campanhas | mudou `app/inicio/filtro-campanhas.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-filtro-campanhas.ts` |
 | Meta Ads | mudou `lib/meta.ts` ou `lib/meta-ads-*` | `node --env-file=.env scripts/jiti.mjs scripts/testar-meta-ads.ts` |
 | Eventos da Meta | mudou `lib/meta-eventos.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-meta-eventos.ts` |
-| Templates do WhatsApp | mudou `lib/templates-whatsapp.ts` ou `app/api/meta/templates/` | `node scripts/jiti.mjs scripts/testar-templates-whatsapp.ts` |
+| Templates do WhatsApp | mudou `lib/templates-whatsapp.ts`, `lib/campanhas-whatsapp.ts` ou `app/api/meta/templates/` | `node scripts/jiti.mjs scripts/testar-templates-whatsapp.ts` |
 | Agenda e horários da IA | mudou `lib/agenda.ts` ou `lib/google-oauth.ts` | `node scripts/testar-agenda-ocupados.mjs` |
 | Hooks do Claude Code | mudou `.claude/hooks/` ou `.claude/settings.json` | `node scripts/testar-hooks.mjs` |
 | Build | mudou `next.config.ts`, `proxy.ts`, `app/layout.tsx`, `package.json` ou `tsconfig.json`; rota ou página nova; alvo `build` ou `tudo` | `npm run build` |

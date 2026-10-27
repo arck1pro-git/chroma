@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Search, SearchX } from "lucide-react";
 import { BLOCOS_POR_DOMINIO, CATALOGO, SECOES } from "@/lib/automacoes/catalogo";
 import type { Bloco, Dominio } from "@/lib/automacoes/tipos";
+import { ChevronLeft, ChevronRight, Search, SearchX } from "@/app/components/icones";
 import { normalizar } from "../filtros-comuns";
 import { CORES, ICONES, ICONES_DOMINIO, ICONE_PADRAO } from "./aparencia";
 

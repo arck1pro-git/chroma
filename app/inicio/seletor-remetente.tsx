@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, ChevronDown, Send, Smartphone, UserRound } from "lucide-react";
+import { Check, ChevronDown, Send, Smartphone, UserRound } from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import { INSTANCIA_RESPONSAVEL } from "@/lib/automacoes/saida";
 import type { InstanciaEscolhivel } from "./cadencias";

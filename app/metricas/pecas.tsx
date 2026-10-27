@@ -7,7 +7,7 @@
 // e o da equipe na página têm de se ler do mesmo jeito.
 import { useId, useMemo } from "react";
 import Link from "next/link";
-import { ArrowRight, CalendarClock, CircleCheck, Flag, LifeBuoy, ListPlus } from "lucide-react";
+import { ArrowRight, CalendarClock, CircleCheck, Flag, LifeBuoy, ListPlus } from "@/app/components/icones";
 import { LinhasPorDia, type EscalaLinha, type SerieLinha } from "../components/grafico-linhas";
 import { tintaDe } from "../components/tinta";
 import { prazoEmTexto, TOM_PRAZO } from "../demandas/datas";

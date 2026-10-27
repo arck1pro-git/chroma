@@ -21,8 +21,8 @@
 // vem COPIAR, não o que se ajusta.
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Pencil, Power, PowerOff, Trash2, Webhook as WebhookIcon } from "lucide-react";
 import type { Alvos, DetalheWebhook } from "@/lib/webhooks-dados";
+import { Check, Pencil, Power, PowerOff, Trash2, Webhook as WebhookIcon } from "@/app/components/icones";
 import Configuracao, {
   AbasDaConfiguracao,
   calcularPendencias,

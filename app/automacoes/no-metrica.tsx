@@ -2,9 +2,9 @@
 
 import { memo } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { LogIn } from "lucide-react";
 import { blocoPorTipo } from "@/lib/automacoes/catalogo";
 import { NO_ENTRADA } from "@/lib/automacoes/tipos";
+import { LogIn } from "@/app/components/icones";
 import { CORES, ICONES, ICONE_PADRAO } from "./aparencia";
 
 export type DadosMetrica = {

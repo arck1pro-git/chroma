@@ -10,7 +10,6 @@
 // situação e o começo do texto. ↑ e ↓ andam pela lista sem o mouse.
 import { useMemo, useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, LayoutTemplate, Plus, RefreshCw, TriangleAlert } from "lucide-react";
 import {
   IDIOMA_PADRAO,
   RASCUNHO_VAZIO,
@@ -18,6 +17,7 @@ import {
   ROTULO_CATEGORIA,
   type Rascunho,
 } from "@/lib/templates-whatsapp";
+import { Building2, LayoutTemplate, Plus, RefreshCw, TriangleAlert } from "@/app/components/icones";
 import { CampoBusca, Chip, SeletorMenu } from "../components/filtros-ui";
 import { BOTAO_PRIMARIO, BOTAO_SECUNDARIO, BotaoIcone } from "../components/gaveta";
 import type { Tom } from "../contatos/pecas";

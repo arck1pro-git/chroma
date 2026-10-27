@@ -5,9 +5,16 @@
 // — o rejeitado diz por quê, em português, e aponta o Duplicar, que é o caminho
 // para corrigir (um template rejeitado não volta para análise com outro texto
 // por aqui).
-import { CircleCheck, CircleX, Clock3, CopyPlus, PauseCircle, type LucideIcon } from "lucide-react";
 import { telefoneLegivel } from "@/lib/telefone";
-import { ROTULO_CATEGORIA, soPorCampanhas, variaveisDo, type TemplateWhatsApp } from "@/lib/templates-whatsapp";
+import { ROTULO_CATEGORIA, semEnvioPeloCrm, variaveisDo, type TemplateWhatsApp } from "@/lib/templates-whatsapp";
+import {
+  CircleCheck,
+  CircleX,
+  Clock3,
+  CopyPlus,
+  PauseCircle,
+  type TipoIcone,
+} from "@/app/components/icones";
 import { BOTAO_SECUNDARIO, BotaoCopiar, Propriedade, Propriedades } from "../components/gaveta";
 import { Selo, type Tom } from "../contatos/pecas";
 import { PreviaWhatsApp } from "./previa";
@@ -62,17 +69,21 @@ const TOM_ORIENTACAO: Record<Tom, string> = {
   neutro: "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300",
 };
 
-function orientacao(t: TemplateWhatsApp, podeCriar: boolean): { Icone: LucideIcon; tom: Tom; texto: string } | null {
+function orientacao(t: TemplateWhatsApp, podeCriar: boolean): { Icone: TipoIcone; tom: Tom; texto: string } | null {
   const corrigir = podeCriar ? " Duplique, ajuste e envie de novo com outro nome." : "";
   switch (t.status) {
     case "APPROVED":
-      return {
-        Icone: CircleCheck,
-        tom: "bom",
-        texto: soPorCampanhas(t)
-          ? "Pronto para usar nas campanhas de WhatsApp. O chat não envia template com cabeçalho de mídia ou link variável."
-          : "Pronto para usar no chat, nas conversas da API oficial, e nas campanhas de WhatsApp.",
-      };
+      return semEnvioPeloCrm(t)
+        ? {
+            Icone: CircleCheck,
+            tom: "aviso",
+            texto: "Aprovado, mas o CRM ainda não envia template com cabeçalho de mídia ou link variável — nem pelo chat, nem por campanha.",
+          }
+        : {
+            Icone: CircleCheck,
+            tom: "bom",
+            texto: "Pronto para usar no chat, nas conversas da API oficial, e nas campanhas de WhatsApp. As variáveis podem levar dados do contato.",
+          };
     case "PENDING":
     case "IN_APPEAL":
       return { Icone: Clock3, tom: "aviso", texto: "A Meta está analisando. Costuma levar alguns minutos — o botão de atualizar, no topo da lista, confere de novo." };

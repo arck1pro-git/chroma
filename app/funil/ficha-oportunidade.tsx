@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, MessageCircle, Pause, Pencil, Play, Trash2, Workflow, X } from "lucide-react";
 import type {
   Anotacao,
   Atendimento,
@@ -19,6 +18,17 @@ import type {
 import type { Ia } from "@/lib/ia/catalogo";
 import { brl, dataCurta, dataHora } from "@/lib/formato";
 import { telefoneLegivel } from "@/lib/telefone";
+import {
+  ChevronDown,
+  ChevronRight,
+  MessageCircle,
+  Pause,
+  Pencil,
+  Play,
+  Trash2,
+  Workflow,
+  X,
+} from "@/app/components/icones";
 import {
   automacoesDaOportunidade,
   excluirOportunidade,

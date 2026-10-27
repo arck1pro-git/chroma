@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import type { AgendaGoogle, EventoAgenda, ParticipanteEvento, ReuniaoDoSistema } from "@/lib/agenda";
 import {
   AlignLeft,
   AtSign,
@@ -23,9 +24,8 @@ import {
   Wallet,
   X,
   XCircle,
-  type LucideIcon,
-} from "lucide-react";
-import type { AgendaGoogle, EventoAgenda, ParticipanteEvento, ReuniaoDoSistema } from "@/lib/agenda";
+  type TipoIcone,
+} from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import { brl, dataHora, iniciais, localizacao } from "@/lib/formato";
 import { diaDe, diaPorExtenso, duracao, intervalo } from "./tempo";
@@ -200,7 +200,7 @@ export default function PainelEvento({ evento, agenda, sistema, aoFechar }: Prop
 
 // ── Peças ─────────────────────────────────────────────────────────────────────
 
-function Linha({ Icone, children }: { Icone: LucideIcon; children: React.ReactNode }) {
+function Linha({ Icone, children }: { Icone: TipoIcone; children: React.ReactNode }) {
   return (
     <div className="flex gap-3 px-5 py-3.5">
       <Icone className="mt-0.5 size-4 shrink-0 text-zinc-400" aria-hidden="true" />
@@ -215,7 +215,7 @@ function Secao({
   contagem,
   children,
 }: {
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   titulo: string;
   contagem?: number;
   children: React.ReactNode;
@@ -328,7 +328,7 @@ function BlocoCliente({ sistema }: { sistema: ReuniaoDoSistema }) {
   );
 }
 
-function Dado({ Icone, rotulo, children }: { Icone: LucideIcon; rotulo: string; children: React.ReactNode }) {
+function Dado({ Icone, rotulo, children }: { Icone: TipoIcone; rotulo: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 text-[13px] text-zinc-700 dark:text-zinc-200">
       <Icone className="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
@@ -366,7 +366,7 @@ function BlocoOportunidade({ op }: { op: NonNullable<ReuniaoDoSistema["oportunid
   );
 }
 
-const RESPOSTA: Record<ParticipanteEvento["resposta"], { Icone: LucideIcon; rotulo: string; cor: string }> = {
+const RESPOSTA: Record<ParticipanteEvento["resposta"], { Icone: TipoIcone; rotulo: string; cor: string }> = {
   aceito: { Icone: CheckCircle2, rotulo: "Confirmou", cor: "text-emerald-600 dark:text-emerald-400" },
   recusou: { Icone: XCircle, rotulo: "Recusou", cor: "text-rose-600 dark:text-rose-400" },
   talvez: { Icone: HelpCircle, rotulo: "Talvez", cor: "text-amber-600 dark:text-amber-400" },

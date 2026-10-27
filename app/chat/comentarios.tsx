@@ -16,10 +16,10 @@
 // Ao vivo pelo mesmo polling do chat (a versão de /api/chat/versao inclui os
 // comentários): nenhuma pergunta nova ao servidor sai daqui.
 import type { ReactNode } from "react";
-import { Bot, Camera, Loader2, MessageCircle, TriangleAlert } from "lucide-react";
 import { dataDoInstante } from "@/lib/formato";
 import type { IaResumo } from "@/lib/ia/catalogo";
 import type { ComentariosDaConta, PostagemInstagram } from "@/lib/instagram-tipos";
+import { Bot, Camera, Loader2, MessageCircle, TriangleAlert } from "@/app/components/icones";
 import type { CanalChat } from "./tipos";
 import { CabecalhoCaixa } from "./lista";
 import { ThreadComentarios } from "./comentarios-thread";

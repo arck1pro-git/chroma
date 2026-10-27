@@ -1,12 +1,13 @@
-// O template oficial do WhatsApp nos dois sentidos, para a tela de Templates:
-// LER o que a Meta devolve (lerTemplate) num formato que a tela desenha sem
-// conhecer o JSON da Graph API, e MONTAR um novo a partir do editor
-// (problemasDo, componentesDoRascunho, rascunhoDe).
+// O template oficial do WhatsApp nos três sentidos: LER o que a Meta devolve
+// (lerTemplate) num formato que a tela desenha sem conhecer o JSON da Graph
+// API; MONTAR um novo a partir do editor de Templates (problemasDo,
+// componentesDoRascunho, rascunhoDe); e ENVIAR — o valor de cada {{n}} no chat
+// e nas campanhas, com dado do contato (seção "Variáveis no envio").
 //
-// Puro, sem server-only, de propósito: o editor confere as mesmas regras
-// enquanto a pessoa digita, e a rota (app/api/meta/templates) confere de novo,
-// porque o que chega do navegador não é confiável. Uma regra só, aplicada nos
-// dois lugares. Testado por scripts/testar-templates-whatsapp.ts.
+// Puro, sem server-only, de propósito: as telas conferem as mesmas regras
+// enquanto a pessoa digita, e o servidor confere de novo, porque o que chega do
+// navegador não é confiável. Uma regra só, aplicada nos dois lugares. Testado
+// por scripts/testar-templates-whatsapp.ts.
 //
 // As regras são as que a Meta aplica na criação (2026-10): exemplo obrigatório
 // para cada variável (sem ele a Meta recusa o envio, e até 2026-10-27 o editor
@@ -29,6 +30,8 @@ export const LIMITE = {
   url: 2000,
   telefone: 20,
   exemplo: 200,
+  /** Texto fixo de uma variável do corpo numa campanha; o do cabeçalho segue `cabecalho`. */
+  valorFixo: 200,
   botoes: 10,
   links: 2,
   telefones: 1,
@@ -107,9 +110,17 @@ export function lerTemplate(t: TemplateMeta): TemplateWhatsApp {
   };
 }
 
-/** Tem cabeçalho de mídia ou link variável: o chat não envia, só as campanhas (app/chat/actions.ts). */
-export function soPorCampanhas(t: ConteudoTemplate): boolean {
-  return (t.cabecalho !== null && t.cabecalho.formato !== "TEXT") || t.botoes.some((b) => /\{\{\d+\}\}/.test(b.destino ?? ""));
+/**
+ * Tem cabeçalho de mídia, link variável ou variável com nome ({{first_name}},
+ * criado no WhatsApp Manager): o CRM ainda não envia, nem pelo chat nem por
+ * campanha — os dois só preenchem variável de texto numerada.
+ */
+export function semEnvioPeloCrm(t: ConteudoTemplate): boolean {
+  return (
+    (t.cabecalho !== null && t.cabecalho.formato !== "TEXT") ||
+    t.botoes.some((b) => /\{\{\d+\}\}/.test(b.destino ?? "")) ||
+    temVariavelForaDoPadrao(`${t.cabecalho?.texto ?? ""} ${t.corpo}`)
+  );
 }
 
 // ── O que o editor monta ────────────────────────────────────────────────────
@@ -311,6 +322,194 @@ export function componentesDoRascunho(r: Rascunho): Array<Record<string, unknown
     });
   }
   return componentes;
+}
+
+// ── Variáveis no envio: texto ou dado do contato ────────────────────────────
+//
+// No envio — chat e campanha —, cada {{1}}, {{2}}… recebe um valor. O valor
+// pode trazer dado do contato com as marcas das cadências ({{primeiro_nome}},
+// {{nome}}…): na campanha a marca fica guardada e vira o dado de cada contato
+// no disparo (pedido dele, 2026-10-27: "definimos nos campos de variável"); no
+// chat, que tem um contato só, o menu já põe o valor real no campo.
+
+// E-mail e WhatsApp só no chat, onde uma pessoa vê o valor antes de mandar. Na
+// campanha, um número reciclado ou um contato casado por e-mail num lead
+// mandaria o dado de uma pessoa para o telefone de outra (revisão de segurança
+// de 2026-10-27).
+export const DADOS_DO_CONTATO = [
+  { chave: "primeiro_nome", rotulo: "Primeiro nome", naCampanha: true },
+  { chave: "nome", rotulo: "Nome completo", naCampanha: true },
+  { chave: "cidade", rotulo: "Cidade", naCampanha: true },
+  { chave: "email", rotulo: "E-mail", naCampanha: false },
+  { chave: "numero", rotulo: "WhatsApp", naCampanha: false },
+] as const;
+
+export const DADOS_NA_CAMPANHA = DADOS_DO_CONTATO.filter((d) => d.naCampanha);
+
+export type ChaveDoContato = (typeof DADOS_DO_CONTATO)[number]["chave"];
+export type DadosDoContato = Record<ChaveDoContato, string>;
+/** O valor de cada {{n}}, na ordem: cabecalho[0] é a {{1}} do cabeçalho. */
+export type ValoresDoEnvio = { cabecalho: string[]; corpo: string[] };
+
+const MARCA_DO_CONTATO = /\{\{([a-z_]+)\}\}/g;
+const ehChaveDoContato = (x: string): x is ChaveDoContato => DADOS_DO_CONTATO.some((d) => d.chave === x);
+const rotuloDoDado = (chave: ChaveDoContato) => DADOS_DO_CONTATO.find((d) => d.chave === chave)?.rotulo ?? chave;
+
+export const marcaDoContato = (chave: ChaveDoContato) => `{{${chave}}}`;
+
+/** O dado que o valor inteiro representa ("{{nome}}" → "nome"); null quando é texto. */
+export function dadoDoValor(valor: string): ChaveDoContato | null {
+  const m = /^\{\{([a-z_]+)\}\}$/.exec(valor.trim());
+  return m && ehChaveDoContato(m[1]) ? m[1] : null;
+}
+
+// Os nomes que o próprio CRM grava quando não sabe o nome (lib/webhooks-recepcao.ts
+// e NOME_PROVISORIO de lib/instagram.ts): "Olá Sem" não é mensagem que se mande.
+const NOMES_PROVISORIOS = new Set(["sem nome", "contato do instagram"]);
+
+/**
+ * Nome e cidade vêm de formulário público (lead da Meta, webhook de site) e vão
+ * DENTRO da mensagem oficial da marca. Só passa o que tem cara de nome: começa
+ * por letra, sem link, domínio, @, número ou marca de formatação, e curto. O
+ * resto vira vazio — e vazio é falha registrada naquele contato, nunca a
+ * mensagem com o texto de quem preencheu o formulário (revisão de segurança de
+ * 2026-10-27: um lead chamado "golpe.com/pix" iria pelo número da marca).
+ */
+function comCaraDeNome(valor: string | null | undefined, maximo: number): string {
+  const v = (valor ?? "").replace(/\s+/g, " ").trim();
+  if (!v || v.length > maximo || NOMES_PROVISORIOS.has(v.toLowerCase())) return "";
+  if (!/^\p{L}/u.test(v) || /[\d@*_~{}<>\\/]|:\/\/|www\.|\.\p{L}{2,}/iu.test(v)) return "";
+  return v;
+}
+
+/** Os dados do contato que uma variável pode levar, já saneados. Vazio = não serve. */
+export function dadosDoContato(c: { nome?: string | null; whatsapp?: string | null; email?: string | null; cidade?: string | null }): DadosDoContato {
+  const nome = comCaraDeNome(c.nome, 60);
+  const email = (c.email ?? "").trim();
+  return {
+    // Só com o nome inteiro aprovado: "Ana golpe.com" não vira "Ana".
+    primeiro_nome: nome ? comCaraDeNome(nome.split(" ")[0], 30) : "",
+    nome,
+    cidade: comCaraDeNome(c.cidade, 40),
+    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "",
+    numero: soDigitos(c.whatsapp ?? ""),
+  };
+}
+
+/** A Meta recusa parâmetro com quebra de linha, tabulação ou 4 espaços seguidos. */
+export const parametroLimpo = (texto: string) => texto.replace(/\s+/g, " ").trim();
+
+/**
+ * Os valores com as marcas trocadas pelos dados deste contato. Faltando um dado
+ * (contato sem e-mail para a {{2}}), devolve o que falta: a campanha registra a
+ * falha nesse contato em vez de mandar a variável vazia, que a Meta recusa.
+ */
+export function valoresParaContato(v: ValoresDoEnvio, dados: DadosDoContato): ValoresDoEnvio | { falta: string } {
+  const faltas: string[] = [];
+  const resolver = (lista: string[], onde: string) =>
+    lista.map((valor, i) => {
+      const texto = parametroLimpo(
+        valor.replace(MARCA_DO_CONTATO, (bruto, chave: string) => {
+          if (!ehChaveDoContato(chave)) return bruto;
+          if (!dados[chave]) faltas.push(`${rotuloDoDado(chave).toLowerCase()} para a {{${i + 1}}}${onde}`);
+          return dados[chave];
+        }),
+      );
+      if (!texto && !faltas.length) faltas.push(`valor para a {{${i + 1}}}${onde}`);
+      return texto;
+    });
+  const resolvidos = { cabecalho: resolver(v.cabecalho, " do cabeçalho"), corpo: resolver(v.corpo, "") };
+  return faltas.length ? { falta: faltas[0] } : resolvidos;
+}
+
+/** Os parâmetros no formato de `components` do envio de template da Graph API. */
+export function componentesDoEnvio(v: ValoresDoEnvio): Array<Record<string, unknown>> {
+  const componentes: Array<Record<string, unknown>> = [];
+  if (v.cabecalho.length) componentes.push({ type: "header", parameters: v.cabecalho.map((text) => ({ type: "text", text })) });
+  if (v.corpo.length) componentes.push({ type: "body", parameters: v.corpo.map((text) => ({ type: "text", text })) });
+  return componentes;
+}
+
+/** Quantas variáveis o template pede (o maior {{n}}) no cabeçalho de texto e no corpo. */
+export function variaveisDoTemplate(t: ConteudoTemplate): { cabecalho: number; corpo: number } {
+  const maior = (texto: string) => Math.max(0, ...variaveisDo(texto));
+  return { cabecalho: t.cabecalho?.formato === "TEXT" ? maior(t.cabecalho.texto ?? "") : 0, corpo: maior(t.corpo) };
+}
+
+/**
+ * Os valores cortados no que o template pede. A sobra vazia (um cabeçalho [""]
+ * num template sem cabeçalho, vindo da IA) passa na conferência, mas no disparo
+ * viraria parâmetro — e a Meta recusa parâmetro a mais.
+ */
+export function ajustarValores(v: ValoresDoEnvio, n: { cabecalho: number; corpo: number }): ValoresDoEnvio {
+  return { cabecalho: v.cabecalho.slice(0, n.cabecalho), corpo: v.corpo.slice(0, n.corpo) };
+}
+
+/** Valores iniciais de um template: a {{1}} do corpo começa como o primeiro nome, o resto em branco. */
+export function valoresIniciais(t: ConteudoTemplate): ValoresDoEnvio {
+  const n = variaveisDoTemplate(t);
+  return {
+    cabecalho: Array.from({ length: n.cabecalho }, () => ""),
+    corpo: Array.from({ length: n.corpo }, (_, i) => (i === 0 ? marcaDoContato("primeiro_nome") : "")),
+  };
+}
+
+/**
+ * O que impede disparar este template com estes valores numa campanha (null =
+ * pode). Conferido na criação, na ativação e de novo em cada disparo (o
+ * template pode ter mudado na Meta); o editor de campanha mostra o mesmo texto
+ * ao lado do botão. Valor a mais também barra: a Meta recusa parâmetro sobrando,
+ * e a campanha queimaria o segmento inteiro.
+ */
+export function problemaNoEnvio(t: ConteudoTemplate, v: ValoresDoEnvio): string | null {
+  if (semEnvioPeloCrm(t)) return "Este template tem cabeçalho de mídia, link variável ou variável com nome, que o CRM ainda não envia.";
+  const n = variaveisDoTemplate(t);
+  const listas: Array<[string[], number, string, number]> = [
+    [v.cabecalho, n.cabecalho, " do cabeçalho", LIMITE.cabecalho],
+    [v.corpo, n.corpo, "", LIMITE.valorFixo],
+  ];
+  for (const [lista, total, onde, maximo] of listas) {
+    if (lista.slice(total).some((x) => x.trim()))
+      return total ? `O template pede ${total === 1 ? "uma variável" : `${total} variáveis`}${onde} e sobrou valor.` : `O template não tem variável${onde}.`;
+    for (let i = 0; i < total; i++) {
+      const valor = (lista[i] ?? "").trim();
+      const qual = `{{${i + 1}}}${onde}`;
+      if (!valor) return `Escolha o que vai na ${qual}.`;
+      if (valor.length > maximo) return `O texto da ${qual} tem até ${maximo} caracteres.`;
+      for (const m of valor.matchAll(MARCA_DO_CONTATO)) {
+        const dado = DADOS_DO_CONTATO.find((d) => d.chave === m[1]);
+        if (dado && !dado.naCampanha) return `${dado.rotulo} não vai em campanha, só no chat, onde alguém confere antes de mandar.`;
+      }
+      // Tirando as marcas conhecidas, não pode sobrar chave: {{Primeiro_nome}}
+      // ou {{ nome }} iriam literais para o segmento inteiro.
+      const resto = valor.replace(MARCA_DO_CONTATO, (bruto, chave: string) => (ehChaveDoContato(chave) ? "" : bruto));
+      if (/\{\{|\}\}/.test(resto)) return `A ${qual} tem uma marca que não é dado do contato. Use o seletor.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * A mensagem como a campanha vai mandar, com cada {{n}} trocado pelo que vai
+ * ali — "[Primeiro nome do contato]" ou o texto fixo. É o que se confere antes
+ * de ativar, inclusive o rascunho que a IA montou.
+ */
+export function textoParaRevisao(t: ConteudoTemplate, v: ValoresDoEnvio): string {
+  const trocar = (texto: string, lista: string[]) =>
+    texto.replace(/\{\{(\d+)\}\}/g, (bruto, n: string) => {
+      const valor = (lista[Number(n) - 1] ?? "").trim();
+      if (!valor) return bruto;
+      return valor.replace(MARCA_DO_CONTATO, (marca, chave: string) =>
+        ehChaveDoContato(chave) ? `[${rotuloDoDado(chave)} do contato]` : marca,
+      );
+    });
+  return [
+    t.cabecalho?.formato === "TEXT" && t.cabecalho.texto ? trocar(t.cabecalho.texto, v.cabecalho) : "",
+    trocar(t.corpo, v.corpo),
+    t.rodape ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 // ── Duplicar ────────────────────────────────────────────────────────────────

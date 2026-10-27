@@ -13,9 +13,9 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Clapperboard, Film, Loader2, Search, Upload } from "lucide-react";
 import type { EnderecoCrm } from "@/lib/endereco";
 import type { PessoaDoVideo, Video } from "@/lib/videos";
+import { Clapperboard, Film, Loader2, Search, Upload } from "@/app/components/icones";
 import { prepararEnvio, registrarVideo } from "./acoes";
 import Detalhe, { duracaoEmTexto } from "./detalhe";
 

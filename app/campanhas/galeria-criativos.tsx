@@ -9,10 +9,10 @@
 // fica abaixo do mínimo vem depois, por investimento, apagado e sem número —
 // à vista, mas sem disputar o pódio com 2 leads de sorte.
 import { useMemo, useState } from "react";
-import { Image as IconeImagem, LoaderCircle } from "lucide-react";
 import { formatarMetrica, metrica, type ContextoMetrica } from "@/lib/meta-ads-metricas";
 import { criterio, preferenciaDeCriterio, primeiroQueRanqueia, ranquear } from "@/lib/meta-ads-ranking";
 import type { CriativoAds, CriativosAds } from "@/lib/meta-ads-tipos";
+import { Image as IconeImagem, LoaderCircle } from "@/app/components/icones";
 import { CampoBusca } from "../components/filtros-ui";
 import { Miniatura, Posicao, Qualidade, Segmentado, SeletorCriterio } from "./metricas-ui";
 import { criativoComoItem } from "./ranking-ads";

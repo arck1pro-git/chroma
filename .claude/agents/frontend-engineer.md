@@ -1,6 +1,6 @@
 ---
 name: frontend-engineer
-description: Engenheiro de frontend do AmaanOffice. Implementa e corrige telas e componentes (React 19 com Server e Client Components do Next 16, Tailwind v4, lucide, chart.js), consumindo os dados e as server actions pelo contrato combinado com o backend, sem SQL nem regra de negócio na tela. Preserva o kit visual compartilhado, o modo escuro, o layout de tablet deitado e o polling existente. Também investiga bugs de interface (tela errada, hidratação, estado, estilo). Use quando a mudança é de tela, componente, estilo ou interação. Não faz commit nem deploy.
+description: Engenheiro de frontend do AmaanOffice. Implementa e corrige telas e componentes (React 19 com Server e Client Components do Next 16, Tailwind v4, ícones Font Awesome por app/components/icones.tsx, chart.js), consumindo os dados e as server actions pelo contrato combinado com o backend, sem SQL nem regra de negócio na tela. Preserva o kit visual compartilhado, o modo escuro, o layout de tablet deitado e o polling existente. Também investiga bugs de interface (tela errada, hidratação, estado, estilo). Use quando a mudança é de tela, componente, estilo ou interação. Não faz commit nem deploy.
 model: opus
 effort: xhigh
 tools: Read, Write, Edit, Grep, Glob, Bash, PowerShell
@@ -55,7 +55,7 @@ Em `page.tsx`, mantenha a guarda `exigirModulo` e a chamada de carga como estão
 
 ## Padrões de interface (além da seção 4)
 
-- Ícones `lucide-react` com `aria-hidden` quando decorativos.
+- Ícones só de `app/components/icones.tsx` (Font Awesome Free Solid); ícone novo entra lá. São decorativos por padrão; com `aria-label`, viram conteúdo.
 - Tablet deitado: `TELA_BAIXA` de `preferencia-local.ts` no JavaScript; cores de etapa de `lib/cores-funil.ts`
   entram no `@source inline`.
 - Gráfico por dia é linha com sombra (`LinhasPorDia`), cores das variáveis `--serie-*`/`--viz-*`.

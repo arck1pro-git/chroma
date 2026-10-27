@@ -2,8 +2,16 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { CalendarCheck2, CalendarClock, CalendarX2, FileText, Play, Plus, Video } from "lucide-react";
 import type { Gravacao } from "@/lib/gravacoes";
+import {
+  CalendarCheck2,
+  CalendarClock,
+  CalendarX2,
+  FileText,
+  Play,
+  Plus,
+  Video,
+} from "@/app/components/icones";
 import VisorGravacao, { quandoDaGravacao, tituloDaGravacao } from "../components/visor-gravacao";
 import type { Usuario } from "@/lib/entidades";
 import { diaDe, hora, Selo, type Tom } from "../contatos/pecas";

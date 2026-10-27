@@ -21,7 +21,7 @@ import {
   Search,
   TriangleAlert,
   X,
-} from "lucide-react";
+} from "@/app/components/icones";
 import LogoMeta from "../components/logo-meta";
 import type { EstadoIntegracaoMeta, FormularioMeta, PerguntaMeta } from "@/lib/meta-leads";
 import type { CampoDoCrm } from "@/lib/webhooks";

@@ -10,6 +10,7 @@
 // Ver "automação" na conversa é o que avisa que a pessoa pode estar
 // respondendo a uma mensagem que ninguém da equipe escreveu.
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { Usuario } from "@/lib/entidades";
 import {
   ArrowDown,
   ArrowLeft,
@@ -26,8 +27,7 @@ import {
   Sparkles,
   TriangleAlert,
   Wallet,
-} from "lucide-react";
-import type { Usuario } from "@/lib/entidades";
+} from "@/app/components/icones";
 import type { CanalChat, ConversaAberta, MensagemChat } from "./tipos";
 import {
   Avatar,

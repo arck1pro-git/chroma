@@ -369,13 +369,6 @@ export function preencher(texto: string, valores: string[]): string {
   return texto.replace(/\{\{(\d+)\}\}/g, (bruto, n) => valores[Number(n) - 1] ?? bruto);
 }
 
-/** Quantas variáveis {{n}} o texto usa (a maior delas). */
-export function variaveisDe(texto: string | undefined): number {
-  let maior = 0;
-  for (const m of (texto ?? "").matchAll(/\{\{(\d+)\}\}/g)) maior = Math.max(maior, Number(m[1]));
-  return maior;
-}
-
 /**
  * O texto que o contato lê — cabeçalho, corpo e rodapé — para guardar na
  * conversa. Botões ficam de fora: são ação, não conteúdo.

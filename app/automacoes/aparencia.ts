@@ -1,11 +1,12 @@
 // Ícone e cor por bloco. Vive aqui, não no catálogo: lib/automacoes/catalogo.ts
 // é domínio (o que o bloco faz) e será lido também pelo validador e pelo
-// compilador, que não têm nada a ver com Tailwind nem com lucide.
+// compilador, que não têm nada a ver com Tailwind nem com ícone.
 //
 // As classes são literais de propósito — o Tailwind varre o código-fonte, então
 // classe montada por concatenação seria purgada no build (mesmo motivo do
 // @source inline em globals.css, para as cores de etapa que vêm do banco).
 
+import type { Dominio } from "@/lib/automacoes/tipos";
 import {
   BadgeCheck,
   Bell,
@@ -25,11 +26,10 @@ import {
   Users,
   Wallet,
   Workflow,
-  type LucideIcon,
-} from "lucide-react";
-import type { Dominio } from "@/lib/automacoes/tipos";
+  type TipoIcone,
+} from "@/app/components/icones";
 
-export const ICONES: Record<string, LucideIcon> = {
+export const ICONES: Record<string, TipoIcone> = {
   // condições
   se: GitBranch,
   alternador: Route,
@@ -63,7 +63,7 @@ export const ICONE_PADRAO = Workflow;
 // Ícone da categoria na paleta. Repetir aqui um ícone que também representa um
 // bloco é aceitável: são níveis diferentes de navegação e nunca aparecem lado a
 // lado.
-export const ICONES_DOMINIO: Record<Dominio, LucideIcon> = {
+export const ICONES_DOMINIO: Record<Dominio, TipoIcone> = {
   condicao: GitBranch,
   contato: Users,
   oportunidade: Wallet,

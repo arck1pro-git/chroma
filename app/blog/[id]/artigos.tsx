@@ -27,7 +27,6 @@
 // peneiram; não reordenam.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, KeyRound, Link2, Rss, Search } from "lucide-react";
 import {
   ARTIGO_STATUS,
   ARTIGO_STATUS_LABEL,
@@ -40,6 +39,7 @@ import {
   type Blog,
 } from "@/lib/artigo";
 import { dataCurta } from "@/lib/formato";
+import { ArrowLeft, KeyRound, Link2, Rss, Search } from "@/app/components/icones";
 import { SeloSeo, TagStatus } from "../pecas";
 import PainelArtigo from "../painel-artigo";
 import PainelConexao from "../painel-conexao";

@@ -11,6 +11,20 @@
 // Cancelar): um clique fora do modal não pode jogar fora um template inteiro.
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
+  avisosDo,
+  emGrupos,
+  LIMITE,
+  nomeDeTemplate,
+  problemasDo,
+  variaveisDo,
+  type BotaoRascunho,
+  type Categoria,
+  type ConteudoTemplate,
+  type Problema,
+  type Rascunho,
+  type TipoBotao,
+} from "@/lib/templates-whatsapp";
+import {
   BellRing,
   Bold,
   Braces,
@@ -26,35 +40,21 @@ import {
   Trash2,
   TriangleAlert,
   X,
-  type LucideIcon,
-} from "lucide-react";
-import {
-  avisosDo,
-  emGrupos,
-  LIMITE,
-  nomeDeTemplate,
-  problemasDo,
-  variaveisDo,
-  type BotaoRascunho,
-  type Categoria,
-  type ConteudoTemplate,
-  type Problema,
-  type Rascunho,
-  type TipoBotao,
-} from "@/lib/templates-whatsapp";
+  type TipoIcone,
+} from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import { BOTAO_PRIMARIO, BOTAO_SECUNDARIO, BotaoIcone, CAMPO } from "../components/gaveta";
 import { Bloco, CampoExemplo, Contador, Ferramenta, Situacao } from "./campos-editor";
 import { PreviaWhatsApp } from "./previa";
 
-const CATEGORIAS: Array<{ valor: Categoria; rotulo: string; descricao: string; Icone: LucideIcon }> = [
+const CATEGORIAS: Array<{ valor: Categoria; rotulo: string; descricao: string; Icone: TipoIcone }> = [
   { valor: "MARKETING", rotulo: "Marketing", descricao: "Ofertas, lançamentos, convites e reengajamento.", Icone: Megaphone },
   { valor: "UTILITY", rotulo: "Utilidade", descricao: "Confirmação, lembrete ou atualização de algo que a pessoa pediu.", Icone: BellRing },
 ];
 
 const TIPOS_BOTAO: TipoBotao[] = ["QUICK_REPLY", "URL", "PHONE_NUMBER"];
 
-const BOTAO_NOVO: Record<TipoBotao, { rotulo: string; Icone: LucideIcon; texto: string; destino?: string }> = {
+const BOTAO_NOVO: Record<TipoBotao, { rotulo: string; Icone: TipoIcone; texto: string; destino?: string }> = {
   QUICK_REPLY: { rotulo: "Resposta", Icone: Reply, texto: "Quero saber mais" },
   URL: { rotulo: "Link", Icone: ExternalLink, texto: "Ver o site", destino: "https://" },
   PHONE_NUMBER: { rotulo: "Ligar", Icone: Phone, texto: "Ligar agora", destino: "" },
@@ -395,7 +395,7 @@ export default function Editor({
               {(temVarCabecalho || varsCorpo.length > 0) && (
                 <Bloco
                   titulo="Exemplos das variáveis"
-                  dica="A Meta analisa o template com estes valores. Use dados de exemplo, nunca de um cliente de verdade."
+                  dica="Só para a análise da Meta: use dados de exemplo, nunca de um cliente de verdade. No envio, pelo chat ou por campanha, cada variável pode levar um dado do contato (primeiro nome, e-mail, cidade…)."
                 >
                   <div className="grid gap-2 sm:grid-cols-2">
                     {temVarCabecalho && (

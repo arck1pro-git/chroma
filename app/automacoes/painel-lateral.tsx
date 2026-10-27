@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { dataHora } from "@/lib/formato";
 import {
   CircleCheck,
   CircleX,
@@ -18,9 +19,8 @@ import {
   UserMinus,
   UserPlus,
   Users,
-  type LucideIcon,
-} from "lucide-react";
-import { dataHora } from "@/lib/formato";
+  type TipoIcone,
+} from "@/app/components/icones";
 import FluxoComMetricas from "./fluxo-metricas";
 import { ExecucoesPorDia } from "./graficos";
 import {
@@ -35,7 +35,7 @@ import type { DetalheFluxo, Fluxo, SegmentoParaDisparo } from "./dados";
 
 type Aba = "visao" | "inscritos" | "execucoes";
 
-const ABAS: { id: Aba; rotulo: string; Icone: LucideIcon }[] = [
+const ABAS: { id: Aba; rotulo: string; Icone: TipoIcone }[] = [
   { id: "visao", rotulo: "Visao geral", Icone: ListTree },
   { id: "inscritos", rotulo: "Inscritos", Icone: Users },
   { id: "execucoes", rotulo: "Execucoes", Icone: Clock },
@@ -116,7 +116,7 @@ function Bloco({
   children,
 }: {
   titulo: string;
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   contagem?: number;
   children: React.ReactNode;
 }) {

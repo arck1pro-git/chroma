@@ -18,9 +18,9 @@
 // Tudo em zinc, como o resto do app. A cor que aparece aqui é a que significa
 // alguma coisa: o tom do funil, o verde de conectado, o âmbar de atenção.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, TriangleAlert, type LucideIcon } from "lucide-react";
 import { amostraDoTom, corValida, TONS_FUNIL } from "@/lib/cores-funil";
 import { telefoneLegivel } from "@/lib/telefone";
+import { Check, ChevronDown, TriangleAlert, type TipoIcone } from "@/app/components/icones";
 import { tintaDe } from "../../components/tinta";
 
 // ── Cabeçalho da aba ────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ export function Cabecalho({
   contagem,
   acao,
 }: {
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   titulo: string;
   descricao: ReactNode;
   /** O número ao lado do título — quantos itens a aba guarda. */
@@ -119,7 +119,7 @@ export function Vazio({
   texto,
   acao,
 }: {
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   titulo: string;
   texto: ReactNode;
   acao?: ReactNode;

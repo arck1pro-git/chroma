@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+import type { TipoIcone } from "./icones";
 
 // Cartão de métrica das faixas de topo (lista de contatos e tela inicial).
 // `ordem` escalona o fade: cada cartão entra 26ms depois do anterior, então a
@@ -13,7 +13,7 @@ export default function Indicador({
   detalhe,
   ordem,
 }: {
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   rotulo: string;
   valor: string;
   detalhe: string;

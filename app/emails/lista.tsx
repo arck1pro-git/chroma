@@ -1,14 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import {
-  CheckCircle2,
-  FileText,
-  Mail,
-  MailPlus,
-  Pencil,
-  SearchX,
-} from "lucide-react";
+import { CheckCircle2, FileText, Mail, MailPlus, Pencil, SearchX } from "@/app/components/icones";
 import { emails as emailsSeed, usuarioPorId, type Email } from "./mock";
 import { dataHora } from "@/lib/formato";
 import Construtor, { type DadosEmail } from "./construtor";

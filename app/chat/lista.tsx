@@ -12,7 +12,7 @@
 // Comentários entram logo abaixo dele (`abas`), e "Nova conversa" fica
 // desligada: no Instagram a conversa só começa quando a pessoa escreve.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Bot, ChevronDown, Inbox, Search, Sparkles, SquarePen, X } from "lucide-react";
+import { Bot, ChevronDown, Inbox, Search, Sparkles, SquarePen, X } from "@/app/components/icones";
 import type { CanalChat, ConversaResumo } from "./tipos";
 import { ListaCanais } from "./canais";
 import {

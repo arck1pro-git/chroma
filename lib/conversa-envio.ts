@@ -49,6 +49,10 @@ export type Destino = {
   whatsapp: string | null;
   /** IGSID do contato (contatos.campos.instagram_id): o destinatário no canal instagram. */
   instagram_id: string | null;
+  /** Nome, e-mail e cidade: o que as variáveis de template do chat oferecem no menu. */
+  nome: string | null;
+  email: string | null;
+  cidade: string | null;
   ultima_entrada: Date | null;
 };
 
@@ -57,6 +61,7 @@ export async function destinoDa(atendimentoId: string): Promise<Destino | null> 
   if (!ehUuid(atendimentoId)) return null;
   const [d] = await sql`
     SELECT a.id, a.canal, a.numero_instancia, c.whatsapp, c.campos->>'instagram_id' AS instagram_id,
+           c.nome, c.email, c.cidade,
            (SELECT max(m.data_criacao) FROM mensagens m
              WHERE m.atendimento_id = a.id AND m.origem = 'contato') AS ultima_entrada
     FROM atendimentos a

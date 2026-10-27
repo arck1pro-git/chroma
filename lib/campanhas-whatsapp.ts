@@ -1,8 +1,25 @@
 import "server-only";
 import { sql } from "@/lib/db";
-import { enviarTemplateMeta, templatesMeta } from "@/lib/meta";
+import { enviarTemplateMeta, telefonesMeta, templatesMeta, type TemplateMeta } from "@/lib/meta";
 import { registrarEnvioOficial, textoDoTemplate } from "@/lib/whatsapp-oficial";
 import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
+import {
+  ajustarValores,
+  componentesDoEnvio,
+  dadosDoContato,
+  lerTemplate,
+  problemaNoEnvio,
+  valoresParaContato,
+  variaveisDoTemplate,
+  type ValoresDoEnvio,
+} from "@/lib/templates-whatsapp";
+
+// GRAVAR a definição com sql.json: até 2026-10-27 ela ia como
+// `${JSON.stringify(definicao)}::jsonb`, que grava uma STRING JSON — e
+// lerDefinicao, que só lê objeto, devolvia os padrões (sem ações, prazo de 1
+// dia). As campanhas já ativadas continuam assim de propósito: passar a ler a
+// string faria campanhas no ar começarem a executar ações que nunca rodaram. O
+// RASCUNHO, que nunca rodou, é lido de verdade na ativação (definicaoDoRascunho).
 
 export type AcaoCampanha =
   | { tipo: "adicionar_tag"; tagId: string }
@@ -14,20 +31,75 @@ export type DefinicaoCampanha = {
   template_nome: string;
   template_idioma: string;
   espera_minutos: number;
+  /** O valor de cada {{n}}: texto fixo ou marca de dado do contato ({{primeiro_nome}}). */
+  variaveis: ValoresDoEnvio;
   ao_responder: AcaoCampanha[];
   ao_expirar: AcaoCampanha[];
 };
 
-export function lerDefinicao(valor: unknown): DefinicaoCampanha {
+/**
+ * A definição normalizada. `coluna` é o template guardado nas colunas da
+ * campanha: vale quando a definição não traz o seu — inclusive o IDIOMA, que
+ * antes caía em pt_BR e recusava campanha antiga de template em outra língua.
+ */
+export function lerDefinicao(valor: unknown, coluna?: { template_nome?: string; template_idioma?: string }): DefinicaoCampanha {
   const bruto = valor && typeof valor === "object" ? valor as Record<string, unknown> : {};
   const espera = Math.min(43_200, Math.max(5, Number(bruto.espera_minutos) || 1440));
+  const texto = (x: unknown, max: number) => (typeof x === "string" && x.trim() ? x.trim().slice(0, max) : "");
   return {
-    template_nome: typeof bruto.template_nome === "string" ? bruto.template_nome.trim().slice(0, 512) : "",
-    template_idioma: typeof bruto.template_idioma === "string" ? bruto.template_idioma.trim().slice(0, 20) : "pt_BR",
+    template_nome: texto(bruto.template_nome, 512) || coluna?.template_nome || "",
+    template_idioma: texto(bruto.template_idioma, 20) || coluna?.template_idioma || "pt_BR",
     espera_minutos: espera,
+    variaveis: lerVariaveis(bruto.variaveis),
     ao_responder: lerAcoes(bruto.ao_responder),
     ao_expirar: lerAcoes(bruto.ao_expirar),
   };
+}
+
+function lerVariaveis(valor: unknown): ValoresDoEnvio {
+  const v = valor && typeof valor === "object" ? valor as Record<string, unknown> : {};
+  const lista = (x: unknown, maximo: number) =>
+    Array.isArray(x) ? x.slice(0, maximo).map((i) => (typeof i === "string" ? i.slice(0, 500) : "")) : [];
+  return { cabecalho: lista(v.cabecalho, 1), corpo: lista(v.corpo, 100) };
+}
+
+/**
+ * Confere na Meta o template da campanha: aprovado e com toda variável
+ * preenchida com texto ou dado do contato. Devolve o motivo da recusa, ou null.
+ * Criação, ativação e a IA de campanhas passam por aqui.
+ */
+export async function recusaDoTemplate(wabaId: string, definicao: DefinicaoCampanha): Promise<string | null> {
+  const template = (await templatesMeta(wabaId)).find(
+    (t) => t.name === definicao.template_nome && t.language === definicao.template_idioma && t.status === "APPROVED",
+  );
+  if (!template) return "Escolha um template aprovado pela Meta.";
+  return problemaNoEnvio(lerTemplate(template), definicao.variaveis);
+}
+
+/**
+ * O número que envia, conferido na conta: o id vem do navegador ou da IA e
+ * entra no caminho da Graph. O nome exibido sai da Meta, não de quem pediu —
+ * senão a tela mostraria um número e a campanha sairia por outro.
+ */
+export async function numeroDaConta(wabaId: string, telefoneId: string) {
+  return (await telefonesMeta(wabaId)).find((t) => t.id === telefoneId) ?? null;
+}
+
+/**
+ * A definição de um RASCUNHO na ativação. Rascunho gravado antes da correção é
+ * string JSON; como nunca rodou, ler o que foi montado (ações, prazo,
+ * variáveis) é o certo — ao contrário da campanha que já está no ar.
+ */
+export function definicaoDoRascunho(valor: unknown, coluna: { template_nome: string; template_idioma: string }): DefinicaoCampanha {
+  let bruto = valor;
+  if (typeof valor === "string") {
+    try {
+      bruto = JSON.parse(valor);
+    } catch {
+      bruto = {};
+    }
+  }
+  return lerDefinicao(bruto, coluna);
 }
 
 function lerAcoes(valor: unknown): AcaoCampanha[] {
@@ -47,9 +119,9 @@ function lerAcoes(valor: unknown): AcaoCampanha[] {
 
 type Execucao = { id: string; campanha_id: string; contato_id: string; contato_nome: string; whatsapp: string; definicao: unknown };
 
-async function evento(campanhaId: string, execucaoId: string | null, tipo: string, detalhe: unknown = {}) {
+async function evento(campanhaId: string, execucaoId: string | null, tipo: string, detalhe: Record<string, unknown> = {}) {
   await sql`INSERT INTO campanha_whatsapp_eventos (campanha_id, execucao_id, tipo, detalhe)
-            VALUES (${campanhaId}::uuid, ${execucaoId}::uuid, ${tipo}, ${JSON.stringify(detalhe)}::jsonb)`;
+            VALUES (${campanhaId}::uuid, ${execucaoId}::uuid, ${tipo}, ${sql.json(detalhe as never)})`;
 }
 
 export async function executarAcoes(execucao: Execucao, ramo: "respondeu" | "expirou") {
@@ -78,15 +150,15 @@ export async function executarAcoes(execucao: Execucao, ramo: "respondeu" | "exp
   }
 }
 
-// O texto do template, para a mensagem aparecer na conversa do /chat como o
-// contato a leu. Um GET por WABA por lote; falhou, fica o nome do template.
-async function textoDosTemplates(wabaIds: string[]) {
-  const mapa = new Map<string, string>();
+// Os templates das contas do lote, lidos uma vez: para conferir de novo as
+// variáveis no disparo e para a mensagem aparecer na conversa do /chat como o
+// contato a leu. Um GET por WABA por lote; falhou, a conferência fica com a da
+// ativação e a conversa mostra o nome do template.
+async function templatesDoLote(wabaIds: string[]) {
+  const mapa = new Map<string, TemplateMeta>();
   for (const waba of new Set(wabaIds)) {
     try {
-      for (const t of await templatesMeta(waba)) {
-        mapa.set(`${waba}|${t.name}|${t.language}`, textoDoTemplate(t.components));
-      }
+      for (const t of await templatesMeta(waba)) mapa.set(`${waba}|${t.name}|${t.language}`, t);
     } catch (e) {
       console.error("[campanhas] não li os templates da WABA", waba, e);
     }
@@ -96,7 +168,7 @@ async function textoDosTemplates(wabaIds: string[]) {
 
 export async function processarFila(limite = 50, campanhaId?: string) {
   const linhas = await sql`
-    SELECT e.id, e.campanha_id, e.contato_id, c.nome AS contato_nome, c.whatsapp,
+    SELECT e.id, e.campanha_id, e.contato_id, c.nome AS contato_nome, c.whatsapp, c.email, c.cidade,
            cw.telefone_id, cw.telefone_exibicao, cw.waba_id,
            cw.template_nome, cw.template_idioma, cw.definicao
       FROM campanha_whatsapp_execucoes e
@@ -105,22 +177,38 @@ export async function processarFila(limite = 50, campanhaId?: string) {
      WHERE e.estado = 'na_fila' AND cw.status = 'ativa'
        AND (${campanhaId ?? null}::uuid IS NULL OR cw.id = ${campanhaId ?? null}::uuid)
      ORDER BY e.data_criacao
-     LIMIT ${limite}` as unknown as Array<Execucao & { telefone_id:string; telefone_exibicao:string; waba_id:string; template_nome:string; template_idioma:string }>;
-  const textos = linhas.length ? await textoDosTemplates(linhas.map((l) => l.waba_id)) : new Map<string, string>();
+     LIMIT ${limite}` as unknown as Array<Execucao & { email:string|null; cidade:string|null; telefone_id:string; telefone_exibicao:string; waba_id:string; template_nome:string; template_idioma:string }>;
+  const templates = linhas.length ? await templatesDoLote(linhas.map((l) => l.waba_id)) : new Map<string, TemplateMeta>();
   let enviados = 0;
   for (const e of linhas) {
-    await sql`UPDATE campanha_whatsapp_execucoes SET estado='enviando' WHERE id=${e.id}::uuid AND estado='na_fila'`;
+    // Reserva a linha. Outra execução da fila (o n8n chama a cada minuto, e a
+    // criação e a ativação chamam também) pode ter pegado a mesma: sem a
+    // reserva, as duas mandavam — mensagem oficial em dobro para o cliente.
+    const [reservada] = await sql`UPDATE campanha_whatsapp_execucoes SET estado='enviando'
+                                    WHERE id=${e.id}::uuid AND estado='na_fila' RETURNING id`;
+    if (!reservada) continue;
     try {
-      const definicao = lerDefinicao(e.definicao);
-      const nome = definicao.template_nome || e.template_nome;
-      const idioma = definicao.template_idioma || e.template_idioma;
-      const r = await enviarTemplateMeta(e.telefone_id, { to: e.whatsapp, name: nome, language: idioma });
+      const definicao = lerDefinicao(e.definicao, e);
+      const nome = definicao.template_nome;
+      const idioma = definicao.template_idioma;
+      const template = templates.get(`${e.waba_id}|${nome}|${idioma}`);
+      const lido = template ? lerTemplate(template) : null;
+      // De novo no disparo: a campanha inscreve gente do segmento por semanas,
+      // e o template pode ter mudado na Meta desde a ativação.
+      const problema = lido ? problemaNoEnvio(lido, definicao.variaveis) : null;
+      if (problema) throw new Error(problema);
+      const variaveis = lido ? ajustarValores(definicao.variaveis, variaveisDoTemplate(lido)) : definicao.variaveis;
+      // As marcas ({{primeiro_nome}}…) viram os dados DESTE contato, saneados.
+      // Faltando um, a execução falha aqui com o motivo, sem ir à Meta.
+      const valores = valoresParaContato(variaveis, dadosDoContato({ nome: e.contato_nome, whatsapp: e.whatsapp, email: e.email, cidade: e.cidade }));
+      if ("falta" in valores) throw new Error(`Contato sem ${valores.falta}.`);
+      const r = await enviarTemplateMeta(e.telefone_id, { to: e.whatsapp, name: nome, language: idioma, components: componentesDoEnvio(valores) });
       // A mensagem entra na conversa do contato no canal oficial — sem isto o
       // /chat mostraria só a resposta, sem o que a campanha mandou.
       await registrarEnvioOficial({
         contatoId: e.contato_id,
         numeroCanal: e.telefone_exibicao,
-        texto: textos.get(`${e.waba_id}|${nome}|${idioma}`) || `Template "${nome}"`,
+        texto: (template && textoDoTemplate(template.components, valores)) || `Template "${nome}"`,
         wamid: r.messages?.[0]?.id ?? null,
         enviadaPor: "automacao",
       });

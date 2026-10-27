@@ -13,11 +13,20 @@
 // série por dia, conjuntos e anúncios — é a carga da própria gaveta, pedida só
 // quando ela abre (lib/meta-ads-relatorio.ts, carregarDetalheCampanha).
 import { useCallback, useEffect } from "react";
-import { ArrowUpRight, BadgeDollarSign, Contact, Megaphone, Settings2, TrendingUp, Wallet, X } from "lucide-react";
 import type { DetalheCampanhaAds, DiaCampanhaAds, LinhaAds } from "@/lib/meta-ads-tipos";
 import { dividir, pecaDoAnuncio } from "@/lib/meta-ads-calculos";
 import { formatarMetrica, metrica, type ContextoMetrica } from "@/lib/meta-ads-metricas";
 import { preferenciaDeCriterio, primeiroQueRanqueia, ranquear } from "@/lib/meta-ads-ranking";
+import {
+  ArrowUpRight,
+  BadgeDollarSign,
+  Contact,
+  Megaphone,
+  Settings2,
+  TrendingUp,
+  Wallet,
+  X,
+} from "@/app/components/icones";
 import { BotaoIcone, Carregando, CascaGaveta, CorpoGaveta, LINHA, Secao, Vazio } from "../components/gaveta";
 import { corDoCss, degrade, useGrafico, type Desenho } from "../components/grafico-canvas";
 import { useConsulta } from "./use-consulta";

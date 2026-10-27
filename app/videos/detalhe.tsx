@@ -16,10 +16,10 @@
 // olhando o lead assistir depois de mandar o link.
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, Pencil, Trash2, TriangleAlert, X } from "lucide-react";
 import type { EnderecoCrm } from "@/lib/endereco";
 import type { PessoaDoVideo, Video } from "@/lib/videos";
 import { dataHora } from "@/lib/formato";
+import { Check, Copy, Pencil, Trash2, TriangleAlert, X } from "@/app/components/icones";
 import { apagarVideo, salvarNome } from "./acoes";
 
 /** "1:05", "12:30", "1:02:03". */

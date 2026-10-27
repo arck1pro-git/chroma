@@ -12,8 +12,8 @@
 // ligada, ela ainda fica quieta se um atendente falou na última hora
 // (lib/ia/atendente.ts).
 import { useOptimistic, useState, useTransition } from "react";
-import { Bot, Loader2 } from "lucide-react";
 import type { EstadoIaContato, IaResumo } from "@/lib/ia/catalogo";
+import { Bot, Loader2 } from "./icones";
 
 type Valor = boolean | null;
 

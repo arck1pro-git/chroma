@@ -65,8 +65,8 @@ export default function ProvedorIaGlobal({
   return (
     <IaFixa.Provider value={canal}>
       {children}
-      {/* useSearchParams (o ?ia= da barra) pede fronteira de Suspense nas rotas
-          estáticas — o mesmo motivo da barra lateral no layout. */}
+      {/* useSearchParams (o ?ia= da URL, que abre uma conversa) pede
+          fronteira de Suspense nas rotas estáticas. */}
       <Suspense fallback={null}>
         <PainelFixo topo={topo} />
       </Suspense>
@@ -86,8 +86,8 @@ function PainelFixo({ topo }: { topo: RegistroIa | null }) {
     <PainelIa
       global
       endpoint="/api/ia"
-      // Conversa nova do painel fixo: escopo próprio. A barra mostra como
-      // "CRM" (lib/ia/navegacao.ts) e, para o TI, reabre aqui mesmo.
+      // Conversa nova do painel fixo: escopo próprio, que a lista de
+      // conversas mostra como "CRM" (lib/ia/navegacao.ts).
       escopo="geral"
       titulo="IA do AmaanOffice"
       rotulo="Conversar com a IA"
@@ -107,8 +107,8 @@ function PainelFixo({ topo }: { topo: RegistroIa | null }) {
       camada="z-[210]"
 
       // Sem painel: só os balões sobre a página, como a IA do dashboard era
-      // antes do fixo (pedido dele, 2026-10-06). As conversas antigas e a nova
-      // ficam na barra lateral (?ia= e o "+", que chegam aqui).
+      // antes do fixo (pedido dele, 2026-10-06). Abre pelo botão flutuante; a
+      // barra lateral não lista mais as conversas (2026-10-27).
       compacto
     />
   );

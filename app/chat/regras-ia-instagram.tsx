@@ -1,10 +1,10 @@
 ﻿"use client";
 
 import { useEffect, useId, useRef, useState, useTransition } from "react";
-import { Bot, Loader2, X } from "lucide-react";
 import type { IaResumo } from "@/lib/ia/catalogo";
 import type { AutomacaoComentarioInstagram, RegraIaInstagram } from "@/lib/instagram-tipos";
 import { AUTOMACAO_COMENTARIO_PADRAO } from "@/lib/instagram-automacao";
+import { Bot, Loader2, X } from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import { salvarAutomacaoInstagram, salvarRegraIaInstagram } from "./acoes-instagram";
 

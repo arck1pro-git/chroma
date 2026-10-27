@@ -4,14 +4,7 @@
 // as duas é quais filtros existem, não como eles se parecem.
 
 import { useEffect, useRef, useState } from "react";
-import {
-  Check,
-  ChevronDown,
-  Globe,
-  Search,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { Check, ChevronDown, Globe, Search, X, type TipoIcone } from "./icones";
 
 // Mesmo estilo dos botões de menu (Segmentos/Tags/Localização): hover no fundo e
 // anel de foco focus-visible, para os selects baterem com eles.
@@ -136,7 +129,7 @@ export function Menu({
   largura = "w-64",
   children,
 }: {
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   rotulo: string;
   contagem: number;
   botao: string;
@@ -182,7 +175,7 @@ export function SeletorMenu({
   botao,
   ativo = false,
 }: {
-  Icone: LucideIcon;
+  Icone: TipoIcone;
   rotulo: string; // aria-label do controle
   valor: string;
   // `detalhe`: um número ao lado do nome (o total de leads do funil, no

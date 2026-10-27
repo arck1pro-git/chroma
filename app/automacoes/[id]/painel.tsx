@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ChartNoAxesColumn, LogIn } from "lucide-react";
+import { ArrowLeft, ChartNoAxesColumn, LogIn } from "@/app/components/icones";
 import Builder from "../builder";
 import type { Fluxo } from "../dados";
 import type { DefinicaoFluxo } from "@/lib/automacoes/tipos";

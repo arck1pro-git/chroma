@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, LoaderCircle, X } from "lucide-react";
 import type { LinhaAds } from "@/lib/meta-ads-tipos";
 import { textosDoCriativo } from "@/lib/meta-ads-calculos";
+import { Copy, LoaderCircle, X } from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import { consultar } from "./use-consulta";
 import { Aviso, botaoAds, botaoPrincipalAds, campoAds, entregaLegivel, objetivos } from "./pecas";

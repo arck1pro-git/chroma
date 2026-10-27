@@ -11,7 +11,7 @@
 // segunda às 8h um workflow do n8n pergunta ao CRM quais notícias desses feeds
 // ainda não viraram artigo e manda gerar 10 por blog.
 import { useEffect, useState } from "react";
-import { Rss } from "lucide-react";
+import { Rss } from "@/app/components/icones";
 import { Balao, CabecalhoFolha } from "./pecas";
 
 const MAX_FEEDS = 5;

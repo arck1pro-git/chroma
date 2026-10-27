@@ -10,7 +10,7 @@ import {
   Send,
   ShieldCheck,
   X,
-} from "lucide-react";
+} from "@/app/components/icones";
 import LogoGoogleCalendar from "../components/logo-google-calendar";
 import LogoMeta from "../components/logo-meta";
 import { SeletorMenu } from "../components/filtros-ui";

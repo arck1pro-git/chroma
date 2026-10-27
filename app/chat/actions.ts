@@ -33,9 +33,19 @@ import {
   enviarTemplateMeta,
   subirMidiaMeta,
   templatesMeta,
+  type TemplateMeta,
   type TipoMidiaMeta,
 } from "@/lib/meta";
-import { textoDoTemplate, variaveisDe } from "@/lib/whatsapp-oficial";
+import { textoDoTemplate } from "@/lib/whatsapp-oficial";
+import {
+  componentesDoEnvio,
+  dadosDoContato,
+  lerTemplate,
+  parametroLimpo,
+  semEnvioPeloCrm,
+  variaveisDoTemplate,
+  type DadosDoContato,
+} from "@/lib/templates-whatsapp";
 import {
   canalDeEnvio,
   confirmarEnvio,
@@ -178,40 +188,23 @@ export async function enviarDocumento(
 
 // ── Templates (API oficial) ─────────────────────────────────────────────────
 
-type Componente = {
-  type?: string;
-  format?: string;
-  text?: string;
-  buttons?: Array<{ type?: string; text?: string; url?: string }>;
-};
-
-function paraTemplateChat(t: { name: string; language: string; category: string; components: Array<Record<string, unknown>> }): TemplateChat {
-  const comps = t.components as Componente[];
-  const achar = (tipo: string) => comps.find((c) => String(c.type ?? "").toUpperCase() === tipo);
-  const cab = achar("HEADER");
-  const corpo = achar("BODY");
-  const rodape = achar("FOOTER");
-  const botoes = achar("BUTTONS")?.buttons ?? [];
-  const cabTexto = cab && String(cab.format ?? "").toUpperCase() === "TEXT" ? (cab.text ?? "") : null;
-
-  let bloqueio: string | null = null;
-  if (cab && cabTexto === null) {
-    bloqueio = "Tem cabeçalho de imagem, vídeo ou documento — envie pela tela de Campanhas.";
-  } else if (botoes.some((b) => /\{\{\d+\}\}/.test(b.url ?? ""))) {
-    bloqueio = "Tem botão com link variável — envie pela tela de Campanhas.";
-  }
-
+// O template como o seletor do chat usa, derivado de lerTemplate: a mesma
+// leitura, a mesma contagem de variáveis e a mesma regra de bloqueio da tela de
+// Templates e das campanhas (lib/templates-whatsapp.ts).
+function paraTemplateChat(meta: TemplateMeta): TemplateChat {
+  const t = lerTemplate(meta);
+  const n = variaveisDoTemplate(t);
   return {
-    nome: t.name,
-    idioma: t.language,
-    categoria: t.category,
-    cabecalho: cabTexto,
-    corpo: corpo?.text ?? "",
-    rodape: rodape?.text ?? null,
-    botoes: botoes.map((b) => b.text ?? "").filter(Boolean),
-    variaveisCabecalho: variaveisDe(cabTexto ?? ""),
-    variaveisCorpo: variaveisDe(corpo?.text),
-    bloqueio,
+    nome: t.nome,
+    idioma: t.idioma,
+    categoria: t.categoria,
+    cabecalho: t.cabecalho?.formato === "TEXT" ? (t.cabecalho.texto ?? "") : null,
+    corpo: t.corpo,
+    rodape: t.rodape,
+    botoes: t.botoes.map((b) => b.texto).filter(Boolean),
+    variaveisCabecalho: n.cabecalho,
+    variaveisCorpo: n.corpo,
+    bloqueio: semEnvioPeloCrm(t) ? "Tem cabeçalho de mídia, link variável ou variável com nome, que o CRM ainda não envia." : null,
   };
 }
 
@@ -225,15 +218,18 @@ async function templatesDoCanal(numeroCanal: string | null): Promise<TemplateCha
     .sort((a, b) => Number(a.bloqueio !== null) - Number(b.bloqueio !== null) || a.nome.localeCompare(b.nome));
 }
 
-/** Os templates aprovados do número desta conversa, para o seletor. */
+/**
+ * Os templates aprovados do número desta conversa, para o seletor, e os dados
+ * do contato que o menu de cada variável oferece (primeiro nome, e-mail…).
+ */
 export async function listarTemplates(
   atendimentoId: string,
-): Promise<{ templates?: TemplateChat[]; erro?: string }> {
+): Promise<{ templates?: TemplateChat[]; contato?: DadosDoContato; erro?: string }> {
   await exigirModulo("chat");
   const d = await destinoDa(atendimentoId);
   if (!d || !ehOficial(d)) return { erro: "Templates são só da API oficial." };
   try {
-    return { templates: await templatesDoCanal(d.numero_instancia) };
+    return { templates: await templatesDoCanal(d.numero_instancia), contato: dadosDoContato(d) };
   } catch (e) {
     return { erro: motivo(e) };
   }
@@ -264,15 +260,18 @@ export async function enviarTemplate(
   if (!template) return { erro: "Template não encontrado ou não aprovado." };
   if (template.bloqueio) return { erro: template.bloqueio };
 
-  const cabecalho = (valores.cabecalho ?? []).slice(0, template.variaveisCabecalho).map((v) => v.trim());
-  const corpo = (valores.corpo ?? []).slice(0, template.variaveisCorpo).map((v) => v.trim());
+  // parametroLimpo: a Meta recusa variável com quebra de linha ou espaços seguidos.
+  const cabecalho = (valores.cabecalho ?? []).slice(0, template.variaveisCabecalho).map(parametroLimpo);
+  const corpo = (valores.corpo ?? []).slice(0, template.variaveisCorpo).map(parametroLimpo);
   if (cabecalho.length < template.variaveisCabecalho || corpo.length < template.variaveisCorpo || [...cabecalho, ...corpo].some((v) => !v)) {
     return { erro: "Preencha todas as variáveis do template." };
   }
+  // Quem vem das cadências digita {{primeiro_nome}}; aqui isso iria literal.
+  if ([...cabecalho, ...corpo].some((v) => v.includes("{{"))) {
+    return { erro: "Para usar um dado do contato, escolha no menu Contato… ao lado do campo." };
+  }
 
-  const componentes: Array<Record<string, unknown>> = [];
-  if (cabecalho.length) componentes.push({ type: "header", parameters: cabecalho.map((text) => ({ type: "text", text })) });
-  if (corpo.length) componentes.push({ type: "body", parameters: corpo.map((text) => ({ type: "text", text })) });
+  const componentes = componentesDoEnvio({ cabecalho, corpo });
 
   const texto = textoDoTemplate(
     [

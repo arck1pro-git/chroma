@@ -8,8 +8,8 @@
 // entre o painel do artigo e a prévia do modal: é a mesma régua do checklist em
 // lib/artigo.ts.
 import { useEffect, useRef, useState } from "react";
-import { Check, Trash2 } from "lucide-react";
 import { ARTIGO_STATUS_LABEL, type ArtigoStatus } from "@/lib/artigo";
+import { Check, Trash2 } from "@/app/components/icones";
 
 /** Pastilha discreta para rótulos e status. */
 export function Tag({

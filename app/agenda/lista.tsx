@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { CalendarX2, MapPin, Repeat, Video } from "lucide-react";
 import type { AgendaGoogle, EventoAgenda, ReuniaoDoSistema } from "@/lib/agenda";
+import { CalendarX2, MapPin, Repeat, Video } from "@/app/components/icones";
 import { eventosDoDia } from "./disposicao";
 import { DIAS_DA_LISTA, diaCurto, diaEMes, diaPorExtenso, intervalo, numeroDoDia } from "./tempo";
 import { useAgora } from "./relogio";

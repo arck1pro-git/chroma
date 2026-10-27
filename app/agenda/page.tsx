@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarDays } from "lucide-react";
 import { exigirModulo } from "@/lib/auth/dal";
 import { conexaoGoogle, GoogleDesconectado } from "@/lib/google-oauth";
 import { agendasDaConta, eventosDasAgendas, reunioesDoSistema } from "@/lib/agenda";
+import { CalendarDays } from "@/app/components/icones";
 import Agenda from "./agenda";
 import { diaDe, janelaDa, meiaNoite, VISOES, type Visao } from "./tempo";
 

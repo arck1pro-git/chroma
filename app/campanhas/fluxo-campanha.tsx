@@ -3,13 +3,25 @@
 import { type ReactNode } from "react";
 import { Background, BackgroundVariant, Controls, MarkerType, Panel, Position, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { GitBranch, MessageSquareText, Plus, Tag, Trash2, UserRoundPlus } from "lucide-react";
+import type { TemplateMeta } from "@/lib/meta";
+import {
+  DADOS_NA_CAMPANHA,
+  LIMITE,
+  dadoDoValor,
+  lerTemplate,
+  marcaDoContato,
+  textoParaRevisao,
+  variaveisDoTemplate,
+  type ChaveDoContato,
+  type ValoresDoEnvio,
+} from "@/lib/templates-whatsapp";
+import { GitBranch, MessageSquareText, Plus, Tag, Trash2, UserRoundPlus } from "@/app/components/icones";
 
 type Acao = { tipo: "registrar_lead" } | { tipo: "adicionar_tag"; tagId: string } | { tipo: "adicionar_segmento"; segmentoId: string } | { tipo: "criar_oportunidade"; funilId: string; etapaId: string; nome: string };
 type Opcao = { id: string; nome: string };
 type EtapaOpcao = Opcao & { funil_id: string };
 type Ramo = "respondeu" | "expirou";
-type Props = { template: string; idioma?:string; espera: number; aoResponder: Acao[]; aoExpirar: Acao[]; editavel?: boolean; templates?:Array<{name:string;language:string;status:string}>; tags?: Opcao[]; segmentos?: Opcao[]; funis?: Opcao[]; etapas?: EtapaOpcao[]; mudarTemplate?:(nome:string,idioma:string)=>void; mudarEspera?:(minutos:number)=>void; mudarResponder?: (acoes: Acao[]) => void; mudarExpirar?: (acoes: Acao[]) => void };
+type Props = { template: string; idioma?:string; espera: number; aoResponder: Acao[]; aoExpirar: Acao[]; editavel?: boolean; templates?:TemplateMeta[]; variaveis?: ValoresDoEnvio; tags?: Opcao[]; segmentos?: Opcao[]; funis?: Opcao[]; etapas?: EtapaOpcao[]; mudarTemplate?:(nome:string,idioma:string)=>void; mudarEspera?:(minutos:number)=>void; mudarVariaveis?: (valores: ValoresDoEnvio) => void; mudarResponder?: (acoes: Acao[]) => void; mudarExpirar?: (acoes: Acao[]) => void };
 
 const campo = "nodrag nopan w-full rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-[11px] text-zinc-700 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200";
 const aresta = { type: "smoothstep", markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 } } as const;
@@ -25,7 +37,41 @@ function Cartao({ icone, titulo, subtitulo, cor = "zinc", children }: { icone: R
   return <div className={`w-[230px] rounded-xl border bg-white p-3 text-left shadow-sm dark:bg-zinc-900 ${cores[cor]}`}><div className="flex items-start gap-2"><span className="mt-0.5 text-zinc-500">{icone}</span><div className="min-w-0 flex-1"><p className="text-[11px] font-semibold text-zinc-900 dark:text-zinc-50">{titulo}</p>{subtitulo&&<p className="mt-0.5 truncate text-[10px] text-zinc-500">{subtitulo}</p>}</div></div>{children&&<div className="mt-2 space-y-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">{children}</div>}</div>;
 }
 
-export default function FluxoCampanha({ template, idioma="pt_BR", espera, aoResponder, aoExpirar, editavel = false, templates = [], tags = [], segmentos = [], funis = [], etapas = [], mudarTemplate, mudarEspera, mudarResponder, mudarExpirar }: Props) {
+/**
+ * O que vai em cada {{n}} do template: um dado do contato (vira o valor de
+ * cada pessoa no disparo, lib/campanhas-whatsapp.ts) ou um texto igual para
+ * todos. Sem `mudar`, só mostra — é a campanha já criada.
+ */
+function VariaveisDoEnvio({ quantas, valores, mudar }: { quantas: { cabecalho: number; corpo: number }; valores: ValoresDoEnvio; mudar?: (v: ValoresDoEnvio) => void }) {
+  const linhas = [
+    ...Array.from({ length: quantas.cabecalho }, (_, i) => ({ lista: "cabecalho" as const, i, rotulo: `Cabeçalho {{${i + 1}}}` })),
+    ...Array.from({ length: quantas.corpo }, (_, i) => ({ lista: "corpo" as const, i, rotulo: `{{${i + 1}}}` })),
+  ];
+  if (!linhas.length) return null;
+  function alterar(lista: "cabecalho" | "corpo", i: number, valor: string) {
+    const nova = [...valores[lista]];
+    while (nova.length <= i) nova.push("");
+    nova[i] = valor;
+    mudar?.(lista === "cabecalho" ? { ...valores, cabecalho: nova } : { ...valores, corpo: nova });
+  }
+  return <div className="space-y-1.5"><p className="text-[9px] font-medium uppercase tracking-wide text-zinc-400">Variáveis</p>{linhas.map((l) => {
+    const valor = valores[l.lista][l.i] ?? "";
+    const dado = dadoDoValor(valor);
+    const rotuloDado = DADOS_NA_CAMPANHA.find((d) => d.chave === dado)?.rotulo;
+    // Sem `truncate`: quem ativa precisa ler o texto fixo inteiro.
+    if (!mudar) return <p key={`${l.lista}${l.i}`} className="break-words text-[10px] text-zinc-500"><span className="font-mono text-zinc-400">{l.rotulo}</span> {rotuloDado ? `${rotuloDado} do contato` : valor ? `“${valor}”` : "—"}</p>;
+    // E-mail e WhatsApp não aparecem aqui: só vão pelo chat (lib/templates-whatsapp.ts).
+    const escolhido = DADOS_NA_CAMPANHA.some((d) => d.chave === dado) ? dado : null;
+    return <div key={`${l.lista}${l.i}`}><span className="font-mono text-[9px] text-zinc-400">{l.rotulo}</span><select aria-label={`O que vai em ${l.rotulo}`} className={campo} value={escolhido ?? "texto"} onChange={(e) => alterar(l.lista, l.i, e.target.value === "texto" ? "" : marcaDoContato(e.target.value as ChaveDoContato))}>{DADOS_NA_CAMPANHA.map((d) => <option key={d.chave} value={d.chave}>{d.rotulo} do contato</option>)}<option value="texto">Texto fixo</option></select>{!escolhido && <input aria-label={`Texto de ${l.rotulo}`} className={`${campo} mt-1`} value={valor} maxLength={l.lista === "cabecalho" ? LIMITE.cabecalho : LIMITE.valorFixo} onChange={(e) => alterar(l.lista, l.i, e.target.value)} placeholder="Igual para todos"/>}</div>;
+  })}<p className="text-[9px] leading-snug text-zinc-400">Contato sem o dado escolhido não recebe; a falha fica registrada.</p></div>;
+}
+
+export default function FluxoCampanha({ template, idioma="pt_BR", espera, aoResponder, aoExpirar, editavel = false, templates = [], variaveis, tags = [], segmentos = [], funis = [], etapas = [], mudarTemplate, mudarEspera, mudarVariaveis, mudarResponder, mudarExpirar }: Props) {
+  const escolhido = templates.find((t) => t.name === template && t.language === idioma);
+  const lido = escolhido ? lerTemplate(escolhido) : null;
+  const valores = variaveis ?? { cabecalho: [], corpo: [] };
+  // Na campanha já criada a lista de templates não vem: a quantidade sai dos valores guardados.
+  const quantas = lido ? variaveisDoTemplate(lido) : { cabecalho: valores.cabecalho.length, corpo: valores.corpo.length };
   function mudar(ramo: Ramo) { return ramo === "respondeu" ? mudarResponder : mudarExpirar }
   function lista(ramo: Ramo) { return ramo === "respondeu" ? aoResponder : aoExpirar }
   function atualizar(ramo: Ramo, indice: number, acao: Acao) { mudar(ramo)?.(lista(ramo).map((item, i) => i === indice ? acao : item)) }
@@ -42,9 +88,9 @@ export default function FluxoCampanha({ template, idioma="pt_BR", espera, aoResp
     return <>{acao.tipo === "adicionar_tag"&&<select className={campo} value={acao.tagId} onChange={e=>atualizar(ramo,indice,{...acao,tagId:e.target.value})}>{tags.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select>}{acao.tipo === "adicionar_segmento"&&<select className={campo} value={acao.segmentoId} onChange={e=>atualizar(ramo,indice,{...acao,segmentoId:e.target.value})}>{segmentos.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select>}{acao.tipo === "criar_oportunidade"&&<><select className={campo} value={acao.funilId} onChange={e=>{const etapa=etapas.find(x=>x.funil_id===e.target.value);if(etapa)atualizar(ramo,indice,{...acao,funilId:e.target.value,etapaId:etapa.id})}}>{funis.map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select><select className={campo} value={acao.etapaId} onChange={e=>atualizar(ramo,indice,{...acao,etapaId:e.target.value})}>{etapas.filter(x=>x.funil_id===acao.funilId).map(x=><option key={x.id} value={x.id}>{x.nome}</option>)}</select><input className={campo} value={acao.nome} onChange={e=>atualizar(ramo,indice,{...acao,nome:e.target.value})}/></>}<button type="button" onClick={()=>remover(ramo,indice)} className="nodrag nopan flex items-center gap-1 text-[10px] font-medium text-red-500"><Trash2 className="size-3"/>Remover bloco</button></>;
   }
   const { nodes, edges } = (() => {
-    const envioEditor=editavel?<><select className={campo} value={`${template}::${idioma}`} onChange={e=>{const [nome,...resto]=e.target.value.split("::");mudarTemplate?.(nome,resto.join("::"))}}><option value="::">Selecione o template</option>{templates.filter(t=>t.status==="APPROVED").map(t=><option key={`${t.name}-${t.language}`} value={`${t.name}::${t.language}`}>{t.name} · {t.language}</option>)}</select><label className="block text-[9px] font-medium uppercase tracking-wide text-zinc-400">Aguardar resposta<select className={`${campo} mt-1`} value={espera} onChange={e=>mudarEspera?.(Number(e.target.value))}><option value={60}>1 hora</option><option value={360}>6 horas</option><option value={1440}>1 dia</option><option value={4320}>3 dias</option><option value={10080}>7 dias</option><option value={43200}>30 dias</option></select></label></>:null;
+    const envioEditor=editavel?<><select className={campo} value={`${template}::${idioma}`} onChange={e=>{const [nome,...resto]=e.target.value.split("::");mudarTemplate?.(nome,resto.join("::"))}}><option value="::">Selecione o template</option>{templates.filter(t=>t.status==="APPROVED").map(t=><option key={`${t.name}-${t.language}`} value={`${t.name}::${t.language}`}>{t.name} · {t.language}</option>)}</select>{lido&&<p className="line-clamp-3 text-[10px] leading-snug text-zinc-500" title={lido.corpo}>{lido.corpo}</p>}<VariaveisDoEnvio quantas={quantas} valores={valores} mudar={mudarVariaveis}/><label className="block text-[9px] font-medium uppercase tracking-wide text-zinc-400">Aguardar resposta<select className={`${campo} mt-1`} value={espera} onChange={e=>mudarEspera?.(Number(e.target.value))}><option value={60}>1 hora</option><option value={360}>6 horas</option><option value={1440}>1 dia</option><option value={4320}>3 dias</option><option value={10080}>7 dias</option><option value={43200}>30 dias</option></select></label></>:null;
     const estiloNo={padding:0,border:"none",background:"transparent",width:230};
-    const nodes: Node[] = [{ id:"envio",position:{x:40,y:235},sourcePosition:Position.Right,targetPosition:Position.Left,style:estiloNo,data:{label:<Cartao cor="blue" icone={<MessageSquareText className="size-4"/>} titulo="Enviar template" subtitulo={!editavel?`${template||"Sem template"} · aguardar ${duracao(espera)}`:undefined}>{envioEditor}</Cartao>},draggable:false}];
+    const nodes: Node[] = [{ id:"envio",position:{x:40,y:235},sourcePosition:Position.Right,targetPosition:Position.Left,style:estiloNo,data:{label:<Cartao cor="blue" icone={<MessageSquareText className="size-4"/>} titulo="Enviar template" subtitulo={!editavel?`${template||"Sem template"} · aguardar ${duracao(espera)}`:undefined}>{envioEditor ?? (lido ? <p className="whitespace-pre-wrap break-words text-[10px] leading-snug text-zinc-600 dark:text-zinc-300">{textoParaRevisao(lido, valores)}</p> : (quantas.cabecalho || quantas.corpo) ? <VariaveisDoEnvio quantas={quantas} valores={valores}/> : null)}</Cartao>},draggable:false}];
     const edges: Edge[] = [];
     const ramos: Array<{chave:Ramo;acoes:Acao[];y:number;titulo:string;cor:"emerald"|"amber"}> = [{chave:"respondeu",acoes:aoResponder,y:90,titulo:"Respondeu",cor:"emerald"},{chave:"expirou",acoes:aoExpirar,y:390,titulo:"Não respondeu",cor:"amber"}];
     for(const ramo of ramos){let anterior="envio";(ramo.acoes.length?ramo.acoes:[null]).forEach((acao,indice)=>{const id=`${ramo.chave}-${indice}`;const titulo=!acao?"Encerrar fluxo":acao.tipo==="registrar_lead"?"Registrar conversão":acao.tipo==="adicionar_tag"?"Adicionar tag":acao.tipo==="adicionar_segmento"?"Adicionar ao segmento":"Criar oportunidade";const subtitulo=!acao?"Nenhuma ação adicional":acao.tipo==="adicionar_tag"?tags.find(x=>x.id===acao.tagId)?.nome:acao.tipo==="adicionar_segmento"?segmentos.find(x=>x.id===acao.segmentoId)?.nome:acao.tipo==="criar_oportunidade"?acao.nome:"Conta como resultado da campanha";const icone=acao?.tipo==="adicionar_tag"?<Tag className="size-4"/>:acao?.tipo==="criar_oportunidade"?<UserRoundPlus className="size-4"/>:<GitBranch className="size-4"/>;nodes.push({id,position:{x:360+indice*290,y:ramo.y},sourcePosition:Position.Right,targetPosition:Position.Left,style:estiloNo,data:{label:<Cartao cor={ramo.cor} icone={icone} titulo={titulo} subtitulo={subtitulo}>{acao?editor(acao,ramo.chave,indice):null}</Cartao>},draggable:false});edges.push({id:`${anterior}-${id}`,source:anterior,target:id,label:anterior==="envio"?ramo.titulo:undefined,labelStyle:{fontSize:10,fill:ramo.cor==="emerald"?"#059669":"#d97706"},...aresta});anterior=id})}

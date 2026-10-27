@@ -47,7 +47,7 @@ batem com o que existe no projeto. Todas mudam alguma escolha adiante.
 | 2 | Prisma ORM | **postgres.js**, com `prepare:false`, `fetch_types:false`, `max:12` — configuração que existe porque o pooler *deadlockava* e penduava rotas por ~30s | Adotar Prisma é refazer essa briga. Ver §4.1 |
 | 3 | `src/modules/...`, nomes em inglês | `app/` e `lib/` na raiz, **tudo em português** (`contatos`, `oportunidades`, `funis`, `etapas`) | Estrutura proposta forkaria a convenção. Ver §7 |
 | 4 | `FlowExecutions.lead_id` | Não existe "lead". Existem `contatos`, `oportunidades`, `atendimentos` | Execução precisa de sujeito polimórfico. Ver §4.3 |
-| 5 | shadcn/ui, Zustand, React Hook Form | Nada disso instalado. UI é feita à mão (`app/components/filtros-ui.tsx`), Tailwind v4, paleta zinc, lucide | shadcn traria um segundo design system. Ver §7.3 |
+| 5 | shadcn/ui, Zustand, React Hook Form | Nada disso instalado. UI é feita à mão (`app/components/filtros-ui.tsx`), Tailwind v4, paleta zinc, ícones Font Awesome (`app/components/icones.tsx`) | shadcn traria um segundo design system. Ver §7.3 |
 | 6 | — | **Não existe autenticação nenhuma** no app. Sem middleware, sem sessão | Bloqueante. Ver §3.1 |
 | 7 | — | `app/automacoes/page.tsx` é um placeholder `ModuloEmBreve` | Ponto de partida limpo, sem migração |
 
@@ -976,7 +976,7 @@ Decidido a partir das restrições de §1.5:
 | Zod | **Sim.** Valida definição na fronteira; use `z.infer` como fonte do tipo |
 | Zustand | **Sim, escopado ao builder.** Estado do canvas (nós, seleção, undo/redo) não pertence a `useState` espalhado. Não usar fora de `app/automacoes/builder/` |
 | React Hook Form | **Talvez.** Só se os painéis de configuração ficarem grandes. Os formulários atuais do projeto são `useState` e funcionam |
-| shadcn/ui | **Não.** O projeto tem linguagem visual própria e consistente (`filtros-ui.tsx`, chips, zinc, `size-*` do lucide). shadcn traria Radix + um segundo vocabulário de componentes. Extraia os componentes que faltam no estilo que já existe |
+| shadcn/ui | **Não.** O projeto tem linguagem visual própria e consistente (`filtros-ui.tsx`, chips, zinc, `size-*` nos ícones). shadcn traria Radix + um segundo vocabulário de componentes. Extraia os componentes que faltam no estilo que já existe |
 | Prisma | **Não** — ver §4.1 |
 | `dnd-kit` | Já instalado, usado no funil. Não substitui React Flow no canvas, mas serve para reordenar listas nos painéis |
 

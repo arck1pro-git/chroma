@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowUpRight, Plus, RefreshCw } from "lucide-react";
 import type { CriativosAds, LinhaAds, RecursosAds, RelatorioAds } from "@/lib/meta-ads-tipos";
 import type { ContextoMetrica } from "@/lib/meta-ads-metricas";
 import { preferenciaDeCriterio, primeiroQueRanqueia, ranquear } from "@/lib/meta-ads-ranking";
 import { teveResultado } from "@/lib/meta-ads-metricas";
+import { ArrowUpRight, Plus, RefreshCw } from "@/app/components/icones";
 import { Seta, campo } from "../components/filtros-ui";
 import LogoMeta from "../components/logo-meta";
 import { useConsulta } from "./use-consulta";

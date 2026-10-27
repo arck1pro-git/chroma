@@ -6,10 +6,10 @@
 // em cada linha, o número que ordenou e os dois que dão contexto a ele (custo
 // baixo com 3 leads não é o mesmo que custo baixo com 80).
 import { useState } from "react";
-import { ArrowRight, type LucideIcon } from "lucide-react";
 import { formatarMetrica, metrica, type ContextoMetrica, type LinhaMetricas } from "@/lib/meta-ads-metricas";
 import { criterio, preferenciaDeCriterio, primeiroQueRanqueia, ranquear } from "@/lib/meta-ads-ranking";
 import type { CriativoAds, LinhaAds, TipoCriativoAds } from "@/lib/meta-ads-tipos";
+import { ArrowRight, type TipoIcone } from "@/app/components/icones";
 import { Miniatura, Posicao, SeletorCriterio } from "./metricas-ui";
 import { entregaLegivel, objetivos } from "./pecas";
 
@@ -45,7 +45,7 @@ export function criativoComoItem(c: CriativoAds): ItemRanking {
 }
 
 export default function CartaoRanking({ titulo, Icone, itens, ctx, temCrm, comVideo, limite = 5, carregando, vazioSemDados, aoAbrir, aoVerTodos, rotuloVerTodos }: {
-  titulo: string; Icone: LucideIcon; itens: ItemRanking[]; ctx: ContextoMetrica; temCrm: boolean; comVideo?: boolean; limite?: number;
+  titulo: string; Icone: TipoIcone; itens: ItemRanking[]; ctx: ContextoMetrica; temCrm: boolean; comVideo?: boolean; limite?: number;
   carregando?: boolean; vazioSemDados: string; aoAbrir: (id: string) => void; aoVerTodos?: () => void; rotuloVerTodos?: string;
 }) {
   const [escolhido, setEscolhido] = useState<string | null>(null);

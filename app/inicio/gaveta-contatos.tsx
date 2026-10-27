@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import type { CampoPersonalizado, Contato, Etapa, Funil, Usuario } from "@/lib/entidades";
+import type { Ia } from "@/lib/ia/catalogo";
+import type { ContatoEncontrado, DadosDoContato } from "@/lib/contatos-busca";
+import { MIN_DIGITOS, MIN_LETRAS, prepararTermo } from "@/lib/contatos-termo";
+import { localizacao } from "@/lib/formato";
+import { telefoneLegivel } from "@/lib/telefone";
 import {
   ArrowLeft,
   ChevronRight,
@@ -12,13 +18,7 @@ import {
   Trash2,
   UserSearch,
   X,
-} from "lucide-react";
-import type { CampoPersonalizado, Contato, Etapa, Funil, Usuario } from "@/lib/entidades";
-import type { Ia } from "@/lib/ia/catalogo";
-import type { ContatoEncontrado, DadosDoContato } from "@/lib/contatos-busca";
-import { MIN_DIGITOS, MIN_LETRAS, prepararTermo } from "@/lib/contatos-termo";
-import { localizacao } from "@/lib/formato";
-import { telefoneLegivel } from "@/lib/telefone";
+} from "@/app/components/icones";
 import { CamposContato, SecoesContato } from "../contatos/detalhes";
 import { haQuanto } from "../contatos/pecas";
 import { Avatar, BOTAO_SECUNDARIO, BotaoIcone, CascaGaveta, CorpoGaveta, LINHA } from "../components/gaveta";

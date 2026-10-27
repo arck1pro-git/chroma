@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Code2, Eye, Monitor, Smartphone, X } from "lucide-react";
+import { Code2, Eye, Monitor, Smartphone, X } from "@/app/components/icones";
 import type { Email } from "./mock";
 
 const campoTexto =

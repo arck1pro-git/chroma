@@ -19,6 +19,9 @@
 // (lib/auth/dal.ts). Desligar aqui fecha a porta no próximo carregamento da
 // pessoa, mesmo com ela já logada.
 import { useState, useTransition } from "react";
+import { OPERACOES } from "@/lib/auth/permissoes";
+import { MODULOS } from "@/lib/auth/modulos";
+import type { ChaveModulo, Escopo } from "@/lib/auth/modulos";
 import {
   Check,
   KeyRound,
@@ -29,10 +32,7 @@ import {
   Trash2,
   UserCog,
   X,
-} from "lucide-react";
-import { OPERACOES } from "@/lib/auth/permissoes";
-import { MODULOS } from "@/lib/auth/modulos";
-import type { ChaveModulo, Escopo } from "@/lib/auth/modulos";
+} from "@/app/components/icones";
 import type {
   DadosAcessos,
   DepartamentoConfig,

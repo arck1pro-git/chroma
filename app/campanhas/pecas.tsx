@@ -1,5 +1,4 @@
-import type { LucideIcon } from "lucide-react";
-import { TriangleAlert } from "lucide-react";
+import { type TipoIcone, TriangleAlert } from "@/app/components/icones";
 
 // As peças que as telas de Campanhas repetem: tokens de campo e botão, os
 // códigos da Meta em português e os dois avisos. Cada painel trazia a própria
@@ -52,7 +51,7 @@ export function Aviso({ texto, detalhe, erro }: { texto: string; detalhe?: strin
   );
 }
 
-export function Vazio({ Icone, texto, girando }: { Icone: LucideIcon; texto: string; girando?: boolean }) {
+export function Vazio({ Icone, texto, girando }: { Icone: TipoIcone; texto: string; girando?: boolean }) {
   return (
     <div className="flex flex-col items-center rounded-lg border border-dashed border-zinc-300 px-6 py-12 text-center dark:border-zinc-700">
       <Icone className={`size-5 text-zinc-400 ${girando ? "animate-spin" : ""}`} aria-hidden="true" />

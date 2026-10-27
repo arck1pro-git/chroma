@@ -22,7 +22,7 @@
 // Cores: variáveis --serie-* e --viz-* da classe .viz (globals.css),
 // validadas para daltonismo nos dois modos.
 import { useCallback, useState, type ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import type { TipoIcone } from "./icones";
 import { corDoCss, degrade, useGrafico, type Desenho } from "./grafico-canvas";
 
 /**
@@ -41,7 +41,7 @@ export type SerieLinha<T> = {
   /** Uma var(--serie-…) de .viz. */
   cor: string;
   /** Ícone na cor da série, no lugar do traço, na legenda e no tooltip. */
-  Icone?: LucideIcon;
+  Icone?: TipoIcone;
   valor: (d: T) => number;
   /** Texto apagado depois do total na legenda — "(9 pela IA)". */
   nota?: (dados: T[]) => string | null;

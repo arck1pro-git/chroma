@@ -2,8 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ChevronLeft, ChevronRight, Loader2, PanelLeft, Video, X } from "lucide-react";
 import type { AgendaGoogle, EventoAgenda, ReuniaoDoSistema } from "@/lib/agenda";
+import {
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  PanelLeft,
+  Video,
+  X,
+} from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import GradeHoras from "./grade-horas";
 import GradeMes from "./grade-mes";

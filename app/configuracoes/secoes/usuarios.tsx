@@ -34,7 +34,7 @@ import {
   UserPlus,
   Users,
   X,
-} from "lucide-react";
+} from "@/app/components/icones";
 import type { DepartamentoDaConta, UsuarioComConta } from "../dados";
 import { criarUsuario, editarUsuario, type DadosUsuario } from "../acoes-usuarios";
 import { botao, botaoFantasma, campoTexto, rotuloCampo, textoAjuda } from "./ui";

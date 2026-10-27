@@ -8,7 +8,17 @@
 // descrição sem corte, para quem foi e quem já fez (na demanda "para todos"),
 // e editar/excluir para quem criou. O cartão do quadro só resume.
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, CalendarClock, Check, Flag, LifeBuoy, Pencil, Trash2, Users, X } from "lucide-react";
+import {
+  ArrowDown,
+  CalendarClock,
+  Check,
+  Flag,
+  LifeBuoy,
+  Pencil,
+  Trash2,
+  Users,
+  X,
+} from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import { dataHora } from "@/lib/formato";
 import { AnexosDaDemanda } from "./anexos";

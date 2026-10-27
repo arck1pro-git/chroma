@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { Repeat } from "lucide-react";
 import type { AgendaGoogle, EventoAgenda, ReuniaoDoSistema } from "@/lib/agenda";
+import { Repeat } from "@/app/components/icones";
 import { faixasDosDias, pedacosDoDia, type Pedaco } from "./disposicao";
 import { diaCurto, diaDe, horaCurta, intervalo, minutosDe, numeroDoDia } from "./tempo";
 import { useAgora } from "./relogio";

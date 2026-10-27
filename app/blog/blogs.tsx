@@ -5,8 +5,8 @@
 // O cadastro e a geração de artigos usam a descrição e as configurações do blog.
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Settings2 } from "lucide-react";
 import type { Blog } from "@/lib/artigo";
+import { Settings2 } from "@/app/components/icones";
 import { BotaoExcluir, BotaoSalvar, Gaveta } from "./pecas";
 
 type Rascunho = {

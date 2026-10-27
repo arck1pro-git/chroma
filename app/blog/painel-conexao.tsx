@@ -12,9 +12,9 @@
 // site precisa copiá-la. O que existe é o botão de trocar, para quando ela
 // vazar — e ele avisa que a URL antiga morre na hora.
 import { useState } from "react";
-import { Check, Copy, Link2, RefreshCw } from "lucide-react";
 import type { Blog } from "@/lib/artigo";
 import { promptDeImplementacao, urlDeConexao } from "@/lib/blog-conexao";
+import { Check, Copy, Link2, RefreshCw } from "@/app/components/icones";
 import { Balao, CabecalhoFolha } from "./pecas";
 
 export default function PainelConexao({

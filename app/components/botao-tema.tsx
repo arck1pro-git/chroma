@@ -1,14 +1,14 @@
 "use client";
 
-// Sol e lua ao lado do "Sair": troca entre modo claro e escuro e GUARDA a
+// Modo claro ou escuro, no menu da conta da barra lateral: troca e GUARDA a
 // escolha (pedido dele, 2026-10-20). A escolha vai num cookie de um ano, que o
 // layout lê no servidor para já mandar o <html> com a classe certa — sem a
 // piscada de abrir claro e escurecer depois. Sem escolha, vale o do sistema.
 //
-// O ícone é decidido pelo CSS (dark:), não por estado: o servidor não sabe o
-// tema do sistema, e um estado aqui desenharia o ícone errado até hidratar.
-import { Moon, Sun } from "lucide-react";
+// Ícone e rótulo são decididos pelo CSS (dark:), não por estado: o servidor não
+// sabe o tema do sistema, e um estado aqui desenharia o errado até hidratar.
 import { COOKIE_TEMA } from "@/lib/tema";
+import { Moon, Sun } from "./icones";
 
 function escuroAgora(): boolean {
   const c = document.documentElement.classList;
@@ -17,26 +17,22 @@ function escuroAgora(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-export default function BotaoTema({ className = "" }: { className?: string }) {
-  function alternar() {
-    const escuro = !escuroAgora();
-    const html = document.documentElement;
-    html.classList.toggle("escuro", escuro);
-    html.classList.toggle("claro", !escuro);
-    document.cookie = `${COOKIE_TEMA}=${escuro ? "escuro" : "claro"}; path=/; max-age=31536000; samesite=lax`;
-  }
+function alternarTema() {
+  const escuro = !escuroAgora();
+  const html = document.documentElement;
+  html.classList.toggle("escuro", escuro);
+  html.classList.toggle("claro", !escuro);
+  document.cookie = `${COOKIE_TEMA}=${escuro ? "escuro" : "claro"}; path=/; max-age=31536000; samesite=lax`;
+}
 
+/** A linha do menu: no claro oferece o escuro (lua), no escuro oferece o claro (sol). */
+export default function ItemDoTema({ className }: { className: string }) {
   return (
-    <button
-      type="button"
-      onClick={alternar}
-      aria-label="Alternar entre modo claro e escuro"
-      title="Modo claro / escuro"
-      className={`flex size-6 shrink-0 items-center justify-center rounded-md text-zinc-950 transition-colors hover:bg-zinc-100 dark:text-zinc-50 dark:hover:bg-zinc-800/60 ${className}`}
-    >
-      {/* No escuro aparece o sol (vai para o claro); no claro, a lua. */}
-      <Sun className="hidden size-3.5 dark:block" aria-hidden="true" />
-      <Moon className="size-3.5 dark:hidden" aria-hidden="true" />
+    <button type="button" role="menuitem" onClick={alternarTema} className={className}>
+      <Moon className="size-4 shrink-0 dark:hidden" aria-hidden="true" />
+      <Sun className="hidden size-4 shrink-0 dark:block" aria-hidden="true" />
+      <span className="dark:hidden">Modo escuro</span>
+      <span className="hidden dark:inline">Modo claro</span>
     </button>
   );
 }

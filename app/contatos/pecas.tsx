@@ -5,10 +5,10 @@
 // jornada, atividade, lateral) usam as mesmas — e um "3 dias" escrito de dois
 // jeitos na mesma tela é o tipo de coisa que denuncia remendo.
 import { useState } from "react";
-import { Check, Copy } from "lucide-react";
 import type { EtapaComTom } from "@/lib/contatos-ficha";
 import { brlCurto, dataDoInstante } from "@/lib/formato";
 import { telefoneLegivel } from "@/lib/telefone";
+import { Check, Copy } from "@/app/components/icones";
 
 const FUSO = "America/Sao_Paulo";
 

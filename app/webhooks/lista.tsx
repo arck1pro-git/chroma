@@ -5,13 +5,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Plus,
-  Search,
-  SearchX,
-  TriangleAlert,
-  Webhook as WebhookIcon,
-} from "lucide-react";
+import { Plus, Search, SearchX, TriangleAlert, Webhook as WebhookIcon } from "@/app/components/icones";
 import { criarWebhook } from "./acoes";
 import { normalizar } from "../filtros-comuns";
 import { dataCurta } from "@/lib/formato";

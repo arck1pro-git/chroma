@@ -29,8 +29,8 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { CalendarOff, ChevronLeft, ChevronRight, Flag } from "lucide-react";
 import type { Prioridade } from "@/lib/demandas-tipos";
+import { CalendarOff, ChevronLeft, ChevronRight, Flag } from "@/app/components/icones";
 import { ehMinha, primeiroNome, siglaDe, type Eu, type Item } from "./cartao";
 import { COLUNAS, definicaoDe, type ColunaId, type Quadro } from "./colunas";
 import { somarDias } from "./datas";

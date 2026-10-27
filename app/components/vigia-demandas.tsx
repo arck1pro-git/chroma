@@ -23,7 +23,6 @@
 // verdade (service worker + uma tabela de aparelhos), que ficou de fora.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { BellRing, X } from "lucide-react";
 import {
   EVENTO_ABRIR_DEMANDA,
   EVENTO_DEMANDAS,
@@ -31,6 +30,7 @@ import {
   type DemandaNova,
   type SituacaoDemandas,
 } from "@/lib/demandas-tipos";
+import { BellRing, X } from "./icones";
 import { criarPreferencia } from "./preferencia-local";
 
 const INTERVALO = 60_000;

@@ -12,6 +12,8 @@
 // `fetch` em vez do `useTransition` que o resto do CRM usa para mutação.
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import type { Documento, TipoDocumento } from "@/lib/documentos";
+import { dataCurta } from "@/lib/formato";
 import {
   Check,
   Download,
@@ -27,17 +29,15 @@ import {
   Trash2,
   Upload,
   X,
-  type LucideIcon,
-} from "lucide-react";
-import type { Documento, TipoDocumento } from "@/lib/documentos";
-import { dataCurta } from "@/lib/formato";
+  type TipoIcone,
+} from "@/app/components/icones";
 import {
   alternarArquivado,
   removerDocumento,
   salvarDocumento,
 } from "./acoes";
 
-const ICONE: Record<TipoDocumento, LucideIcon> = {
+const ICONE: Record<TipoDocumento, TipoIcone> = {
   imagem: ImageIcon,
   video: Film,
   audio: Music,

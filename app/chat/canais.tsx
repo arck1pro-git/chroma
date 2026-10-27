@@ -16,7 +16,7 @@
 //   · lg     → só os avatares (a lista e a conversa precisam do espaço);
 //   · < lg   → some; quem troca de canal é o menu do cabeçalho da lista.
 import Link from "next/link";
-import { Inbox, MessageCircle, Settings2 } from "lucide-react";
+import { Inbox, MessageCircle, Settings2 } from "@/app/components/icones";
 import type { CanalChat, TipoCanal } from "./tipos";
 import { Avatar, PAPEL, estadoDoCanal, identificacaoDoCanal } from "./ui";
 

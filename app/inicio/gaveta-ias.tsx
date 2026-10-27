@@ -9,7 +9,6 @@
 // do quadro (etapas.ia_id) e o interruptor do contato. A lista só mostra onde
 // cada uma está em uso, que é a pergunta antes de editar ou excluir.
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { ArrowLeft, ArrowRightLeft, Bot, ChevronRight, Clock3, Loader2, Plus, Trash2, X } from "lucide-react";
 import {
   ACOES_IA,
   LIMITE_NOME_IA,
@@ -18,6 +17,17 @@ import {
   MAX_RETOMADAS,
   type Ia,
 } from "@/lib/ia/catalogo";
+import {
+  ArrowLeft,
+  ArrowRightLeft,
+  Bot,
+  ChevronRight,
+  Clock3,
+  Loader2,
+  Plus,
+  Trash2,
+  X,
+} from "@/app/components/icones";
 import CamadaTopo from "../components/camada-topo";
 import type { Contato, Etapa, Funil } from "@/lib/entidades";
 import { atualizarIa, criarIa, excluirIa } from "./acoes-ia";

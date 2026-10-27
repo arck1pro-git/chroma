@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Sidebar, { type ItemDeModulo } from "./components/sidebar";
@@ -84,32 +83,25 @@ export default async function RootLayout({
     >
       <body className="min-h-full font-sans" suppressHydrationWarning>
         <div className="flex min-h-screen">
-          {/* A sidebar lê ?ia= para marcar a conversa aberta, e useSearchParams
-              exige fronteira de Suspense nas rotas estáticas (/emails,
-              /integracoes, /meta) — sem isto o build falha nelas. O fallback é a
-              coluna vazia, do mesmo tamanho: nada pula quando ela chega. */}
-          <Suspense fallback={<div className="w-[260px] shrink-0" />}>
-            <Sidebar
-              usuario={
-                usuario && {
-                  id: usuario.id,
-                  nome: usuario.nome,
-                  iniciais: usuario.iniciais,
-                  email: usuario.email,
-                  departamento: usuario.departamento?.nome ?? null,
-                }
+          <Sidebar
+            usuario={
+              usuario && {
+                id: usuario.id,
+                nome: usuario.nome,
+                iniciais: usuario.iniciais,
+                email: usuario.email,
+                departamento: usuario.departamento?.nome ?? null,
               }
-              modulos={modulos}
-              temConfiguracoes={temConfiguracoes}
-              // Criar instância de WhatsApp exige o MÓDULO configuracoes, e
-              // não o `temConfiguracoes` acima — aquele soma quem administra
-              // acessos sem ter o módulo, e essas actions chamam
-              // exigirModulo("configuracoes").
-              podeWhatsApp={usuario?.modulos.has("configuracoes") ?? false}
-              iaFixa={iaFixa}
-              demandas={demandas}
-            />
-          </Suspense>
+            }
+            modulos={modulos}
+            temConfiguracoes={temConfiguracoes}
+            // Criar instância de WhatsApp exige o MÓDULO configuracoes, e
+            // não o `temConfiguracoes` acima — aquele soma quem administra
+            // acessos sem ter o módulo, e essas actions chamam
+            // exigirModulo("configuracoes").
+            podeWhatsApp={usuario?.modulos.has("configuracoes") ?? false}
+            demandas={demandas}
+          />
           <ProvedorIaGlobal ativa={iaFixa}>
             <div className="flex min-w-0 flex-1 flex-col">{children}</div>
           </ProvedorIaGlobal>

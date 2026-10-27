@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, Layers, Tag as TagIcon, User, Users, X } from "lucide-react";
+import { CalendarDays, Layers, Tag as TagIcon, User, Users, X } from "@/app/components/icones";
 import {
   CampoBusca,
   Chip,

@@ -17,7 +17,7 @@
 // ESPELHO — lê scrollTop/scrollHeight e escreve scrollTop quando arrastam. Se
 // ele quebrar, a coluna continua rolando.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "@/app/components/icones";
 
 /** Altura mínima do polegar, para ele não virar um risco em lista longa. */
 const MIN_POLEGAR = 28;
