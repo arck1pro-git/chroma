@@ -12,7 +12,6 @@
 // mensagem deles. Criar IA não é aqui — é a gaveta do botão IA, no topo; sem
 // nenhuma criada, o diálogo leva até lá.
 import { useEffect, useOptimistic, useRef, useState, useTransition, type ReactNode } from "react";
-import Link from "next/link";
 import { ArrowRightLeft, BookOpen, Bot, Check, Hand, Loader2, MessageCircle, Plus, X } from "lucide-react";
 import { realceDoTom, solidoDoTom } from "@/lib/cores-funil";
 import type { Ia } from "@/lib/ia/catalogo";
@@ -239,11 +238,7 @@ function EscolherIa({
                   removido da IA.
                 </Item>
                 <Item Icone={BookOpen}>
-                  Só afirma o que está em{" "}
-                  <Link href="/contextos" className="font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100">
-                    Contextos
-                  </Link>
-                  . O que não souber, pede à equipe.
+                  Segue as instruções cadastradas nesta IA. O que não souber, pede à equipe.
                 </Item>
                 {ias.find((i) => i.id === escolhida)?.acoes.includes("mover_etapa") && (
                   <Item Icone={ArrowRightLeft}>

@@ -40,7 +40,7 @@ import {
   type Blog,
 } from "@/lib/artigo";
 import { dataCurta } from "@/lib/formato";
-import { SeloSeo, Tag, TagStatus } from "../pecas";
+import { SeloSeo, TagStatus } from "../pecas";
 import PainelArtigo from "../painel-artigo";
 import PainelConexao from "../painel-conexao";
 import PainelRss from "../painel-rss";
@@ -153,15 +153,7 @@ export default function BlogArtigos({
               {blog?.nome ?? "…"}
             </h1>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              {blog?.auditoria_nome ? (
-                <Tag>{blog.auditoria_nome}</Tag>
-              ) : (
-                blog && (
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                    Sem auditoria — não dá para gerar artigo
-                  </span>
-                )
-              )}
+
               {blog?.url_base && (
                 <span className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">
                   {blog.url_base}

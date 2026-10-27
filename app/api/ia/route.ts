@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 import { ferramentasDoUsuario, REGRAS_DE_ANALISE } from "@/lib/ia/ferramentas";
 import { conversar, historicoDe, texto } from "@/lib/ia/conversa";
 import { REGRA_DADO_NAO_CONFIAVEL } from "@/lib/ia/sanitizar";
-import { blocoDeContexto, registrarContextosUsados } from "@/lib/contextos";
 import { exigirLoginApi } from "@/lib/auth/dal";
 import { conversaCompleta, temIaCompleta } from "@/lib/ia/completa";
 
@@ -62,27 +61,8 @@ export async function POST(req: NextRequest) {
     return Response.json({ erro: "Pergunta vazia." }, { status: 400 });
   }
 
-  // Blocos de prompt escolhidos na tela (módulo Contextos). Entram DEPOIS do
-  // system fixo para não estragar o prefixo cacheável: o pedaço estável
-  // continua igual entre perguntas, e só a cauda muda quando a escolha muda.
-  //
-  // São instrução de verdade, sem o embrulho de dado inerte — quem os escreve é
-  // o operador do CRM, que já podia escrever a própria pergunta. O que continua
-  // marcado como não confiável é o que vem do WhatsApp (lib/ia/sanitizar.ts).
-  const ids = Array.isArray(corpo.contextos)
-    ? corpo.contextos.filter((v): v is string => typeof v === "string")
-    : [];
-  const { texto: blocos, usados } = await blocoDeContexto(ids);
-
-  // Sem await: é linha de auditoria, e segurar a resposta da IA por causa dela
-  // seria trocar o principal pelo acessório. Erros já são engolidos lá dentro.
-  const conversaId = texto(corpo.conversa_id, 64);
-  if (conversaId && usados.length > 0) {
-    void registrarContextosUsados(conversaId, usados);
-  }
-
   return conversar({
-    sistema: blocos ? [SISTEMA, blocos].join("\n\n") : SISTEMA,
+    sistema: SISTEMA,
     // No escopo de quem pergunta, e nenhuma sem o Dashboard (lib/ia/ferramentas.ts).
     ferramentas: ferramentasDoUsuario(sessao),
     pergunta,

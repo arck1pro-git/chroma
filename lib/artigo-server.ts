@@ -3,8 +3,7 @@
 // POR QUE NÃO ESTÁ EM lib/artigo.ts: aquele arquivo é importado pelo painel do
 // artigo, que é componente de cliente. Uma linha de `import { sql }` lá dentro
 // arrastaria o driver do Postgres (net/tls) para o bundle do navegador e o
-// build quebraria em "module not found: net" — a mesma armadilha que separa
-// lib/contextos-tipos.ts de lib/contextos.ts.
+// build quebraria em "module not found: net".
 import { sql } from "@/lib/db";
 import { slugify } from "@/lib/artigo";
 

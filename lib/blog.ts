@@ -10,19 +10,17 @@ import { sql } from "@/lib/db";
 import type { Artigo, Blog } from "@/lib/artigo";
 
 /**
- * Projeção canônica do blog: colunas + `auditoria_nome` (do JOIN em contextos)
- * + `artigos` (contagem). Os dois últimos não são colunas de `blog`.
+ * Projeção canônica do blog: colunas e contagem de artigos.
  *
  * Datas viram texto ISO no Postgres, como no resto do projeto: assim o valor
  * que chega ao JSON não depende de como o driver serializa Date.
  */
 const CAMPOS_BLOG = `
-  b.id, b.nome, b.auditoria_id, b.descricao, b.url_base, b.autor, b.chave,
+  b.id, b.nome, b.descricao, b.url_base, b.autor, b.chave,
   to_char(b.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
-  c.nome AS auditoria_nome,
   (SELECT count(*) FROM artigo a WHERE a.blog_id = b.id)::int AS artigos`;
 
-const DE_BLOG = `FROM blog b LEFT JOIN contextos c ON c.id = b.auditoria_id`;
+const DE_BLOG = `FROM blog b`;
 
 /**
  * Ordenação canônica da lista de artigos, usada em TODA listagem por blog:
@@ -47,15 +45,10 @@ export function camposArtigo(prefixo = ""): string {
     to_char(${p}updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at`;
 }
 
-export async function listarBlogs(auditoriaId?: string | null): Promise<Blog[]> {
-  const linhas = auditoriaId
-    ? await sql`
-        SELECT ${sql.unsafe(CAMPOS_BLOG)} ${sql.unsafe(DE_BLOG)}
-        WHERE b.auditoria_id = ${auditoriaId}
-        ORDER BY b.nome`
-    : await sql`
-        SELECT ${sql.unsafe(CAMPOS_BLOG)} ${sql.unsafe(DE_BLOG)}
-        ORDER BY b.nome`;
+export async function listarBlogs(): Promise<Blog[]> {
+  const linhas = await sql`
+    SELECT ${sql.unsafe(CAMPOS_BLOG)} ${sql.unsafe(DE_BLOG)}
+    ORDER BY b.nome`;
   return linhas as unknown as Blog[];
 }
 

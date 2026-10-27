@@ -57,8 +57,7 @@ export async function POST(req: NextRequest) {
   const { ferramentas, gravou } = ferramentasDoFluxo(fluxoId);
 
   // A biblioteca vai JUNTO do system, montada agora: ela muda a cada upload, e
-  // o modelo só consegue anexar o que ele enxerga. Mesmo padrão dos contextos
-  // em app/api/ia/route.ts.
+  // o modelo só consegue anexar o que ele enxerga.
   // Os vídeos também: é daqui que o modelo copia o link rastreável que vai na
   // mensagem, já com o domínio deste CRM (tirado do request).
   const [documentos, videos] = await Promise.all([

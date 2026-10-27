@@ -94,7 +94,7 @@ export default function PainelRss({
           <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
             Até {MAX_FEEDS} endereços de RSS. Toda segunda às 8h a automação lê
             os feeds, descarta o que já virou artigo e gera 10 artigos novos
-            como pendentes, usando a auditoria deste blog.
+            como pendentes, usando a descrição e as configurações deste blog.
           </p>
 
           {!carregado ? (

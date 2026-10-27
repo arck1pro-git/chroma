@@ -91,7 +91,7 @@ export interface RespostaArtigo {
  */
 export async function blogPorChave(chave: string): Promise<Blog | null> {
   const [linha] = await sql`
-    SELECT b.id, b.nome, b.auditoria_id, b.descricao, b.url_base, b.autor,
+    SELECT b.id, b.nome, b.descricao, b.url_base, b.autor,
            b.chave,
            to_char(b.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
              AS created_at

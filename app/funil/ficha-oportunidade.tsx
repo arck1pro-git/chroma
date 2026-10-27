@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, MessageCircle, Pause, Play, Trash2, Workflow, X } from "lucide-react";
+import { ChevronDown, ChevronRight, MessageCircle, Pause, Pencil, Play, Trash2, Workflow, X } from "lucide-react";
 import type {
   Anotacao,
   Atendimento,
@@ -28,6 +28,7 @@ import {
   retomarAutomacao,
 } from "./actions";
 import { STATUS_OPORTUNIDADE, type StatusOportunidade } from "./status";
+import { editarOportunidade } from "./acoes-edicao";
 import type { AutomacaoDaEntidade } from "@/lib/automacoes/repositorio";
 import { ListaCampos } from "../components/campos-personalizados";
 import {
@@ -83,6 +84,52 @@ const ESTADO_EXECUCAO: Record<string, string> = {
 
 type Aba = "oportunidade" | "cliente";
 
+function EditorOportunidade({ oportunidade, aoFechar }: {
+  oportunidade: Oportunidade;
+  aoFechar: () => void;
+}) {
+  const [nome, setNome] = useState(oportunidade.nome);
+  const [valor, setValor] = useState(String(oportunidade.valor));
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvando, iniciar] = useTransition();
+  const campo = "w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-[13px] text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:text-zinc-50";
+
+  return (
+    <form onSubmit={(e) => {
+      e.preventDefault();
+      if (salvando) return;
+      setErro(null);
+      iniciar(async () => {
+        try {
+          const r = await editarOportunidade(oportunidade.id, { nome, valor: Number(valor) });
+          if (!r.ok) { setErro(r.erro); return; }
+          aoFechar();
+        } catch {
+          setErro("Não consegui salvar a oportunidade. Tente novamente.");
+        }
+      });
+    }} className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+      <fieldset disabled={salvando} className="grid min-w-0 gap-3 sm:grid-cols-[1fr_150px]">
+        <label className="min-w-0 text-[12px] text-zinc-600 dark:text-zinc-400">
+          Nome da oportunidade
+          <input autoFocus required maxLength={200} value={nome} onChange={(e) => setNome(e.target.value)} className={`${campo} mt-1`} />
+        </label>
+        <label className="min-w-0 text-[12px] text-zinc-600 dark:text-zinc-400">
+          Valor (R$)
+          <input type="number" required min="0" max="999999999999.99" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} className={`${campo} mt-1 tabular-nums`} />
+        </label>
+      </fieldset>
+      {erro && <p role="alert" className="mt-2 text-[12px] text-red-600 dark:text-red-400">{erro}</p>}
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" onClick={aoFechar} disabled={salvando} className={BOTAO_SECUNDARIO}>Cancelar</button>
+        <button type="submit" disabled={salvando || !nome.trim() || !valor.trim()} className={BOTAO_PRIMARIO}>
+          {salvando ? "Salvando…" : "Salvar alterações"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /** A conversa do botão "Conversar": a aberta mais recente, ou a última que houve. */
 function conversaPrincipal(atendimentos: Atendimento[]): Atendimento | null {
   const recentes = [...atendimentos].sort((a, b) => b.data_criacao.localeCompare(a.data_criacao));
@@ -96,6 +143,7 @@ export default function FichaOportunidade({
   funilPorId,
   usuarioPorId,
   euId,
+  podeEditarTodas,
   oportunidadesDoContato,
   historicoDoContato,
   anotacoesDoContato,
@@ -115,6 +163,7 @@ export default function FichaOportunidade({
   usuarioPorId: Map<string, Usuario>;
   /** Quem está logado (apagar anotação é só de quem escreveu). */
   euId: string;
+  podeEditarTodas: boolean;
   oportunidadesDoContato: Map<string, Oportunidade[]>;
   historicoDoContato: Map<string, Historico[]>;
   anotacoesDoContato: Map<string, Anotacao[]>;
@@ -128,6 +177,8 @@ export default function FichaOportunidade({
   aoFechar: () => void;
 }) {
   const [aba, setAba] = useState<Aba>("oportunidade");
+  const [edicaoId, setEdicaoId] = useState<string | null>(null);
+  const podeEditar = oportunidade.responsavel_id === euId || podeEditarTodas;
 
   const etapa = etapaPorId.get(oportunidade.etapa_id);
   const funil = funilPorId.get(oportunidade.funil_id);
@@ -284,6 +335,23 @@ export default function FichaOportunidade({
             )}
           </p>
         </div>
+
+        {podeEditar && (
+          <div className="mt-2">
+            {edicaoId === oportunidade.id ? (
+              <EditorOportunidade
+                key={oportunidade.id}
+                oportunidade={oportunidade}
+                aoFechar={() => setEdicaoId((atual) => atual === oportunidade.id ? null : atual)}
+              />
+            ) : (
+              <button type="button" onClick={() => setEdicaoId(oportunidade.id)} className={BOTAO_SECUNDARIO}>
+                <Pencil className="size-3.5" aria-hidden="true" />
+                Editar nome e valor
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="mt-3">
           <ReguaEtapas etapas={etapasDoFunil} atualId={oportunidade.etapa_id} />

@@ -26,7 +26,6 @@
 // isso nenhuma tela precisou mudar de endpoint.
 import type { BetaRunnableTool } from "@anthropic-ai/sdk/lib/tools/BetaRunnableTool";
 import type { UsuarioLogado } from "@/lib/auth/dal";
-import { blocoDeContexto, registrarContextosUsados } from "@/lib/contextos";
 import { headers } from "next/headers";
 import { enderecoDoCrm } from "@/lib/endereco";
 import { blocoDeDocumentos, blocoDeVideos, ferramentasDeFluxos, REGRAS_DE_FLUXO } from "./automacoes";
@@ -120,23 +119,14 @@ export async function conversaCompleta({
     secoes.push(`## TAGS E SEGMENTOS\n\n${REGRAS_DE_TAGS}`);
   }
 
-  // Os contextos escolhidos na tela (módulo Contextos), como em /api/ia.
-  const ids = Array.isArray(corpo.contextos)
-    ? corpo.contextos.filter((v): v is string => typeof v === "string")
-    : [];
   // Documentos e vídeos só para quem monta fluxo: é deles que o modelo copia o
   // anexo e o link rastreável de vídeo (com o domínio deste CRM, do request).
-  const [{ texto: blocos, usados }, documentos, videos] = await Promise.all([
-    blocoDeContexto(ids),
+  const [documentos, videos] = await Promise.all([
     fluxos ? blocoDeDocumentos() : Promise.resolve(""),
     fluxos ? headers().then((h) => blocoDeVideos(enderecoDoCrm(h))) : Promise.resolve(""),
   ]);
-  const conversaId = texto(corpo.conversa_id, 64);
-  if (conversaId && usados.length > 0) void registrarContextosUsados(conversaId, usados);
-
-  // O que muda entre perguntas (biblioteca, contextos) vai DEPOIS do que não
-  // muda: prefixo estável = prefixo cacheável (lib/ia/conversa.ts).
-  const sistema = [abertura(podeFazer), ...secoes, LIMITES, REGRA_DADO_NAO_CONFIAVEL, documentos, videos, blocos]
+  // A biblioteca vem depois das instruções estáveis para preservar o cache.
+  const sistema = [abertura(podeFazer), ...secoes, LIMITES, REGRA_DADO_NAO_CONFIAVEL, documentos, videos]
     .filter(Boolean)
     .join("\n\n");
 

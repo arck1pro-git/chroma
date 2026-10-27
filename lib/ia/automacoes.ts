@@ -367,7 +367,7 @@ export function ferramentasDeFluxos() {
  * Vai como bloco ANEXADO ao system e não dentro de SISTEMA_AUTOMACOES porque a
  * lista muda a cada upload — uma constante de módulo congelaria o acervo no
  * primeiro import do processo. É o mesmo padrão de app/api/ia/route.ts, que
- * junta os contextos ao system na hora.
+ * monta as instruções e a biblioteca ao responder.
  *
  * Só id e nome. A descrição entra quando existir: é ela que ajuda o modelo a
  * escolher entre "Tabela de preços" e "Tabela de preços — corporativo".

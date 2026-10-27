@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     const msg = e instanceof Error ? e.message : String(e);
     // ux_documentos_nome é UNIQUE em lower(nome) entre os não arquivados: dois
     // "Tabela de preços" tornariam a escolha na hora de anexar um chute. Mesma
-    // tradução que os Contextos fazem, e pelo mesmo motivo — o erro do Postgres
+    // tradução das demais ações, pelo mesmo motivo — o erro do Postgres
     // não serve para ler.
     if (/ux_documentos_nome|duplicate key/i.test(msg)) {
       return Response.json(

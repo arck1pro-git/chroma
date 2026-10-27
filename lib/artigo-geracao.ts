@@ -1,4 +1,4 @@
-// A geração do artigo: matéria real + auditoria do blog → rascunho.
+// A geração do artigo: matéria real + descrição do blog → rascunho.
 //
 // POR QUE É UM MÓDULO E NÃO CÓDIGO DA ROTA: dois caminhos chegam aqui — a
 // geração manual (/api/artigos/generate, alguém colou um link) e a automática
@@ -11,8 +11,7 @@
 //
 // 1. Artigo nasce de matéria real. O link é lido ANTES de chamar o modelo, e se
 //    a leitura falhar nada é gerado — nunca se escreve "por cima do título".
-// 2. A auditoria manda no ângulo e no tom, não no formato. Ela pode ter sido
-//    escrita para carrossel; aqui a saída é artigo, e o prompt diz isso.
+// 2. A descrição do blog e as instruções do editor orientam o ângulo e o tom.
 // 3. NADA É GRAVADO AQUI. Quem devolve é um rascunho em memória; gravar é
 //    decisão de quem chamou (a tela, depois da prévia; ou a rota de RSS, que
 //    grava direto porque não há ninguém para aprovar às 8h da segunda).
@@ -105,7 +104,6 @@ const SCHEMA = {
 
 interface DadosPrompt {
   blog: { nome: string; descricao: string; autor: string };
-  auditoria: { nome: string; conteudo: string };
   vizinhos: { titulo: string; slug: string }[];
   materia: { titulo: string; url: string; texto: string };
   palavraChave: string;
@@ -115,7 +113,7 @@ interface DadosPrompt {
 
 /**
  * O prompt. A ordem das seções é deliberada: BLOG e LINKS INTERNOS antes do
- * MATERIAL, MATERIAL antes da AUDITORIA, e as REGRAS por último — o que vem
+ * MATERIAL e as REGRAS por último — o que vem
  * depois pesa mais na hora de escrever, e as restrições são o que não pode ser
  * esquecido no fim de um texto longo.
  */
@@ -140,11 +138,8 @@ function montarPrompt(d: DadosPrompt): string {
     "Você é redator de conteúdo SEO para blog corporativo. Escreve em português do Brasil.",
     "",
     "Sua tarefa: transformar o MATERIAL abaixo (uma matéria real) em um ARTIGO DE BLOG",
-    "otimizado para busca orgânica, seguindo a AUDITORIA que orienta este blog.",
-    "",
-    "A AUDITORIA é a única fonte de verdade sobre a marca, o posicionamento e o que pode",
-    "ou não ser dito. Não invente nada sobre a empresa que não esteja escrito nela nem",
-    "no MATERIAL.",
+    "otimizado para busca orgânica, seguindo a descrição do blog e as instruções do editor.",
+    "Não invente informações sobre a empresa ou sobre o material de origem.",
     "",
     "## BLOG",
     `Nome: ${d.blog.nome}`,
@@ -155,17 +150,6 @@ function montarPrompt(d: DadosPrompt): string {
     "",
     `## MATERIAL (matéria: "${d.materia.titulo || "sem título"}" — ${d.materia.url})`,
     d.materia.texto,
-    "",
-    `## AUDITORIA DESTE BLOG — "${d.auditoria.nome}" (diretrizes obrigatórias)`,
-    d.auditoria.conteudo,
-    "",
-    "### Como aplicar a auditoria a um artigo de blog",
-    "A auditoria acima manda no ÂNGULO, no TOM, nos critérios editoriais e no que pode",
-    "ou não ser dito. Ela NÃO manda no formato: mesmo que tenha sido escrita para",
-    "carrossel, Reels ou vídeo, aqui a saída é um artigo de blog. Ignore instruções de",
-    "slide, de gancho de retenção, de contagem de caracteres por tela, de CTA de story",
-    "e de duração — e transponha a lógica editorial dela para a estrutura de artigo",
-    "descrita abaixo. Onde a auditoria conflitar com o formato, o formato de artigo vence.",
     "",
     d.palavraChave ? `## PALAVRA-CHAVE OBRIGATÓRIA\n${d.palavraChave}\n` : null,
     d.instrucoes ? `## INSTRUÇÕES EXTRAS DO EDITOR\n${d.instrucoes}\n` : null,
@@ -192,7 +176,7 @@ function montarPrompt(d: DadosPrompt): string {
     "   e ponto de interrogação no fim — e a resposta logo abaixo em 40 a 60 palavras,",
     "   direta e completa em si mesma.",
     '10. Depois da FAQ, feche com "## Conclusão" trazendo o próximo passo (CTA) coerente',
-    "    com o que a auditoria posiciona. Sem promessa de resultado garantido.",
+    "    com a descrição do blog. Sem promessa de resultado garantido.",
     "",
     "## REGRAS",
     `- Tamanho alvo: ${alvo.palavras} palavras no campo "conteudo".`,
@@ -202,7 +186,7 @@ function montarPrompt(d: DadosPrompt): string {
     "- Distribua a palavra-chave de forma natural: entre 0,5% e 2,5% do texto.",
     '- Nada de "neste artigo você vai ver", "no mundo atual", "cada vez mais" nem',
     "  linguagem de release. Escreva como especialista explicando para um cliente.",
-    "- Respeite integralmente as restrições e proibições escritas na auditoria.",
+    "- Respeite as instruções do editor e a descrição do blog.",
     '- Não escreva o índice/sumário à mão: ele é gerado a partir dos "## " e "### ".',
     "",
     "Responda apenas com o JSON no formato pedido.",
@@ -263,17 +247,10 @@ export async function gerarArtigoDeMateria(
   const instrucoes = campo(pedido.instrucoes, 4000);
   const tamanho = pedido.tamanho ?? "medio";
 
-  // ── Blog e auditoria ──────────────────────────────────────────────────────
+  // ── Configuração do blog ──────────────────────────────────────────────────
   const [blog] = await sql`
-    SELECT id, nome, descricao, autor, auditoria_id FROM blog WHERE id = ${blogId}`;
+    SELECT id, nome, descricao, autor FROM blog WHERE id = ${blogId}`;
   if (!blog) throw new FalhaGeracao(404, "Blog não encontrado.");
-  if (!blog.auditoria_id) {
-    throw new FalhaGeracao(
-      400,
-      "Este blog não tem auditoria vinculada. Edite o blog e escolha uma.",
-    );
-  }
-
   // ── A matéria, antes de qualquer token gasto ──────────────────────────────
   let materia;
   try {
@@ -281,15 +258,6 @@ export async function gerarArtigoDeMateria(
   } catch (e) {
     const codigo = e instanceof FalhaMateria ? e.codigo : "FALHA";
     throw new FalhaGeracao(502, MENSAGEM_FALHA[codigo]);
-  }
-
-  const [auditoria] = await sql`
-    SELECT nome, conteudo FROM contextos WHERE id = ${blog.auditoria_id}`;
-  if (!auditoria) {
-    throw new FalhaGeracao(
-      404,
-      "A auditoria deste blog não existe mais. Edite o blog e escolha outra.",
-    );
   }
 
   // Vizinhos: link interno REAL em vez de slug inventado.
@@ -304,10 +272,6 @@ export async function gerarArtigoDeMateria(
       nome: blog.nome as string,
       descricao: (blog.descricao as string) ?? "",
       autor: (blog.autor as string) ?? "",
-    },
-    auditoria: {
-      nome: auditoria.nome as string,
-      conteudo: auditoria.conteudo as string,
     },
     vizinhos: vizinhos as unknown as { titulo: string; slug: string }[],
     materia: { titulo: newsTitle, url: materia.url, texto: materia.texto },

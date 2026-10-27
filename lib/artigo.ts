@@ -9,8 +9,7 @@
 // TUDO AQUI É FUNÇÃO PURA, SEM BANCO. O painel do artigo é componente de
 // cliente e importa este arquivo para recalcular a nota de SEO a cada tecla; se
 // uma linha daqui importasse lib/db.ts, o bundle do navegador arrastaria o
-// driver do Postgres junto (o mesmo motivo que separa contextos-tipos.ts de
-// contextos.ts). O único helper que consulta o banco — `slugLivre`, que
+// driver do Postgres junto. O único helper que consulta o banco — `slugLivre`, que
 // desambigua slug repetido — mora em lib/artigo-server.ts.
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
@@ -32,8 +31,6 @@ export const ARTIGO_STATUS_LABEL: Record<ArtigoStatus, string> = {
 export interface Blog {
   id: number;
   nome: string;
-  /** contextos(id) — o bloco de prompt que orienta a linha editorial do blog. */
-  auditoria_id: string | null;
   descricao: string;
   url_base: string;
   autor: string;
@@ -43,8 +40,6 @@ export interface Blog {
    */
   chave: string;
   created_at: string;
-  /** Vem do JOIN em contextos, não é coluna de `blog`. */
-  auditoria_nome?: string | null;
   /** Contagem de artigos, não é coluna de `blog`. */
   artigos?: number;
 }

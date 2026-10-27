@@ -3,7 +3,7 @@
 // POR QUE ESTA ROTA GRAVA (e /api/artigos/generate não): lá o pedido é "me
 // mostra como ficaria" — alguém colou um link, ajusta palavra-chave, tamanho e
 // instruções, olha a prévia e decide. Aqui o pedido é o clique de uma linha da
-// lista: pega ESTA notícia, com a auditoria JÁ definida no blog, e gera. Pedir
+// lista: pega ESTA notícia, com a descrição e as configurações do blog, e gera. Pedir
 // uma aprovação depois do clique seria inventar uma etapa que ninguém pediu — e
 // o artigo nasce `pendente`, que já é o estado que segura a publicação: a rota
 // pública só serve o que está aprovado.

@@ -2,30 +2,15 @@
 
 // Tela /blog: o CADASTRO dos blogs — criar, configurar, excluir.
 //
-// O trabalho do dia (ler os feeds e virar notícia em artigo) mora dentro de
-// cada blog, em /blog/[id]: a notícia só faz sentido ao lado da auditoria que
-// vai escrever o artigo e dos artigos que já saíram dela. Esta tela leva até
-// lá; ela não é o lugar de escolher pauta.
-//
-// Cada blog é orientado por uma AUDITORIA — que neste sistema é um contexto
-// ligado (lib/contextos.ts). Sem nenhum cadastrado não há formulário de
-// criação: criar blog sem auditoria produziria um blog que não consegue gerar
-// artigo nenhum, e descobrir isso só na hora de gerar é pior do que ser barrado
-// aqui.
+// O cadastro e a geração de artigos usam a descrição e as configurações do blog.
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Settings2 } from "lucide-react";
 import type { Blog } from "@/lib/artigo";
-import { BotaoExcluir, BotaoSalvar, Gaveta, Tag } from "./pecas";
-
-export interface Auditoria {
-  id: string;
-  nome: string;
-}
+import { BotaoExcluir, BotaoSalvar, Gaveta } from "./pecas";
 
 type Rascunho = {
   nome: string;
-  auditoriaId: string;
   descricao: string;
   url_base: string;
   autor: string;
@@ -34,7 +19,6 @@ type Rascunho = {
 function deBlog(b: Blog): Rascunho {
   return {
     nome: b.nome,
-    auditoriaId: b.auditoria_id ?? "",
     descricao: b.descricao ?? "",
     url_base: b.url_base ?? "",
     autor: b.autor ?? "",
@@ -43,14 +27,11 @@ function deBlog(b: Blog): Rascunho {
 
 export default function Blogs() {
   const [blogs, setBlogs] = useState<Blog[]>([]);
-  const [auditorias, setAuditorias] = useState<Auditoria[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
-  // Criação em linha, no cabeçalho: criar blog é dois campos, e um modal para
-  // dois campos é cerimônia demais.
+  // Criação em linha pelo nome; as demais configurações ficam na gaveta.
   const [nomeNovo, setNomeNovo] = useState("");
-  const [auditoriaNova, setAuditoriaNova] = useState("");
   const [criando, setCriando] = useState(false);
 
   // O blog aberto na gaveta de configuração.
@@ -58,15 +39,10 @@ export default function Blogs() {
 
   useEffect(() => {
     let vivo = true;
-    Promise.all([
-      fetch("/api/blogs").then((r) => r.json()),
-      fetch("/api/auditorias").then((r) => r.json()),
-    ])
-      .then(([bs, as]) => {
+    fetch("/api/blogs").then((r) => r.json())
+      .then((bs) => {
         if (!vivo) return;
         setBlogs(Array.isArray(bs) ? bs : []);
-        setAuditorias(Array.isArray(as) ? as : []);
-        if (Array.isArray(as) && as.length) setAuditoriaNova(as[0].id);
       })
       .catch(() => vivo && setErro("Não foi possível carregar os blogs."))
       .finally(() => vivo && setCarregando(false));
@@ -77,14 +53,14 @@ export default function Blogs() {
 
   async function criar() {
     const nome = nomeNovo.trim();
-    if (!nome || !auditoriaNova || criando) return;
+    if (!nome || criando) return;
     setCriando(true);
     setErro(null);
 
     const r = await fetch("/api/blogs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ nome, auditoriaId: auditoriaNova }),
+      body: JSON.stringify({ nome }),
     });
     const dados = await r.json();
     setCriando(false);
@@ -121,20 +97,8 @@ export default function Blogs() {
     <div className="pagina-surge min-h-screen bg-conteudo">
       <div className="mx-auto w-full max-w-6xl px-6 py-8">
         {/* ── Criação ────────────────────────────────────────────────────── */}
-        {/* A tela abre direto no que se faz nela. O título e a explicação que
-            moravam aqui diziam o que a própria tela mostra: os blogs estão
-            logo abaixo, e a auditoria aparece em cada cartão. */}
         {!carregando && (
           <div>
-            {auditorias.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-3 text-[12px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                Crie uma auditoria antes: é ela que orienta a linha editorial do
-                blog.{" "}
-                <Link href="/contextos" className="underline underline-offset-2">
-                  Ir para Contextos
-                </Link>
-              </p>
-            ) : (
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   value={nomeNovo}
@@ -143,17 +107,7 @@ export default function Blogs() {
                   placeholder="Nome do blog"
                   className="min-w-0 flex-1 rounded-full border border-zinc-200 bg-transparent px-4 py-2 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
                 />
-                <select
-                  value={auditoriaNova}
-                  onChange={(e) => setAuditoriaNova(e.target.value)}
-                  className="rounded-full border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-700 outline-none dark:border-zinc-800 dark:text-zinc-300"
-                >
-                  {auditorias.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.nome}
-                    </option>
-                  ))}
-                </select>
+
                 <button
                   type="button"
                   onClick={criar}
@@ -163,7 +117,6 @@ export default function Blogs() {
                   {criando ? "Criando…" : "Criar blog"}
                 </button>
               </div>
-            )}
           </div>
         )}
 
@@ -191,16 +144,6 @@ export default function Blogs() {
                       {b.nome}
                     </h2>
 
-                    <div className="mt-1.5">
-                      {b.auditoria_nome ? (
-                        <Tag>{b.auditoria_nome}</Tag>
-                      ) : (
-                        <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                          Sem auditoria
-                        </span>
-                      )}
-                    </div>
-
                     <p className="mt-2 line-clamp-2 flex-1 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
                       {b.descricao || b.url_base || "Sem descrição ainda."}
                     </p>
@@ -223,7 +166,7 @@ export default function Blogs() {
               ))}
         </div>
 
-        {!carregando && blogs.length === 0 && auditorias.length > 0 && (
+        {!carregando && blogs.length === 0 && (
           <p className="mt-6 text-[12px] text-zinc-400 dark:text-zinc-500">
             Nenhum blog ainda. Crie o primeiro acima.
           </p>
@@ -235,7 +178,6 @@ export default function Blogs() {
         <ConfigBlog
           key={aberto.id}
           blog={aberto}
-          auditorias={auditorias}
           aoFechar={() => setAberto(null)}
           aoSalvar={trocar}
           aoExcluir={remover}
@@ -249,13 +191,11 @@ export default function Blogs() {
 
 function ConfigBlog({
   blog,
-  auditorias,
   aoFechar,
   aoSalvar,
   aoExcluir,
 }: {
   blog: Blog;
-  auditorias: Auditoria[];
   aoFechar: () => void;
   aoSalvar: (b: Blog) => void;
   aoExcluir: (id: number) => void;
@@ -316,27 +256,6 @@ function ConfigBlog({
             onChange={(e) => muda("nome")(e.target.value)}
             className="w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-900 outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
           />
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-            Auditoria
-          </span>
-          <select
-            value={r.auditoriaId}
-            onChange={(e) => muda("auditoriaId")(e.target.value)}
-            className="w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-900 outline-none dark:border-zinc-800 dark:text-zinc-50"
-          >
-            <option value="">— escolha —</option>
-            {auditorias.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.nome}
-              </option>
-            ))}
-          </select>
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
-            Orienta todo artigo deste blog.
-          </span>
         </label>
 
         <label className="flex flex-col gap-1">

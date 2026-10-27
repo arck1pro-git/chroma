@@ -51,13 +51,11 @@
 //     link do Meet, e o horário pode ter sido ocupado no meio do caminho.
 //
 // QUEM ELA É vem do prompt da IA (/ botão IA do topo); as REGRAS FIXAS abaixo
-// valem por cima dele. O QUE ELA SABE é só a base de Contextos (os ativos,
-// /contextos): as regras proíbem falar de preço, condição ou disponibilidade
-// fora dela.
+// valem por cima dele. As informações sobre o negócio vêm das instruções da
+// própria IA: ela não inventa preço, condição ou disponibilidade ausentes.
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "@/lib/db";
-import { contextosAtivos } from "@/lib/contextos";
 import { enviarAudioNaConversa, enviarTextoNaConversa, type ResultadoEnvio } from "@/lib/conversa-envio";
 import { enviarTexto, instanciaExataPorNumero } from "@/lib/uazapi";
 import { soDigitos } from "@/lib/telefone";
@@ -881,25 +879,12 @@ async function agendaParaIa(s: Situacao): Promise<{ linha: string; horarios: Hor
   }
 }
 
-// ── Taxas da SCP ────────────────────────────────────────────────────────────
-//
-// O modelo errava a faixa da tabela (R$ 100 mil exatos caindo na segunda, em 2
-// de 3 simulações de 2026-10-02) — com esforço baixo, procurar numa tabela de
-// cabeça não é confiável, e taxa errada para investidor é grave. A busca é
-// feita AQUI, lendo a tabela do próprio Contexto: continua havendo uma fonte só
-// (editar a tabela em /contextos muda o que a IA informa), e o modelo só repete
-// o resultado.
-
 type LinhaDeTaxa = { ate: number; taxas: string[] };
 type TabelaDeTaxas = { mensal: LinhaDeTaxa[]; final: LinhaDeTaxa[]; prazos: string[] };
 
-/**
- * A tabela de condições da SCP, lida do Contexto que a tem (linhas "faixa |
- * 18 | 24 | 36" sob "Retorno mensal" e "Retorno no final"). null quando não há
- * contexto com ela ou o formato mudou — aí a ferramenta não é oferecida.
- */
-export function tabelaDeTaxas(contextos: Array<{ conteudo: string }>): TabelaDeTaxas | null {
-  for (const c of contextos) {
+/** Lê a tabela de condições das instruções da própria IA. */
+export function tabelaDeTaxas(instrucoes: Array<{ conteudo: string }>): TabelaDeTaxas | null {
+  for (const c of instrucoes) {
     if (!/Retorno mensal/i.test(c.conteudo) || !/Retorno no final/i.test(c.conteudo)) continue;
     const tabela: TabelaDeTaxas = { mensal: [], final: [], prazos: [] };
     let secao: "mensal" | "final" | null = null;
@@ -1059,8 +1044,8 @@ Como escrever:
 - Se perguntarem se você é um robô ou uma IA, diga a verdade: é o assistente virtual da equipe e pode chamar uma pessoa quando precisarem.
 
 O que você pode afirmar:
-- Empreendimentos, preços, condições de pagamento, prazos, disponibilidade, endereços e documentos: só o que está na base. O que não estiver nela, você não sabe: não invente, não estime, não prometa.
-- Pediram algo que não está na base (valores, tabela, disponibilidade, proposta, material, documentos, contrato, dados da empresa)? Não invente e não prometa envio: se <sua_funcao> disser como tratar esse pedido, siga; senão, use a ferramenta avisar_equipe.
+- Empreendimentos, preços, condições de pagamento, prazos, disponibilidade, endereços e documentos: só o que está em <sua_funcao>. O que não estiver nas suas instruções, você não sabe: não invente, não estime, não prometa.
+- Pediram algo que não está nas suas instruções (valores, tabela, disponibilidade, proposta, material, documentos, contrato, dados da empresa)? Não invente e não prometa envio: se <sua_funcao> disser como tratar esse pedido, siga; senão, use a ferramenta avisar_equipe.
 - avisar_equipe ENCERRA o seu atendimento a este contato: a conversa passa para uma pessoa da equipe e você não fala mais com ele. A resposta que vai junto é a sua última mensagem: diga que alguém da equipe vai falar com ele sobre isso, sem fazer pergunta.
 - Nunca feche negócio, conceda desconto ou reserve unidade.
 - Horário de reunião só se marca pela ferramenta agendar_reuniao, quando ela existir, e só num dos horários livres listados que o cliente escolheu. Sem ela, não marque horário por conta própria.`;
@@ -1079,12 +1064,7 @@ export function blocoDaFuncao(ia: { nome: string; prompt: string }) {
   return `SUA FUNÇÃO\n<sua_funcao>\nNome desta IA (interno, não precisa dizer ao cliente): ${ia.nome}\n\n${ia.prompt.trim()}\n</sua_funcao>`;
 }
 
-export function blocoDaBase(contextos: Array<{ nome: string; conteudo: string }>) {
-  if (contextos.length === 0) {
-    return "BASE DE CONHECIMENTO\n<base>\n(vazia — a empresa ainda não cadastrou informações. Cumprimente, pergunte o que a pessoa procura e use avisar_equipe para a equipe responder o que você não sabe.)\n</base>";
-  }
-  return `BASE DE CONHECIMENTO\n<base>\n${contextos.map((c) => `## ${c.nome}\n${c.conteudo.trim()}`).join("\n\n")}\n</base>`;
-}
+
 
 const fmtQuando = new Intl.DateTimeFormat("pt-BR", {
   timeZone: "America/Sao_Paulo",
@@ -1188,8 +1168,7 @@ async function gerarResposta(
   iaId: string,
   aindaVale: () => Promise<boolean>,
 ): Promise<Saida> {
-  const [contextos, historico, oportunidades, ias, etapasDoFunil, origens, rotulosDeCampo] = await Promise.all([
-    contextosAtivos(),
+  const [historico, oportunidades, ias, etapasDoFunil, origens, rotulosDeCampo] = await Promise.all([
     sql`
       SELECT m.origem, m.enviada_por, u.nome AS autor, m.texto, m.tipo, m.midia_nome, m.data_criacao
       FROM mensagens m
@@ -1298,8 +1277,7 @@ async function gerarResposta(
 
   const cliente = new Anthropic({ timeout: 60_000, maxRetries: 1 });
   const podePassar = ia.acoes.includes("passar_para_humano");
-  // Só com a tabela na base: sem ela não há o que consultar.
-  const tabela = tabelaDeTaxas(contextos);
+  const tabela = tabelaDeTaxas([{ conteudo: ia.prompt }]);
   const ferramentas = [
     FERRAMENTA_AVISAR,
     ...(podePassar ? [FERRAMENTA_HUMANO] : []),
@@ -1313,15 +1291,13 @@ async function gerarResposta(
     max_tokens: 16_000,
     thinking: { type: "adaptive" },
     // Esforço baixo: conversa de WhatsApp pede resposta rápida, e as regras
-    // (base de conhecimento, quando passar para humano) se sustentam nele.
+    // (instruções da IA, quando passar para humano) se sustentam nele.
     output_config: { effort: "low" },
     tools: ferramentas,
-    // Regras + função da IA + base em cache: é o prefixo que se repete em toda
-    // resposta da mesma IA. Só invalida quando alguém edita a IA ou um Contexto.
+    // Regras e instruções da IA formam o prefixo estável das respostas.
     system: [
       { type: "text", text: regras(podePassar) },
-      { type: "text", text: blocoDaFuncao(ia) },
-      { type: "text", text: blocoDaBase(contextos), cache_control: { type: "ephemeral" } },
+      { type: "text", text: blocoDaFuncao(ia), cache_control: { type: "ephemeral" } },
     ],
   } satisfies Omit<Anthropic.MessageCreateParamsNonStreaming, "messages">;
   const resposta = await cliente.messages.create({ ...base, messages: [{ role: "user", content: pedido }] });

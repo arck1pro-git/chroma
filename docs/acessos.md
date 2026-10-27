@@ -57,10 +57,23 @@ Os filtros de proprietário continuam valendo. A IA também verifica as
 operações ao executar suas ferramentas de escrita. Integrações de serviço
 com credenciais próprias continuam seguindo sua autenticação específica.
 
+O responsável sempre pode editar a própria oportunidade, mesmo com **Editar**
+desligado no Dashboard. A ficha oferece **Editar nome e valor**; a mesma exceção
+vale para mudar status, etapa e responsável. Editar oportunidades de outras
+pessoas exige **Editar** e escopo **de todos**. Excluir continua exigindo sua
+permissão específica. A gravação de nome e valor confere o responsável no banco
+e registra a alteração no histórico.
+
 Usuários ficam fora da grade: somente Admin gerencia contas. A permissão
 de administrar acessos continua separada dos módulos, com suas travas.
 
 Validação: `node --test scripts/testar-permissoes.mjs`.
+
+O módulo Contextos foi removido. `migration-remover-contextos.sql` elimina suas
+permissões, tabelas de conteúdo e histórico, além do vínculo antigo dos blogs.
+Na produção, a limpeza deve ocorrer **depois** de publicar o código sem essas
+consultas. Blogs usam a descrição e as instruções do editor; o atendimento usa
+as instruções de cada IA. Migrações antigas permanecem como histórico.
 
 Não existe linha "negado". Departamento novo nasce **sem nada** e recebe o que
 alguém marcar — mesmo princípio do `proxy.ts`, que fecha por padrão.
@@ -75,7 +88,7 @@ em Configurações · Acessos e marcar quem recebe. Isso é de propósito: o esq
 |---|---|---|---|
 | Dashboard, Chat, Agenda | ✓ | ✓ | ✓ |
 | Métricas | ✓ *(só as dele)* | ✓ *(de todos)* | ✓ *(de todos)* |
-| E-mails, Campanhas, Blog, Contextos, Meta, Integrações | | ✓ | ✓ |
+| E-mails, Campanhas, Blog, Meta, Integrações | | ✓ | ✓ |
 | Automações, Webhooks, Configurações | | | ✓ |
 | Administra acessos | | | ✓ |
 

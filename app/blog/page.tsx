@@ -4,7 +4,7 @@ import { exigirModulo } from "@/lib/auth/dal";
 
 export const metadata: Metadata = { title: "Blog · AmaanOffice" };
 
-// A tela busca no cliente (blogs + auditorias em paralelo, com skeleton): é
+// A tela busca no cliente (blogs, com skeleton): é
 // lista curta, e a criação em linha já reescreve o estado local sem recarregar
 // a rota. Deixar a página estática mantém a navegação instantânea.
 export default async function Page() {

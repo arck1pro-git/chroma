@@ -3,7 +3,7 @@
 // A DIFERENÇA PARA /api/blogs/rss/pauta: aquela é a porta de serviço do n8n —
 // exige o token, só enxerga blog com a geração automática LIGADA e devolve
 // apenas o que vai virar artigo na segunda. Esta é a lista que a pessoa vê:
-// todo blog com feed entra, inclusive o desligado e o que está sem auditoria
+// todo blog com feed entra, inclusive o desligado
 // (esse aparece com o motivo, em vez de sumir sem explicação), e as matérias
 // que já viraram artigo vêm junto, marcadas — "essa eu já usei" é resposta.
 //

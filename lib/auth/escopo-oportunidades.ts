@@ -12,14 +12,19 @@
 // sim/não para uma oportunidade só.
 import "server-only";
 import { exigirModulo } from "@/lib/auth/dal";
+import { podeOperar } from "@/lib/auth/permissoes";
 import { listaUuid, sql } from "@/lib/db";
 import { ehUuid } from "@/lib/validacao";
 
 /** As oportunidades da lista que quem chamou pode tocar, e quem chamou. */
-export async function oportunidadesNoEscopo(ids: string[]) {
+export async function oportunidadesNoEscopo(ids: string[], operacao?: "editar") {
   const acesso = await exigirModulo("inicio");
   const validos = ids.filter((id) => typeof id === "string" && ehUuid(id));
-  if (acesso.escopo !== "proprio" || validos.length === 0) return { ...acesso, ids: validos };
+  // O responsável sempre edita a própria oportunidade. Editar a de outra
+  // pessoa exige a operação do módulo E o escopo de todos.
+  const podeTodos = acesso.escopo === "todos" &&
+    (!operacao || podeOperar(acesso.usuario, "inicio", operacao));
+  if (podeTodos || validos.length === 0) return { ...acesso, ids: validos };
   const linhas = await sql`
     SELECT id FROM oportunidades
      WHERE id = ANY(string_to_array(${listaUuid(validos)}, ',')::uuid[])
@@ -29,8 +34,8 @@ export async function oportunidadesNoEscopo(ids: string[]) {
 }
 
 /** Pode tocar ESTA oportunidade? */
-export async function podeTocarOportunidade(id: string): Promise<boolean> {
-  const { ids } = await oportunidadesNoEscopo([id]);
+export async function podeTocarOportunidade(id: string, operacao?: "editar"): Promise<boolean> {
+  const { ids } = await oportunidadesNoEscopo([id], operacao);
   return ids.length === 1;
 }
 

@@ -60,7 +60,7 @@ public/               só ícones e o que o app serve; nada de material interno
 ```
 
 Módulos (chave, rota): inicio `/`, chat, contatos, agenda, demandas, metricas, emails, automacoes, campanhas,
-templates, blog, webhooks, formularios, documentos, videos, contextos, meta, integracoes, configuracoes. A rota é
+templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, configuracoes. A rota é
 `/<chave>`, exceto inicio. Quem vê cada um é decidido no banco (`departamento_modulos`), não no código.
 
 ## 2. Fluxo de execução e pontos de entrada

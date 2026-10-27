@@ -38,24 +38,20 @@ export const POR_BLOG_AUTOMACAO = 10;
 /** Teto do que a TELA mostra por blog. Feed grande não vira lista infinita. */
 export const POR_BLOG_TELA = 30;
 
-const CAMPOS_BLOG = `b.id, b.nome, b.auditoria_id, c.nome AS auditoria_nome`;
-const DE_BLOG = `FROM blog b LEFT JOIN contextos c ON c.id = b.auditoria_id`;
+const CAMPOS_BLOG = `b.id, b.nome`;
+const DE_BLOG = `FROM blog b`;
 const TEM_FEED = `EXISTS (SELECT 1 FROM blog_rss r WHERE r.blog_id = b.id)`;
 
 interface BlogDaPauta {
   id: number;
   nome: string;
-  auditoria_id: string | null;
-  auditoria_nome: string | null;
 }
 
 /**
  * Os blogs que entram na pauta.
  *
- * `somenteAtivos` é o recorte da AUTOMAÇÃO: só o que está ligado e tem
- * auditoria, porque às 8h da segunda não há ninguém para resolver pendência. A
- * TELA não usa esse recorte — lá a pessoa está olhando, e um blog sem auditoria
- * precisa aparecer com o motivo, não sumir.
+ * `somenteAtivos` é o recorte da automação: blogs com RSS ligado e feed.
+ * A tela também mostra os blogs cujo RSS está pausado.
  */
 async function blogsComFeed(opcoes: {
   blogId?: number;
@@ -68,7 +64,7 @@ async function blogsComFeed(opcoes: {
     : opcoes.somenteAtivos
       ? await sql`
           SELECT ${sql.unsafe(CAMPOS_BLOG)} ${sql.unsafe(DE_BLOG)}
-          WHERE b.rss_ativo AND b.auditoria_id IS NOT NULL AND ${sql.unsafe(TEM_FEED)}
+          WHERE b.rss_ativo AND ${sql.unsafe(TEM_FEED)}
           ORDER BY b.id`
       : await sql`
           SELECT ${sql.unsafe(CAMPOS_BLOG)} ${sql.unsafe(DE_BLOG)}
@@ -121,8 +117,6 @@ async function pautaDeUmBlog(
   return {
     blogId: blog.id,
     blogNome: blog.nome,
-    auditoriaNome: blog.auditoria_nome,
-    temAuditoria: Boolean(blog.auditoria_id),
     feeds: feeds.length,
     lidos: itens.length,
     itens: [...novos, ...repetidos],
@@ -166,7 +160,7 @@ export type SaidaGeracao =
  * justamente o estado que pede revisão humana antes de publicar, e ela acontece
  * depois, no painel do artigo.
  *
- * Falha esperada (paywall, site fora, blog sem auditoria) volta como `ok:false`
+ * Falha esperada (paywall, site fora) volta como `ok:false`
  * com o status HTTP que a rota deve usar. O inesperado sobe: 500 é 500.
  */
 export async function gerarDaPauta(pedido: {

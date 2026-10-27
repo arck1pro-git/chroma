@@ -20,8 +20,6 @@ import {
   lerConversaIa,
   lerConversaIaPorId,
   listarConversasIa,
-  contextosDisponiveis,
-  type ContextoDisponivel,
 } from "./acoes-ia";
 import { EVENTO_NOVA_ANALISE, useIaFixa, type CanalIaFixa } from "./ia-global-contexto";
 import { lugarDoEscopo } from "@/lib/ia/navegacao";
@@ -147,13 +145,6 @@ export function PainelIa({
   // vez de cobri-lo. É o modo da tela inicial, onde o quadro não pode ficar
   // escondido atrás da conversa.
   modo = "flutuante",
-  // Este painel oferece o seletor de blocos de prompt (módulo Contextos)?
-  //
-  // Era `escopoContexto`, que dizia QUAL categoria de contexto mostrar. A
-  // categoria saiu do modelo: um contexto é só nome, descrição e prompt, e onde
-  // ele se aplica é decisão da interface. Sobrou o liga/desliga — quais blocos
-  // entram naquela conversa quem marca é a pessoa, na hora.
-  usaContextos = false,
   // Id de conversa vindo da URL (?ia=<id>), posto lá pela sidebar. Quando
   // presente, o painel abre sozinho já nessa conversa — é o que faz clicar numa
   // análise da barra voltar exatamente para onde ela parou.
@@ -187,7 +178,6 @@ export function PainelIa({
   aoAplicar?: () => void;
   camada?: string;
   modo?: "flutuante" | "lateral";
-  usaContextos?: boolean;
   conversaInicial?: string | null;
   botaoFlutuante?: boolean;
   compacto?: boolean;
@@ -226,30 +216,10 @@ export function PainelIa({
 
   const atual = conversas.find((c) => c.id === atualId) ?? null;
 
-  // ── Contextos ─────────────────────────────────────────────────────────────
-  // Carregados junto da lista de conversas, no primeiro clique — pelo mesmo
-  // motivo: há vários painéis destes por tela e nenhum precisa de banco antes
-  // de alguém abrir.
-  const [contextos, setContextos] = useState<ContextoDisponivel[]>([]);
-  const [escolhidos, setEscolhidos] = useState<string[]>([]);
-
-  function alternarContexto(id: string) {
-    setEscolhidos((atuais) =>
-      atuais.includes(id) ? atuais.filter((x) => x !== id) : [...atuais, id],
-    );
-  }
-
   // Carrega a lista no primeiro clique, não na montagem: são ~3 painéis destes
   // por tela, e nenhum precisa de banco antes de alguém abrir.
   async function carregarLista() {
     setCarregandoLista(true);
-    if (usaContextos) {
-      // Falha aqui não pode derrubar o painel: contexto é acessório, a conversa
-      // funciona sem nenhum escolhido.
-      contextosDisponiveis()
-        .then(setContextos)
-        .catch(() => setContextos([]));
-    }
     if (global) {
       // A mesma lista da barra: o fixo abre conversa de qualquer tela.
       setConversas(await conversasDaBarra());
@@ -516,13 +486,6 @@ export function PainelIa({
           pergunta: limpo,
           historico,
           contexto,
-          // Ids dos blocos de prompt ligados na tela. O servidor confere que
-          // ainda estão ativos — desligar um contexto vale na hora, inclusive
-          // para uma aba aberta há uma hora.
-          contextos: escolhidos,
-          // Para gravar em ia_conversa_contextos qual bloco explicou esta
-          // conversa. Null na primeira pergunta: a conversa só nasce depois.
-          conversa_id: atualId,
           ...extra,
         }),
         signal: controle.signal,
@@ -831,35 +794,6 @@ export function PainelIa({
               </div>
 
               <div ref={fimRef} />
-            </div>
-          )}
-
-          {/* Contextos ligados nesta pergunta. Fica ACIMA do campo, à vista:
-              um bloco de prompt esquecido ligado muda a resposta sem que
-              ninguém entenda por quê. */}
-          {!compactoEfetivo && !vendoLista && contextos.length > 0 && (
-            <div className="shrink-0 border-t border-zinc-200 px-2.5 pt-2 dark:border-zinc-800">
-              <div className="flex flex-wrap gap-1">
-                {contextos.map((c) => {
-                  const ligado = escolhidos.includes(c.id);
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => alternarContexto(c.id)}
-                      title={c.descricao ?? "Bloco de prompt do projeto"}
-                      aria-pressed={ligado}
-                      className={`rounded-full border px-2 py-0.5 text-[11px] transition ${
-                        ligado
-                          ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-50 dark:bg-zinc-50 dark:text-zinc-900"
-                          : "border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                      }`}
-                    >
-                      {c.nome}
-                    </button>
-                  );
-                })}
-              </div>
             </div>
           )}
 

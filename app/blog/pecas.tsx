@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Trash2 } from "lucide-react";
 import { ARTIGO_STATUS_LABEL, type ArtigoStatus } from "@/lib/artigo";
 
-/** Pastilha discreta — usada para a auditoria do blog e para o status. */
+/** Pastilha discreta para rótulos e status. */
 export function Tag({
   children,
   tom = "neutro",

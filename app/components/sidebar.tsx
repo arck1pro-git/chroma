@@ -41,7 +41,6 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
-  Blocks,
   CalendarDays,
   Clapperboard,
   UsersRound,
@@ -109,7 +108,6 @@ const ICONES: Record<ChaveModulo, LucideIcon> = {
   formularios: ClipboardList,
   documentos: Paperclip,
   videos: Clapperboard,
-  contextos: Blocks,
   meta: Grid2x2,
   integracoes: Link2,
   configuracoes: Settings,

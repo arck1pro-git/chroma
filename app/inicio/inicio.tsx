@@ -642,6 +642,7 @@ export default function Inicio({
   fluxosParaInscricao,
   graficoIa,
   euId,
+  podeEditarTodasOportunidades,
 }: {
   dados: DadosFunil;
   // A cadência de cada etapa (a automação por trás das subetapas) e as
@@ -667,6 +668,7 @@ export default function Inicio({
   // Quem está logado, da sessão (page.tsx): só as anotações dele ganham o
   // botão de apagar. Quem garante é a ação, que confere o autor no servidor.
   euId: string;
+  podeEditarTodasOportunidades: boolean;
 }) {
   const {
     funis,
@@ -1365,7 +1367,7 @@ export default function Inicio({
         // cria a cadência de uma etapa, por exemplo. Recarregar faz a coluna
         // mostrar a cadência nova sem F5. Para quem só lê, nunca dispara.
         aoAplicar={() => router.refresh()}
-        usaContextos
+
         // Quem abre a análise aqui é o "+" da sidebar, ao lado de "Análises".
         botaoFlutuante
         // Com uma cadência aberta, o ?ia= é dela — passar aqui também abriria
@@ -1445,6 +1447,7 @@ export default function Inicio({
           de entrada roda de novo em vez de o React reaproveitar o nó */}
       {oportunidadeAberta && (
         <FichaOportunidade
+          podeEditarTodas={podeEditarTodasOportunidades}
           key={oportunidadeAberta.id}
           oportunidade={oportunidadeAberta}
           contato={contatoPorId.get(oportunidadeAberta.contato_id)}

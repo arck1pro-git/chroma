@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
 }
 
 async function montar() {
-  // Só blogs LIGADOS, COM auditoria e COM feed — os três são pré-requisito, e o
+  // Só blogs com RSS LIGADO e COM feed — os dois são pré-requisito, e o
   // recorte está no módulo. Itens que já viraram artigo ficam de fora: gerar de
   // novo seria pagar tokens para repetir o que está no banco.
   const blogs = await pautaDosBlogs({

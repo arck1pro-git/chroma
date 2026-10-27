@@ -105,7 +105,7 @@ function PainelFixo({ topo }: { topo: RegistroIa | null }) {
       // Acima do painel de cadência (z-200/201), abaixo das fichas e gavetas
       // (z-300): com um modal de verdade aberto, o véu dele cobre o botão.
       camada="z-[210]"
-      usaContextos
+
       // Sem painel: só os balões sobre a página, como a IA do dashboard era
       // antes do fixo (pedido dele, 2026-10-06). As conversas antigas e a nova
       // ficam na barra lateral (?ia= e o "+", que chegam aqui).

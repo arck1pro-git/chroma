@@ -47,7 +47,6 @@ import {
   type ConversaResumo,
 } from "@/lib/ia/conversas";
 
-import { contextosAtivos } from "@/lib/contextos";
 
 function texto(v: unknown, max: number) {
   return typeof v === "string" ? v.slice(0, max).trim() : "";
@@ -171,39 +170,6 @@ export async function apagarConversaIa(
   } catch (e) {
     if (semTabela(e)) return { ok: false, erro: SEM_TABELA };
     return { ok: false, erro: "Não consegui apagar a conversa." };
-  }
-}
-
-
-// ── Contextos disponíveis para o painel ─────────────────────────────────────
-//
-// Leitura, mas mora aqui pelo mesmo motivo do resto do arquivo: o painel é
-// componente de cliente e não importa lib/db.ts.
-//
-// Só devolve o que a tela precisa mostrar (id, nome, descrição). O CONTEÚDO do
-// bloco fica no servidor: mandá-lo ao navegador não serviria para nada — quem
-// monta o system é app/api/ia/route.ts — e só engordaria o payload.
-export type ContextoDisponivel = {
-  id: string;
-  nome: string;
-  descricao: string | null;
-};
-
-/**
- * Todos os contextos ligados. Não recebe mais escopo: o bloco não declara onde
- * se aplica — quem decide se um painel oferece a lista é o próprio painel (a
- * prop `usaContextos` do chat), e quem escolhe quais entram na conversa é a
- * pessoa, marcando na hora.
- */
-export async function contextosDisponiveis(): Promise<ContextoDisponivel[]> {
-  await exigirLogin();
-  try {
-    const lista = await contextosAtivos();
-    return lista.map((c) => ({ id: c.id, nome: c.nome, descricao: c.descricao }));
-  } catch {
-    // Tabela ausente (migration não rodada) ou banco fora: o painel funciona
-    // sem contexto nenhum, e é melhor isso que uma tela quebrada.
-    return [];
   }
 }
 

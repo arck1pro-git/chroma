@@ -48,10 +48,9 @@ export async function moverOportunidade(
   etapaId: string,
   funilId: string,
 ): Promise<ResultadoAcao> {
-  await exigirModulo("inicio", "editar");
   // No escopo "próprio", só a oportunidade de que a pessoa é responsável
   // (lib/auth/escopo-oportunidades.ts).
-  if (!(await podeTocarOportunidade(id))) return { ok: false, erro: FORA_DO_ESCOPO };
+  if (!(await podeTocarOportunidade(id, "editar"))) return { ok: false, erro: FORA_DO_ESCOPO };
   // Histórico, cadência da etapa e evento da Meta: o mesmo caminho da IA que
   // move oportunidade pelo WhatsApp (lib/mover-etapa.ts).
   await moverOportunidadeDeEtapa(id, etapaId, funilId);
@@ -81,8 +80,7 @@ export async function mudarStatusOportunidade(
   id: string,
   status: StatusOportunidade,
 ): Promise<{ ok: boolean; mensagem: string }> {
-  await exigirModulo("inicio", "editar");
-  if (!(await podeTocarOportunidade(id))) return { ok: false, mensagem: FORA_DO_ESCOPO };
+  if (!(await podeTocarOportunidade(id, "editar"))) return { ok: false, mensagem: FORA_DO_ESCOPO };
   if (!STATUS_OPORTUNIDADE.includes(status)) {
     return { ok: false, mensagem: "Status inválido." };
   }
@@ -439,8 +437,7 @@ export async function moverParaResponsavel(
   oportunidadeIds: string[],
   usuarioId: string | null,
 ): Promise<ResultadoLote> {
-  await exigirModulo("inicio", "editar");
-  const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
+  const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds), "editar");
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
 
   // usuarioId null = tirar o responsável (volta a "sem dono"), que é uma
@@ -486,8 +483,7 @@ export async function moverParaEtapa(
   etapaId: string,
   confirmado = false,
 ): Promise<ResultadoLote> {
-  await exigirModulo("inicio", "editar");
-  const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
+  const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds), "editar");
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
   if (!ehUuid(etapaId)) return { ok: false, mensagem: "Etapa inválida." };
 

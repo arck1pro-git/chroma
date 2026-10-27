@@ -50,19 +50,9 @@ export async function PUT(
   const nome = campo(corpo.nome, 200);
   if (!nome) return Response.json({ error: "Dê um nome ao blog." }, { status: 400 });
 
-  // Mesma exigência do POST: não existe blog sem auditoria, nem por edição.
-  const auditoriaId = campo(corpo.auditoriaId, 64);
-  if (!auditoriaId) {
-    return Response.json(
-      { error: "Selecione a auditoria do blog." },
-      { status: 400 },
-    );
-  }
-
   const [alterado] = await sql`
     UPDATE blog SET
       nome         = ${nome},
-      auditoria_id = ${auditoriaId},
       descricao    = ${campo(corpo.descricao, 4000)},
       url_base     = ${urlBase(corpo.url_base)},
       autor        = ${campo(corpo.autor, 200)}

@@ -1,7 +1,6 @@
 // Os tipos da pauta, SEM tocar o banco.
 //
-// Existe separado de ./blog-pauta.ts pela mesma razão dura de
-// lib/contextos-tipos.ts: aquele importa lib/db.ts, que importa `postgres`, que
+// Existe separado de ./blog-pauta.ts porque aquele importa lib/db.ts e `postgres`, que
 // importa `net`/`tls`. A lista de notícias é componente de cliente — se ela
 // importasse os tipos de lá, o driver do Postgres iria junto para o bundle do
 // navegador e o build quebraria em "module not found: net".
@@ -26,9 +25,6 @@ export interface ItemPauta {
 export interface PautaDoBlog {
   blogId: number;
   blogNome: string;
-  auditoriaNome: string | null;
-  /** Sem auditoria não se gera artigo — a tela desabilita o botão e diz por quê. */
-  temAuditoria: boolean;
   feeds: number;
   /** Itens lidos dos feeds ANTES do corte: distingue "feed mudo" de "tudo já usado". */
   lidos: number;

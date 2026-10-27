@@ -3,27 +3,8 @@
 // Criar blog sem sair de onde se está: o modal abre por cima da tela central,
 // pelo "+ Novo blog" da barra lateral.
 //
-// POR QUE UM MODAL, E NÃO UMA IDA A /blog: criar blog é um formulário de dois
-// campos. Mandar a pessoa para a tela de cadastro só para preencher dois campos
-// custa uma navegação e, no caminho de volta, o lugar onde ela estava.
-//
-// SÃO DOIS CAMPOS PORQUE A API EXIGE DOIS. `POST /api/blogs` recusa blog sem
-// contexto (app/api/blogs/route.ts), e a regra é do servidor, não desta tela: um
-// blog sem contexto não consegue gerar artigo nenhum, e descobrir isso na hora
-// de gerar é pior do que ser barrado aqui.
-//
-// O resto do cadastro — endereço, autor, descrição, chave de publicação — fica
-// em /blog, na engrenagem do cartão. Aqui entra só o que a criação não dispensa.
-//
-// Este componente NÃO importa nada de app/blog: a barra lateral está em todas as
-// telas, e puxar as peças daquele módulo carregaria o Blog inteiro no bundle de
-// quem nunca abre o Blog.
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { X } from "lucide-react";
-
-/** Um contexto ligado, como /api/auditorias devolve. */
-type Contexto = { id: string; nome: string };
 
 /** O que a barra precisa saber do blog recém-criado. */
 export type BlogCriado = { id: number; nome: string };
@@ -37,33 +18,8 @@ export default function ModalNovoBlog({
   aoCriar: (blog: BlogCriado) => void;
 }) {
   const [nome, setNome] = useState("");
-  const [contextoId, setContextoId] = useState("");
-  const [contextos, setContextos] = useState<Contexto[] | null>(null);
   const [criando, setCriando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-
-  // A lista chega depois da primeira pintura: o modal já aparece com o campo de
-  // nome pronto, que é onde a pessoa vai digitar primeiro de qualquer jeito.
-  //
-  // `null` é "ainda buscando" e é o que segura o botão de criar. Lista vazia é
-  // outra coisa — nenhum contexto cadastrado — e tem tela própria mais abaixo.
-  useEffect(() => {
-    let vivo = true;
-    fetch("/api/auditorias")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((lista: unknown) => {
-        if (!vivo) return;
-        const limpa = Array.isArray(lista) ? (lista as Contexto[]) : [];
-        setContextos(limpa);
-        if (limpa.length) setContextoId(limpa[0].id);
-      })
-      .catch(() => {
-        if (vivo) setContextos([]);
-      });
-    return () => {
-      vivo = false;
-    };
-  }, []);
 
   // Esc fecha, como em todo modal do app. Não fecha no meio de uma criação: o
   // POST já saiu, e sumir com a tela deixaria a pessoa sem saber se o blog
@@ -76,7 +32,7 @@ export default function ModalNovoBlog({
     return () => window.removeEventListener("keydown", aoTeclar);
   }, [aoFechar, criando]);
 
-  const podeCriar = Boolean(nome.trim() && contextoId) && !criando;
+  const podeCriar = Boolean(nome.trim()) && !criando;
 
   async function criar() {
     if (!podeCriar) return;
@@ -87,7 +43,7 @@ export default function ModalNovoBlog({
       const r = await fetch("/api/blogs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ nome: nome.trim(), auditoriaId: contextoId }),
+        body: JSON.stringify({ nome: nome.trim() }),
       });
       const dados = await r.json();
 
@@ -105,8 +61,6 @@ export default function ModalNovoBlog({
       setCriando(false);
     }
   }
-
-  const semContexto = contextos !== null && contextos.length === 0;
 
   return (
     <>
@@ -127,7 +81,7 @@ export default function ModalNovoBlog({
               Novo blog
             </h2>
             <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-              O contexto orienta a linha editorial de tudo que for gerado aqui.
+              Crie o blog e configure sua descrição, autor e endereço.
             </p>
           </div>
 
@@ -159,47 +113,6 @@ export default function ModalNovoBlog({
               className="w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
             />
           </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-              Contexto
-            </span>
-            <select
-              value={contextoId}
-              onChange={(e) => setContextoId(e.target.value)}
-              disabled={contextos === null || semContexto}
-              className="w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-950 outline-none disabled:opacity-50 dark:border-zinc-800 dark:text-zinc-50"
-            >
-              {contextos === null ? (
-                <option value="">Carregando…</option>
-              ) : semContexto ? (
-                <option value="">Nenhum contexto ligado</option>
-              ) : (
-                contextos.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))
-              )}
-            </select>
-          </label>
-
-          {/* Sem contexto não há blog, e o caminho para resolver é uma tela
-              adiante. Dizer só "escolha um contexto" deixaria a pessoa presa
-              num seletor vazio. */}
-          {semContexto && (
-            <p className="rounded-xl border border-dashed border-zinc-300 px-3 py-2 text-[11px] text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-              Crie um contexto antes: é ele que orienta a linha editorial do
-              blog.{" "}
-              <Link
-                href="/contextos"
-                onClick={aoFechar}
-                className="underline underline-offset-2"
-              >
-                Ir para Contextos
-              </Link>
-            </p>
-          )}
 
           {erro && (
             <p className="text-[12px] text-red-600 dark:text-red-400">{erro}</p>

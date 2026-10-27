@@ -2,7 +2,7 @@
 //
 // Rota separada do PUT do blog de propósito: o painel de RSS fica no TOPO da
 // tela de artigos, não na gaveta de configuração, e salvar os feeds não pode
-// exigir mandar nome, auditoria e endereço junto — nem sobrescrevê-los com o
+// exigir mandar nome e endereço junto — nem sobrescrevê-los com o
 // que estivesse na tela.
 import { NextRequest } from "next/server";
 import { sql } from "@/lib/db";

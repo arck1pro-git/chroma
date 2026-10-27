@@ -34,7 +34,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "@/lib/db";
-import { contextosAtivos } from "@/lib/contextos";
 import { destinoDa, ehOficial, enviarTextoNaConversa, janelaAberta } from "@/lib/conversa-envio";
 import {
   acharWorkflowPorNome,
@@ -45,7 +44,6 @@ import {
 import { garantirCredencialDoCrm } from "@/lib/campanhas-workflow";
 import {
   avisarNoWhatsApp,
-  blocoDaBase,
   blocoDaFuncao,
   conversaDoAviso,
   dadosDoLead,
@@ -301,8 +299,7 @@ async function gerarRetomada(
   numero: number,
   silencioMs: number,
 ): Promise<string> {
-  const [contextos, historico, oportunidades] = await Promise.all([
-    contextosAtivos(),
+  const [historico, oportunidades] = await Promise.all([
     sql`
       SELECT m.origem, m.enviada_por, u.nome AS autor, m.texto, m.tipo, m.midia_nome, m.data_criacao
       FROM mensagens m
@@ -351,7 +348,6 @@ async function gerarRetomada(
     system: [
       { type: "text", text: regras(ia.acoes.includes("passar_para_humano")) },
       { type: "text", text: blocoDaFuncao(ia) },
-      { type: "text", text: blocoDaBase(contextos), cache_control: { type: "ephemeral" } },
     ],
     messages: [{ role: "user", content: pedido }],
   });

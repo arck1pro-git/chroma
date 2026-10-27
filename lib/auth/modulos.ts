@@ -31,7 +31,6 @@ export type ChaveModulo =
   | "formularios"
   | "documentos"
   | "videos"
-  | "contextos"
   | "meta"
   | "integracoes"
   | "configuracoes";
@@ -206,14 +205,6 @@ export const MODULOS: readonly Modulo[] = [
     naBarra: true,
     descricao:
       "Vídeos com link rastreável: o link leva o WhatsApp do lead, e a tela mostra quem abriu e quanto assistiu.",
-  },
-  {
-    chave: "contextos",
-    rotulo: "Contextos",
-    href: "/contextos",
-    escopavel: false,
-    naBarra: true,
-    descricao: "O que a IA sabe sobre o negócio ao responder.",
   },
   {
     chave: "meta",

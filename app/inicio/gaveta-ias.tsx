@@ -400,7 +400,7 @@ function FormIa({
             />
             <span className="mt-1.5 block text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
               Por cima do prompt valem sempre as regras fixas: escreve curto, como no WhatsApp; só afirma o que está em
-              Contextos; pede à equipe o que não sabe; e passa para uma pessoa quando o cliente pede.
+              suas instruções; pede à equipe o que não sabe; e passa para uma pessoa quando o cliente pede.
             </span>
           </label>
 

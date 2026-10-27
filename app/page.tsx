@@ -6,6 +6,7 @@ import { carregarAtendimentosIa } from "./inicio/atendimentos-ia";
 import { comCadenciaDeDemonstracao, FLUXO_DEMO } from "./inicio/demo-cadencia";
 import { fluxosParaInscricao } from "@/lib/automacoes/repositorio";
 import { exigirModulo } from "@/lib/auth/dal";
+import { podeOperar } from "@/lib/auth/permissoes";
 
 // O título segue a forma dos outros módulos ("X · AmaanOffice"); sem ele a raiz
 // herdava só "Chroma" do layout e era a única aba sem nome próprio.
@@ -86,6 +87,7 @@ export default async function Home({
       fluxosParaInscricao={fluxos}
       graficoIa={graficoIa}
       euId={usuario.id}
+      podeEditarTodasOportunidades={escopo === "todos" && podeOperar(usuario, "inicio", "editar")}
     />
   );
 }
