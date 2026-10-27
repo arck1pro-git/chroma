@@ -280,7 +280,9 @@ export function LigarAvisos({ recolhida, classe }: { recolhida: boolean; classe:
     }
   }
 
-  const texto = "Ligar avisos de demanda";
+  // Curto para caber inteiro na barra (14,5px desde 2026-10-27); o "de demanda"
+  // está na dica e no sino ao lado de Demandas.
+  const texto = "Ligar avisos";
   const dica = "Avisa no Windows quando chegar demanda para você — com o CRM aberto em alguma aba.";
   return (
     <div className={`${classe} group/aviso ${recolhida ? "" : "!pr-1"}`}>
@@ -290,7 +292,7 @@ export function LigarAvisos({ recolhida, classe }: { recolhida: boolean; classe:
         title={recolhida ? `${texto}. ${dica}` : dica}
         className={`flex min-w-0 flex-1 items-center gap-2.5 text-left ${recolhida ? "justify-center" : ""}`}
       >
-        <BellRing className="size-4 shrink-0" aria-hidden="true" />
+        <BellRing className="size-[18px] shrink-0" aria-hidden="true" />
         {!recolhida && <span className="truncate">{texto}</span>}
         {recolhida && <span className="sr-only">{texto}</span>}
       </button>

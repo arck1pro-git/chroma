@@ -6,19 +6,21 @@
 // REDESENHO DE 2026-10-27 (pedido dele: "dê uma boa caprichada"):
 //
 // · GRUPOS. Eram 17 módulos numa coluna só, e numa tela de 800px a lista rolava
-//   sem dizer onde cada coisa ficava. Agora são três: o dia a dia (sem título —
-//   é o que se abre primeiro), Marketing e Conteúdo. O grupo é desenho, então
-//   mora aqui, ao lado do ícone (GRUPOS); quem decide se o módulo aparece
-//   continua sendo o servidor. Módulo sem grupo cai num último, "Outros", em vez
-//   de sumir.
+//   sem dizer onde cada coisa ficava. Agora são três: o dia a dia, o marketing e
+//   o conteúdo, separados por um fio fino. Sem título na tela (pedido dele, no
+//   mesmo dia: "tira o Conteúdo e o Marketing"); o nome fica só para o leitor de
+//   tela. O grupo é desenho, então mora aqui, ao lado do ícone (GRUPOS); quem
+//   decide se o módulo aparece continua sendo o servidor. Módulo sem grupo cai
+//   num último em vez de sumir.
 //
 // · HIERARQUIA DE TINTA. O ativo tem fundo, texto cheio e peso médio; os outros,
 //   texto um degrau abaixo e ícone apagado, que acendem no hover. Antes tudo era
 //   a mesma tinta cheia e só o fundo dizia "você está aqui" — numa lista longa,
 //   o olho não achava o ativo.
 //
-// · RITMO. Linhas de 32px (28px em tela baixa — o tablet deitado), raio de 8px,
-//   ícone num quadro fixo de 16px para os rótulos alinharem.
+// · RITMO. Linhas de 36px (32px em tela baixa — o tablet deitado), texto de
+//   14,5px e ícone num quadro fixo de 18px para os rótulos alinharem (um degrau
+//   acima do primeiro desenho, a pedido dele).
 //
 // · AS CONVERSAS COM IA SAÍRAM DA BARRA (pedido dele, 2026-10-27). A IA continua
 //   no botão flutuante de cada tela e, para o TI, no painel fixo.
@@ -126,7 +128,7 @@ type BlogNaBarra = { id: number; nome: string };
 // lista parecendo a mesma barra. `group/item` deixa o ícone acender junto no
 // hover da linha.
 function classesDoItem(ativo: boolean, recolhida = false) {
-  return `group/item relative flex h-8 w-full shrink-0 items-center rounded-lg text-[13.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-zinc-900/15 tela-baixa:h-7 dark:focus-visible:ring-white/20 ${
+  return `group/item relative flex h-9 w-full shrink-0 items-center rounded-lg text-[14.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-zinc-900/15 tela-baixa:h-8 dark:focus-visible:ring-white/20 ${
     recolhida ? "justify-center" : "gap-2.5 px-2"
   } ${
     ativo
@@ -136,7 +138,7 @@ function classesDoItem(ativo: boolean, recolhida = false) {
 }
 
 function classesDoIcone(ativo: boolean) {
-  return `size-4 shrink-0 transition-colors ${
+  return `size-[18px] shrink-0 transition-colors ${
     ativo
       ? "text-zinc-950 dark:text-zinc-50"
       : "text-zinc-400 group-hover/item:text-zinc-800 dark:text-zinc-500 dark:group-hover/item:text-zinc-100"
@@ -146,7 +148,7 @@ function classesDoIcone(ativo: boolean) {
 // A linha de um blog dentro da sanfona: um degrau menor e pendurada num fio à
 // esquerda, que diz "isto está dentro de Blog" sem caixa em volta.
 function classesDoSubitem(ativo: boolean) {
-  return `flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-zinc-900/15 dark:focus-visible:ring-white/20 ${
+  return `flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-[14px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-zinc-900/15 dark:focus-visible:ring-white/20 ${
     ativo
       ? "bg-zinc-100 font-medium text-zinc-950 dark:bg-zinc-800/80 dark:text-zinc-50"
       : "text-zinc-600 hover:bg-zinc-100/70 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-50"
@@ -413,14 +415,12 @@ export default function Sidebar({
       >
         {grupos.map((g, i) => (
           <div key={g.titulo ?? `grupo-${i}`} role="group" aria-label={g.titulo ?? "Principal"} className="flex flex-col gap-px">
-            {i > 0 &&
-              (recolhida ? (
-                <span className="mx-auto my-2 h-px w-5 shrink-0 bg-zinc-200 dark:bg-zinc-800" aria-hidden="true" />
-              ) : (
-                <p className="px-2 pb-1 pt-4 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-zinc-400 tela-baixa:pt-3 dark:text-zinc-500">
-                  {g.titulo}
-                </p>
-              ))}
+            {i > 0 && (
+              <span
+                className={`my-2.5 h-px shrink-0 bg-zinc-200/80 tela-baixa:my-2 dark:bg-zinc-800/80 ${recolhida ? "mx-auto w-5" : "mx-2"}`}
+                aria-hidden="true"
+              />
+            )}
             {g.modulos.map(linhaDoModulo)}
           </div>
         ))}
@@ -509,10 +509,10 @@ function MenuDaConta({ usuario, recolhida }: { usuario: UsuarioDaBarra; recolhid
         title={recolhida ? `${usuario.nome} · ${departamento}` : undefined}
         className={`flex w-full items-center rounded-lg outline-none transition-colors hover:bg-zinc-100/70 focus-visible:ring-2 focus-visible:ring-zinc-900/15 dark:hover:bg-zinc-800/50 dark:focus-visible:ring-white/20 ${
           aberto ? "bg-zinc-100/70 dark:bg-zinc-800/50" : ""
-        } ${recolhida ? "h-10 justify-center" : "h-11 gap-2.5 px-1.5 tela-baixa:h-10"}`}
+        } ${recolhida ? "h-10 justify-center" : "h-12 gap-2.5 px-1.5 tela-baixa:h-11"}`}
       >
         <span
-          className={`flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${tintaDe(usuario.nome)}`}
+          className={`flex size-8 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold ${tintaDe(usuario.nome)}`}
           aria-hidden="true"
         >
           {usuario.iniciais}
@@ -520,10 +520,10 @@ function MenuDaConta({ usuario, recolhida }: { usuario: UsuarioDaBarra; recolhid
         {!recolhida && (
           <>
             <span className="min-w-0 flex-1 text-left">
-              <span className="block truncate text-[13px] font-medium leading-tight text-zinc-950 dark:text-zinc-50">
+              <span className="block truncate text-[14px] font-medium leading-tight text-zinc-950 dark:text-zinc-50">
                 {usuario.nome}
               </span>
-              <span className="block truncate text-[11.5px] leading-tight text-zinc-500 dark:text-zinc-400">{departamento}</span>
+              <span className="block truncate text-[12px] leading-tight text-zinc-500 dark:text-zinc-400">{departamento}</span>
             </span>
             <ChevronsUpDown className="size-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" aria-hidden="true" />
           </>
