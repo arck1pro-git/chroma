@@ -12,15 +12,19 @@ export async function varrerComentariosInstagram() {
     const resultado = { novos: 0, avaliados: 0, postagens: 0, falhas: 0, ocupado: !trava?.obtida };
     if (!trava?.obtida) return resultado;
     const inicio = Date.now();
-    const regras = await sql`SELECT conta_id, midia_id FROM instagram_ia_regras WHERE midia_id IS NOT NULL`;
+    const regras = await sql`SELECT conta_id, midia_id, ligada FROM instagram_ia_regras`;
     for (const perfil of PERFIS) {
+      const daConta = regras.filter((r) => r.conta_id === perfil.instagramId);
+      if (!daConta.some((r) => r.ligada)) continue;
+      const geralLigada = daConta.some((r) => r.midia_id === null && r.ligada);
       // Regras específicas também podem apontar para publicações fora das recentes.
-      const midias = new Set<string>(regras.filter((r) => r.conta_id === perfil.instagramId).map((r) => r.midia_id as string));
+      const midias = new Set<string>(daConta.filter((r) => r.ligada && r.midia_id !== null).map((r) => r.midia_id as string));
       const produtos = new Map<string, string | null>();
       try {
-        for (const p of (await postagensDaConta(perfil)).slice(0, 10)) {
+        for (const p of await postagensDaConta(perfil)) {
           produtos.set(p.id, p.produto ?? null);
-          if (p.comentarios > 0) midias.add(p.id);
+          const propria = daConta.find((r) => r.midia_id === p.id);
+          if (p.comentarios > 0 && (propria ? propria.ligada : geralLigada)) midias.add(p.id);
         }
       } catch (e) {
         resultado.falhas++;

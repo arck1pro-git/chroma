@@ -115,10 +115,11 @@ Comentários antigos importados pelo botão de busca não disparam respostas ret
 
 ### Conferência de entregas ausentes
 
-O agendador `[Chroma] Instagram · conferir comentarios` chama, a cada minuto, o
+O agendador `[Chroma] Instagram · conferir comentarios` chama, a cada dois minutos, o
 `POST /api/meta/instagram/varrer`, protegido por `CRM_SERVICE_TOKEN`. Não depende do Chat aberto.
-Confere as dez publicações recentes com comentários de cada conta e todas as publicações
-com regra própria. Importa os comentários ausentes mesmo sem regra ligada. Só os recém-inseridos,
+Lê as regras atuais em cada rodada: novas automações entram automaticamente, sem criar
+outro agendador. Confere publicações com regra própria ligada e as trinta recentes quando
+a regra geral da conta está ligada, respeitando exceções desligadas. Só os recém-inseridos,
 de terceiros, raiz e com até dez minutos são avaliados pela automação normal; ela continua
 conferindo regra ligada, palavras, atendimento humano e reservas. Antigos ficam visíveis sem envio.
 Uma trava no banco impede duas rodadas simultâneas. Candidatos ficam marcados em

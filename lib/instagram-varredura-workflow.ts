@@ -2,6 +2,8 @@ import "server-only";
 import {
   acharWorkflowPorNome,
   ativarWorkflow,
+  atualizarWorkflow,
+  desativarWorkflow,
   criarWorkflow,
   lerWorkflow,
   type WorkflowMotor,
@@ -13,7 +15,7 @@ export const URL_VARREDURA_INSTAGRAM = "https://amaanoffice.amaan.com.br/api/met
 
 /** Apenas a referência ao cofre do motor vai para o workflow. */
 export function montarWorkflowVarreduraInstagram(credencialId: string): WorkflowMotor {
-  const agenda = "A cada minuto";
+  const agenda = "A cada 2 minutos";
   const executar = "Conferir comentários do Instagram";
   return {
     name: NOME_VARREDURA_INSTAGRAM,
@@ -21,7 +23,7 @@ export function montarWorkflowVarreduraInstagram(credencialId: string): Workflow
       {
         id: "agenda", name: agenda, type: "n8n-nodes-base.scheduleTrigger", typeVersion: 1.2,
         position: [0, 0],
-        parameters: { rule: { interval: [{ field: "minutes", minutesInterval: 1 }] } },
+        parameters: { rule: { interval: [{ field: "minutes", minutesInterval: 2 }] } },
       },
       {
         id: "conferir", name: executar, type: "n8n-nodes-base.httpRequest", typeVersion: 4.2,
@@ -39,7 +41,7 @@ export function montarWorkflowVarreduraInstagram(credencialId: string): Workflow
   };
 }
 
-/** Confere o destino antes de ativar; nunca altera a definição de um workflow existente. */
+/** Único agendador do CRM: lê as regras atuais a cada rodada, inclusive as recém-criadas. */
 export async function garantirVarreduraInstagram(): Promise<{ id: string; active: boolean }> {
   const existente = await acharWorkflowPorNome(NOME_VARREDURA_INSTAGRAM);
   let id: string;
@@ -51,7 +53,16 @@ export async function garantirVarreduraInstagram(): Promise<{ id: string; active
         chamadas[0].parameters.url !== URL_VARREDURA_INSTAGRAM || chamadas[0].parameters.method !== "POST") {
       throw new Error("O agendador de comentários existente tem destino diferente. Nenhuma alteração foi aplicada.");
     }
-    if (!workflow.active) await ativarWorkflow(id);
+    const agendas = workflow.nodes.filter((no) => no.type === "n8n-nodes-base.scheduleTrigger");
+    if (workflow.nodes.length !== 2 || agendas.length !== 1) throw new Error("O agendador existente possui passos inesperados.");
+    const regra = agendas[0].parameters.rule as { interval?: Array<{ field?: string; minutesInterval?: number }> } | undefined;
+    if (regra?.interval?.length !== 1 || regra.interval[0].field !== "minutes" || regra.interval[0].minutesInterval !== 2) {
+      const credencialId = chamadas[0].credentials?.httpHeaderAuth?.id;
+      if (!credencialId) throw new Error("Agendador sem credencial do CRM.");
+      if (workflow.active) await desativarWorkflow(id);
+      await atualizarWorkflow(id, montarWorkflowVarreduraInstagram(credencialId));
+      await ativarWorkflow(id);
+    } else if (!workflow.active) await ativarWorkflow(id);
   } else {
     const credencial = await garantirCredencialDoCrm();
     id = await criarWorkflow(montarWorkflowVarreduraInstagram(credencial.id));

@@ -4,12 +4,12 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-function ambiente({ ocupado = false, lento = false } = {}) {
+function ambiente({ ocupado = false, lento = false, regras } = {}) {
   const avaliados = [], midias = [], fila = new Set();
   let inseriu = false, relogio = 1000000;
   const sql = async (partes, ...valores) => {
     const q = partes.join('?');
-    if (q.includes('SELECT conta_id')) return [{ conta_id: '100', midia_id: 'antiga-configurada' }];
+    if (q.includes('SELECT conta_id')) return regras ?? [{ conta_id: '100', midia_id: 'antiga-configurada', ligada: true }, { conta_id: '100', midia_id: null, ligada: true }];
     if (q.includes('SELECT id FROM instagram_comentarios')) {
       assert.match(q, /NOT da_conta AND pai_id IS NULL/);
       assert.match(q, /interval '10 minutes'/);
@@ -60,4 +60,12 @@ test('outra rodada em andamento não consulta a Meta nem executa ação', async 
   const a = ambiente({ ocupado: true });
   assert.equal((await a.varrerComentariosInstagram()).ocupado, true);
   assert.equal(a.midias.length, 0);
+});
+test('só consulta publicações com regras ligadas e respeita exceção desligada', async () => {
+  const a = ambiente({ regras: [{ conta_id: '100', midia_id: 'recente', ligada: false }] });
+  await a.varrerComentariosInstagram();
+  assert.equal(a.midias.length, 0);
+  const b = ambiente({ regras: [{ conta_id: '100', midia_id: null, ligada: true }, { conta_id: '100', midia_id: 'recente', ligada: false }] });
+  await b.varrerComentariosInstagram();
+  assert.equal(b.midias.length, 0);
 });
