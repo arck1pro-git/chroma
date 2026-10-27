@@ -16,7 +16,7 @@ import { revalidatePath } from "next/cache";
 import { exigirModulo } from "@/lib/auth/dal";
 import { podeOperar } from "@/lib/auth/permissoes";
 import { paginaDeComentarios } from "@/lib/instagram-leitura";
-import type { PaginaComentariosInstagram } from "@/lib/instagram-tipos";
+import type { AutomacaoComentarioInstagram, PaginaComentariosInstagram } from "@/lib/instagram-tipos";
 import { comoResultado, type ResultadoAcao } from "@/lib/resultado-acao";
 import { ehUuid } from "@/lib/validacao";
 import {
@@ -28,6 +28,20 @@ import {
 } from "@/lib/instagram-comentarios";
 
 const SO_ADMIN_TI = "Seu acesso não permite esta operação em nome da marca.";
+
+export async function salvarAutomacaoInstagram(
+  contaId: string, midiaId: string | null, iaId: string | null, ligada: boolean, automacao: AutomacaoComentarioInstagram,
+): Promise<ResultadoAcao> {
+  const { usuario } = await exigirModulo("chat");
+  if (!podeOperar(usuario, "chat", "editar") || !falaPelaMarca(usuario)) return { ok: false, erro: SO_ADMIN_TI };
+  if (typeof contaId !== "string" || (midiaId !== null && typeof midiaId !== "string") ||
+      (iaId !== null && typeof iaId !== "string") || typeof ligada !== "boolean" || !automacao) {
+    return { ok: false, erro: "Configuração inválida." };
+  }
+  const r = await comoResultado(() => salvarRegraIa(contaId, midiaId, iaId, ligada, automacao));
+  revalidatePath("/chat");
+  return r;
+}
 
 /** Responde a um comentário em público (Admin e TI) ou chama a pessoa no direct. */
 export async function responderComentario(linhaId: string, texto: string, modo: "publico" | "direct"): Promise<ResultadoAcao> {

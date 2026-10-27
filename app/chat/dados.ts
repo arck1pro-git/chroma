@@ -28,6 +28,7 @@ import { usuarioAtual } from "@/lib/auth/dal";
 import { contaDoPerfil, ehIdMeta, perfilDaConta, postagensDaConta } from "@/lib/instagram";
 import { falaPelaMarca, naoLidosPorConta } from "@/lib/instagram-comentarios";
 import type { ComentariosDaConta, PostagemInstagram, RegraIaInstagram } from "@/lib/instagram-tipos";
+import { automacaoDoRegistro } from "@/lib/instagram-automacao";
 import type { Perfil } from "@/lib/social/perfis";
 import type {
   AbaInstagram,
@@ -323,7 +324,7 @@ export async function carregarComentariosDaConta(
          WHERE conta_id = ${perfil.instagramId} AND (envio IS NULL OR envio = 'enviado')
          GROUP BY midia_id`,
       midia ? paginaDeComentarios(perfil.instagramId, midia) : Promise.resolve({ comentarios: [], antes: null, temMais: false }),
-      sql`SELECT midia_id, ia_id, ligada FROM instagram_ia_regras WHERE conta_id = ${perfil.instagramId}`,
+      sql`SELECT midia_id, ia_id, ligada, automacao FROM instagram_ia_regras WHERE conta_id = ${perfil.instagramId}`,
     ]);
 
     const porMidia = new Map((contagens as unknown as LinhaContagem[]).map((c) => [c.midia_id, c]));
@@ -357,8 +358,8 @@ export async function carregarComentariosDaConta(
       comentarios: comentarios.comentarios,
       antesComentarios: comentarios.antes,
       temMaisComentarios: comentarios.temMais,
-      regras: (regras as unknown as Array<{ midia_id: string | null; ia_id: string; ligada: boolean }>).map(
-        (r): RegraIaInstagram => ({ contaId: perfil.instagramId, midiaId: r.midia_id, iaId: r.ia_id, ligada: r.ligada === true }),
+      regras: (regras as unknown as Array<{ midia_id: string | null; ia_id: string | null; ligada: boolean; automacao: RegraIaInstagram["automacao"] }>).map(
+        (r): RegraIaInstagram => ({ contaId: perfil.instagramId, midiaId: r.midia_id, iaId: r.ia_id, ligada: r.ligada === true, automacao: automacaoDoRegistro(r.automacao) }),
       ),
       erro: erroMeta,
     };

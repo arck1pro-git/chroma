@@ -1,3 +1,7 @@
+// Automações de comentários: IA ou mensagem pronta por palavras alternativas.
+// Mensagens prontas são configuradas pela equipe e podem conter links; não
+// passam pelo modelo nem pelo filtro de abertura gerada. Compartilham reservas,
+// idempotência, teto e proteção de atendimento humano com o modo IA abaixo.
 // A IA que responde a quem COMENTA nas postagens do Instagram (2026-10-26).
 //
 // Decisão dele: resposta curta em público + abre o direct, onde a IA de
@@ -39,6 +43,8 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "@/lib/db";
+import { automacaoDoRegistro, correspondeAoComentario } from "@/lib/instagram-automacao";
+import type { AutomacaoComentarioInstagram } from "@/lib/instagram-tipos";
 import { comoDado, REGRA_DADO_NAO_CONFIAVEL } from "@/lib/ia/sanitizar";
 import { gravarIaDoContato } from "@/lib/ia/contato-ia";
 import { PERFIS } from "@/lib/social/perfis";
@@ -122,20 +128,20 @@ export function aberturaSegura(bruto: string, usuario: string | null): string {
   return texto;
 }
 
-type Regra = { midia_id: string | null; ia_id: string; ligada: boolean };
+type Regra = { midia_id: string | null; ia_id: string | null; ligada: boolean; automacao?: AutomacaoComentarioInstagram };
 
 /**
  * A regra que vale para o comentário: a da postagem vence a da conta (ligada
  * ou desligada). A da conta não vale em anúncio, nem quando a Meta não disse o
  * tipo da postagem (na dúvida, pode ser anúncio).
  */
-export function regraQueVale(regras: Regra[], midiaId: string, midiaTipo: string | null): { iaId: string } | null {
+export function regraQueVale(regras: Regra[], midiaId: string, midiaTipo: string | null): { iaId: string | null; automacao?: AutomacaoComentarioInstagram } | null {
   const daPostagem = regras.find((r) => r.midia_id === midiaId);
-  if (daPostagem) return daPostagem.ligada ? { iaId: daPostagem.ia_id } : null;
+  if (daPostagem) return daPostagem.ligada ? { iaId: daPostagem.ia_id, ...(daPostagem.automacao && { automacao: daPostagem.automacao }) } : null;
   const daConta = regras.find((r) => r.midia_id === null);
   if (!daConta?.ligada) return null;
   if (!midiaTipo || midiaTipo.toUpperCase() === "AD") return null;
-  return { iaId: daConta.ia_id };
+  return { iaId: daConta.ia_id, ...(daConta.automacao && { automacao: daConta.automacao }) };
 }
 
 // ── O modelo ────────────────────────────────────────────────────────────────
@@ -225,10 +231,13 @@ export async function responderComentarioComIa(linhaId: string): Promise<void> {
     if (Date.now() - new Date(linha.data_criacao).getTime() > COMENTARIO_RECENTE_MS) return nao("comentário antigo");
 
     const regras = (await sql`
-      SELECT midia_id, ia_id, ligada FROM instagram_ia_regras
+      SELECT midia_id, ia_id, ligada, automacao FROM instagram_ia_regras
        WHERE conta_id = ${linha.conta_id} AND (midia_id = ${linha.midia_id} OR midia_id IS NULL)`) as unknown as Regra[];
     const regra = regraQueVale(regras, linha.midia_id, linha.midia_tipo);
     if (!regra) return nao("sem regra ligada para esta postagem");
+    const automacao = automacaoDoRegistro(regra.automacao);
+    if (!correspondeAoComentario(linha.texto, automacao.palavras)) return nao("nenhuma palavra configurada no comentário");
+    if ((automacao.modo === "ia" || automacao.continuarComIa) && !regra.iaId) return nao("automação sem IA de atendimento");
 
     const noTexto = motivoNoTexto(linha.texto);
     if (noTexto) return nao(noTexto);
@@ -261,10 +270,18 @@ export async function responderComentarioComIa(linhaId: string): Promise<void> {
       return nao(naoNaMeta);
     }
 
+    // Comentário editado entre evento e leitura não pode disparar a palavra antiga.
+    if (!naMeta || motivoNoTexto(naMeta.texto) || !correspondeAoComentario(naMeta.texto, automacao.palavras)) {
+      await descartar(reservaId, "comentário alterado ou sem palavra configurada");
+      return;
+    }
+
     const usuario = usuarioValido(linha.autor_usuario);
     let decisao: Decisao;
     try {
-      decisao = await decidir({ texto: linha.texto, legenda: await legendaDaPostagem(perfil, linha.midia_id), usuario });
+      decisao = automacao.modo === "mensagem"
+        ? { frase: "chamei_no_direct", abertura: automacao.mensagemDirect }
+        : await decidir({ texto: naMeta.texto, legenda: await legendaDaPostagem(perfil, linha.midia_id), usuario });
     } catch (e) {
       await marcarErroDaResposta(reservaId, new Error(`o modelo falhou: ${motivoDoErro(e)}`));
       return;
@@ -275,15 +292,20 @@ export async function responderComentarioComIa(linhaId: string): Promise<void> {
     }
 
     // 1. O direct.
-    const direct = await abrirDirectDoComentario(linha, aberturaSegura(decisao.abertura, usuario), { quem: "ia", usuarioId: null });
+    const textoDirect = automacao.modo === "mensagem" ? automacao.mensagemDirect : aberturaSegura(decisao.abertura, usuario);
+    const direct = await abrirDirectDoComentario(linha, textoDirect, { quem: "ia", usuarioId: null });
     if (!direct.ok && !direct.jaTinha) {
       await marcarErroDaResposta(reservaId, new Error(`o direct não saiu: ${direct.erro}`));
       return;
     }
-    if (direct.ok) await ligarIaNoContato(direct.contatoId, regra.iaId);
+    if (direct.ok && automacao.continuarComIa && regra.iaId) await ligarIaNoContato(direct.contatoId, regra.iaId);
 
     // 2. A frase pública.
-    const frase = FRASES[decisao.frase].texto(usuario);
+    const frase = automacao.modo === "mensagem" ? automacao.respostaPublica : FRASES[decisao.frase].texto(usuario);
+    if (!frase) {
+      await descartar(reservaId, "automação concluída somente no Direct");
+      return;
+    }
     await sql`UPDATE instagram_comentarios SET texto = ${frase} WHERE id = ${reservaId}`;
     try {
       const r = await responderEmPublico(perfil, linha.comentario_id, linha.autor_id, frase);

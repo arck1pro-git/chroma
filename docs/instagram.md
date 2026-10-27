@@ -36,6 +36,27 @@ aparecem no trilho do `/chat`, cada uma com duas abas:
 
 ## IA
 
+### Automações no Chat
+
+Em **Comentários → Criar automação/Editar**, configure uma regra para a conta ou para uma publicação.
+A regra da publicação substitui a regra da conta, inclusive quando desligada.
+
+- **Mensagem pronta:** informe uma ou várias palavras/expressões alternativas e a mensagem do Direct
+  (até 1.000 caracteres, com link para o material). A resposta pública é opcional.
+  Pode entregar o material sem IA ou selecionar uma IA para continuar quando a pessoa responder no Direct.
+- **IA:** seleciona uma frase pública aprovada, abre o Direct e segue com a IA escolhida.
+  Palavras são opcionais; sem palavras, avalia todos os comentários elegíveis.
+- Basta uma expressão inteira corresponder, sem distinguir maiúsculas ou acentos. “material” não casa com “materialista”.
+- **Salvar desligada** guarda a configuração. **Salvar e ativar** autoriza os próximos disparos;
+  não processa comentários antigos. **Desligar** preserva os textos e as palavras.
+- Uma entrega por pessoa por publicação, com as mesmas reservas, teto e proteção de atendimento humano.
+  A IA só assume contatos sem definição anterior; respeita IA desligada e atendimento humano.
+- O envio do material ocorre antes da resposta pública. Mensagem pronta não chama o modelo.
+
+Persistência: `instagram_ia_regras.automacao` (JSON), criada por `migration-instagram-automacoes.sql`.
+Aplicar depois de `migration-instagram.sql`, antes do deploy. Regras antigas continuam com o modo IA.
+Recebimento depende da assinatura do Instagram na Meta; criar uma regra não altera o app externo.
+
 - **Direct:** a mesma IA de atendimento do WhatsApp (`lib/ia/atendente.ts`), com as mesmas travas.
   - Contato novo do Instagram nasce sem IA (`ia = NULL`, sem etapa), então ela não responde por padrão.
   - No prompt, o texto e o nome do contato do Instagram entram marcados como dado (`comoDado`).

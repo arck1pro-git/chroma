@@ -18,6 +18,8 @@ import { podeOperar } from "@/lib/auth/permissoes";
 import type { UsuarioLogado } from "@/lib/auth/dal";
 import { Recusa, ehDuplicado } from "@/lib/resultado-acao";
 import { ehUuid } from "@/lib/validacao";
+import { validarAutomacaoComentario } from "@/lib/instagram-automacao";
+import type { AutomacaoComentarioInstagram } from "@/lib/instagram-tipos";
 import {
   comentariosDaPostagem,
   ehContaNossa,
@@ -241,30 +243,37 @@ export async function responderComentarioPelaEquipe(
  * ou de uma postagem. iaId null apaga a regra. A postagem é conferida como
  * desta conta na Meta. Quem pode é decidido na ação (Admin e TI).
  */
-export async function salvarRegraIa(contaId: string, midiaId: string | null, iaId: string | null, ligada: boolean): Promise<void> {
+export async function salvarRegraIa(contaId: string, midiaId: string | null, iaId: string | null, ligada: boolean, configuracao?: AutomacaoComentarioInstagram): Promise<void> {
   const perfil = perfilDaConta(contaId);
   if (!perfil) throw new Recusa("Conta do Instagram inválida.");
   if (midiaId !== null && !ehIdMeta(midiaId)) throw new Recusa("Postagem inválida.");
-  if (iaId === null) {
+  if (iaId === null && configuracao === undefined) {
     await sql`
       DELETE FROM instagram_ia_regras
        WHERE conta_id = ${perfil.instagramId} AND midia_id IS NOT DISTINCT FROM ${midiaId}::text`;
     return;
   }
-  if (!ehUuid(iaId)) throw new Recusa("IA inválida.");
+  let automacao: AutomacaoComentarioInstagram | undefined;
+  try { automacao = configuracao === undefined ? undefined : validarAutomacaoComentario(configuracao); }
+  catch (e) { throw new Recusa(e instanceof Error ? e.message : "Automação inválida."); }
+  const precisaIa = !automacao || automacao.modo === "ia" || automacao.continuarComIa;
+  if ((precisaIa || iaId !== null) && !ehUuid(iaId)) throw new Recusa("IA inválida. Escolha a IA que continuará o atendimento.");
   if (typeof ligada !== "boolean") throw new Recusa("Diga se a IA fica ligada.");
-  const [ia] = await sql`SELECT id FROM ias WHERE id = ${iaId}`;
-  if (!ia) throw new Recusa("Essa IA não existe mais.");
+  if (iaId !== null) {
+    const [ia] = await sql`SELECT id FROM ias WHERE id = ${iaId}`;
+    if (!ia) throw new Recusa("Essa IA não existe mais.");
+  }
   // Só LIGAR exige a Meta confirmar o dono: desligar tem de funcionar mesmo com a
   // Graph fora ou a postagem fora das recentes (regra desligada é inofensiva).
   if (midiaId !== null && ligada && !(await midiaEhDaConta(perfil, midiaId))) {
     throw new Recusa("Não consegui confirmar na Meta que essa postagem é desta conta.");
   }
   await sql`
-    INSERT INTO instagram_ia_regras (conta_id, midia_id, ia_id, ligada)
-    VALUES (${perfil.instagramId}, ${midiaId}, ${iaId}, ${ligada})
+    INSERT INTO instagram_ia_regras (conta_id, midia_id, ia_id, ligada, automacao)
+    VALUES (${perfil.instagramId}, ${midiaId}, ${iaId}, ${ligada}, ${sql.json(automacao ?? {})}::jsonb)
     ON CONFLICT (conta_id, midia_id) DO UPDATE
-      SET ia_id = EXCLUDED.ia_id, ligada = EXCLUDED.ligada`;
+      SET ia_id = EXCLUDED.ia_id, ligada = EXCLUDED.ligada,
+          automacao = CASE WHEN ${automacao !== undefined} THEN EXCLUDED.automacao ELSE instagram_ia_regras.automacao END`;
 }
 
 // ── Lidos e busca na Meta ───────────────────────────────────────────────────

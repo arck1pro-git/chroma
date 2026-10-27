@@ -63,8 +63,17 @@ export type PaginaComentariosInstagram = {
 export type RegraIaInstagram = {
   contaId: string;
   midiaId: string | null;
-  iaId: string;
+  iaId: string | null;
   ligada: boolean;
+  automacao?: AutomacaoComentarioInstagram;
+};
+
+export type AutomacaoComentarioInstagram = {
+  modo: "ia" | "mensagem";
+  palavras: string[];
+  mensagemDirect: string;
+  respostaPublica: string;
+  continuarComIa: boolean;
 };
 
 /** O que a aba "Comentários" de uma conta mostra. */

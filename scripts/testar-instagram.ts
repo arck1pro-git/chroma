@@ -110,6 +110,7 @@ const ocultos = new Set<string>();
 /** Comentários que a Meta diz serem antigos (o evento chega agora, como numa reentrega). */
 const antigosNaMeta = new Set<string>();
 const autorDoComentario = new Map<string, string>();
+const textoDoComentario = new Map<string, string>();
 let seq = 0;
 let paginarBusca = false;
 
@@ -159,7 +160,7 @@ function graphFalsa(metodo: string, url: URL, corpo: Record<string, unknown> | n
   if (metodo === "GET" && campos === "name,username") return json({ name: `Pessoa Teste ${alvo.slice(-3)}`, username: `teste_${alvo.slice(-3)}` });
   if (metodo === "GET" && campos.includes("hidden")) {
     return json({
-      id: alvo, text: "x", hidden: ocultos.has(alvo), from: { id: autorDoComentario.get(alvo) ?? "" },
+      id: alvo, text: textoDoComentario.get(alvo) ?? "x", hidden: ocultos.has(alvo), from: { id: autorDoComentario.get(alvo) ?? "" },
       timestamp: antigosNaMeta.has(alvo) ? "2026-10-20T10:00:00+0000" : new Date().toISOString(),
     });
   }
@@ -236,6 +237,7 @@ function eco(para: string, mid: string, texto: string) {
 
 function comentario(c: { id: string; midia: string; autor: string; usuario: string; texto: string; pai?: string; tipo?: string; time?: number; conta?: string }) {
   autorDoComentario.set(c.id, c.autor);
+  textoDoComentario.set(c.id, c.texto);
   return { object: "instagram", entry: [{ id: c.conta ?? CONTA, time: c.time ?? agoraS(), changes: [{ field: "comments", value: {
     id: c.id, text: c.texto, from: { id: c.autor, username: c.usuario },
     media: { id: c.midia, media_product_type: c.tipo ?? "FEED" }, ...(c.pai ? { parent_id: c.pai } : {}) } }] }] };
@@ -632,6 +634,33 @@ async function parteComentarios(iaId: string) {
   await sql`DELETE FROM instagram_comentarios WHERE midia_id = ${ig(150)}`;
 }
 
+async function parteAutomacao(iaId: string) {
+  passo("automação: palavras alternativas, link no Direct, sem modelo, repetição e continuação por IA");
+  const config = { modo: "mensagem" as const, palavras: ["material", "quero detalhes"],
+    mensagemDirect: "Aqui está o material: https://exemplo.invalid/apresentacao", respostaPublica: "", continuarComIa: false };
+  await salvarRegraIa(CONTA, MIDIA_3, null, true, config);
+  const [gravada] = await sql`SELECT automacao FROM instagram_ia_regras WHERE conta_id = ${CONTA} AND midia_id = ${MIDIA_3}`;
+  assert.deepEqual(gravada.automacao, config, "JSON recuperado preserva o modo e os textos");
+  const antesModelo = modelo.length;
+  const antesEnvio = postsGraph("messages").length;
+  await emProducao(async () => {
+    await webhook(comentario({ id: com(180), midia: MIDIA_3, autor: ig(180), usuario: "automacao", texto: "Quero detalhes!" }));
+    await webhook(comentario({ id: com(180), midia: MIDIA_3, autor: ig(180), usuario: "automacao", texto: "Quero detalhes!" }));
+    await webhook(comentario({ id: com(181), midia: MIDIA_3, autor: ig(181), usuario: "automacao2", texto: "materialista" }));
+  });
+  assert.equal(modelo.length, antesModelo, "mensagem pronta não chama modelo");
+  assert.equal(postsGraph("messages").length, antesEnvio + 1, "uma única DM, sem substring indevida");
+  assert.equal((postsGraph("messages").at(-1)!.corpo?.message as { text: string }).text, config.mensagemDirect);
+  assert.equal((await contato(ig(180))).ia, null, "entrega de material não liga IA");
+  assert.equal((await respostasDaIa(com(180)))[0].envio, "descartado", "reserva não aparece como comentário pendente");
+  await salvarRegraIa(CONTA, MIDIA_3, iaId, true, { ...config, respostaPublica: "Enviei no Direct!", continuarComIa: true });
+  const antesPublico = postsGraph("replies").length;
+  await emProducao(() => webhook(comentario({ id: com(182), midia: MIDIA_3, autor: ig(182), usuario: "automacao3", texto: "MATERIAL" })));
+  assert.equal(postsGraph("replies").length, antesPublico + 1);
+  assert.equal((await contato(ig(182))).ia, true, "continuação explícita liga IA no contato novo");
+  await salvarRegraIa(CONTA, MIDIA_3, null, false);
+}
+
 async function parteDirectComIa() {
   passo("IA de atendimento segue no direct (espera ~8 s)");
   const antes = postsGraph("messages").length;
@@ -844,6 +873,7 @@ async function main() {
     partePura();
     await parteEntrada();
     await parteDirect();
+    await parteAutomacao(ia.id as string);
     await parteComentarios(ia.id as string);
     await parteDirectComIa();
     await parteAvisos(FABRICIO);
