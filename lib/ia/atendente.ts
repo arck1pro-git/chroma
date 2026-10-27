@@ -1,7 +1,9 @@
-// As IAs que atendem os contatos pelo WhatsApp.
+// As IAs que atendem os contatos pelo WhatsApp e, desde 2026-10-26, pelo
+// direct do Instagram (o que muda lá está em "Canal", perto de regras()).
 //
-// Chamada pelos dois webhooks (uazapi e Meta) a cada mensagem nova DO CONTATO,
-// depois da resposta ao webhook (`after`). Ela decide sozinha se responde:
+// Chamada pelos webhooks (uazapi, WhatsApp da Meta e Instagram) a cada
+// mensagem nova DO CONTATO, depois da resposta ao webhook (`after`). Ela
+// decide sozinha se responde:
 //
 //   1. QUAL IA atende o contato?  contatos.ia manda: false = nenhuma; true =
 //      a IA escolhida à mão (contatos.ia_id); vazio segue a etapa — a IA
@@ -63,6 +65,9 @@ import { moverOportunidadeDeEtapa } from "@/lib/mover-etapa";
 import { vozConfigurada } from "@/lib/voz";
 import { gravarIaDoContato } from "@/lib/ia/contato-ia";
 import { LIMITE_PALAVRA_IA } from "@/lib/ia/catalogo";
+import { comoDado, REGRA_DADO_NAO_CONFIAVEL } from "@/lib/ia/sanitizar";
+import { avisarPorDemanda } from "@/lib/ia/aviso-demanda";
+import { NOME_PROVISORIO } from "@/lib/instagram";
 import { conexaoGoogle } from "@/lib/google-oauth";
 import { linkDaConversa } from "@/lib/link-do-crm";
 import {
@@ -232,8 +237,11 @@ const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // chega é transcrito em lib/transcricao.ts). Quem escreve recebe texto.
 // Decisão dele (2026-09-29): Groq para ouvir, Magnific para falar.
 
-/** A resposta vai falada: o cliente mandou áudio e a voz está configurada. */
-const emAudio = (s: Situacao) => s.tipo_ultima_do_contato === "audio" && vozConfigurada();
+/**
+ * A resposta vai falada: o cliente mandou áudio e a voz está configurada. No
+ * direct do Instagram, nunca: o CRM só manda texto por lá.
+ */
+const emAudio = (s: Situacao) => s.canal !== "instagram" && s.tipo_ultima_do_contato === "audio" && vozConfigurada();
 
 // Valor em reais ou porcentagem na resposta. Número dito em áudio não se
 // confere depois; escrito, sim.
@@ -484,8 +492,15 @@ async function moverPelaIa(s: Situacao, mover: Movimento) {
  *   · a IA marcou a reunião          → "reunião agendada"
  * (Funis reformulados em 2026-10-19: "em contato" virou "em atendimento" e
  * "tentando contato" virou "solicitou contato", nessa ordem no quadro.)
- * Só para a frente pela ordem das etapas (card que já passou não volta), menos
- * "sem contato" → "em atendimento", que é exatamente o lead que voltou a falar.
+ * Só para a frente pela ordem das etapas (card que já passou não volta), com
+ * duas voltas permitidas:
+ *   · "sem contato" → "em atendimento": é exatamente o lead que voltou a falar;
+ *   · "em atendimento" → "solicitou contato": o lead pediu uma pessoa no meio
+ *     da conversa (pedido dele, 2026-10-23). No quadro, "solicitou contato" vem
+ *     ANTES de "em atendimento", e como o lead que responde já anda para "em
+ *     atendimento", a coluna só recebia quem pedia gente na primeira resposta:
+ *     ficava vazia. Etapas depois de "em atendimento" (reunião agendada, No
+ *     Show, realizada) não voltam: ali a equipe já está com o lead.
  *
  * `manterIa`: a IA atende pela etapa (iaQueAtende), e "em atendimento" não tem
  * IA — sair da etapa dela a calaria no meio da conversa. Então ela fica ligada
@@ -504,7 +519,9 @@ async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: st
     const destino = etapas.find((e) => alvo.test(e.nome.trim()));
     const atual = etapas.find((e) => e.id === s.op_etapa_id);
     if (!destino || !atual || destino.id === atual.id) return;
-    const volta = alvo === ETAPA_EM_CONTATO && /^sem contato$/i.test(atual.nome.trim());
+    const volta =
+      (alvo === ETAPA_EM_CONTATO && /^sem contato$/i.test(atual.nome.trim())) ||
+      (alvo === ETAPA_SOLICITOU && ETAPA_EM_CONTATO.test(atual.nome.trim()));
     if (destino.ordem <= atual.ordem && !volta) return;
     if (manterIa) {
       await sql`UPDATE contatos SET ia = true, ia_id = ${iaId} WHERE id = ${s.contato_id} AND ia IS NULL`;
@@ -582,6 +599,10 @@ export async function avisarNoWhatsApp(
   // Pela Meta, texto livre só sai dentro da janela de 24h aberta pelo
   // DESTINATÁRIO — para gente da equipe, quase nunca aberta. Sairia com template.
   if (c.canal === "whatsapp_oficial") return `${pessoa.nome} não avisado: pelo número oficial só sai com template`;
+  // Conversa do Instagram não tem número de WhatsApp nosso por onde avisar, e
+  // a busca por fim de número abaixo poderia casar o id da conta com o número
+  // de uma instância. Falha fechado (revisão de segurança, 2026-10-26).
+  if (c.canal === "instagram") return `${pessoa.nome} não avisado: conversa do Instagram não tem número de WhatsApp para o aviso`;
   try {
     // Busca EXATA: a instância padrão faria o aviso sair de outro número.
     const instancia = c.numero_instancia ? await instanciaExataPorNumero(c.numero_instancia) : null;
@@ -602,8 +623,14 @@ export async function avisarNoWhatsApp(
  *
  * O texto é o que ele pediu: o aviso e nome, WhatsApp e valor do lead. O
  * pedido em si fica no histórico, não aqui.
+ *
+ * No direct do Instagram não há WhatsApp nosso por onde avisar: vira DEMANDA
+ * (lib/ia/aviso-demanda.ts) para o responsável da oportunidade, ou o da
+ * conversa, ou, sem nenhum dos dois (o contato do Instagram costuma não ter
+ * oportunidade), quem recebe o aviso de reunião (AVISAR_REUNIAO).
  */
 async function avisarResponsavel(atendimentoId: string, s: Situacao, valorDito: number | null): Promise<string> {
+  if (s.canal === "instagram") return avisarPedidoNoInstagram(atendimentoId, s);
   try {
     if (!s.op_id) return "responsável não avisado: contato sem oportunidade aberta";
     const c = await conversaDoAviso(atendimentoId, s);
@@ -617,6 +644,27 @@ async function avisarResponsavel(atendimentoId: string, s: Situacao, valorDito: 
   } catch (e) {
     console.error("[ia atendente] não avisou o responsável:", atendimentoId, e);
     return `responsável não avisado: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`;
+  }
+}
+
+/** O pedido de atendimento humano no Instagram, como demanda. Nunca lança. */
+async function avisarPedidoNoInstagram(atendimentoId: string, s: Situacao): Promise<string> {
+  try {
+    const [r] = await sql`
+      SELECT (SELECT o.responsavel_id FROM oportunidades o WHERE o.id = ${s.op_id}::uuid) AS da_oportunidade,
+             (SELECT a.responsavel_id FROM atendimentos a WHERE a.id = ${atendimentoId}) AS da_conversa`;
+    const quem = (r?.da_oportunidade ?? r?.da_conversa ?? null) as string | null;
+    return await avisarPorDemanda({
+      titulo: "Pediu atendimento no Instagram",
+      nome: s.contato_nome,
+      quando: `${fmtAgora.format(new Date())} (horário de Brasília)`,
+      atendimentoId,
+      pessoaIds: quem ? [quem] : AVISAR_REUNIAO,
+      prioridade: "alta",
+    });
+  } catch (e) {
+    console.error("[ia atendente] não avisou o pedido do Instagram:", atendimentoId, e instanceof Error ? e.message : e);
+    return `ninguém avisado: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`;
   }
 }
 
@@ -637,6 +685,8 @@ const AVISAR_REUNIAO = [
  * (usuarios.whatsapp), pelo mesmo número da conversa. Quem está sem WhatsApp
  * no cadastro aparece no histórico como "não avisado", para alguém notar e
  * cadastrar. Nunca lança: a reunião já está marcada.
+ *
+ * No direct do Instagram, a mesma lista recebe uma DEMANDA (lib/ia/aviso-demanda.ts).
  */
 async function avisarReuniao(
   atendimentoId: string,
@@ -645,6 +695,20 @@ async function avisarReuniao(
   valorDito: number | null,
 ): Promise<void> {
   try {
+    if (s.canal === "instagram") {
+      const como = await avisarPorDemanda({
+        titulo: "Reunião marcada pela IA no Instagram",
+        nome: s.contato_nome,
+        quando: `${rotuloDoHorario(reuniao.inicio)} (horário de Brasília)`,
+        atendimentoId,
+        pessoaIds: AVISAR_REUNIAO,
+        prioridade: "normal",
+      });
+      await sql`
+        INSERT INTO historico (contato_id, oportunidade_id, descricao)
+        VALUES (${s.contato_id}, ${s.op_id}, ${`Aviso da reunião à equipe: ${como}`.slice(0, 1000)})`;
+      return;
+    }
     const equipe = (await sql`
       SELECT nome, nullif(whatsapp, '') AS whatsapp FROM usuarios
        WHERE id = ANY(string_to_array(${AVISAR_REUNIAO.join(",")}, ',')::uuid[]) AND ativo
@@ -842,7 +906,6 @@ function ferramentaAgendar(horarios: string[]): Anthropic.Tool {
     strict: true,
   };
 }
-
 
 /**
  * O que a IA sabe da agenda nesta resposta: a reunião que o contato já tem, ou
@@ -1060,11 +1123,49 @@ export function regras(podePassar: boolean) {
   return [REGRAS_INICIO, podePassar ? REGRAS_PASSAR : REGRAS_SEM_PASSAR, REGRAS_FIM].join("\n\n");
 }
 
+// ── Canal ────────────────────────────────────────────────────────────────────
+//
+// O direct do Instagram (2026-10-26) usa a mesma IA, as mesmas regras e a
+// mesma base. O que muda, e SÓ no Instagram (o prompt do WhatsApp está
+// calibrado e simulado a seco, não mexer): a linha do canal, o texto do
+// contato e o nome marcados como dado não confiável (lib/ia/sanitizar.ts) com
+// a regra dessa marca no system, e nada de resposta em áudio (emAudio).
+
+const REGRA_DO_INSTAGRAM = `ESTA CONVERSA É NO DIRECT DO INSTAGRAM, não no WhatsApp: as regras acima valem do mesmo jeito. Só texto: não mande áudio nem peça para mandarem documento por aqui.
+
+${REGRA_DADO_NAO_CONFIAVEL}`;
+
+/** A linha "Canal:" do pedido ao modelo. */
+export function linhaDoCanal(canal: string): string {
+  if (canal === "instagram") return "Canal: Instagram (direct)";
+  return `Canal: ${canal === "whatsapp_oficial" ? "WhatsApp oficial da empresa" : "WhatsApp do comercial"}`;
+}
+
+/** O bloco do system que só o Instagram tem. Vai DEPOIS da base: o prefixo em cache não muda. */
+export function sistemaDoCanal(canal: string): Anthropic.TextBlockParam[] {
+  return canal === "instagram" ? [{ type: "text", text: REGRA_DO_INSTAGRAM }] : [];
+}
+
+/** O nome do contato e as linhas da conversa, como vão ao modelo. */
+export function conversaParaPrompt(
+  canal: string,
+  nome: string,
+  historico: LinhaHistorico[],
+): { nome: string; linhas: string[] } {
+  if (canal !== "instagram") {
+    return { nome: /^[\d\s+()-]+$/.test(nome) ? "(nome não informado)" : nome, linhas: historico.map(linhaDaConversa) };
+  }
+  // No Instagram o contato nasce com nome provisório ou só com o @.
+  const semNome = nome === NOME_PROVISORIO || nome.startsWith("@") || /^[\d\s+()-]+$/.test(nome);
+  return {
+    nome: semNome ? "(nome não informado)" : comoDado(nome),
+    linhas: historico.map((m) => linhaDaConversa(m.origem === "contato" ? { ...m, texto: comoDado(m.texto) } : m)),
+  };
+}
+
 export function blocoDaFuncao(ia: { nome: string; prompt: string }) {
   return `SUA FUNÇÃO\n<sua_funcao>\nNome desta IA (interno, não precisa dizer ao cliente): ${ia.nome}\n\n${ia.prompt.trim()}\n</sua_funcao>`;
 }
-
-
 
 const fmtQuando = new Intl.DateTimeFormat("pt-BR", {
   timeZone: "America/Sao_Paulo",
@@ -1088,7 +1189,8 @@ const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL",
 // Campos que a captação grava mas não são resposta do lead: rastreio de
 // anúncio e de formulário. O resto (quanto quer investir, prazo, cidade…) é o
 // que ele respondeu, e a IA usa para não perguntar de novo.
-const CAMPO_TECNICO = /^(utm_|campaign|adset|ad_|ad$|fbclid|gclid|form_?(id|name)?$|(lead|leadgen)_?id$|platform$|is_organic$|created_time$|page_?(id|name)$)/i;
+// instagram_ (2026-10-26): o IGSID e o @ do contato do direct não são resposta.
+const CAMPO_TECNICO = /^(utm_|campaign|adset|ad_|ad$|fbclid|gclid|form_?(id|name)?$|(lead|leadgen)_?id$|platform$|is_organic$|created_time$|page_?(id|name)$|instagram_)/i;
 
 /**
  * As respostas do formulário em uma linha ("Quanto pretende investir: R$ 100
@@ -1224,11 +1326,10 @@ async function gerarResposta(
       ? destinosPorNome(etapas.filter((e) => e.id !== s.op_etapa_id))
       : new Map<string, string>();
 
-  const linhas = (historico as unknown as LinhaHistorico[]).reverse().map(linhaDaConversa);
+  const { nome, linhas } = conversaParaPrompt(s.canal, s.contato_nome, (historico as unknown as LinhaHistorico[]).reverse());
   const situacaoCrm = oportunidades.length
     ? oportunidades.map((o) => `${o.funil} › ${o.etapa} (${o.nome})`).join("; ")
     : "sem oportunidade aberta";
-  const nome = /^[\d\s+()-]+$/.test(s.contato_nome) ? "(nome não informado)" : s.contato_nome;
   const origem = origens[0] as
     | {
         campanha: string | null;
@@ -1252,7 +1353,7 @@ async function gerarResposta(
 
   const pedido = [
     `Contato: ${nome}`,
-    `Canal: ${s.canal === "whatsapp_oficial" ? "WhatsApp oficial da empresa" : "WhatsApp do comercial"}`,
+    linhaDoCanal(s.canal),
     `No CRM: ${situacaoCrm}`,
     ...(deOnde.length ? [`Origem do lead: ${deOnde.join(" · ")}`] : []),
     ...(valorDaOp > 0 ? [`Valor na oportunidade (informado no cadastro ou formulário): ${brl.format(valorDaOp)}`] : []),
@@ -1298,6 +1399,8 @@ async function gerarResposta(
     system: [
       { type: "text", text: regras(podePassar) },
       { type: "text", text: blocoDaFuncao(ia), cache_control: { type: "ephemeral" } },
+
+      ...sistemaDoCanal(s.canal),
     ],
   } satisfies Omit<Anthropic.MessageCreateParamsNonStreaming, "messages">;
   const resposta = await cliente.messages.create({ ...base, messages: [{ role: "user", content: pedido }] });
@@ -1460,3 +1563,6 @@ async function gerarResposta(
 
 // Para o teste do andamento do funil (avancarPelaIa) contra o banco do dev.
 export const paraTesteAndamento = { avancarPelaIa, ETAPA_EM_CONTATO, ETAPA_SOLICITOU, ETAPA_REUNIAO };
+// Para o teste do aviso por demanda no Instagram (scripts/testar-instagram.ts):
+// a reunião só é marcada com o Google de verdade, e o aviso é o que importa ali.
+export const paraTesteAvisos = { avisarReuniao };

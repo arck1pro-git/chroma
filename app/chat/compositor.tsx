@@ -1,22 +1,46 @@
 "use client";
 
-// Onde se escreve. O mesmo campo nos dois canais, com uma diferença que a tela
-// tem que deixar óbvia: na API oficial existe a JANELA DE 24H.
+// Onde se escreve. O mesmo campo em todos os canais, com uma diferença que a
+// tela tem que deixar óbvia: na API oficial existe a JANELA DE 24H.
 //
 //   · Janela aberta  → escreve normal; uma linha discreta mostra quanto falta.
 //   · Janela fechada → o campo dá lugar a um aviso e ao botão de template,
 //                      porque texto livre seria recusado pela Meta. Esconder o
 //                      campo é melhor do que deixar digitar e falhar no envio.
+//
+// No direct do Instagram (2026-10-26) a janela é a mesma, mas não existe
+// template para reabrir: fechada, o aviso diz que a conversa volta quando a
+// pessoa escrever. E é SÓ TEXTO — sem anexo da biblioteca, sem template; o
+// servidor recusa os dois também (lib/conversa-envio.ts).
 import { useEffect, useRef, useState, useTransition } from "react";
 import { FileText, LayoutTemplate, Loader2, Lock, Paperclip, RotateCcw, SendHorizonal, Timer, X } from "lucide-react";
 import type { Documento } from "@/lib/documentos";
 import type { ConversaResumo } from "./tipos";
 import { duracao, restanteDaJanela, tipoDaConversa } from "./ui";
 
+// O aviso de janela fechada na cor do canal (violeta na API oficial, rosa no
+// Instagram). Classes por extenso para o Tailwind enxergá-las.
+const TOM_JANELA = {
+  api: {
+    caixa: "border-violet-200 bg-violet-50/70 dark:border-violet-400/20 dark:bg-violet-500/10",
+    icone: "text-violet-600 ring-violet-200 dark:bg-violet-500/15 dark:text-violet-300 dark:ring-violet-400/20",
+    titulo: "text-violet-950 dark:text-violet-100",
+    texto: "text-violet-900/70 dark:text-violet-200/70",
+  },
+  instagram: {
+    caixa: "border-pink-200 bg-pink-50/70 dark:border-pink-400/20 dark:bg-pink-500/10",
+    icone: "text-pink-600 ring-pink-200 dark:bg-pink-500/15 dark:text-pink-300 dark:ring-pink-400/20",
+    titulo: "text-pink-950 dark:text-pink-100",
+    texto: "text-pink-900/70 dark:text-pink-200/70",
+  },
+};
+
 export function Compositor({
   conversa,
   documentos,
   demo,
+  podeEnviar,
+  podeReabrir,
   aoEnviar,
   aoEnviarDocumento,
   aoReabrir,
@@ -25,6 +49,8 @@ export function Compositor({
   conversa: ConversaResumo;
   documentos: Documento[];
   demo: boolean;
+  podeEnviar: boolean;
+  podeReabrir: boolean;
   /** `erro` quando falha; `registrada` quando a falha já está na conversa. */
   aoEnviar: (texto: string) => Promise<{ erro?: string; registrada?: boolean }>;
   aoEnviarDocumento: (documentoId: string, legenda: string) => Promise<{ erro?: string; registrada?: boolean }>;
@@ -64,12 +90,15 @@ export function Compositor({
     el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
   }, [texto]);
 
-  const oficial = tipoDaConversa(conversa) === "api";
-  const restante = oficial ? restanteDaJanela(conversa, agora) : Infinity;
-  const janelaFechada = oficial && restante <= 0;
+  const tipo = tipoDaConversa(conversa);
+  const oficial = tipo === "api";
+  const instagram = tipo === "instagram";
+  const comJanela = oficial || instagram;
+  const restante = comJanela ? restanteDaJanela(conversa, agora) : Infinity;
+  const janelaFechada = comJanela && restante <= 0;
 
   function submeter() {
-    if (enviando || demo) return;
+    if (enviando || demo || !podeEnviar) return;
     const corpo = texto;
     const doc = anexo;
     if (!doc && !corpo.trim()) return;
@@ -77,16 +106,22 @@ export function Compositor({
     setTexto("");
     setAnexo(null);
     iniciar(async () => {
-      const r = doc ? await aoEnviarDocumento(doc.id, corpo) : await aoEnviar(corpo);
-      if (r.erro) {
-        setErro(r.erro);
-        // Recusada antes de gravar: devolve o rascunho (e o anexo), para a
-        // pessoa não perder o que escreveu. Gravada com erro, ela já está na
-        // conversa marcada em vermelho — devolver duplicaria.
-        if (!r.registrada) {
-          setTexto((atual) => atual || corpo);
-          if (doc) setAnexo(doc);
+      try {
+        const r = doc ? await aoEnviarDocumento(doc.id, corpo) : await aoEnviar(corpo);
+        if (r.erro) {
+          setErro(r.erro);
+          // Recusada antes de gravar: devolve o rascunho (e o anexo), para a
+          // pessoa não perder o que escreveu. Gravada com erro, ela já está na
+          // conversa marcada em vermelho — devolver duplicaria.
+          if (!r.registrada) {
+            setTexto((atual) => atual || corpo);
+            if (doc) setAnexo(doc);
+          }
         }
+      } catch {
+        setErro("Não consegui confirmar o envio. Confira a conversa antes de tentar novamente.");
+        setTexto((atual) => atual || corpo);
+        if (doc) setAnexo((atual) => atual ?? doc);
       }
     });
     campo.current?.focus();
@@ -99,7 +134,7 @@ export function Compositor({
         <button
           type="button"
           onClick={aoReabrir}
-          disabled={demo}
+          disabled={demo || !podeReabrir || enviando}
           className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-900"
         >
           <RotateCcw className="size-3.5" /> Reabrir para responder
@@ -109,30 +144,34 @@ export function Compositor({
   }
 
   if (janelaFechada) {
+    const tom = TOM_JANELA[instagram ? "instagram" : "api"];
     return (
       <div className="shrink-0 border-t border-zinc-200 bg-white px-3 py-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="mx-auto flex max-w-3xl flex-col gap-3 rounded-2xl border border-violet-200 bg-violet-50/70 p-3.5 sm:flex-row sm:items-center dark:border-violet-400/20 dark:bg-violet-500/10">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white text-violet-600 ring-1 ring-violet-200 dark:bg-violet-500/15 dark:text-violet-300 dark:ring-violet-400/20">
-            <Lock className="size-4" />
+        <div className={`mx-auto flex max-w-3xl flex-col gap-3 rounded-2xl border p-3.5 sm:flex-row sm:items-center ${tom.caixa}`}>
+          <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl bg-white ring-1 ${tom.icone}`}>
+            <Lock className="size-4" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-semibold text-violet-950 dark:text-violet-100">
+            <p className={`text-[13px] font-semibold ${tom.titulo}`}>
               {conversa.janela_ate ? "A janela de 24h fechou" : "O contato ainda não escreveu"}
             </p>
-            <p className="text-[12px] leading-relaxed text-violet-900/70 dark:text-violet-200/70">
-              Pela API oficial, mensagem livre só até 24h depois da última mensagem do contato. Para
-              chamar agora, envie um template aprovado — a janela reabre quando ele responder.
+            <p className={`text-[12px] leading-relaxed ${tom.texto}`}>
+              {instagram
+                ? "Pelo Instagram, mensagem no direct só até 24h depois da última mensagem da pessoa. A conversa reabre quando ela escrever de novo."
+                : "Pela API oficial, mensagem livre só até 24h depois da última mensagem do contato. Para chamar agora, envie um template aprovado — a janela reabre quando ele responder."}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={aoTemplates}
-            disabled={demo}
-            className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[12.5px] font-medium text-white transition hover:bg-violet-700 disabled:opacity-40"
-          >
-            <LayoutTemplate className="size-4" />
-            Enviar template
-          </button>
+          {oficial && (
+            <button
+              type="button"
+              onClick={aoTemplates}
+              disabled={demo || !podeEnviar || enviando}
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-[12.5px] font-medium text-white transition hover:bg-violet-700 disabled:opacity-40"
+            >
+              <LayoutTemplate className="size-4" />
+              Enviar template
+            </button>
+          )}
         </div>
         {erro && <p className="mx-auto mt-2 max-w-3xl text-[12px] text-red-600 dark:text-red-400">{erro}</p>}
       </div>
@@ -142,24 +181,27 @@ export function Compositor({
   return (
     <div className="shrink-0 border-t border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="mx-auto flex max-w-3xl flex-col gap-2">
-        {oficial && (
+        {comJanela && (
           <div className="flex items-center justify-between gap-2 px-1 text-[11.5px]">
             <span
               className={`inline-flex items-center gap-1.5 ${
                 restante < 3_600_000 ? "text-amber-600 dark:text-amber-400" : "text-zinc-500 dark:text-zinc-400"
               }`}
             >
-              <Timer className="size-3.5" />
+              <Timer className="size-3.5" aria-hidden="true" />
               Janela de 24h aberta · fecha em {duracao(restante)}
+              {instagram && <span className="text-zinc-400 dark:text-zinc-500">· só texto</span>}
             </span>
-            <button
-              type="button"
-              onClick={aoTemplates}
-              disabled={demo}
-              className="inline-flex items-center gap-1 font-medium text-violet-600 transition hover:text-violet-800 disabled:opacity-40 dark:text-violet-300 dark:hover:text-violet-100"
-            >
-              <LayoutTemplate className="size-3.5" /> Templates
-            </button>
+            {oficial && (
+              <button
+                type="button"
+                onClick={aoTemplates}
+                disabled={demo || !podeEnviar || enviando}
+                className="inline-flex items-center gap-1 font-medium text-violet-600 transition hover:text-violet-800 disabled:opacity-40 dark:text-violet-300 dark:hover:text-violet-100"
+              >
+                <LayoutTemplate className="size-3.5" /> Templates
+              </button>
+            )}
           </div>
         )}
 
@@ -229,17 +271,19 @@ export function Compositor({
         )}
 
         <div className="flex items-end gap-2">
-          <button
-            type="button"
-            onClick={() => setBiblioteca((v) => !v)}
-            disabled={demo}
-            aria-label="Anexar documento da biblioteca"
-            aria-expanded={biblioteca}
-            title="Anexar da biblioteca"
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
-          >
-            <Paperclip className="size-[18px]" />
-          </button>
+          {!instagram && (
+            <button
+              type="button"
+              onClick={() => setBiblioteca((v) => !v)}
+              disabled={demo || !podeEnviar || enviando}
+              aria-label="Anexar documento da biblioteca"
+              aria-expanded={biblioteca}
+              title="Anexar da biblioteca"
+              className="flex size-10 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+            >
+              <Paperclip className="size-[18px]" />
+            </button>
+          )}
           <textarea
             ref={campo}
             value={texto}
@@ -252,22 +296,27 @@ export function Compositor({
               }
             }}
             rows={1}
-            disabled={demo}
+            disabled={demo || !podeEnviar || enviando}
             placeholder={
               demo
                 ? "Demonstração — nada é enviado"
+                : !podeEnviar
+                  ? "Seu acesso permite apenas ler as mensagens"
                 : anexo
                   ? "Legenda do anexo (opcional)"
                   : conversa.status === "na_fila" || !conversa.responsavel_id
                     ? "Responder assume a conversa para você…"
-                    : "Escreva uma mensagem"
+                    : instagram
+                      ? "Escreva no direct"
+                      : "Escreva uma mensagem"
             }
+            aria-label="Mensagem"
             className="max-h-[168px] min-h-10 flex-1 resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-2.5 text-[13.5px] leading-5 text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:ring-2 focus:ring-zinc-900/5 disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-600"
           />
           <button
             type="button"
             onClick={submeter}
-            disabled={demo || enviando || (!texto.trim() && !anexo)}
+            disabled={demo || !podeEnviar || enviando || (!texto.trim() && !anexo)}
             aria-label="Enviar"
             className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-white transition hover:bg-zinc-700 disabled:pointer-events-none disabled:opacity-30 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >

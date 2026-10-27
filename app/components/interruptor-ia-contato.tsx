@@ -27,7 +27,8 @@ export type PropsInterruptorIa = {
 
 const SEM_IAS = "Nenhuma IA criada ainda — crie uma no botão IA, no topo do dashboard.";
 
-function Chave({ ligada, ocupado }: { ligada: boolean; ocupado: boolean }) {
+/** O desenho da chave liga/desliga; também nas regras da IA de comentários do chat. */
+export function Chave({ ligada, ocupado }: { ligada: boolean; ocupado: boolean }) {
   return (
     <span
       className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${

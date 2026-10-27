@@ -16,6 +16,10 @@
 //   2. dispara — uazapi (WhatsApp Web) ou Meta (API oficial), conforme o canal
 //      da conversa
 //   3. casa o retorno: id_externo + 'enviado', ou 'erro' com o motivo
+//
+// O direct do Instagram (2026-10-26) passa pelo mesmo texto (enviarMensagem →
+// lib/conversa-envio.ts); anexo e template são recusados nele. Os comentários
+// têm as ações deles em acoes-instagram.ts.
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { exigirModulo } from "@/lib/auth/dal";
@@ -33,6 +37,7 @@ import {
 } from "@/lib/meta";
 import { textoDoTemplate, variaveisDe } from "@/lib/whatsapp-oficial";
 import {
+  canalDeEnvio,
   confirmarEnvio,
   destinoDa,
   ehOficial,
@@ -40,6 +45,7 @@ import {
   janelaAberta,
   marcarErro,
   motivo,
+  recusaDoDestino,
   telefoneOficial,
 } from "@/lib/conversa-envio";
 import { gravarIaDoContato } from "@/lib/ia/contato-ia";
@@ -110,10 +116,16 @@ export async function enviarDocumento(
 
   const d = await destinoDa(atendimentoId);
   if (!d) return { erro: "Conversa não encontrada." };
-  if (!d.whatsapp) return { erro: "O contato não tem número de WhatsApp." };
+  // Canal exaustivo: no direct do Instagram o CRM manda só texto, e canal
+  // desconhecido é recusa (nunca "senão é uazapi").
+  const canal = canalDeEnvio(d);
+  if (canal === "instagram") return { erro: "No direct do Instagram o CRM manda só texto." };
+  const recusa = recusaDoDestino(d);
+  if (!canal || recusa) return { erro: recusa ?? "O CRM não envia mensagem pelo canal desta conversa." };
   if (ehOficial(d) && !janelaAberta(d)) {
     return { erro: "A janela de 24h está fechada. Envie um template antes do anexo." };
   }
+  const whatsapp = soDigitos(d.whatsapp ?? "");
 
   const [msg] = await sql`
     INSERT INTO mensagens
@@ -127,25 +139,30 @@ export async function enviarDocumento(
   try {
     const bytes = await lerArquivo(doc.caminho);
     let idExterno: string | null;
-    if (ehOficial(d)) {
-      const telefoneId = await telefoneOficial(d);
-      const midiaId = await subirMidiaMeta(telefoneId, bytes, doc.mime, doc.arquivoNome);
-      const r = await enviarMidiaMeta(telefoneId, soDigitos(d.whatsapp), tipoParaMeta(doc.tipo, doc.mime), midiaId, {
-        legenda: texto,
-        arquivoNome: doc.arquivoNome,
-      });
-      idExterno = r.messages?.[0]?.id ?? null;
-    } else {
-      const instancia = await instanciaPorNumero(d.numero_instancia ?? null);
-      // Base64 e não URL: ver `paraEnvio` em lib/documentos.ts.
-      const r = await enviarMidia(
-        soDigitos(d.whatsapp),
-        bytes.toString("base64"),
-        { tipo: doc.tipo, texto, arquivoNome: doc.arquivoNome, mime: doc.mime },
-        instancia,
-        msg.id,
-      );
-      idExterno = r.messageid;
+    switch (canal) {
+      case "whatsapp_oficial": {
+        const telefoneId = await telefoneOficial(d);
+        const midiaId = await subirMidiaMeta(telefoneId, bytes, doc.mime, doc.arquivoNome);
+        const r = await enviarMidiaMeta(telefoneId, whatsapp, tipoParaMeta(doc.tipo, doc.mime), midiaId, {
+          legenda: texto,
+          arquivoNome: doc.arquivoNome,
+        });
+        idExterno = r.messages?.[0]?.id ?? null;
+        break;
+      }
+      case "whatsapp": {
+        const instancia = await instanciaPorNumero(d.numero_instancia ?? null);
+        // Base64 e não URL: ver `paraEnvio` em lib/documentos.ts.
+        const r = await enviarMidia(
+          whatsapp,
+          bytes.toString("base64"),
+          { tipo: doc.tipo, texto, arquivoNome: doc.arquivoNome, mime: doc.mime },
+          instancia,
+          msg.id,
+        );
+        idExterno = r.messageid;
+        break;
+      }
     }
     await confirmarEnvio(msg.id, idExterno);
     await assumirAoResponder(atendimentoId, usuario.id);
@@ -337,9 +354,11 @@ export async function iniciarConversa(
   const tipoCanal = canal.tipo === "api" ? "whatsapp_oficial" : "whatsapp";
   const alvo = fim8(canal.chave);
 
+  // Conversa do Instagram fica de fora: o id da conta não é telefone, e os
+  // últimos 8 dígitos dele podem coincidir com os de um número nosso.
   const [existente] = await sql`
     SELECT id, status FROM atendimentos
-    WHERE contato_id = ${contatoId}
+    WHERE contato_id = ${contatoId} AND canal <> 'instagram'
       AND right(regexp_replace(coalesce(numero_instancia, ''), '[^0-9]', '', 'g'), 8) = ${alvo}
     LIMIT 1`;
   if (existente) {
@@ -429,7 +448,7 @@ export async function definirIaDoContatoNoChat(
 
 /** Abriu = leu. É o que zera as não lidas na lista e no canal. */
 export async function marcarLido(id: string): Promise<void> {
-  await exigirModulo("chat", "editar");
+  await exigirModulo("chat");
   if (!ehUuid(id)) return;
   await sql`UPDATE atendimentos SET lido_em = now() WHERE id = ${id}`;
   revalidatePath("/chat");

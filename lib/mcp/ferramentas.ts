@@ -37,7 +37,8 @@ function ehTelefone(trecho: string): boolean {
   return d.length === 10 || d.length === 11 || ((d.length === 12 || d.length === 13) && d.startsWith("55"));
 }
 // Campo de formulário cujo valor some inteiro, seja qual for o formato.
-const CHAVE_SENSIVEL = /fone|whats|celular|phone|e-?mail|cpf|cnpj|^rg$|_rg$/i;
+// instagram (2026-10-26): o IGSID e o @ do contato que veio do direct.
+const CHAVE_SENSIVEL = /fone|whats|celular|phone|e-?mail|cpf|cnpj|^rg$|_rg$|instagram/i;
 
 /** "(47) •••••-••••": o DDD serve para ver de onde vêm os leads. */
 export function mascararTelefone(bruto: string | null | undefined): string | null {

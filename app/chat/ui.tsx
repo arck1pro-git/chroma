@@ -1,11 +1,22 @@
 "use client";
 
 // Peças visuais do /chat, compartilhadas pelas colunas (canais, lista,
-// conversa). Nada aqui fala com o servidor.
+// conversa, comentários do Instagram). Nada aqui fala com o servidor.
 import { Fragment, useState, type ComponentType, type ReactNode } from "react";
-import { Bot, Check, CheckCheck, Clock, Smartphone, TriangleAlert } from "lucide-react";
+import {
+  Bot,
+  Camera,
+  Check,
+  CheckCheck,
+  Clock,
+  Film,
+  Image as IconeImagem,
+  Layers,
+  Smartphone,
+  TriangleAlert,
+} from "lucide-react";
 import { horaCurta, iniciais } from "@/lib/formato";
-import type { CanalChat, ConversaResumo, EstadoCanal, TipoCanal } from "./tipos";
+import type { AbaInstagram, CanalChat, ConversaResumo, EstadoCanal, TipoCanal } from "./tipos";
 import type { StatusMensagem } from "@/lib/entidades";
 import { telefoneLegivel } from "@/lib/telefone";
 
@@ -13,8 +24,10 @@ import { telefoneLegivel } from "@/lib/telefone";
 //
 // Cada tipo de canal é um "papel" na empresa, e a cor diz qual sem precisar
 // ler: verde é o comercial (gente, WhatsApp Web), violeta é automação e IA
-// (a API oficial). As duas cores seguem o canal pela tela inteira — trilho,
-// lista, cabeçalho da conversa e os balões que a automação mandou.
+// (a API oficial), rosa é o Instagram (direct e comentários, desde
+// 2026-10-26). As cores seguem o canal pela tela inteira — trilho, lista,
+// cabeçalho da conversa e os balões que a automação mandou. A lucide não tem
+// mais logo de marca: o Instagram é a câmera, como na ficha do contato.
 
 export const PAPEL: Record<
   TipoCanal,
@@ -24,6 +37,8 @@ export const PAPEL: Record<
     Icone: ComponentType<{ className?: string }>;
     chip: string;
     selo: string;
+    /** A cor do ícone no título do grupo, no trilho. */
+    icone: string;
   }
 > = {
   web: {
@@ -32,6 +47,7 @@ export const PAPEL: Record<
     Icone: Smartphone,
     chip: "bg-emerald-50 text-emerald-700 ring-emerald-600/15 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/20",
     selo: "bg-emerald-500 text-white",
+    icone: "text-emerald-500",
   },
   api: {
     rotulo: "Automações e IA",
@@ -39,6 +55,15 @@ export const PAPEL: Record<
     Icone: Bot,
     chip: "bg-violet-50 text-violet-700 ring-violet-600/15 dark:bg-violet-500/10 dark:text-violet-300 dark:ring-violet-400/20",
     selo: "bg-violet-500 text-white",
+    icone: "text-violet-500",
+  },
+  instagram: {
+    rotulo: "Instagram",
+    meio: "Direct e comentários",
+    Icone: Camera,
+    chip: "bg-pink-50 text-pink-700 ring-pink-600/15 dark:bg-pink-500/10 dark:text-pink-300 dark:ring-pink-400/20",
+    selo: "bg-pink-500 text-white",
+    icone: "text-pink-500",
   },
 };
 
@@ -49,21 +74,40 @@ export const ESTADO: Record<EstadoCanal, { rotulo: string; ponto: string }> = {
   desconhecido: { rotulo: "Sem resposta da uazapi", ponto: "bg-zinc-400" },
 };
 
+/** O estado para ler: na conta do Instagram, quem não respondeu foi a Meta. */
+export function estadoDoCanal(c: Pick<CanalChat, "estado" | "tipo">) {
+  const e = ESTADO[c.estado];
+  return c.tipo === "instagram" && c.estado === "desconhecido" ? { ...e, rotulo: "Sem resposta da Meta" } : e;
+}
+
 /** O tipo do canal de uma conversa, pelo que o atendimento guarda. */
 export const tipoDaConversa = (c: Pick<ConversaResumo, "canal">): TipoCanal =>
-  c.canal === "whatsapp_oficial" ? "api" : "web";
+  c.canal === "whatsapp_oficial" ? "api" : c.canal === "instagram" ? "instagram" : "web";
 
 export const fim8 = (n: string | null | undefined) => (n ?? "").replace(/\D/g, "").slice(-8);
 
-export function canalDaConversa(canais: CanalChat[], c: Pick<ConversaResumo, "numero_instancia">) {
+/**
+ * O canal de uma conversa. WhatsApp casa pelos últimos 8 dígitos, como o app
+ * inteiro casa número; Instagram pelo id da conta INTEIRO — id de conta não é
+ * telefone, e os 8 últimos dígitos dele poderiam coincidir com um número nosso.
+ */
+export function canalDaConversa(canais: CanalChat[], c: Pick<ConversaResumo, "numero_instancia" | "canal">) {
+  if (c.canal === "instagram") {
+    const conta = (c.numero_instancia ?? "").replace(/\D/g, "");
+    return conta ? canais.find((k) => k.tipo === "instagram" && k.chave === conta) : undefined;
+  }
   const alvo = fim8(c.numero_instancia);
-  return alvo ? canais.find((k) => fim8(k.chave) === alvo) : undefined;
+  return alvo ? canais.find((k) => k.tipo !== "instagram" && fim8(k.chave) === alvo) : undefined;
 }
 
 // ── Formatação ──────────────────────────────────────────────────────────────
 
 /** "5547992399626" → "+55 47 9 9239-9626" (lib/telefone.ts). */
 export const formatarTelefone = telefoneLegivel;
+
+/** O que identifica o canal para quem lê: o telefone, ou o @ da conta do Instagram. */
+export const identificacaoDoCanal = (c: Pick<CanalChat, "tipo" | "numero">) =>
+  c.tipo === "instagram" ? c.numero : formatarTelefone(c.numero);
 
 // Fuso fixo nos dois lados pelo mesmo motivo de lib/formato.ts: com o fuso do
 // runtime, o SSR sai em UTC e o navegador em local, e a hidratação reclama.
@@ -194,9 +238,14 @@ export function Avatar({
   );
 }
 
-/** A foto do contato vem da nossa rota (app/api/chat/foto) — ver lá o porquê. */
-export function fotoDoContato(contatoId: string, via: string | null, demo: boolean) {
-  if (demo) return null;
+/**
+ * A foto do contato vem da nossa rota (app/api/chat/foto) — ver lá o porquê.
+ * Sem WhatsApp a rota só responderia 404 (a foto é a do WhatsApp): o contato
+ * que veio do Instagram costuma não ter, e cada avatar seria uma ida à toa ao
+ * servidor.
+ */
+export function fotoDoContato(contatoId: string, via: string | null, demo: boolean, whatsapp: string | null) {
+  if (demo || !whatsapp) return null;
   return `/api/chat/foto/${contatoId}${via ? `?via=${via.replace(/\D/g, "")}` : ""}`;
 }
 
@@ -279,4 +328,106 @@ export function previa(tipo: string, texto: string): string {
   const limpo = texto.replace(/[*_~]/g, "").replace(/\s+/g, " ").trim();
   if (tipo !== "texto") return limpo ? `${ROTULO_ANEXO[tipo] ?? "Anexo"} · ${limpo}` : (ROTULO_ANEXO[tipo] ?? "Anexo");
   return limpo || "Mensagem";
+}
+
+// ── Instagram ───────────────────────────────────────────────────────────────
+
+const ABAS: Array<{ id: AbaInstagram; rotulo: string }> = [
+  { id: "direct", rotulo: "Direct" },
+  { id: "comentarios", rotulo: "Comentários" },
+];
+
+/**
+ * Direct | Comentários, no topo da coluna do meio quando o canal é uma conta do
+ * Instagram. A aba vive na URL (?aba=), como o canal e a conversa.
+ */
+export function AbasInstagram({
+  aba,
+  naoLidas,
+  comentariosNaoLidos,
+  aoTrocar,
+}: {
+  aba: AbaInstagram;
+  /** Conversas de direct com mensagem não lida. */
+  naoLidas: number;
+  comentariosNaoLidos: number;
+  aoTrocar: (aba: AbaInstagram) => void;
+}) {
+  return (
+    <div className="shrink-0 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+      <div role="tablist" aria-label="Direct ou comentários" className="grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-900">
+        {ABAS.map((a) => {
+          const ativa = a.id === aba;
+          const n = a.id === "direct" ? naoLidas : comentariosNaoLidos;
+          return (
+            <button
+              key={a.id}
+              type="button"
+              role="tab"
+              aria-selected={ativa}
+              onClick={() => !ativa && aoTrocar(a.id)}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[12.5px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 ${
+                ativa
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                  : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+              }`}
+            >
+              {a.rotulo}
+              {n > 0 && (
+                <span
+                  className={`flex h-[17px] min-w-[17px] items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums text-white ${
+                    a.id === "direct" ? "bg-emerald-500" : "bg-pink-500"
+                  }`}
+                >
+                  {n > 99 ? "99+" : n}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A miniatura de uma postagem. Sem imagem, ou com a URL da Meta já expirada
+ * (ela vence em alguns dias), fica o ícone do tipo — vídeo, carrossel, foto.
+ */
+export function MiniaturaPostagem({ src, tipo, tamanho = 48 }: { src: string | null; tipo: string; tamanho?: number }) {
+  const [falhou, setFalhou] = useState(false);
+  // Outra postagem na mesma posição da lista: tenta a imagem dela.
+  const [srcVisto, setSrcVisto] = useState(src);
+  if (srcVisto !== src) {
+    setSrcVisto(src);
+    setFalhou(false);
+  }
+  const Icone = tipo === "VIDEO" || tipo === "REELS" ? Film : tipo === "CAROUSEL_ALBUM" ? Layers : IconeImagem;
+  const comImagem = Boolean(src) && !falhou;
+  return (
+    <span
+      className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-zinc-100 text-zinc-400 ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-500 dark:ring-zinc-800"
+      style={{ width: tamanho, height: tamanho }}
+    >
+      <Icone className="size-[40%]" aria-hidden="true" />
+      {comImagem && (
+        // <img> e não next/image: a URL é da CDN da Meta, expira e tem tamanho
+        // que o build não conhece (mesmo motivo do Avatar).
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src ?? undefined}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFalhou(true)}
+          className="absolute inset-0 size-full object-cover"
+        />
+      )}
+      {comImagem && Icone !== IconeImagem && (
+        <span className="absolute right-0.5 top-0.5 rounded bg-black/45 p-0.5 text-white" aria-hidden="true">
+          <Icone className="size-2.5" />
+        </span>
+      )}
+    </span>
+  );
 }

@@ -34,7 +34,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "@/lib/db";
-import { destinoDa, ehOficial, enviarTextoNaConversa, janelaAberta } from "@/lib/conversa-envio";
+import { destinoDa, enviarTextoNaConversa, foraDaJanela } from "@/lib/conversa-envio";
 import {
   acharWorkflowPorNome,
   ativarWorkflow,
@@ -46,14 +46,16 @@ import {
   avisarNoWhatsApp,
   blocoDaFuncao,
   conversaDoAviso,
+  conversaParaPrompt,
   dadosDoLead,
   fmtAgora,
   HISTORICO,
   iaQueAtende,
-  linhaDaConversa,
+  linhaDoCanal,
   MODELO,
   regras,
   semTravessao,
+  sistemaDoCanal,
   situacao,
   type LinhaHistorico,
   type Situacao,
@@ -219,11 +221,16 @@ async function retomar(
   numero: number,
   silencioMs: number,
 ): Promise<"enviada" | "parou"> {
-  // Pela Meta, texto livre só dentro das 24h abertas pela última mensagem do
-  // cliente. Fechada, nenhuma retomada sai mais: vale desistir agora.
+  // Pela Meta (API oficial e direct do Instagram), texto livre só dentro das
+  // 24h abertas pela última mensagem do cliente. Fechada, nenhuma retomada sai
+  // mais: vale desistir agora. A regra por canal mora em lib/conversa-envio.ts.
   const destino = await destinoDa(atendimentoId);
-  if (destino && ehOficial(destino) && !janelaAberta(destino)) {
-    await desistir(atendimentoId, s, "a janela de 24h do número oficial fechou, e fora dela só sai template.", true);
+  if (destino && foraDaJanela(destino)) {
+    const porque =
+      destino.canal === "instagram"
+        ? "a janela de 24h do direct do Instagram fechou."
+        : "a janela de 24h do número oficial fechou, e fora dela só sai template.";
+    await desistir(atendimentoId, s, porque, true);
     return "parou";
   }
 
@@ -318,15 +325,15 @@ async function gerarRetomada(
   ]);
 
   const total = ia.retomar_apos.length;
-  const nome = /^[\d\s+()-]+$/.test(s.contato_nome) ? "(nome não informado)" : s.contato_nome;
+  const { nome, linhas } = conversaParaPrompt(s.canal, s.contato_nome, (historico as unknown as LinhaHistorico[]).reverse());
   const pedido = [
     `Contato: ${nome}`,
-    `Canal: ${s.canal === "whatsapp_oficial" ? "WhatsApp oficial da empresa" : "WhatsApp do comercial"}`,
+    linhaDoCanal(s.canal),
     `No CRM: ${oportunidades.length ? oportunidades.map((o) => `${o.funil} › ${o.etapa} (${o.nome})`).join("; ") : "sem oportunidade aberta"}`,
     `Agora: ${fmtAgora.format(new Date())}`,
     "",
     "<conversa>",
-    ...(historico as unknown as LinhaHistorico[]).reverse().map(linhaDaConversa),
+    ...linhas,
     "</conversa>",
     "",
     `RETOMADA ${numero} DE ${total}. O cliente não respondeu à sua última mensagem, de ${duracao(silencioMs)} atrás. Escreva UMA mensagem curta para retomar a conversa:`,
@@ -348,6 +355,8 @@ async function gerarRetomada(
     system: [
       { type: "text", text: regras(ia.acoes.includes("passar_para_humano")) },
       { type: "text", text: blocoDaFuncao(ia) },
+
+      ...sistemaDoCanal(s.canal),
     ],
     messages: [{ role: "user", content: pedido }],
   });

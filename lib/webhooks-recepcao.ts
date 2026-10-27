@@ -98,6 +98,19 @@ const COLUNAS_CONTATO: Partial<Record<DestinoCampo, string>> = {
   "contato.pais": "pais",
 };
 
+/**
+ * As chaves da identidade do Instagram (contatos.campos.instagram_id, o IGSID,
+ * e instagram_usuario). Elas só nascem do webhook ASSINADO da Meta
+ * (lib/instagram-conversa.ts): um formulário público que as mandasse grudaria
+ * a conta de outra pessoa num contato (revisão de segurança, 2026-10-26).
+ */
+const CHAVES_DO_INSTAGRAM = new Set(["instagram_id", "instagram_usuario"]);
+
+/** Os campos sem as chaves reservadas do Instagram, com qualquer caixa ou espaço em volta. */
+export function semIdentidadeDoInstagram(campos: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(campos).filter(([chave]) => !CHAVES_DO_INSTAGRAM.has(chave.trim().toLowerCase())));
+}
+
 function distribuir(
   campos: WebhookCampo[],
   payload: Record<string, unknown>,
@@ -401,6 +414,10 @@ export async function processarLead(
     // O mapeado vence: as chaves declaradas já estão em contatoCampos.
     dist.contatoCampos = { ...extras, ...dist.contatoCampos };
   }
+  // Nem pelo mapeamento nem pelos não mapeados: a identidade do Instagram não
+  // entra por aqui.
+  dist.contatoCampos = semIdentidadeDoInstagram(dist.contatoCampos);
+  dist.oportunidadeCampos = semIdentidadeDoInstagram(dist.oportunidadeCampos);
   const resumo: string[] = [];
   let contatoId: string | null = null;
   let oportunidadeId: string | null = null;
@@ -581,8 +598,9 @@ async function avisarQueVoltou(webhookId: string, oportunidadeId: string): Promi
     SELECT w.nome AS captacao, f.nome AS funil, e.nome AS etapa, o.valor,
            c.nome AS lead, c.whatsapp AS lead_whatsapp,
            u.nome AS responsavel, nullif(u.whatsapp, '') AS responsavel_whatsapp,
+           -- Conversa do Instagram não tem número de WhatsApp por onde avisar.
            (SELECT a.numero_instancia FROM atendimentos a
-             WHERE a.contato_id = c.id AND a.numero_instancia IS NOT NULL
+             WHERE a.contato_id = c.id AND a.numero_instancia IS NOT NULL AND a.canal <> 'instagram'
              ORDER BY a.data_atualizacao DESC NULLS LAST LIMIT 1) AS numero_da_conversa,
            (SELECT a.id FROM atendimentos a
              WHERE a.contato_id = c.id

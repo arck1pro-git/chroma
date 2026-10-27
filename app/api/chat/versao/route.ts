@@ -12,11 +12,14 @@
 //     nos dois webhooks e nos envios), e as contagens por status (assumir,
 //     encerrar e reabrir não tocam data_atualizacao);
 //   · a conversa aberta: status e mídia das últimas mensagens — é assim que o
-//     "entregue/lido" e o anexo que terminou de baixar aparecem sem F5.
+//     "entregue/lido" e o anexo que terminou de baixar aparecem sem F5;
+//   · os comentários do Instagram (2026-10-26): o último registro e os não
+//     lidos (lib/instagram-comentarios.ts). Sem a tabela, o pedaço fica vazio.
 import { NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { exigirModuloApi } from "@/lib/auth/dal";
 import { ehUuid } from "@/lib/validacao";
+import { assinaturaDosComentarios } from "@/lib/instagram-comentarios";
 
 export const dynamic = "force-dynamic";
 
@@ -46,8 +49,10 @@ export async function GET(req: NextRequest) {
     conversa = (c?.v as string) ?? "";
   }
 
+  const comentarios = await assinaturaDosComentarios();
+
   return Response.json(
-    { v: `${geral?.v ?? ""}|${conversa}` },
+    { v: `${geral?.v ?? ""}|${conversa}|${comentarios}` },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

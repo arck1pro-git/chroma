@@ -12,11 +12,17 @@
 // /api/chat/versao se algo mudou, e só então recarrega os dados. Com a aba
 // escondida não pergunta nada — numa hospedagem que cobra por invocação, aba
 // esquecida aberta não pode virar custo.
+//
+// CONTA DO INSTAGRAM (2026-10-26): o canal ganha as abas Direct | Comentários
+// (?aba=). Direct é a lista e a conversa de sempre; Comentários troca as duas
+// colunas pelas postagens e a thread da postagem aberta (?postagem=,
+// comentarios.tsx). O mesmo polling cobre os comentários — a versão do
+// servidor inclui o último comentário registrado.
 import { useCallback, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FlaskConical, Loader2 } from "lucide-react";
-import type { DadosChat, MensagemChat } from "./tipos";
+import type { AbaInstagram, DadosChat, MensagemChat } from "./tipos";
 import {
   assumirAtendimento,
   definirIaDoContatoNoChat,
@@ -34,7 +40,8 @@ import { SeletorTemplates } from "./modelos";
 import { NovaConversa } from "./nova-conversa";
 import { PainelDetalhes } from "./detalhes";
 import { NovaOportunidade } from "./nova-oportunidade";
-import { canalDaConversa } from "./ui";
+import { ComentariosInstagram } from "./comentarios";
+import { AbasInstagram, canalDaConversa } from "./ui";
 
 /** Lembra o último canal escolhido — page.tsx lê quando a URL não diz. */
 const COOKIE_CANAL = "chat_canal";
@@ -44,16 +51,21 @@ const COOKIE_CANAL = "chat_canal";
 const INTERVALO_FOCO = 5_000;
 const INTERVALO_FUNDO = 15_000;
 
-export default function Chat({ dados, usuarioId }: { dados: DadosChat; usuarioId: string }) {
+export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosChat; usuarioId: string; permissoes: { criar: boolean; editar: boolean } }) {
   const router = useRouter();
   const [navegando, iniciarNavegacao] = useTransition();
   const [, iniciar] = useTransition();
 
-  const { aberta, canais, canal: canalAtual, demo } = dados;
+  const { aberta, canais, canal: canalAtual, demo, aba, instagram } = dados;
+  const canalEscolhido = canais.find((c) => c.chave === canalAtual);
+  const contaInstagram = canalEscolhido?.tipo === "instagram";
+  const modoComentarios = contaInstagram && aba === "comentarios";
 
   // A conversa clicada que ainda está chegando do servidor. Destaca na lista na
   // hora, em vez de esperar a resposta para mostrar que o clique pegou.
   const [alvo, setAlvo] = useState<string | null>(null);
+  // O mesmo para a postagem clicada na aba Comentários.
+  const [alvoPostagem, setAlvoPostagem] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>("abertas");
   const [detalhes, setDetalhes] = useState(false);
   const [novaConversa, setNovaConversa] = useState(false);
@@ -63,12 +75,18 @@ export default function Chat({ dados, usuarioId }: { dados: DadosChat; usuarioId
   // ── Navegação ─────────────────────────────────────────────────────────────
 
   const irPara = useCallback(
-    (canal: string, atendimento: string | null) => {
+    (canal: string, atendimento: string | null, extra: { aba?: AbaInstagram; postagem?: string | null } = {}) => {
       const sp = new URLSearchParams();
       sp.set("canal", canal || "todos");
+      // Só "comentarios" vai na URL: direct é o padrão.
+      if (extra.aba === "comentarios") {
+        sp.set("aba", "comentarios");
+        if (extra.postagem) sp.set("postagem", extra.postagem);
+      }
       if (atendimento) sp.set("atendimento", atendimento);
       if (demo) sp.set("demo", "1");
       setAlvo(atendimento);
+      setAlvoPostagem(extra.postagem ?? null);
       iniciarNavegacao(() => router.push(`/chat?${sp.toString()}`, { scroll: false }));
     },
     [demo, router],
@@ -77,13 +95,35 @@ export default function Chat({ dados, usuarioId }: { dados: DadosChat; usuarioId
   function trocarCanal(chave: string) {
     document.cookie = `${COOKIE_CANAL}=${chave || "todos"}; path=/; max-age=31536000; samesite=lax`;
     setDetalhes(false);
-    irPara(chave, null);
+    // Quem está nos comentários de uma conta e passa para outra continua nos
+    // comentários: é o caso de quem modera as três contas em sequência.
+    const destino = canais.find((c) => c.chave === chave);
+    irPara(chave, null, { aba: modoComentarios && destino?.tipo === "instagram" ? "comentarios" : "direct" });
+  }
+
+  function trocarAba(nova: AbaInstagram) {
+    setDetalhes(false);
+    irPara(canalAtual, null, { aba: nova });
   }
 
   const selecionadaId = navegando ? alvo : (aberta?.id ?? null);
   const carregandoConversa = navegando && alvo !== null && alvo !== aberta?.id;
   // No celular a lista cede a tela à conversa — inclusive enquanto ela chega.
   const listaOculta = navegando ? alvo !== null : Boolean(aberta);
+  // As mesmas três coisas para a postagem, na aba Comentários.
+  const postagemAberta = instagram?.postagemId ?? null;
+  const postagemSelecionada = navegando ? alvoPostagem : postagemAberta;
+  const carregandoPostagem = navegando && alvoPostagem !== null && alvoPostagem !== postagemAberta;
+  const postagensOcultas = navegando ? alvoPostagem !== null : Boolean(postagemAberta);
+
+  const abas = contaInstagram ? (
+    <AbasInstagram
+      aba={modoComentarios ? "comentarios" : "direct"}
+      naoLidas={canalEscolhido?.naoLidas ?? 0}
+      comentariosNaoLidos={canalEscolhido?.comentariosNaoLidos ?? 0}
+      aoTrocar={trocarAba}
+    />
+  ) : undefined;
 
   // ── Ao vivo ───────────────────────────────────────────────────────────────
 
@@ -106,8 +146,9 @@ export default function Chat({ dados, usuarioId }: { dados: DadosChat; usuarioId
         const r = await fetch(`/api/chat/versao${abertaId ? `?atendimento=${abertaId}` : ""}`, { cache: "no-store" });
         if (r.ok) {
           const { v } = (await r.json()) as { v: string };
-          // A primeira resposta é a referência; recarrega só quando MUDA.
-          if (ultima !== null && v !== ultima) iniciar(() => router.refresh());
+          if (parado) return;
+          // A primeira consulta reconcilia mensagens chegadas entre o HTML e o polling.
+          if (ultima === null || v !== ultima) iniciar(() => router.refresh());
           ultima = v;
         }
       } catch {
@@ -121,7 +162,7 @@ export default function Chat({ dados, usuarioId }: { dados: DadosChat; usuarioId
     };
     document.addEventListener("visibilitychange", voltou);
     window.addEventListener("focus", voltou);
-    agendar(INTERVALO_FOCO);
+    agendar(0);
     return () => {
       parado = true;
       clearTimeout(timer);
@@ -188,12 +229,18 @@ export default function Chat({ dados, usuarioId }: { dados: DadosChat; usuarioId
       midia_erro: null,
     };
     setOtimistas((a) => [...a, otimista]);
-    const r = await enviarMensagem(aberta.id, corpo);
-    // Recusada ANTES de gravar (janela fechada, sem número): o balão some e o
-    // compositor devolve o rascunho. Recusada depois, a linha real com o erro
-    // toma o lugar dele pela reconciliação.
-    if (r.erro && !r.registrada) setOtimistas((a) => a.filter((o) => o.id !== otimista.id));
-    return r;
+    try {
+      const r = await enviarMensagem(aberta.id, corpo);
+      // Recusada ANTES de gravar (janela fechada, sem número): o balão some e o
+      // compositor devolve o rascunho. Recusada depois, a linha real com o erro
+      // toma o lugar dele pela reconciliação.
+      if (r.erro && !r.registrada) setOtimistas((a) => a.filter((o) => o.id !== otimista.id));
+      return r;
+    } catch {
+      setOtimistas((a) => a.filter((o) => o.id !== otimista.id));
+      router.refresh();
+      return { erro: "Não consegui confirmar o envio. Confira a conversa antes de tentar novamente." };
+    }
   }
 
   async function enviarDoc(documentoId: string, legenda: string) {
@@ -223,80 +270,110 @@ export default function Chat({ dados, usuarioId }: { dados: DadosChat; usuarioId
       <div className="flex min-h-0 flex-1">
         <TrilhoCanais canais={canais} atual={canalAtual} aoEscolher={trocarCanal} />
 
-        <ListaConversas
-          canais={canais}
-          canalAtual={canalAtual}
-          conversas={dados.conversas}
-          selecionadaId={selecionadaId}
-          usuarioId={usuarioId}
-          filtro={filtro}
-          aoFiltrar={setFiltro}
-          aoAbrir={(id) => irPara(canalAtual, id)}
-          aoTrocarCanal={trocarCanal}
-          aoNovaConversa={() => setNovaConversa(true)}
-          demo={demo}
-          oculta={listaOculta}
-        />
+        {modoComentarios ? (
+          <ComentariosInstagram
+            canais={canais}
+            canalAtual={canalAtual}
+            dados={instagram}
+            abas={abas}
+            ias={dados.ias}
+            demo={demo}
+            postagemSelecionada={postagemSelecionada}
+            carregandoPostagem={carregandoPostagem}
+            postagensOcultas={postagensOcultas}
+            aoTrocarCanal={trocarCanal}
+            aoAbrirPostagem={(id) => irPara(canalAtual, null, { aba: "comentarios", postagem: id })}
+            aoFecharPostagem={() => irPara(canalAtual, null, { aba: "comentarios" })}
+            // A conversa do autor é desta mesma conta: abre no Direct dela.
+            aoAbrirConversa={(id) => irPara(canalAtual, id)}
+          />
+        ) : (
+          <>
+            <ListaConversas
+              canais={canais}
+              canalAtual={canalAtual}
+              conversas={dados.conversas}
+              selecionadaId={selecionadaId}
+              usuarioId={usuarioId}
+              filtro={filtro}
+              aoFiltrar={setFiltro}
+              aoAbrir={(id) => irPara(canalAtual, id)}
+              aoTrocarCanal={trocarCanal}
+              podeCriar={permissoes.criar}
+              aoNovaConversa={() => setNovaConversa(true)}
+              demo={demo}
+              oculta={listaOculta}
+              abas={abas}
+            />
 
-        <section className={`relative min-w-0 flex-1 flex-col lg:flex ${listaOculta ? "flex" : "hidden"}`}>
-          {aberta && !carregandoConversa ? (
-            <>
-              <CabecalhoConversa
-                aberta={aberta}
-                canal={canalDaAberta}
-                usuarios={dados.usuarios}
-                usuarioId={usuarioId}
-                demo={demo}
-                detalhesAbertos={detalhes}
-                aoVoltar={() => irPara(canalAtual, null)}
-                aoAssumir={() => iniciar(() => assumirAtendimento(aberta.id))}
-                aoEncerrar={() => iniciar(() => encerrarAtendimento(aberta.id))}
-                aoReabrir={() => iniciar(() => reabrirAtendimento(aberta.id))}
-                aoOportunidade={() => setOportunidade(true)}
-                aoDetalhes={() => setDetalhes((v) => !v)}
-                ias={dados.ias}
-                aoDefinirIa={(v, iaId) => definirIaDoContatoNoChat(aberta.contato.id, v, iaId)}
-                // Ligar sem IA na etapa pede a escolha: o painel do contato tem o seletor.
-                aoEscolherIa={() => setDetalhes(true)}
-              />
-              <Mensagens mensagens={mensagens} usuarios={dados.usuarios} conversaId={aberta.id} carregando={false} />
-              <Compositor
-                conversa={aberta.resumo}
-                documentos={dados.documentos}
-                demo={demo}
-                aoEnviar={enviar}
-                aoEnviarDocumento={enviarDoc}
-                aoReabrir={() => iniciar(() => reabrirAtendimento(aberta.id))}
-                aoTemplates={() => setTemplates(true)}
-              />
-              {detalhes && (
-                <PainelDetalhes
-                  aberta={aberta}
-                  canais={canais}
-                  funis={dados.funis}
-                  etapas={dados.etapas}
-                  demo={demo}
-                  aoFechar={() => setDetalhes(false)}
-                  aoIrPara={(id) => {
-                    const outra = aberta.outras.find((o) => o.id === id);
-                    const chave = outra ? (canalDaConversa(canais, outra)?.chave ?? "") : "";
-                    // Mesmo canal da tela, ou "todos" se a outra conversa é de outro número.
-                    irPara(chave && chave === canalAtual ? canalAtual : "", id);
-                  }}
-                  aoNovaOportunidade={() => setOportunidade(true)}
-                  ias={dados.ias}
-                  aoDefinirIa={(v, iaId) => definirIaDoContatoNoChat(aberta.contato.id, v, iaId)}
-                />
+            <section className={`relative min-w-0 flex-1 flex-col lg:flex ${listaOculta ? "flex" : "hidden"}`}>
+              {aberta && !carregandoConversa ? (
+                <>
+                  <CabecalhoConversa
+                    podeCriar={permissoes.criar}
+                    podeEditar={permissoes.editar}
+                    aberta={aberta}
+                    canal={canalDaAberta}
+                    usuarios={dados.usuarios}
+                    usuarioId={usuarioId}
+                    demo={demo}
+                    detalhesAbertos={detalhes}
+                    aoVoltar={() => irPara(canalAtual, null)}
+                    aoAssumir={() => iniciar(() => assumirAtendimento(aberta.id))}
+                    aoEncerrar={() => iniciar(() => encerrarAtendimento(aberta.id))}
+                    aoReabrir={() => iniciar(() => reabrirAtendimento(aberta.id))}
+                    aoOportunidade={() => setOportunidade(true)}
+                    aoDetalhes={() => setDetalhes((v) => !v)}
+                    ias={dados.ias}
+                    aoDefinirIa={(v, iaId) => definirIaDoContatoNoChat(aberta.contato.id, v, iaId)}
+                    // Ligar sem IA na etapa pede a escolha: o painel do contato tem o seletor.
+                    aoEscolherIa={() => setDetalhes(true)}
+                  />
+                  <Mensagens mensagens={mensagens} usuarios={dados.usuarios} conversaId={aberta.id} carregando={false} />
+                  <Compositor
+                    key={aberta.id}
+                    podeEnviar={permissoes.criar}
+                    podeReabrir={permissoes.editar}
+                    conversa={aberta.resumo}
+                    documentos={dados.documentos}
+                    demo={demo}
+                    aoEnviar={enviar}
+                    aoEnviarDocumento={enviarDoc}
+                    aoReabrir={() => iniciar(() => reabrirAtendimento(aberta.id))}
+                    aoTemplates={() => setTemplates(true)}
+                  />
+                  {detalhes && (
+                    <PainelDetalhes
+                      podeCriar={permissoes.criar}
+                      podeEditar={permissoes.editar}
+                      aberta={aberta}
+                      canais={canais}
+                      funis={dados.funis}
+                      etapas={dados.etapas}
+                      demo={demo}
+                      aoFechar={() => setDetalhes(false)}
+                      aoIrPara={(id) => {
+                        const outra = aberta.outras.find((o) => o.id === id);
+                        const chave = outra ? (canalDaConversa(canais, outra)?.chave ?? "") : "";
+                        // Mesmo canal da tela, ou "todos" se a outra conversa é de outro número.
+                        irPara(chave && chave === canalAtual ? canalAtual : "", id);
+                      }}
+                      aoNovaOportunidade={() => setOportunidade(true)}
+                      ias={dados.ias}
+                      aoDefinirIa={(v, iaId) => definirIaDoContatoNoChat(aberta.contato.id, v, iaId)}
+                    />
+                  )}
+                </>
+              ) : carregandoConversa ? (
+                <div className="flex flex-1 items-center justify-center bg-zinc-50 dark:bg-zinc-900/30">
+                  <Loader2 className="size-5 animate-spin text-zinc-400" />
+                </div>
+              ) : (
+                <SemConversa canal={canalEscolhido} />
               )}
-            </>
-          ) : carregandoConversa ? (
-            <div className="flex flex-1 items-center justify-center bg-zinc-50 dark:bg-zinc-900/30">
-              <Loader2 className="size-5 animate-spin text-zinc-400" />
-            </div>
-          ) : (
-            <SemConversa canal={canais.find((c) => c.chave === canalAtual)} />
-          )}
-        </section>
+            </section>
+          </>
+        )}
       </div>
 
       {novaConversa && (

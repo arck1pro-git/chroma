@@ -3,26 +3,35 @@
 import type { Atendimento, Contato, Etapa, Funil, Mensagem, Oportunidade, Usuario } from "@/lib/entidades";
 import type { Documento } from "@/lib/documentos";
 import type { EstadoIaContato, IaResumo } from "@/lib/ia/catalogo";
+import type { ComentariosDaConta } from "@/lib/instagram-tipos";
 
-export type TipoCanal = "web" | "api";
+/** "instagram" = uma conta profissional do Instagram (DMs e comentários), desde 2026-10-26. */
+export type TipoCanal = "web" | "api" | "instagram";
 export type EstadoCanal = "conectado" | "conectando" | "desconectado" | "desconhecido";
 
 /**
- * Um número nosso. `chave` são os dígitos do número — é o que as conversas
- * guardam em `atendimentos.numero_instancia`, e é o que vai na URL (?canal=).
+ * Um número nosso, ou uma conta do Instagram. `chave` são os dígitos do número
+ * (no Instagram, o id da conta) — é o que as conversas guardam em
+ * `atendimentos.numero_instancia`, e é o que vai na URL (?canal=).
  */
 export type CanalChat = {
   chave: string;
   tipo: TipoCanal;
   nome: string;
   perfil: string | null;
+  /** O número legível; no Instagram, o @. */
   numero: string;
   foto: string | null;
   estado: EstadoCanal;
   /** Conversas (não encerradas) com mensagem que ninguém leu. */
   naoLidas: number;
   naFila: number;
+  /** Só no Instagram: comentários de terceiros que ninguém leu. */
+  comentariosNaoLidos?: number;
 };
+
+/** No canal de Instagram: as conversas de direct ou os comentários das postagens (?aba=). */
+export type AbaInstagram = "direct" | "comentarios";
 
 /** 'ia' = a IA que atende o contato (lib/ia/atendente.ts); 'automacao' = cadência/campanha. */
 export type EnviadaPor = "automacao" | "ia" | "crm" | "aparelho" | null;
@@ -85,6 +94,10 @@ export type DadosChat = {
   documentos: Documento[];
   /** As IAs de atendimento, para o "ligada à mão" do interruptor do contato. */
   ias: IaResumo[];
+  /** Canal de Instagram: a aba aberta (?aba=). Fora do Instagram, "direct". */
+  aba: AbaInstagram;
+  /** Só com um canal de Instagram e a aba "comentarios"; senão null. */
+  instagram: ComentariosDaConta | null;
   /** Dados fictícios (só em desenvolvimento, ?demo=1): nada é gravado nem enviado. */
   demo: boolean;
 };

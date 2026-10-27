@@ -298,11 +298,15 @@ export async function inserirDemandas(
  * nascem no mesmo instante e copiasDe as reconhece como irmãs, então quem
  * criou vê um cartão com o progresso de cada pessoa. Quem não pode receber
  * (inativo, sem login ou sem o módulo) fica de fora, como em inserirDemandas.
+ *
+ * `criadoPor` null = quem criou foi o sistema (o aviso da IA do Instagram,
+ * lib/ia/aviso-demanda.ts): não há usuário, e assim todos os destinatários
+ * recebem a notificação de demanda nova (a de quem cria para si não toca).
  */
 export async function inserirDemandasParaPessoas(
   campos: Campos,
   pessoaIds: string[],
-  criadoPor: string,
+  criadoPor: string | null,
 ): Promise<Array<{ id: string; responsavel: string }>> {
   if (!pessoaIds.length) return [];
   const linhas = await sql`

@@ -17,13 +17,23 @@
 //           estado e a foto que a uazapi informa em /instance/all.
 //   · api → a própria Meta (WABAs → números), com cache de 10 minutos: é uma
 //           cadeia de 3+ chamadas que muda quase nunca.
+//
+// E desde 2026-10-26 um terceiro tipo, que NÃO entra em listarCanais:
+//   · instagram → as três contas de lib/social/perfis.ts (canaisInstagram). A
+//           chave é o id da conta, e conversa do Instagram casa com ela por
+//           IGUALDADE EXATA de numero_instancia: os últimos 8 dígitos de um id
+//           de conta podem coincidir com os de um telefone, e fim8 misturaria
+//           os dois. Por isso listarCanais (que quem procura por fim8 usa)
+//           continua só com os números de WhatsApp.
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { sql } from "@/lib/db";
 import { soDigitos } from "@/lib/telefone";
 import { fotoDoTelefoneMeta, telefonesMeta, wabasMeta } from "@/lib/meta";
+import { PERFIS } from "@/lib/social/perfis";
+import { fotoDaConta } from "@/lib/instagram";
 
-export type TipoCanal = "web" | "api";
+export type TipoCanal = "web" | "api" | "instagram";
 export type EstadoCanal = "conectado" | "conectando" | "desconectado" | "desconhecido";
 
 export type CanalServidor = {
@@ -165,6 +175,28 @@ export async function listarCanais(): Promise<CanalServidor[]> {
   // da Meta, que é o que decide as regras de envio.
   const daApi = new Set(api.map((c) => fim8(c.chave)));
   return [...web.filter((c) => !daApi.has(fim8(c.chave))), ...api];
+}
+
+/**
+ * As contas do Instagram como canais do chat: o nome do perfil, o @ no lugar
+ * do número e a foto da conta. Estado "desconhecido" quando a Meta não
+ * respondeu (ou não há token): as conversas continuam no banco.
+ */
+export async function canaisInstagram(): Promise<CanalServidor[]> {
+  return Promise.all(
+    PERFIS.map(async (p) => {
+      const meta = await fotoDaConta(p);
+      return {
+        chave: p.instagramId,
+        tipo: "instagram" as const,
+        nome: p.nome,
+        perfil: `@${p.instagram}`,
+        numero: `@${p.instagram}`,
+        foto: meta?.foto ?? null,
+        estado: meta ? ("conectado" as const) : ("desconhecido" as const),
+      };
+    }),
+  );
 }
 
 /** O número da Meta que corresponde a este canal — para enviar por ele. */

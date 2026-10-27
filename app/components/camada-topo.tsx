@@ -22,7 +22,8 @@ import { createPortal } from "react-dom";
 //   z-[310]  gaveta — e, na mesma camada, o que abre do quadro por cima de
 //            tudo: nova oportunidade (app/funil/form-oportunidade.tsx), painel
 //            de filtros (app/funil/painel-filtros.tsx) e a confirmação de
-//            ligar a IA da etapa (app/inicio/interruptor-ia.tsx)
+//            ligar a IA da etapa (app/inicio/interruptor-ia.tsx) e a dos
+//            comentários do Instagram (app/chat/regras-ia-instagram.tsx)
 //   z-[320]  modal aberto DE DENTRO de uma gaveta (FormContato; e o véu da
 //            gestão do Meta Ads, app/campanhas/gestao-ads.tsx, com o painel
 //            dela em z-[330])

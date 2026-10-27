@@ -26,6 +26,10 @@ const PUBLICAS_EXATAS = new Set([
   // do próprio handler — quem chama é a uazapi, que não tem como ter cookie.
   "/api/uazapi/webhook",
   "/api/meta/whatsapp/webhook",
+  // Direct e comentários do Instagram (2026-10-26). A tranca é a assinatura
+  // X-Hub-Signature-256 com o META_APP_SECRET (e o verify token no GET),
+  // conferida no próprio handler; sem o segredo, a rota recusa tudo.
+  "/api/meta/instagram/webhook",
   // Aviso de lead dos formulários instantâneos da Meta. A tranca é a
   // assinatura X-Hub-Signature-256, conferida no próprio handler.
   "/api/meta/leads/webhook",

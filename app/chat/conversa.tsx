@@ -57,6 +57,8 @@ export function CabecalhoConversa({
   usuarios,
   usuarioId,
   demo,
+  podeCriar,
+  podeEditar,
   detalhesAbertos,
   aoVoltar,
   aoAssumir,
@@ -76,6 +78,8 @@ export function CabecalhoConversa({
   usuarios: Usuario[];
   usuarioId: string;
   demo: boolean;
+  podeCriar: boolean;
+  podeEditar: boolean;
   detalhesAbertos: boolean;
   aoVoltar: () => void;
   aoAssumir: () => void;
@@ -102,12 +106,17 @@ export function CabecalhoConversa({
       </button>
 
       <button type="button" onClick={aoDetalhes} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 text-left">
-        <Avatar nome={contato.nome} src={fotoDoContato(contato.id, resumo.numero_instancia, demo)} tamanho={38} />
+        <Avatar nome={contato.nome} src={fotoDoContato(contato.id, resumo.numero_instancia, demo, contato.whatsapp)} tamanho={38} />
         <span className="min-w-0">
           <span className="block truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-50">{nome}</span>
           <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
-            <span className="hidden truncate tabular-nums sm:inline">{formatarTelefone(contato.whatsapp)}</span>
-            <span className="hidden sm:inline" aria-hidden="true">·</span>
+            {/* Contato que veio do Instagram costuma não ter WhatsApp: sem número, só o canal. */}
+            {contato.whatsapp && (
+              <>
+                <span className="hidden truncate tabular-nums sm:inline">{formatarTelefone(contato.whatsapp)}</span>
+                <span className="hidden sm:inline" aria-hidden="true">·</span>
+              </>
+            )}
             <span className={`inline-flex min-w-0 items-center gap-1 rounded-full px-1.5 py-px text-[10.5px] font-medium ring-1 ${papel.chip}`}>
               <papel.Icone className="size-2.5 shrink-0" />
               <span className="truncate">{canal?.nome ?? papel.meio}</span>
@@ -143,22 +152,22 @@ export function CabecalhoConversa({
           ias={ias}
           aoDefinir={aoDefinirIa}
           aoEscolher={aoEscolherIa}
-          desabilitado={demo}
+          desabilitado={demo || !podeEditar}
         />
         {semDono && (
-          <button type="button" onClick={aoAssumir} disabled={demo} className={botaoPrimario}>
+          <button type="button" onClick={aoAssumir} disabled={demo || !podeEditar} className={botaoPrimario}>
             <Hand className="size-3.5" />
             Assumir
           </button>
         )}
         {resumo.status === "aberto" && !semDono && (
-          <button type="button" onClick={aoEncerrar} disabled={demo} className={botaoSecundario} title="Encerrar conversa">
+          <button type="button" onClick={aoEncerrar} disabled={demo || !podeEditar} className={botaoSecundario} title="Encerrar conversa">
             <CircleCheck className="size-3.5" />
             <span className="hidden sm:inline">Encerrar</span>
           </button>
         )}
         {resumo.status === "encerrado" && (
-          <button type="button" onClick={aoReabrir} disabled={demo} className={botaoSecundario}>
+          <button type="button" onClick={aoReabrir} disabled={demo || !podeEditar} className={botaoSecundario}>
             <RotateCcw className="size-3.5" />
             <span className="hidden sm:inline">Reabrir</span>
           </button>
@@ -166,7 +175,7 @@ export function CabecalhoConversa({
         <button
           type="button"
           onClick={aoOportunidade}
-          disabled={demo}
+          disabled={demo || !podeCriar}
           title="Criar oportunidade para este contato"
           aria-label="Criar oportunidade"
           className="hidden shrink-0 rounded-lg p-2 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 sm:inline-flex dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
@@ -514,14 +523,16 @@ export function SemConversa({ canal }: { canal: CanalChat | undefined }) {
       </span>
       <div>
         <p className="text-[14px] font-semibold text-zinc-900 dark:text-zinc-50">
-          {canal ? `Conversas de ${canal.nome}` : "Escolha uma conversa"}
+          {canal ? `${canal.tipo === "instagram" ? "Direct de" : "Conversas de"} ${canal.nome}` : "Escolha uma conversa"}
         </p>
         <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
           {canal?.tipo === "api"
             ? "Número da API oficial: aqui ficam as conversas das automações e da IA. Fora da janela de 24h, a conversa só começa com template."
-            : canal
-              ? "Número do comercial, pelo WhatsApp Web. O que você mandar daqui sai por este número."
-              : "Selecione uma conversa à esquerda ou comece uma nova. Os números ficam na coluna de canais."}
+            : canal?.tipo === "instagram"
+              ? "Conta do Instagram: aqui ficam as mensagens do direct, só texto e até 24h depois da última mensagem da pessoa. Os comentários das postagens ficam na aba Comentários."
+              : canal
+                ? "Número do comercial, pelo WhatsApp Web. O que você mandar daqui sai por este número."
+                : "Selecione uma conversa à esquerda ou comece uma nova. Os números ficam na coluna de canais."}
         </p>
       </div>
     </div>

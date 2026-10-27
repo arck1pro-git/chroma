@@ -5,6 +5,9 @@
 // O número é escolha explícita, e vem marcado com o canal aberto na tela. Sem
 // isso a conversa nascia sem número quando havia mais de uma instância, e o
 // primeiro envio não sabia por onde sair.
+//
+// Só números de WhatsApp: no Instagram a conversa nasce quando a pessoa manda
+// direct ou é chamada a partir de um comentário (2026-10-26), nunca daqui.
 import { useEffect, useState, useTransition } from "react";
 import { Loader2, MessageSquarePlus, Search, X } from "lucide-react";
 import { buscarContatos, iniciarConversa, type ContatoBusca } from "./actions";
@@ -12,7 +15,7 @@ import type { CanalChat } from "./tipos";
 import { Avatar, ESTADO, PAPEL, formatarTelefone } from "./ui";
 
 export function NovaConversa({
-  canais,
+  canais: todosOsCanais,
   canalAtual,
   aoFechar,
   aoCriada,
@@ -22,11 +25,16 @@ export function NovaConversa({
   aoFechar: () => void;
   aoCriada: (atendimentoId: string, canal: string) => void;
 }) {
+  const canais = todosOsCanais.filter((c) => c.tipo !== "instagram");
   const [busca, setBusca] = useState("");
   const [contatos, setContatos] = useState<ContatoBusca[] | null>(null);
   const [contato, setContato] = useState<ContatoBusca | null>(null);
   const [canal, setCanal] = useState(
-    () => canalAtual || canais.find((c) => c.tipo === "web" && c.estado === "conectado")?.chave || canais[0]?.chave || "",
+    () =>
+      (canais.some((c) => c.chave === canalAtual) ? canalAtual : "") ||
+      canais.find((c) => c.tipo === "web" && c.estado === "conectado")?.chave ||
+      canais[0]?.chave ||
+      "",
   );
   const [erro, setErro] = useState<string | null>(null);
   const [criando, iniciar] = useTransition();

@@ -473,14 +473,15 @@ export type EstadoIntegracaoMeta = {
   erros: string[];
 };
 
-async function appDoToken(): Promise<string | null> {
+/** O app da Meta do token do CRM. Também usado pela inscrição do Instagram (lib/instagram-inscricao.ts). */
+export async function appDoToken(): Promise<string | null> {
   const token = process.env.META_SYSTEM_USER_TOKEN?.trim();
   if (!token) return null;
   const r = await requisicao<{ data?: { app_id?: string } }>("debug_token", { params: { input_token: token } });
   return r.data?.app_id ?? null;
 }
 
-function tokenDoApp(appId: string): string {
+export function tokenDoApp(appId: string): string {
   const segredo = process.env.META_APP_SECRET?.trim();
   if (!segredo) throw new ErroMeta("META_APP_SECRET não configurado.", undefined, 503);
   return `${appId}|${segredo}`;

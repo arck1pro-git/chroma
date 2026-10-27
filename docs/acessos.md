@@ -121,6 +121,13 @@ Demandas e Métricas **não** usam o escopo: quem vê a equipe é o
 demais veem só as próprias demandas e os próprios números, e o corte também é
 na consulta.
 
+Comentários do Instagram no Chat (desde 2026-10-26): ler e chamar a pessoa no
+direct é do módulo **Chat**; responder **em público** e ligar ou desligar a IA
+de comentários falam pela marca e exigem também o módulo **Meta** (Admin e TI
+no seed). A regra é um predicado só, `falaPelaMarca` (lib/instagram-comentarios.ts):
+a ação confere com ele (app/chat/acoes-instagram.ts) e a tela só esconde os
+controles com ele (`ComentariosDaConta.podeAdministrar`).
+
 ## Por que a permissão não é conferida no proxy
 
 Mesma razão do login (ver [auth.md](auth.md)): o proxy roda em **toda**

@@ -21,6 +21,12 @@ export async function gravarIaDoContato(
   iaId: string | null,
   autorId: string | null,
   como?: string,
+  /**
+   * Só grava se ninguém definiu a IA do contato ainda (ia IS NULL), na mesma
+   * instrução. É o caso da IA de comentário do Instagram (lib/ia/comentarios.ts):
+   * ela nunca passa por cima de quem ligou ou desligou à mão.
+   */
+  opcoes: { soSeNaoDefinida?: boolean } = {},
 ): Promise<{ erro?: string }> {
   let nomeIa: string | null = null;
   if (valor === true) {
@@ -35,6 +41,7 @@ export async function gravarIaDoContato(
     UPDATE contatos SET ia = ${valor}::boolean, ia_id = ${id}::uuid
      WHERE id = ${contatoId}
        AND (ia, ia_id) IS DISTINCT FROM (${valor}::boolean, ${id}::uuid)
+       AND (NOT ${opcoes.soSeNaoDefinida === true}::boolean OR ia IS NULL)
     RETURNING id`;
   if (linha) {
     const base =

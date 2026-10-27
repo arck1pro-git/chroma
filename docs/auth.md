@@ -47,6 +47,7 @@ Estão listadas em `proxy.ts`. Cada uma tem outra tranca no lugar:
 | `/api/publico/*` | chave do blog na própria URL |
 | `/api/webhooks/*` | slug do webhook; é captação de formulário de site |
 | `/api/uazapi/webhook` | `UAZAPI_WEBHOOK_SECRET` na querystring |
+| `/api/meta/instagram/webhook` | assinatura `X-Hub-Signature-256` com `META_APP_SECRET` no POST; `META_WEBHOOK_VERIFY_TOKEN` no GET de verificação (desde 2026-10-26) |
 | `/api/blogs/rss/gerar`, `/api/blogs/rss/pauta`, `/api/midia/fila` | `Authorization: Bearer $CRM_SERVICE_TOKEN` |
 
 Rota nova nasce **protegida**. Para abrir uma, é preciso editar essa lista — e

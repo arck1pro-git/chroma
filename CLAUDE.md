@@ -77,7 +77,7 @@ templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, c
 
 | Entrada | Rotas | Tranca |
 |---|---|---|
-| Webhooks de mensagem | `/api/uazapi/webhook` (repassado pelo n8n), `/api/meta/whatsapp/webhook` | segredo na URL (uazapi); assinatura `X-Hub-Signature-256` (Meta) |
+| Webhooks de mensagem | `/api/uazapi/webhook` (repassado pelo n8n), `/api/meta/whatsapp/webhook`, `/api/meta/instagram/webhook` (DM e comentários) | segredo na URL (uazapi); assinatura `X-Hub-Signature-256` (Meta) |
 | Leads da Meta | `/api/meta/leads/webhook` | assinatura `X-Hub-Signature-256` |
 | Formulários de sites | `/api/webhooks/[slug]` | slug do webhook |
 | Serviço (n8n) | `/api/automacoes/enviar` e `/mover`, `/api/ia/retomar`, `/api/meta/leads/varrer`, `/api/social/publicar`, `/api/midia/fila`, `/api/meta/whatsapp/processar`, `/api/blogs/rss/gerar` e `/pauta` | `Authorization: Bearer CRM_SERVICE_TOKEN`, via `autorizado()` |
@@ -86,7 +86,9 @@ templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, c
 
 Mensagem que chega pelo WhatsApp é gravada e, depois da resposta (`after`), `lib/ia/atendente.ts` decide se a IA
 responde. Envio de mensagem, da equipe ou da IA, passa por `lib/conversa-envio.ts`: grava pendente, envia pela
-uazapi ou pela Meta, casa o retorno. Automação: a tela desenha o fluxo, `lib/automacoes/compilador` gera o
+uazapi, pela Meta ou pelo Instagram (escolha por canal, sem "senão é uazapi"), casa o retorno. Instagram: DM vira
+conversa comum (canal 'instagram'); comentários ficam em `instagram_comentarios`; todo envio ao Instagram sai pelo
+ponto único de `lib/instagram.ts`; a IA de comentário (`lib/ia/comentarios.ts`) só escolhe frase pública fixa. Automação: a tela desenha o fluxo, `lib/automacoes/compilador` gera o
 workflow, `lib/automacoes/motores/n8n/adaptador.ts` publica no n8n, e o n8n chama as rotas de serviço.
 
 ## 3. Onde fica cada coisa
@@ -98,7 +100,7 @@ workflow, `lib/automacoes/motores/n8n/adaptador.ts` publica no n8n, e o n8n cham
 | Server actions | `app/<modulo>/acoes.ts` (novo) ou `actions.ts` (antigo); `acoes-<assunto>.ts` quando o módulo tem vários assuntos (Configurações); `app/components/acoes-*.ts` |
 | Rotas HTTP | `app/api/**/route.ts` |
 | Regra de negócio | `lib/` (ex.: `mover-etapa.ts`, `oportunidades.ts`, `demandas.ts`, `automacoes/`, `ia/`); parte ainda nas ações |
-| Integrações | `lib/uazapi.ts`, `lib/whatsapp-oficial.ts`, `lib/meta*.ts`, `lib/google-*.ts`, `lib/automacoes/motores/n8n/`, `lib/transcricao.ts`, `lib/voz.ts`, `lib/armazenamento.ts`, `lib/social/` |
+| Integrações | `lib/uazapi.ts`, `lib/whatsapp-oficial.ts`, `lib/meta*.ts`, `lib/instagram*.ts`, `lib/google-*.ts`, `lib/automacoes/motores/n8n/`, `lib/transcricao.ts`, `lib/voz.ts`, `lib/armazenamento.ts`, `lib/social/` |
 | Consultas ao banco | `lib/db.ts` (conexão); `app/<modulo>/dados.ts` (leitura só daquela tela); `lib/<dominio>` quando outra parte também lê (ex.: `lib/funil.ts`, `lib/webhooks-dados.ts`, que a IA reutiliza) |
 | Tipos | `lib/entidades.ts` (tabelas), `lib/*-tipos.ts`, `lib/automacoes/tipos.ts`, `app/chat/tipos.ts`; tipo local fica junto do uso |
 | Validação | na entrada (ação ou rota): `ehUuid` de `lib/validacao.ts`, `trim`/`slice`, enum, limites; zod em payload complexo |
@@ -167,8 +169,9 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
 
 - **Testes:** não existe `npm test`. Os scripts de verificação que já existem simulam a rede e passam hoje:
   `scripts/testar-cadencia-responsavel.mjs` e `scripts/testar-agenda-ocupados.mjs` (direto com `node`),
-  `testar-filtro-campanhas.ts`, `testar-meta-ads.ts`
-  e `testar-meta-eventos.ts` (pelo runner; este usa o DEV numa transação desfeita), e `scripts/testar-hooks.mjs`
+  `testar-filtro-campanhas.ts`, `testar-meta-ads.ts`, `testar-meta-eventos.ts` (pelo runner; este usa o DEV numa
+  transação desfeita) e `testar-instagram.ts` (pelo runner; webhook, IA de comentário e envio do Instagram contra o
+  DEV com Graph e modelo falsos, cenário marcado e apagado no fim), e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
   falam com serviço e conta de verdade e só rodam a pedido.
 - **Script novo de verificação:** chama as funções reais pelo runner acima, contra o banco DEV: cria o cenário com
@@ -205,7 +208,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
 - Criar, ativar, parar ou alterar workflow no n8n (instância compartilhada com produção e com outro sistema).
 - Mexer no webhook da instância uazapi compartilhada.
 - Instalar dependência, baixar browser headless ou ferramenta pesada.
-- Editar o `.env`. A trava `WHATSAPP_SO_PARA` (ambiente de desenvolvimento) nunca é contornada nem criada na Vercel.
+- Editar o `.env`. As travas `WHATSAPP_SO_PARA` e `INSTAGRAM_SO_PARA` (ambiente de desenvolvimento) nunca são
+  contornadas nem criadas na Vercel.
 - Semear o DEV (padrão é mock em JSON); quando pedido, com marca e sem deixar nada pendente.
 - Apagar dado ou arquivo, `DROP`, `TRUNCATE`, `git reset`, `git clean`, `git checkout --`.
 - Mudar a lógica funcional do produto quando o pedido era documentação, análise ou revisão.
@@ -239,7 +243,9 @@ O fluxo completo, com delegação aos subagentes e revisão, está nas skills `/
 `lib/db.ts`, `lib/ia/db.ts`, `next.config.ts`, `lib/automacoes/servico.ts`, `lib/segredo.ts`,
 `lib/destino-permitido.ts`, `lib/rede-externa.ts`, `lib/ia/sanitizar.ts`, `lib/conversa-envio.ts`,
 `lib/ia/atendente.ts`, `lib/automacoes/compilador/`, `lib/automacoes/motores/n8n/adaptador.ts`,
-`app/api/uazapi/webhook/route.ts`, `app/api/meta/whatsapp/webhook/route.ts`, `app/api/mcp/[segredo]/route.ts`.
+`app/api/uazapi/webhook/route.ts`, `app/api/meta/whatsapp/webhook/route.ts`, `app/api/mcp/[segredo]/route.ts`,
+`app/api/meta/instagram/webhook/route.ts`, `lib/instagram.ts` (ponto único de envio e trava de dev),
+`lib/instagram-webhook.ts`, `lib/ia/comentarios.ts`.
 
 **Dependências que importam:** `next` 16.3 (API diferente do treino, ver `AGENTS.md`), `postgres` (fora do
 bundle, `serverExternalPackages`), `jose`, `zod` 4, `@anthropic-ai/sdk` (o Storage do Supabase é chamado por `fetch` em `lib/armazenamento.ts`, sem SDK),
@@ -252,7 +258,7 @@ bundle, `serverExternalPackages`), `jose`, `zod` 4, `@anthropic-ai/sdk` (o Stora
 | Neon | banco (DEV local, produção na Vercel) | `lib/db.ts` | produção só com pedido |
 | Supabase Storage | documentos, anexos, vídeos | `lib/armazenamento.ts` | buckets privados, link assinado |
 | uazapi | WhatsApp não oficial | `lib/uazapi.ts` | instância compartilhada; laço bane o número |
-| Meta | WhatsApp Cloud API, leads, Ads, Conversions API, posts | `lib/whatsapp-oficial.ts`, `lib/meta*.ts`, `lib/social/` | eventos sempre ligados na produção |
+| Meta | WhatsApp Cloud API, leads, Ads, Conversions API, posts, Instagram (DM e comentários) | `lib/whatsapp-oficial.ts`, `lib/meta*.ts`, `lib/social/`, `lib/instagram*.ts` | eventos sempre ligados na produção; app compartilhado (WhatsApp, leads, Instagram): mexer só na assinatura do objeto em questão |
 | n8n | executa cadências e agendadores | `lib/automacoes/motores/n8n/` | instância compartilhada; só tocar o que o CRM criou |
 | Google | Agenda (OAuth), Drive e gravações do Meet (conta de serviço), Search Console | `lib/google-*.ts`, `lib/agenda.ts`, `lib/gravacoes.ts`, `lib/search-console.ts` | escopo mínimo |
 | Anthropic | IAs de atendimento e de interface | `lib/ia/` | prompt com dado de cliente sanitizado |

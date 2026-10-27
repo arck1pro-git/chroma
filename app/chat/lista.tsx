@@ -5,17 +5,23 @@
 // O cabeçalho diz DE QUEM é a caixa que se está olhando (foto, nome, papel e
 // conexão do número) — no celular ele é também o botão que troca de canal. Os
 // filtros são de estado da conversa, não de canal: o canal já foi escolhido.
-import { useEffect, useMemo, useRef, useState } from "react";
+//
+// O cabeçalho é exportado (CabecalhoCaixa) desde 2026-10-26: a aba
+// "Comentários" de uma conta do Instagram (comentarios.tsx) usa o mesmo, com o
+// mesmo menu de canais no celular. Numa conta do Instagram as abas Direct |
+// Comentários entram logo abaixo dele (`abas`), e "Nova conversa" fica
+// desligada: no Instagram a conversa só começa quando a pessoa escreve.
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Bot, ChevronDown, Inbox, Search, Sparkles, SquarePen, X } from "lucide-react";
 import type { CanalChat, ConversaResumo } from "./tipos";
 import { ListaCanais } from "./canais";
 import {
   Avatar,
-  ESTADO,
   Entrega,
   PAPEL,
   SeloCanal,
   canalDaConversa,
+  estadoDoCanal,
   formatarTelefone,
   fotoDoContato,
   previa,
@@ -50,43 +56,26 @@ const VAZIO: Record<Filtro, { titulo: string; texto: string }> = {
   encerradas: { titulo: "Nada encerrado", texto: "Conversas encerradas ficam guardadas aqui." },
 };
 
-export function ListaConversas({
+/**
+ * De quem é a caixa: foto, nome, papel e conexão do canal. No celular é também
+ * o botão que abre o menu de canais. `acao` é o botão à direita (nova conversa).
+ */
+export function CabecalhoCaixa({
   canais,
   canalAtual,
-  conversas,
-  selecionadaId,
-  usuarioId,
-  filtro,
-  aoFiltrar,
-  aoAbrir,
   aoTrocarCanal,
-  aoNovaConversa,
-  demo,
-  oculta,
+  acao,
 }: {
   canais: CanalChat[];
   canalAtual: string;
-  conversas: ConversaResumo[];
-  selecionadaId: string | null;
-  usuarioId: string;
-  filtro: Filtro;
-  aoFiltrar: (f: Filtro) => void;
-  aoAbrir: (id: string) => void;
   aoTrocarCanal: (chave: string) => void;
-  aoNovaConversa: () => void;
-  demo: boolean;
-  /** No celular, com uma conversa aberta, a lista cede a tela. */
-  oculta: boolean;
+  acao?: ReactNode;
 }) {
-  const [busca, setBusca] = useState("");
   const [menuCanais, setMenuCanais] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  // "Agora" congelado por render: as horas relativas ("Ontem") não precisam de
-  // relógio correndo, só de estar certas quando a lista é desenhada.
-  const [agora] = useState(() => Date.now());
-
   const canal = canais.find((c) => c.chave === canalAtual);
-  const mostrarCanal = canalAtual === "";
+  const papel = canal ? PAPEL[canal.tipo] : null;
+  const estado = canal ? estadoDoCanal(canal) : null;
 
   useEffect(() => {
     if (!menuCanais) return;
@@ -101,6 +90,107 @@ export function ListaConversas({
       document.removeEventListener("keydown", esc);
     };
   }, [menuCanais]);
+
+  return (
+    <header className="relative flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 px-3 dark:border-zinc-800" ref={menuRef}>
+      <button
+        type="button"
+        onClick={() => setMenuCanais((v) => !v)}
+        aria-expanded={menuCanais}
+        aria-haspopup="menu"
+        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1 py-1 text-left transition hover:bg-zinc-50 lg:pointer-events-none dark:hover:bg-zinc-900"
+      >
+        {canal && estado ? (
+          <Avatar nome={canal.perfil ?? canal.nome} src={canal.foto} tamanho={32}>
+            <span className={`absolute -bottom-px -right-px size-2.5 rounded-full ring-2 ring-white dark:ring-zinc-950 ${estado.ponto}`} />
+          </Avatar>
+        ) : (
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900">
+            <Inbox className="size-4" />
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1 truncate text-[14px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            <span className="truncate">{canal ? canal.nome : "Todas as conversas"}</span>
+            <ChevronDown className="size-3.5 shrink-0 text-zinc-400 lg:hidden" />
+          </span>
+          <span className="flex items-center gap-1.5 truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+            {canal && papel && estado ? (
+              <>
+                <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium ring-1 ${papel.chip}`}>
+                  <papel.Icone className="size-2.5" />
+                  {papel.rotulo}
+                </span>
+                <span className="truncate">{canal.estado === "conectado" ? papel.meio : estado.rotulo}</span>
+              </>
+            ) : (
+              <span>Todos os números</span>
+            )}
+          </span>
+        </span>
+      </button>
+      {acao}
+
+      {menuCanais && (
+        <div
+          role="menu"
+          className="veu-surge absolute inset-x-2 top-[calc(100%+4px)] z-30 max-h-[70vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-zinc-50 p-2 shadow-xl lg:hidden dark:border-zinc-800 dark:bg-zinc-950"
+        >
+          <ListaCanais
+            canais={canais}
+            atual={canalAtual}
+            aoEscolher={(chave) => {
+              setMenuCanais(false);
+              aoTrocarCanal(chave);
+            }}
+          />
+        </div>
+      )}
+    </header>
+  );
+}
+
+export function ListaConversas({
+  canais,
+  canalAtual,
+  conversas,
+  selecionadaId,
+  usuarioId,
+  filtro,
+  aoFiltrar,
+  aoAbrir,
+  aoTrocarCanal,
+  aoNovaConversa,
+  demo,
+  podeCriar,
+  oculta,
+  abas,
+}: {
+  canais: CanalChat[];
+  canalAtual: string;
+  conversas: ConversaResumo[];
+  selecionadaId: string | null;
+  usuarioId: string;
+  filtro: Filtro;
+  aoFiltrar: (f: Filtro) => void;
+  aoAbrir: (id: string) => void;
+  aoTrocarCanal: (chave: string) => void;
+  aoNovaConversa: () => void;
+  demo: boolean;
+  podeCriar: boolean;
+  /** No celular, com uma conversa aberta, a lista cede a tela. */
+  oculta: boolean;
+  /** Direct | Comentários, quando o canal é uma conta do Instagram. */
+  abas?: ReactNode;
+}) {
+  const [busca, setBusca] = useState("");
+  // "Agora" congelado por render: as horas relativas ("Ontem") não precisam de
+  // relógio correndo, só de estar certas quando a lista é desenhada.
+  const [agora] = useState(() => Date.now());
+
+  const canal = canais.find((c) => c.chave === canalAtual);
+  const mostrarCanal = canalAtual === "";
+  const instagram = canal?.tipo === "instagram";
 
   const contagem = useMemo(() => {
     const c = {} as Record<Filtro, number>;
@@ -121,8 +211,6 @@ export function ListaConversas({
     });
   }, [conversas, filtro, busca, usuarioId]);
 
-  const papel = canal ? PAPEL[canal.tipo] : null;
-
   return (
     <section
       className={`min-h-0 w-full flex-col border-r border-zinc-200 bg-white lg:flex lg:w-[340px] lg:shrink-0 dark:border-zinc-800 dark:bg-zinc-950 ${
@@ -130,70 +218,30 @@ export function ListaConversas({
       }`}
     >
       {/* Cabeçalho: de quem é esta caixa. No celular, troca de canal. */}
-      <header className="relative flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 px-3 dark:border-zinc-800" ref={menuRef}>
-        <button
-          type="button"
-          onClick={() => setMenuCanais((v) => !v)}
-          aria-expanded={menuCanais}
-          aria-haspopup="menu"
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1 py-1 text-left transition hover:bg-zinc-50 lg:pointer-events-none dark:hover:bg-zinc-900"
-        >
-          {canal ? (
-            <Avatar nome={canal.perfil ?? canal.nome} src={canal.foto} tamanho={32}>
-              <span className={`absolute -bottom-px -right-px size-2.5 rounded-full ring-2 ring-white dark:ring-zinc-950 ${ESTADO[canal.estado].ponto}`} />
-            </Avatar>
-          ) : (
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900">
-              <Inbox className="size-4" />
-            </span>
-          )}
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1 truncate text-[14px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              <span className="truncate">{canal ? canal.nome : "Todas as conversas"}</span>
-              <ChevronDown className="size-3.5 shrink-0 text-zinc-400 lg:hidden" />
-            </span>
-            <span className="flex items-center gap-1.5 truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-              {canal && papel ? (
-                <>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium ring-1 ${papel.chip}`}>
-                    <papel.Icone className="size-2.5" />
-                    {papel.rotulo}
-                  </span>
-                  <span className="truncate">{canal.estado === "conectado" ? papel.meio : ESTADO[canal.estado].rotulo}</span>
-                </>
-              ) : (
-                <span>Todos os números</span>
-              )}
-            </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={aoNovaConversa}
-          disabled={demo}
-          title={demo ? "Indisponível na demonstração" : "Nova conversa"}
-          aria-label="Nova conversa"
-          className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-white transition hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          <SquarePen className="size-4" />
-        </button>
-
-        {menuCanais && (
-          <div
-            role="menu"
-            className="veu-surge absolute inset-x-2 top-[calc(100%+4px)] z-30 max-h-[70vh] overflow-y-auto rounded-2xl border border-zinc-200 bg-zinc-50 p-2 shadow-xl lg:hidden dark:border-zinc-800 dark:bg-zinc-950"
+      <CabecalhoCaixa
+        canais={canais}
+        canalAtual={canalAtual}
+        aoTrocarCanal={aoTrocarCanal}
+        acao={
+          <button
+            type="button"
+            onClick={aoNovaConversa}
+            disabled={demo || instagram || !podeCriar}
+            title={
+              demo
+                ? "Indisponível na demonstração"
+                : instagram
+                  ? "No Instagram a conversa começa quando a pessoa escreve ou comenta"
+                  : "Nova conversa"
+            }
+            aria-label="Nova conversa"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-white transition hover:bg-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
           >
-            <ListaCanais
-              canais={canais}
-              atual={canalAtual}
-              aoEscolher={(chave) => {
-                setMenuCanais(false);
-                aoTrocarCanal(chave);
-              }}
-            />
-          </div>
-        )}
-      </header>
+            <SquarePen className="size-4" aria-hidden="true" />
+          </button>
+        }
+      />
+      {abas}
 
       {/* Busca e filtros */}
       <div className="flex shrink-0 flex-col gap-2 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
@@ -203,7 +251,7 @@ export function ListaConversas({
             type="search"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar por nome ou número"
+            placeholder={instagram ? "Buscar por nome" : "Buscar por nome ou número"}
             aria-label="Buscar conversa"
             className="w-full rounded-lg border border-zinc-200 bg-zinc-50 py-2 pl-8 pr-8 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white focus:ring-2 focus:ring-zinc-900/5 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-600 dark:focus:bg-zinc-900"
           />
@@ -266,7 +314,11 @@ export function ListaConversas({
               {busca ? "Ninguém com esse nome ou número" : VAZIO[filtro].titulo}
             </p>
             <p className="text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-              {busca ? "Confira a busca ou troque o filtro." : VAZIO[filtro].texto}
+              {busca
+                ? "Confira a busca ou troque o filtro."
+                : instagram && filtro === "abertas"
+                  ? "Quando alguém mandar direct para esta conta, a conversa aparece aqui."
+                  : VAZIO[filtro].texto}
             </p>
           </li>
         ) : (
@@ -286,7 +338,7 @@ export function ListaConversas({
                   }`}
                 >
                   {sel && <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-zinc-900 dark:bg-zinc-100" aria-hidden="true" />}
-                  <Avatar nome={c.contato_nome} src={fotoDoContato(c.contato_id, c.numero_instancia, demo)} tamanho={44}>
+                  <Avatar nome={c.contato_nome} src={fotoDoContato(c.contato_id, c.numero_instancia, demo, c.contato_whatsapp)} tamanho={44}>
                     {mostrarCanal && <SeloCanal tipo={tipoDaConversa(c)} />}
                   </Avatar>
                   <span className="min-w-0 flex-1">

@@ -218,7 +218,8 @@ export function SecoesContato({
               {atendimentos.map((a) => {
                 const { rotulo, Icone } = CANAL[a.canal];
                 const status = STATUS_ATENDIMENTO[a.status];
-                const numero = telefoneLegivel(a.numero_instancia);
+                // No Instagram, numero_instancia é o id da conta, não telefone.
+                const numero = a.canal === "instagram" ? "" : telefoneLegivel(a.numero_instancia);
                 return (
                   <li key={a.id}>
                     <Link href={`/chat?atendimento=${a.id}`} className={LINHA}>

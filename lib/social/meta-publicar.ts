@@ -29,7 +29,7 @@
 // publicar (POST /collaboration_invites) — e o post já sai nos dois perfis.
 import "server-only";
 import { ErroMeta } from "@/lib/meta";
-import { perfilPorInstagram, type Perfil } from "./perfis";
+import { PERFIS, perfilPorInstagram, type Perfil } from "./perfis";
 
 const VERSAO = process.env.META_GRAPH_VERSION?.trim() || "v26.0";
 
@@ -207,6 +207,19 @@ async function tokenDaPagina(paginaId: string): Promise<string> {
   if (!r.access_token) throw new ErroMeta(`O token não tem acesso de publicação à página ${paginaId}.`);
   tokensDePagina.set(paginaId, { token: r.access_token, ate: Date.now() + 30 * 60_000 });
   return r.access_token;
+}
+
+/**
+ * O token de uma das NOSSAS páginas (lib/social/perfis.ts), e só delas. É o
+ * que o direct do Instagram usa (lib/instagram.ts, desde 2026-10-26): o token
+ * do system user alcançaria qualquer página que alguém atribuísse a ele, e a
+ * lista fechada é a trava.
+ */
+export async function tokenDaPaginaDoPerfil(paginaId: string): Promise<string> {
+  if (!PERFIS.some((p) => p.paginaId === paginaId)) {
+    throw new ErroMeta(`A página ${paginaId} não é de um dos perfis do CRM.`, undefined, 400);
+  }
+  return tokenDaPagina(paginaId);
 }
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));

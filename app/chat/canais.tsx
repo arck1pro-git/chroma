@@ -7,14 +7,18 @@
 // como subtítulo. Cada canal aparece como uma pessoa: a foto e o nome do perfil
 // que o cliente vê do outro lado, o número, e o ponto de conexão.
 //
+// Desde 2026-10-26 há um terceiro grupo, "Instagram": as contas que o CRM
+// atende, com o @ no lugar do número e, além das conversas de direct não
+// lidas, a contagem de comentários que ninguém leu (em rosa, a cor do canal).
+//
 // Três larguras:
 //   · xl+    → coluna cheia, com nome, número e contagem;
 //   · lg     → só os avatares (a lista e a conversa precisam do espaço);
 //   · < lg   → some; quem troca de canal é o menu do cabeçalho da lista.
 import Link from "next/link";
-import { Inbox, Settings2 } from "lucide-react";
+import { Inbox, MessageCircle, Settings2 } from "lucide-react";
 import type { CanalChat, TipoCanal } from "./tipos";
-import { Avatar, ESTADO, PAPEL, formatarTelefone } from "./ui";
+import { Avatar, PAPEL, estadoDoCanal, identificacaoDoCanal } from "./ui";
 
 function Contagem({ n, destaque }: { n: number; destaque?: boolean }) {
   if (n <= 0) return null;
@@ -41,14 +45,20 @@ function ItemCanal({
   /** No trilho estreito (lg) o texto some e fica só o avatar. */
   compacto: boolean;
 }) {
-  const estado = ESTADO[canal.estado];
+  const estado = estadoDoCanal(canal);
   const titulo = canal.perfil && canal.perfil !== canal.nome ? `${canal.nome} · ${canal.perfil}` : canal.nome;
+  const comentarios = canal.comentariosNaoLidos ?? 0;
+  // No trilho estreito há uma bolinha só: direct não lido (verde) vem antes;
+  // sem ele, os comentários (rosa).
+  const bolinha = canal.naoLidas + comentarios;
   return (
     <button
       type="button"
       onClick={aoEscolher}
       aria-current={ativo ? "true" : undefined}
-      title={`${titulo}\n${formatarTelefone(canal.numero)} · ${estado.rotulo}`}
+      title={`${titulo}\n${identificacaoDoCanal(canal)} · ${estado.rotulo}${
+        comentarios > 0 ? `\n${comentarios} ${comentarios === 1 ? "comentário não lido" : "comentários não lidos"}` : ""
+      }`}
       className={`group relative flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition ${
         compacto ? "justify-center xl:justify-start xl:px-2 xl:py-2" : "px-2 py-2"
       } ${
@@ -64,9 +74,13 @@ function ItemCanal({
           role="img"
         />
         {/* No trilho estreito a contagem vira bolinha no canto do avatar. */}
-        {compacto && canal.naoLidas > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1 text-[9px] font-bold text-white ring-2 ring-zinc-50 xl:hidden dark:ring-zinc-950">
-            {canal.naoLidas > 9 ? "9+" : canal.naoLidas}
+        {compacto && bolinha > 0 && (
+          <span
+            className={`absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white ring-2 ring-zinc-50 xl:hidden dark:ring-zinc-950 ${
+              canal.naoLidas > 0 ? "bg-emerald-500" : "bg-pink-500"
+            }`}
+          >
+            {bolinha > 9 ? "9+" : bolinha}
           </span>
         )}
       </Avatar>
@@ -78,7 +92,14 @@ function ItemCanal({
           <Contagem n={canal.naoLidas} destaque />
         </span>
         <span className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-          <span className="truncate tabular-nums">{formatarTelefone(canal.numero)}</span>
+          <span className="truncate tabular-nums">{identificacaoDoCanal(canal)}</span>
+          {comentarios > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-pink-100 px-1.5 text-[10px] font-medium tabular-nums text-pink-700 dark:bg-pink-500/15 dark:text-pink-300">
+              <MessageCircle className="size-2.5" aria-hidden="true" />
+              {comentarios > 99 ? "99+" : comentarios}
+              <span className="sr-only">{comentarios === 1 ? " comentário não lido" : " comentários não lidos"}</span>
+            </span>
+          )}
           {canal.naFila > 0 && (
             <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
               {canal.naFila} na fila
@@ -104,7 +125,7 @@ function Grupo({
   compacto: boolean;
 }) {
   if (canais.length === 0) return null;
-  const { rotulo, meio, Icone } = PAPEL[tipo];
+  const { rotulo, meio, Icone, icone } = PAPEL[tipo];
   return (
     <div className="flex flex-col gap-1">
       <p
@@ -113,7 +134,7 @@ function Grupo({
         }`}
         title={`${rotulo} · ${meio}`}
       >
-        <Icone className={`size-3.5 ${tipo === "api" ? "text-violet-500" : "text-emerald-500"}`} />
+        <Icone className={`size-3.5 ${icone}`} aria-hidden="true" />
         <span className={compacto ? "hidden xl:inline" : ""}>{rotulo}</span>
         <span className={`font-normal normal-case tracking-normal ${compacto ? "hidden xl:inline" : ""}`}>· {meio}</span>
       </p>
@@ -169,13 +190,14 @@ export function ListaCanais({
             <Contagem n={naoLidas} destaque />
           </span>
           <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">
-            {canais.length} {canais.length === 1 ? "número" : "números"}
+            {canais.length} {canais.length === 1 ? "canal" : "canais"}
           </span>
         </span>
       </button>
 
       <Grupo tipo="web" canais={canais.filter((c) => c.tipo === "web")} atual={atual} aoEscolher={aoEscolher} compacto={compacto} />
       <Grupo tipo="api" canais={canais.filter((c) => c.tipo === "api")} atual={atual} aoEscolher={aoEscolher} compacto={compacto} />
+      <Grupo tipo="instagram" canais={canais.filter((c) => c.tipo === "instagram")} atual={atual} aoEscolher={aoEscolher} compacto={compacto} />
 
       {canais.length === 0 && (
         <p className={`px-2 text-[11px] leading-relaxed text-zinc-400 ${compacto ? "hidden xl:block" : ""}`}>

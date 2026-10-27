@@ -30,6 +30,7 @@ import { BUCKET_DOCUMENTOS, baixar, subir } from "@/lib/armazenamento";
 import { baixarMidiaMeta } from "@/lib/meta";
 import { linkDaMidiaRecebida } from "@/lib/uazapi";
 import { transcreverAudio } from "@/lib/transcricao";
+import { baixarAnexoInstagram } from "@/lib/instagram";
 
 export type TipoMensagem =
   | "texto"
@@ -264,9 +265,14 @@ export async function lerArquivo(caminho: string): Promise<Buffer> {
  *                              webhook, só o id; a URL sai de outra chamada,
  *                              vale minutos e pede token (baixarMidiaMeta em
  *                              lib/meta.ts).
+ *   · ig:<url>               → anexo do direct do Instagram (2026-10-26). Só de
+ *                              host da Meta, com cada redirecionamento
+ *                              conferido e teto (baixarAnexoInstagram em
+ *                              lib/instagram.ts).
  */
 async function baixarOrigem(origem: string): Promise<{ bytes: Uint8Array; mime: string | null }> {
   if (origem.startsWith("meta:")) return baixarMidiaMeta(origem.slice(5));
+  if (origem.startsWith("ig:")) return baixarAnexoInstagram(origem.slice(3), TETO_BYTES);
   if (origem.startsWith("uazapi:")) {
     const idCompleto = origem.slice("uazapi:".length);
     const numero = idCompleto.split(":")[0];

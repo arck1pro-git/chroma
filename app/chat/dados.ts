@@ -10,13 +10,27 @@
 //
 // Timestamps saem já em ISO "…Z" (to_char em UTC): o formato do Postgres
 // ("2026-07-15 09:40:00+00", com espaço) nem sempre parseia no navegador.
+//
+// INSTAGRAM (2026-10-26): as três contas entram como canais (chave = id da
+// conta). Conversa do Instagram casa com a conta por IGUALDADE EXATA de
+// numero_instancia, nunca pelos últimos 8 dígitos (um id de conta pode
+// terminar como um telefone). Na aba "Comentários", `instagram` traz as
+// postagens (da Meta), os comentários da postagem aberta e as regras da IA.
 import { sql } from "@/lib/db";
 import { documentosEscolhiveis } from "@/lib/documentos";
-import { fim8, listarCanais } from "@/lib/canais";
+import { canaisInstagram, fim8, listarCanais } from "@/lib/canais";
 import { tomDaEtapa } from "@/lib/cores-funil";
 import type { Contato, Etapa, Funil, Oportunidade, Usuario } from "@/lib/entidades";
 import { ehUuid } from "@/lib/validacao";
+import { paginaDeComentarios } from "@/lib/instagram-leitura";
+import { podeOperar } from "@/lib/auth/permissoes";
+import { usuarioAtual } from "@/lib/auth/dal";
+import { contaDoPerfil, ehIdMeta, perfilDaConta, postagensDaConta } from "@/lib/instagram";
+import { falaPelaMarca, naoLidosPorConta } from "@/lib/instagram-comentarios";
+import type { ComentariosDaConta, PostagemInstagram, RegraIaInstagram } from "@/lib/instagram-tipos";
+import type { Perfil } from "@/lib/social/perfis";
 import type {
+  AbaInstagram,
   CanalChat,
   ConversaAberta,
   ConversaResumo,
@@ -146,20 +160,31 @@ async function carregarAberta(id: string): Promise<ConversaAberta | null> {
 export async function carregarChat({
   canal,
   atendimentoId,
+  aba = "direct",
+  postagemId = null,
 }: {
-  /** Dígitos do número do canal; "" = todos. */
+  /** Dígitos do número do canal, ou o id da conta do Instagram; "" = todos. */
   canal: string;
   atendimentoId: string | null;
+  /** Numa conta do Instagram: as conversas de direct ou os comentários. */
+  aba?: AbaInstagram;
+  /** A postagem aberta na aba de comentários (id da Meta). */
+  postagemId?: string | null;
 }): Promise<DadosChat> {
-  const alvo = canal ? fim8(canal) : null;
+  const contaIg = perfilDaConta(canal);
+  const alvo = canal && !contaIg ? fim8(canal) : null;
   const idAberta = atendimentoId && ehUuid(atendimentoId) ? atendimentoId : null;
+  const abaAberta: AbaInstagram = contaIg && aba === "comentarios" ? "comentarios" : "direct";
 
-  const [canais, contagens, conversas, aberta, usuarios, funis, etapas, documentos, ias] =
+  const [canais, canaisIg, contagens, conversas, aberta, usuarios, funis, etapas, documentos, ias] =
     await Promise.all([
       listarCanais(),
-      // Por canal: quantas conversas na fila e quantas com algo não lido.
+      canaisInstagram(),
+      // Por canal: quantas conversas na fila e quantas com algo não lido. O
+      // Instagram conta pela conta inteira ('ig:<id>'); o WhatsApp, pelo fim do número.
       sql`
-        SELECT right(regexp_replace(coalesce(a.numero_instancia, ''), '[^0-9]', '', 'g'), 8) AS fim8,
+        SELECT CASE WHEN a.canal = 'instagram' THEN 'ig:' || coalesce(a.numero_instancia, '')
+                    ELSE right(regexp_replace(coalesce(a.numero_instancia, ''), '[^0-9]', '', 'g'), 8) END AS chave,
                count(*) FILTER (WHERE a.status = 'na_fila')::int AS fila,
                count(*) FILTER (WHERE EXISTS (
                  SELECT 1 FROM mensagens m
@@ -169,9 +194,11 @@ export async function carregarChat({
         WHERE a.status <> 'encerrado'
         GROUP BY 1`,
       consultarConversas(
-        alvo
-          ? sql`right(regexp_replace(coalesce(a.numero_instancia, ''), '[^0-9]', '', 'g'), 8) = ${alvo}`
-          : sql`true`,
+        contaIg
+          ? sql`a.canal = 'instagram' AND a.numero_instancia = ${contaIg.instagramId}`
+          : alvo
+            ? sql`a.canal <> 'instagram' AND right(regexp_replace(coalesce(a.numero_instancia, ''), '[^0-9]', '', 'g'), 8) = ${alvo}`
+            : sql`true`,
         LIMITE_LISTA,
       ),
       idAberta ? carregarAberta(idAberta) : Promise.resolve(null),
@@ -184,12 +211,26 @@ export async function carregarChat({
       sql`SELECT id, nome FROM ias ORDER BY data_criacao`,
     ]);
 
+  // Depois do lote, que já ocupa quase todas as conexões (lib/db.ts, max 12):
+  // os comentários não lidos por conta e, só na aba de comentários, a aba.
+  const comentariosNaoLidos = await naoLidosPorConta();
+  const usuario = contaIg && abaAberta === "comentarios" ? await usuarioAtual() : null;
+  const instagram =
+    contaIg && abaAberta === "comentarios"
+      ? await carregarComentariosDaConta(contaIg, postagemId, Boolean(usuario && podeOperar(usuario, "chat", "editar") && falaPelaMarca(usuario)), {
+          publico: Boolean(usuario && podeOperar(usuario, "chat", "criar") && falaPelaMarca(usuario, "criar")),
+          direct: Boolean(usuario && podeOperar(usuario, "chat", "criar")),
+        })
+      : null;
+
   const porCanal = new Map(
-    (contagens as unknown as Array<{ fim8: string; fila: number; nao_lidas: number }>).map((c) => [
-      c.fim8,
+    (contagens as unknown as Array<{ chave: string; fila: number; nao_lidas: number }>).map((c) => [
+      c.chave,
       c,
     ]),
   );
+  const contagemDo = (c: { chave: string; tipo: string }) =>
+    porCanal.get(c.tipo === "instagram" ? `ig:${c.chave}` : fim8(c.chave));
 
   // A cor da etapa é derivada da cor do funil e da posição (lib/cores-funil.ts),
   // igual ao quadro — `etapas.cor` não é mais lida.
@@ -205,7 +246,7 @@ export async function carregarChat({
   });
 
   return {
-    canais: canais.map(
+    canais: [...canais, ...canaisIg].map(
       (c): CanalChat => ({
         chave: c.chave,
         tipo: c.tipo,
@@ -214,8 +255,9 @@ export async function carregarChat({
         numero: c.numero,
         foto: c.foto,
         estado: c.estado,
-        naoLidas: porCanal.get(fim8(c.chave))?.nao_lidas ?? 0,
-        naFila: porCanal.get(fim8(c.chave))?.fila ?? 0,
+        naoLidas: contagemDo(c)?.nao_lidas ?? 0,
+        naFila: contagemDo(c)?.fila ?? 0,
+        ...(c.tipo === "instagram" ? { comentariosNaoLidos: comentariosNaoLidos.get(c.chave) ?? 0 } : {}),
       }),
     ),
     canal: canal ?? "",
@@ -226,6 +268,106 @@ export async function carregarChat({
     etapas: etapasComCor,
     documentos,
     ias: ias as unknown as DadosChat["ias"],
+    aba: abaAberta,
+    instagram,
     demo: false,
   };
+}
+
+// ── Comentários de uma conta do Instagram ───────────────────────────────────
+
+type LinhaContagem = { midia_id: string; nao_lidos: number; total: number; ultimo: string | null; tipo: string | null };
+
+/**
+ * A aba "Comentários": as postagens recentes (da Meta, com os não lidos do
+ * banco), mais as postagens que só o banco conhece (anúncio, postagem antiga
+ * com comentário), os comentários da postagem aberta e as regras da IA.
+ * Meta fora do ar: segue com o banco e diz em `erro`. Banco sem a tabela
+ * (deploy antes da migration-instagram.sql): só as postagens, com o aviso.
+ */
+export async function carregarComentariosDaConta(
+  perfil: Perfil,
+  postagemId: string | null,
+  podeAdministrar: boolean,
+  respostas = { publico: false, direct: false },
+): Promise<ComentariosDaConta> {
+  const midia = ehIdMeta(postagemId) ? postagemId : null;
+  const base: ComentariosDaConta = {
+    conta: contaDoPerfil(perfil),
+    postagens: [],
+    postagemId: midia,
+    comentarios: [],
+    regras: [],
+    podeAdministrar,
+    podeResponderPublico: respostas.publico,
+    podeResponderDirect: respostas.direct,
+    erro: null,
+  };
+
+  let erroMeta: string | null = null;
+  const daMeta = postagensDaConta(perfil).catch((e) => {
+    erroMeta = `A Meta não devolveu as postagens: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300);
+    return [] as PostagemInstagram[];
+  });
+
+  try {
+    const [postagens, contagens, comentarios, regras] = await Promise.all([
+      daMeta,
+      sql`
+        SELECT midia_id,
+               count(*) FILTER (WHERE NOT da_conta AND lido_em IS NULL)::int AS nao_lidos,
+               count(*) FILTER (WHERE NOT da_conta)::int AS total,
+               to_char(max(data_criacao) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ultimo,
+               max(midia_tipo) AS tipo
+          FROM instagram_comentarios
+         WHERE conta_id = ${perfil.instagramId} AND (envio IS NULL OR envio = 'enviado')
+         GROUP BY midia_id`,
+      midia ? paginaDeComentarios(perfil.instagramId, midia) : Promise.resolve({ comentarios: [], antes: null, temMais: false }),
+      sql`SELECT midia_id, ia_id, ligada FROM instagram_ia_regras WHERE conta_id = ${perfil.instagramId}`,
+    ]);
+
+    const porMidia = new Map((contagens as unknown as LinhaContagem[]).map((c) => [c.midia_id, c]));
+    const recentes = postagens.map((p) => ({
+      ...p,
+      comentarios: Math.max(p.comentarios, porMidia.get(p.id)?.total ?? 0),
+      naoLidos: porMidia.get(p.id)?.nao_lidos ?? 0,
+    }));
+    const conhecidas = new Set(recentes.map((p) => p.id));
+    // A postagem que só o banco conhece: sem legenda nem miniatura, mas com os comentários.
+    const soNoBanco = (contagens as unknown as LinhaContagem[])
+      .filter((c) => !conhecidas.has(c.midia_id))
+      .sort((a, b) => (b.ultimo ?? "").localeCompare(a.ultimo ?? ""))
+      .slice(0, 30)
+      .map(
+        (c): PostagemInstagram => ({
+          id: c.midia_id,
+          legenda: "",
+          tipo: c.tipo ?? "",
+          miniatura: null,
+          link: "",
+          quando: c.ultimo ?? "",
+          comentarios: c.total,
+          naoLidos: c.nao_lidos,
+        }),
+      );
+
+    return {
+      ...base,
+      postagens: [...recentes, ...soNoBanco],
+      comentarios: comentarios.comentarios,
+      antesComentarios: comentarios.antes,
+      temMaisComentarios: comentarios.temMais,
+      regras: (regras as unknown as Array<{ midia_id: string | null; ia_id: string; ligada: boolean }>).map(
+        (r): RegraIaInstagram => ({ contaId: perfil.instagramId, midiaId: r.midia_id, iaId: r.ia_id, ligada: r.ligada === true }),
+      ),
+      erro: erroMeta,
+    };
+  } catch (e) {
+    console.error("[chat] comentários do Instagram indisponíveis:", e instanceof Error ? e.message : e);
+    return {
+      ...base,
+      postagens: await daMeta,
+      erro: "Não consegui ler os comentários no banco agora.",
+    };
+  }
 }

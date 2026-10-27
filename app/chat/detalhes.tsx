@@ -13,7 +13,7 @@ import type { Etapa, Funil } from "@/lib/entidades";
 import { brl, localizacao } from "@/lib/formato";
 import { InterruptorIaContato } from "../components/interruptor-ia-contato";
 import type { IaResumo } from "@/lib/ia/catalogo";
-import type { CanalChat, ConversaAberta } from "./tipos";
+import type { CanalChat, ConversaAberta, TipoCanal } from "./tipos";
 import { Avatar, PAPEL, canalDaConversa, formatarTelefone, fotoDoContato, tipoDaConversa } from "./ui";
 
 export function PainelDetalhes({
@@ -22,6 +22,8 @@ export function PainelDetalhes({
   funis,
   etapas,
   demo,
+  podeCriar,
+  podeEditar,
   aoFechar,
   aoIrPara,
   aoNovaOportunidade,
@@ -35,6 +37,8 @@ export function PainelDetalhes({
   funis: Funil[];
   etapas: Etapa[];
   demo: boolean;
+  podeCriar: boolean;
+  podeEditar: boolean;
   aoFechar: () => void;
   aoIrPara: (atendimentoId: string) => void;
   aoNovaOportunidade: () => void;
@@ -67,7 +71,7 @@ export function PainelDetalhes({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col items-center gap-2 border-b border-zinc-100 px-5 py-6 text-center dark:border-zinc-900">
-          <Avatar nome={contato.nome} src={fotoDoContato(contato.id, resumo.numero_instancia, demo)} tamanho={84} />
+          <Avatar nome={contato.nome} src={fotoDoContato(contato.id, resumo.numero_instancia, demo, contato.whatsapp)} tamanho={84} />
           <p className="mt-1 text-[16px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{nome}</p>
           {contato.whatsapp && (
             <button
@@ -104,7 +108,7 @@ export function PainelDetalhes({
             estado={aberta.ia}
             ias={ias}
             aoDefinir={aoDefinirIa}
-            desabilitado={demo}
+            desabilitado={demo || !podeEditar}
           />
         </section>
 
@@ -136,7 +140,7 @@ export function PainelDetalhes({
             <button
               type="button"
               onClick={aoNovaOportunidade}
-              disabled={demo}
+              disabled={demo || !podeCriar}
               className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-zinc-600 transition hover:bg-zinc-100 disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-900"
             >
               <Plus className="size-3" /> Nova
@@ -197,7 +201,7 @@ function Linha({
   );
 }
 
-function CanalLinha({ canal, tipo }: { canal: CanalChat | undefined; tipo: "web" | "api" }) {
+function CanalLinha({ canal, tipo }: { canal: CanalChat | undefined; tipo: TipoCanal }) {
   const papel = PAPEL[tipo];
   return (
     <span className="flex min-w-0 items-center gap-2">
