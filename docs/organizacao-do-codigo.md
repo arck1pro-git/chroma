@@ -181,9 +181,15 @@ cortado, enum) usado no código novo e no que for tocado; zod para corpo de rota
 - 29 arquivos formatam data por conta própria (`toLocale*`, `Intl.DateTimeFormat`), o que abre espaço para erro de
   fuso na virada do dia.
 - `app/formato.ts` é usado por `lib/` (ver 3.3).
+- O JSON de template da Meta é lido em três lugares: `lerTemplate` (`lib/templates-whatsapp.ts`, a tela de
+  Templates), `paraTemplateChat` (`app/chat/actions.ts`) e `textoDoTemplate` (`lib/whatsapp-oficial.ts`). Contar e
+  preencher variáveis também se repete ali e em `app/chat/modelos.tsx`. A formatação do WhatsApp (`*negrito*`) tem
+  duas regex: a da prévia de Templates (`app/templates/previa.tsx`) exige a marca encostada no texto, como o
+  WhatsApp; a do chat (`TOKEN` em `app/chat/ui.tsx`) aceita `*palavra *`. Anotado em 2026-10-27, no redesenho de
+  Templates; `ROTULO_CATEGORIA` já é um só.
 
 **Proposta:** formatação de data, dinheiro e telefone num lugar só em `lib/`, com o fuso de Brasília explícito.
-Trocar os usos ao tocar cada tela.
+Trocar os usos ao tocar cada tela. Para templates: o chat derivar de `lerTemplate` e usar a mesma regex de formato.
 
 ### 3.8 Sem `error.tsx`, `not-found.tsx` e `loading.tsx`
 

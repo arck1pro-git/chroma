@@ -8,6 +8,7 @@
 // antes de mandar algo que não dá para editar depois.
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { ArrowLeft, LayoutTemplate, Loader2, Lock, Search, SendHorizonal, X } from "lucide-react";
+import { ROTULO_CATEGORIA as CATEGORIA } from "@/lib/templates-whatsapp";
 import { enviarTemplate, listarTemplates } from "./actions";
 import type { TemplateChat } from "./tipos";
 import { TextoWhatsApp } from "./ui";
@@ -17,12 +18,6 @@ const preencher = (texto: string, valores: string[]) =>
     const v = valores[Number(n) - 1]?.trim();
     return v ? v : bruto;
   });
-
-const CATEGORIA: Record<string, string> = {
-  MARKETING: "Marketing",
-  UTILITY: "Utilidade",
-  AUTHENTICATION: "Autenticação",
-};
 
 export function SeletorTemplates({
   atendimentoId,

@@ -230,6 +230,8 @@ export type TelefoneMeta = { id: string; display_phone_number: string; verified_
 export type TemplateMeta = {
   id: string; name: string; language: string; status: string; category: string;
   quality_score?: { score?: string };
+  /** Por que a Meta rejeitou (INVALID_FORMAT, PROMOTIONAL…); "NONE" quando não rejeitou. */
+  rejected_reason?: string;
   components: Array<Record<string, unknown>>;
 };
 
@@ -266,7 +268,15 @@ async function buscarWabas(): Promise<WabaMeta[]> {
   return [...new Map(porNegocio.flat().map((w) => [w.id, w])).values()];
 }
 
+// O id da conta entra no CAMINHO da Graph, assinado com o token de sistema: sem
+// esta conferência, um "123/outro_no?method=delete#" vindo de rota ou da IA
+// alcançaria qualquer nó que o token enxerga (achado da revisão de 2026-10-27).
+function conferirConta(wabaId: string) {
+  if (!/^\d+$/.test(wabaId)) throw new ErroMeta("Conta do WhatsApp inválida.", undefined, 400);
+}
+
 export async function telefonesMeta(wabaId: string): Promise<TelefoneMeta[]> {
+  conferirConta(wabaId);
   const { valor } = await lembrar(`whatsapp/${wabaId}/telefones`, VALIDADE_CADASTRO, async () => {
     const r = await requisicao<{ data: TelefoneMeta[] }>(`${wabaId}/phone_numbers`, {
       params: { fields: "id,display_phone_number,verified_name,quality_rating", limit: "100" },
@@ -277,8 +287,9 @@ export async function telefonesMeta(wabaId: string): Promise<TelefoneMeta[]> {
 }
 
 export async function templatesMeta(wabaId: string): Promise<TemplateMeta[]> {
+  conferirConta(wabaId);
   const r = await requisicao<{ data: TemplateMeta[] }>(`${wabaId}/message_templates`, {
-    params: { fields: "id,name,language,status,category,quality_score,components", limit: "250" },
+    params: { fields: "id,name,language,status,category,quality_score,rejected_reason,components", limit: "250" },
   });
   return r.data;
 }
@@ -287,6 +298,7 @@ export async function criarTemplateMeta(wabaId: string, entrada: {
   name: string; language: string; category: "MARKETING" | "UTILITY";
   components: Array<Record<string, unknown>>;
 }) {
+  conferirConta(wabaId);
   return requisicao<{ id: string; status: string; category: string }>(`${wabaId}/message_templates`, {
     method: "POST", body: entrada,
   });

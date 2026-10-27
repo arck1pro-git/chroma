@@ -1,32 +1,55 @@
 import { NextRequest } from "next/server";
+import { z } from "zod";
 import { exigirModuloApi } from "@/lib/auth/dal";
-import { criarTemplateMeta, respostaErroMeta, templatesMeta } from "@/lib/meta";
+import { criarTemplateMeta, respostaErroMeta, wabasMeta } from "@/lib/meta";
+import { componentesDoRascunho, IDIOMA_PADRAO, LIMITE, problemasDo } from "@/lib/templates-whatsapp";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
-  const acesso = await exigirModuloApi("templates");
-  if (acesso instanceof Response) return acesso;
-  try {
-    return Response.json({ templates: await templatesMeta(req.nextUrl.searchParams.get("waba") ?? "") });
-  } catch (e) { return respostaErroMeta(e); }
-}
+// Só criação. A leitura saiu daqui em 2026-10-27: a tela lê no servidor
+// (app/templates/dados.ts) e o GET antigo, sem chamador, repassava o `waba` da
+// URL direto para o caminho da Graph.
+//
+// O formato é o do editor (app/templates/editor.tsx). O zod só garante tipos e
+// tamanhos que não deixam o corpo da requisição crescer à toa; as regras da
+// Meta são as de problemasDo, as mesmas que o editor mostra enquanto se digita.
+const texto = (max: number) => z.string().max(max).default("");
+const Entrada = z.object({
+  waba: z.string().regex(/^\d+$/),
+  nome: texto(600),
+  categoria: z.enum(["MARKETING", "UTILITY"]),
+  cabecalho: texto(200),
+  corpo: texto(2000),
+  rodape: texto(200),
+  exemplosCabecalho: z.array(texto(LIMITE.exemplo)).max(1).default([]),
+  exemplosCorpo: z.array(texto(LIMITE.exemplo)).max(100).default([]),
+  botoes: z
+    .array(z.object({ tipo: z.enum(["QUICK_REPLY", "URL", "PHONE_NUMBER"]), texto: texto(100), destino: texto(LIMITE.url) }))
+    .max(20)
+    .default([]),
+});
 
 export async function POST(req: NextRequest) {
   const acesso = await exigirModuloApi("templates", "criar");
   if (acesso instanceof Response) return acesso;
+  const lido = Entrada.safeParse(await req.json().catch(() => null));
+  if (!lido.success) return Response.json({ erro: "Os dados do template vieram incompletos." }, { status: 400 });
+  const { waba, ...rascunho } = lido.data;
+  const problema = problemasDo(rascunho)[0];
+  if (problema) return Response.json({ erro: problema.mensagem }, { status: 400 });
   try {
-    const b = await req.json() as Record<string, unknown>;
-    const nome = typeof b.nome === "string" ? b.nome.trim().toLowerCase() : "";
-    const corpo = typeof b.corpo === "string" ? b.corpo.trim() : "";
-    const categoria = b.categoria === "UTILITY" ? "UTILITY" : "MARKETING";
-    const idioma = typeof b.idioma === "string" ? b.idioma : "pt_BR";
-    const waba = typeof b.waba === "string" ? b.waba : "";
-    if (!/^[a-z0-9_]{1,512}$/.test(nome)) return Response.json({ erro: "Use apenas letras minúsculas, números e _ no nome." }, { status: 400 });
-    if (!corpo || corpo.length > 1024) return Response.json({ erro: "O corpo deve ter entre 1 e 1.024 caracteres." }, { status: 400 });
-    const components: Array<Record<string, unknown>> = [{ type: "BODY", text: corpo }];
-    if (typeof b.rodape === "string" && b.rodape.trim()) components.push({ type: "FOOTER", text: b.rodape.trim().slice(0, 60) });
-    const resultado = await criarTemplateMeta(waba, { name: nome, language: idioma, category: categoria, components });
+    // A conta vem do navegador: só vale uma das que o token da Meta enxerga.
+    if (!(await wabasMeta()).some((w) => w.id === waba)) {
+      return Response.json({ erro: "Conta do WhatsApp desconhecida." }, { status: 400 });
+    }
+    const resultado = await criarTemplateMeta(waba, {
+      name: rascunho.nome.trim(),
+      language: IDIOMA_PADRAO,
+      category: rascunho.categoria,
+      components: componentesDoRascunho(rascunho),
+    });
+    // Template é a voz pública da marca e não guarda autor na Meta: fica no log quem criou.
+    console.info("[templates] criado", { usuario: acesso.usuario.id, waba, nome: rascunho.nome.trim(), id: resultado.id });
     return Response.json({ ok: true, resultado }, { status: 201 });
   } catch (e) { return respostaErroMeta(e); }
 }

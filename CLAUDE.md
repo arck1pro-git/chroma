@@ -171,7 +171,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   `scripts/testar-cadencia-responsavel.mjs` e `scripts/testar-agenda-ocupados.mjs` (direto com `node`),
   `testar-filtro-campanhas.ts`, `testar-meta-ads.ts`, `testar-meta-eventos.ts` (pelo runner; este usa o DEV numa
   transação desfeita) e `testar-instagram.ts` (pelo runner; webhook, IA de comentário e envio do Instagram contra o
-  DEV com Graph e modelo falsos, cenário marcado e apagado no fim), e `scripts/testar-hooks.mjs`
+  DEV com Graph e modelo falsos, cenário marcado e apagado no fim), `testar-templates-whatsapp.ts` (pelo runner,
+  sem `.env`: as regras do editor de templates que a rota aplica antes de criar na Meta) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
   falam com serviço e conta de verdade e só rodam a pedido.
 - **Script novo de verificação:** chama as funções reais pelo runner acima, contra o banco DEV: cria o cenário com
