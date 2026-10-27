@@ -55,7 +55,7 @@ export async function criarCampoPersonalizado(
   tipo: string,
   opcoes: string,
 ): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "criar");
   const r = rotulo.trim();
   if (!r) return { ok: false, erro: "Rótulo é obrigatório" };
   const chave = chaveDe(r);
@@ -86,7 +86,7 @@ export async function editarCampoPersonalizado(
   tipo: string,
   opcoes: string,
 ): Promise<ResultadoAcao> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   const r = rotulo.trim();
   if (!r) return { ok: false, erro: "Rótulo é obrigatório" };
   await sql`
@@ -106,7 +106,7 @@ export async function editarCampoPersonalizado(
 // a mesma chave. Apagar 17 mil valores num clique de tela de configuração é
 // estrago grande demais pra ser irreversível.
 export async function excluirCampoPersonalizado(id: string): Promise<void> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "excluir");
   await sql`DELETE FROM campos_personalizados WHERE id = ${id}`;
   revalidarCampos();
 }

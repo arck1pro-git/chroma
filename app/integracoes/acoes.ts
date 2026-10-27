@@ -10,7 +10,7 @@ import { desconectarGoogle } from "@/lib/google-oauth";
  * Agenda, a ficha e a IA lerem e marcarem.
  */
 export async function desconectarGoogleCalendar(): Promise<{ ok: boolean; mensagem: string }> {
-  await exigirModulo("integracoes");
+  await exigirModulo("integracoes", "editar");
   try {
     await desconectarGoogle();
   } catch (e) {

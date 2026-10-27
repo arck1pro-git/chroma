@@ -96,14 +96,17 @@ export default function NavConfiguracoes({
 }: {
   temConfiguracoes: boolean;
   gerenciaAcessos: boolean;
-  /** Admin e TI criam e editam contas mesmo sem o módulo (lib/auth/dal.ts). */
+  /** Apenas Admin gerencia contas, independentemente do módulo. */
   gereUsuarios: boolean;
 }) {
   const pathname = usePathname();
   // Sem o módulo, quem gere usuários vê só Usuários — o resto das Entidades o
   // mandaria para o mesmo redirecionamento.
   const grupos = temConfiguracoes
-    ? GRUPOS
+    ? GRUPOS.map((grupo) => ({
+        ...grupo,
+        itens: grupo.itens.filter((item) => item !== USUARIOS || gereUsuarios),
+      }))
     : gereUsuarios
       ? [{ titulo: "Entidades", itens: [USUARIOS] }]
       : [];

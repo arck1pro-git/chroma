@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const volta = new URL("/integracoes", req.nextUrl);
 
-  const acesso = await exigirModuloApi("integracoes");
+  const acesso = await exigirModuloApi("integracoes", "editar");
   if (acesso instanceof Response) {
     volta.searchParams.set("google", "erro");
     volta.searchParams.set("motivo", "Sem acesso ao módulo Integrações.");

@@ -7,7 +7,7 @@ import { enderecoDoCrm } from "@/lib/endereco";
 import { publicarWorkflowCampanha } from "@/lib/campanhas-workflow";
 
 export async function POST(req:Request,{params}:{params:Promise<{id:string}>}){
-  const acesso=await exigirModuloApi("campanhas");if(acesso instanceof Response)return acesso;
+  const acesso=await exigirModuloApi("campanhas", "editar");if(acesso instanceof Response)return acesso;
   const {id}=await params;
   const [c]=await sql`SELECT * FROM campanhas_whatsapp WHERE id=${id}::uuid AND status='rascunho'`;
   if(!c)return Response.json({erro:"Rascunho não encontrado ou já ativado."},{status:404});

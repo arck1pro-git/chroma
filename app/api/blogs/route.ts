@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const sessao = await exigirModuloApi("blog");
+  const sessao = await exigirModuloApi("blog", "criar");
   if (sessao instanceof Response) return sessao;
   const corpo = await lerCorpo(req);
   if (!corpo) return Response.json({ error: "Corpo inválido." }, { status: 400 });

@@ -31,6 +31,8 @@ import {
   type Escopo,
 } from "./modulos";
 
+import { podeOperar, type Operacao, type PermissoesPorModulo } from "./permissoes";
+
 export type DepartamentoDoUsuario = {
   id: string;
   nome: string;
@@ -51,6 +53,7 @@ export type UsuarioLogado = {
   departamento: DepartamentoDoUsuario | null;
   /** chave do módulo → até onde ela enxerga dentro dele. */
   modulos: Map<ChaveModulo, Escopo>;
+  permissoes: PermissoesPorModulo;
 };
 
 type LinhaUsuario = {
@@ -64,6 +67,7 @@ type LinhaUsuario = {
   departamento_nivel: number | null;
   gerencia_acessos: boolean | null;
   modulos: Record<string, string>;
+  permissoes: PermissoesPorModulo;
 };
 
 /**
@@ -93,7 +97,10 @@ export const usuarioAtual = cache(async (): Promise<UsuarioLogado | null> => {
              jsonb_object_agg(dm.modulo, dm.escopo)
                FILTER (WHERE dm.modulo IS NOT NULL),
              '{}'::jsonb
-           ) AS modulos
+           ) AS modulos,
+           COALESCE(jsonb_object_agg(dm.modulo,
+             jsonb_build_object('criar', dm.criar, 'editar', dm.editar, 'excluir', dm.excluir))
+             FILTER (WHERE dm.modulo IS NOT NULL), '{}'::jsonb) AS permissoes
       FROM usuarios u
       LEFT JOIN departamentos d
         ON d.id = u.departamento_id
@@ -136,6 +143,7 @@ export const usuarioAtual = cache(async (): Promise<UsuarioLogado | null> => {
         }
       : null,
     modulos,
+    permissoes: linha.permissoes ?? {},
   };
 });
 
@@ -194,6 +202,7 @@ export type AcessoAoModulo = {
  */
 export async function exigirModulo(
   chave: ChaveModulo,
+  operacao?: Operacao,
 ): Promise<AcessoAoModulo> {
   const usuario = await exigirLogin();
   const escopo = usuario.modulos.get(chave);
@@ -201,6 +210,9 @@ export async function exigirModulo(
   // não tem o módulo. Reapresentar o login sugeriria que entrar de novo
   // resolveria.
   if (!escopo) redirect(destinoPossivel(usuario));
+  if (operacao && !podeOperar(usuario, chave, operacao)) {
+    throw new Error(`Sem permissão para ${operacao} neste módulo.`);
+  }
   return { usuario, escopo };
 }
 
@@ -237,26 +249,9 @@ export async function exigirGerenciaAcessos(): Promise<UsuarioLogado> {
   return usuario;
 }
 
-// Admin e TI pelo DEPARTAMENTO (slug), como nas Demandas: pedido dele de
-// 2026-10-07, "o admin pode criar e editar um usuário". Fixo no código de
-// propósito — nenhuma marcação em Acessos transforma outro departamento nisso.
-const GEREM_USUARIOS = new Set(["admin", "ti"]);
-
-/**
- * Quem cria e edita contas (e-mail, senha e departamento) em Configurações ·
- * Usuários: Admin e TI, e quem já tinha a tela pelo módulo Configurações.
- *
- * Isto abre a TELA. O que dá pra mexer lá dentro tem um teto, nas actions
- * (app/configuracoes/acoes-usuarios.ts): quem não administra acessos não põe ninguém
- * num departamento que administra, nem edita a conta de quem está num. Sem o
- * teto, o Admin criaria uma conta no TI e entraria por ela em tudo o que o
- * pedido de 2026-09-16 lhe tirou — inclusive a tela de Acessos.
- */
+// Contas são exclusivas do Admin, independentemente dos módulos concedidos.
 export function gereUsuarios(usuario: UsuarioLogado): boolean {
-  return (
-    usuario.modulos.has("configuracoes") ||
-    GEREM_USUARIOS.has(usuario.departamento?.slug ?? "")
-  );
+  return usuario.departamento?.slug === "admin";
 }
 
 export async function exigirGestaoDeUsuarios(): Promise<UsuarioLogado> {
@@ -284,6 +279,7 @@ export async function exigirLoginApi(): Promise<UsuarioLogado | Response> {
  */
 export async function exigirModuloApi(
   chave: ChaveModulo,
+  operacao?: Operacao,
 ): Promise<AcessoAoModulo | Response> {
   const usuario = await usuarioAtual();
   if (!usuario) {
@@ -293,5 +289,18 @@ export async function exigirModuloApi(
   if (!escopo) {
     return Response.json({ erro: "sem acesso ao módulo" }, { status: 403 });
   }
+  if (operacao && !podeOperar(usuario, chave, operacao)) {
+    return Response.json({ erro: `Sem permissão para ${operacao} neste módulo.` }, { status: 403 });
+  }
   return { usuario, escopo };
+}
+
+/** Ações compartilhadas precisam da operação em ao menos um módulo de origem. */
+export async function exigirOperacaoEmAlgumModulo(operacao: Operacao, ...chaves: ChaveModulo[]): Promise<AcessoAoModulo> {
+  const usuario = await exigirLogin();
+  for (const chave of chaves) {
+    const escopo = usuario.modulos.get(chave);
+    if (escopo && podeOperar(usuario, chave, operacao)) return { usuario, escopo };
+  }
+  throw new Error(`Sem permissão para ${operacao} neste módulo.`);
 }

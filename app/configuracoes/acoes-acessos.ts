@@ -14,7 +14,8 @@
 // ("ficaria sem como voltar aqui") é justamente o que a pessoa precisa ler.
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
-import { exigirGerenciaAcessos } from "@/lib/auth/dal";
+import { exigirGestaoDeUsuarios, exigirGerenciaAcessos } from "@/lib/auth/dal";
+import { ehOperacao } from "@/lib/auth/permissoes";
 import { ehChaveModulo, ehEscopo } from "@/lib/auth/modulos";
 import { comoResultado, type ResultadoAcao } from "@/lib/resultado-acao";
 
@@ -216,7 +217,8 @@ export async function moverParticipante(
   usuarioId: string,
   departamentoId: string | null,
 ): Promise<ResultadoAcao> {
-  const usuario = await exigirGerenciaAcessos();
+  const usuario = await exigirGestaoDeUsuarios();
+  await exigirGerenciaAcessos();
 
   // A mesma trava do desligar, pelo mesmo motivo: mover a si mesmo pra um
   // departamento que não administra é se trancar do lado de fora. Mover OUTRA
@@ -239,6 +241,23 @@ export async function moverParticipante(
 
   await sql`
     UPDATE usuarios SET departamento_id = ${departamentoId} WHERE id = ${usuarioId}`;
+  revalidar();
+  return { ok: true };
+}
+
+export async function definirOperacaoDoModulo(departamentoId: string, modulo: string, operacao: string, ligado: boolean): Promise<ResultadoAcao> {
+  await exigirGerenciaAcessos();
+  if (!ehChaveModulo(modulo) || !ehOperacao(operacao) || typeof ligado !== "boolean") {
+    return { ok: false, erro: "Permissão inválida" };
+  }
+  const linhas = await sql`
+    UPDATE departamento_modulos
+       SET criar = CASE WHEN ${operacao} = 'criar' THEN ${ligado} ELSE criar END,
+           editar = CASE WHEN ${operacao} = 'editar' THEN ${ligado} ELSE editar END,
+           excluir = CASE WHEN ${operacao} = 'excluir' THEN ${ligado} ELSE excluir END
+     WHERE departamento_id = ${departamentoId} AND modulo = ${modulo}
+     RETURNING modulo`;
+  if (!linhas.length) return { ok: false, erro: "Libere a visualização do módulo primeiro" };
   revalidar();
   return { ok: true };
 }

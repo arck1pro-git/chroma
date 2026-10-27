@@ -13,7 +13,7 @@
 // revalidatePath("/configuracoes") vale para todas: cada seção é uma rota.
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { exigirModulo } from "@/lib/auth/dal";
+import { exigirGestaoDeUsuarios, exigirModulo } from "@/lib/auth/dal";
 import { sql } from "@/lib/db";
 import { enderecoDoCrm } from "@/lib/endereco";
 import { urlExternaSegura } from "@/lib/rede-externa";
@@ -102,6 +102,7 @@ function revalidarInstancias() {
 }
 
 async function usuarioDaInstancia(usuarioId: string) {
+  await exigirGestaoDeUsuarios();
   if (!ehUuid(usuarioId)) {
     throw new Recusa("Selecione o usuário responsável por este WhatsApp");
   }
@@ -132,7 +133,7 @@ export async function vincularUsuarioInstancia(
   instanciaId: string,
   usuarioId: string,
 ): Promise<ResultadoAcao> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   return comoResultado(async () => {
     await usuarioDaInstancia(usuarioId);
     const id = await instanciaOuNula(instanciaId);
@@ -277,7 +278,7 @@ export async function conectarInstancia(
   token: string,
   usuarioId: string,
 ): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "criar");
   const n = nome.trim();
   const url = baseUrl.trim().replace(/\/+$/, "");
   const tok = token.trim();
@@ -316,7 +317,7 @@ export async function conectarInstancia(
 }
 
 export async function renomearInstancia(id: string, nome: string): Promise<ResultadoAcao> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome é obrigatório" };
   return comoResultado(
@@ -350,7 +351,7 @@ export async function renomearInstancia(id: string, nome: string): Promise<Resul
  * como "já está como eu queria" e a linha sai do mesmo jeito.
  */
 export async function removerInstancia(id: string): Promise<ResultadoAcao> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "excluir");
   return comoResultado(async () => {
     const { baseUrl, token } = await credencial(id);
 
@@ -388,7 +389,7 @@ export async function gerarQrCode(
   id: string,
   telefone?: string,
 ): Promise<ResultadoAcao<{ conexao: ConexaoUazapi }>> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   const fone = (telefone ?? "").replace(/\D/g, "");
   if (telefone && fone.length < 10) {
     return {
@@ -453,7 +454,7 @@ export async function consultarConexao(
 export async function desconectarDoWhatsApp(
   id: string,
 ): Promise<ResultadoAcao<{ conexao: ConexaoUazapi }>> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   return comoResultado(async () => {
     const { baseUrl, token } = await credencial(id);
     await chamarUazapi(baseUrl, token, "/instance/disconnect", {});
@@ -519,7 +520,7 @@ export async function criarInstanciaNaUazapi(
   nome: string,
   usuarioId: string,
 ): Promise<ResultadoAcao<{ id: string; aviso: string | null }>> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "criar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Dê um nome à instância" };
 
@@ -595,7 +596,7 @@ export async function criarInstanciaNaUazapi(
 export async function sincronizarWebhook(
   id: string,
 ): Promise<ResultadoAcao<{ mensagem: string }>> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   return comoResultado(async () => {
     const { baseUrl, token } = await credencial(id);
     const [linha] = await sql`SELECT numero FROM instancias_uazapi WHERE id = ${id}`;

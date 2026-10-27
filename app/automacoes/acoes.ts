@@ -226,7 +226,7 @@ export async function criarFluxo(
   nome: string,
   entidade: "contato" | "oportunidade",
 ): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "criar");
   const limpo = nome.trim();
   if (!limpo) return { ok: false, erro: "Nome é obrigatório" };
   if (entidade !== "contato" && entidade !== "oportunidade") {
@@ -242,7 +242,7 @@ export async function salvarRascunho(
   fluxoId: string,
   definicao: DefinicaoFluxo,
 ): Promise<ResultadoAcao<{ versao: number }>> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "editar");
   if (definicao?.schema !== "chroma.flow/v1") {
     return { ok: false, erro: "Formato de definição desconhecido" };
   }
@@ -268,7 +268,7 @@ export async function publicar(
   fluxoId: string,
   opcoes?: { ativar?: boolean },
 ): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "editar");
   const ativar = opcoes?.ativar ?? true;
   const definicao = await definicaoDoFluxo(fluxoId);
 
@@ -368,7 +368,7 @@ export async function publicar(
 }
 
 export async function pausar(fluxoId: string): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "editar");
   const [fluxo] = await sql`
     SELECT motor_workflow_id FROM fluxos WHERE id = ${fluxoId}`;
   if (!fluxo?.motor_workflow_id) {
@@ -396,7 +396,7 @@ export async function pausar(fluxoId: string): Promise<Resultado> {
  * edição que ninguém pediu para publicar.
  */
 export async function retomar(fluxoId: string): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "editar");
   const [fluxo] = await sql`
     SELECT motor_workflow_id, versao_publicada_id FROM fluxos WHERE id = ${fluxoId}`;
   if (!fluxo?.motor_workflow_id || !fluxo.versao_publicada_id) {
@@ -436,7 +436,7 @@ export async function dispararParaSegmento(
   fluxoId: string,
   segmentoId: string,
 ): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "editar");
   const fluxo = await dadosDeDisparo(fluxoId);
   if (!fluxo) return { ok: false, erro: "Automação não encontrada." };
 
@@ -544,7 +544,7 @@ export async function desinscreverDaAutomacao(
   entidadeTipo: "contato" | "oportunidade",
   entidadeId: string,
 ): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "editar");
   if (entidadeTipo !== "contato" && entidadeTipo !== "oportunidade") {
     return { ok: false, erro: "Tipo de entidade inválido." };
   }
@@ -579,7 +579,7 @@ export async function inscreverNaAutomacao(
   fluxoId: string,
   contatoIds: string[],
 ): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "criar");
   const ids = contatoIds.filter(Boolean);
   if (ids.length === 0) return { ok: false, erro: "Escolha ao menos um contato." };
 
@@ -659,7 +659,7 @@ export async function inscreverNaAutomacao(
  * webhook vivo que o CRM não gerencia mais.
  */
 export async function excluirFluxo(fluxoId: string): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "excluir");
   const [fluxo] = await sql`
     SELECT id, nome, motor_workflow_id FROM fluxos WHERE id = ${fluxoId}`;
   if (!fluxo) return { ok: false, erro: "Automação não encontrada." };

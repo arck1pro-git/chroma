@@ -30,6 +30,7 @@ import {
   UserCog,
   X,
 } from "lucide-react";
+import { OPERACOES } from "@/lib/auth/permissoes";
 import { MODULOS } from "@/lib/auth/modulos";
 import type { ChaveModulo, Escopo } from "@/lib/auth/modulos";
 import type {
@@ -43,6 +44,7 @@ import {
   definirEscopoDoModulo,
   definirGerenciaAcessos,
   definirModulo,
+  definirOperacaoDoModulo,
   moverParticipante,
   renomearDepartamento,
 } from "../acoes-acessos";
@@ -79,11 +81,13 @@ export function AcessosSection({
   dados,
   departamentoIdAtual,
   usuarioIdAtual,
+  podeGerirUsuarios,
 }: {
   dados: DadosAcessos;
   /** Pra marcar "você está aqui" e explicar por que alguns botões não abrem. */
   departamentoIdAtual: string | null;
   usuarioIdAtual: string;
+  podeGerirUsuarios: boolean;
 }) {
   // Um único lugar de erro para a tela toda: as ações são muitas e pequenas, e
   // um aviso por interruptor encheria a grade de espaço vazio esperando por
@@ -243,6 +247,7 @@ export function AcessosSection({
         departamentos={departamentos}
         usuarioIdAtual={usuarioIdAtual}
         aoFalhar={setErro}
+        podeGerirUsuarios={podeGerirUsuarios}
       />
     </section>
   );
@@ -492,7 +497,8 @@ function CelulaModulo({
   const escopo = (pendentes[chaveEscopo] as Escopo | undefined) ?? gravado ?? "proprio";
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
       <Interruptor
         ligado={ligado}
         rotulo={`${rotuloModulo} em ${d.nome}`}
@@ -516,6 +522,24 @@ function CelulaModulo({
           <option value="proprio">só o próprio</option>
         </select>
       )}
+        <span className="text-[11px] text-zinc-500">Visualizar</span>
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-2">
+        {OPERACOES.map((operacao) => {
+          const id = `${d.id}:${chave}:${operacao}`;
+          const marcado = typeof pendentes[id] === "boolean" ? pendentes[id] === true : d.permissoes?.[chave]?.[operacao] === true;
+          return (
+            <label key={operacao} className="flex items-center gap-1.5 text-[11px] text-zinc-600 dark:text-zinc-300">
+              <input type="checkbox" checked={ligado && marcado} disabled={!ligado}
+                aria-label={`${operacao} em ${rotuloModulo} — ${d.nome}`}
+                onChange={(e) => rodar(id, e.target.checked,
+                  () => definirOperacaoDoModulo(d.id, chave, operacao, e.target.checked), "Falha ao alterar permissão")}
+                className="accent-zinc-900 disabled:opacity-40" />
+              {operacao === "criar" ? "Criar" : operacao === "editar" ? "Editar" : "Excluir"}
+            </label>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -527,7 +551,9 @@ function Participantes({
   departamentos,
   usuarioIdAtual,
   aoFalhar,
+  podeGerirUsuarios,
 }: {
+  podeGerirUsuarios: boolean;
   participantes: ParticipanteConfig[];
   departamentos: DepartamentoConfig[];
   usuarioIdAtual: string;
@@ -546,7 +572,7 @@ function Participantes({
           </span>
         }
         contagem={participantes.length}
-        descricao="Só quem tem login. Quem existe apenas para assinar card e mensagem não entra em departamento — não entra no sistema."
+        descricao="Só quem tem login. Apenas o Admin pode alterar o departamento dos participantes."
       />
       {participantes.length === 0 ? (
         <p className="px-5 py-8 text-center text-[13px] text-zinc-400 dark:text-zinc-500">
@@ -580,7 +606,7 @@ function Participantes({
                   )}
                   <select
                     value={p.departamentoId ?? ""}
-                    disabled={salvando}
+                    disabled={salvando || !podeGerirUsuarios}
                     aria-label={`Departamento de ${p.nome}`}
                     onChange={(e) => {
                       const destino = e.target.value || null;

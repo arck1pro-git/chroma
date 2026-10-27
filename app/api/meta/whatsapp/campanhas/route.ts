@@ -38,7 +38,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const acesso = await exigirModuloApi("campanhas");
+  const acesso = await exigirModuloApi("campanhas", "criar");
   if (acesso instanceof Response) return acesso;
   try {
     const b = await req.json() as Record<string, unknown>;

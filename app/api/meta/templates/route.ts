@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const acesso = await exigirModuloApi("templates");
+  const acesso = await exigirModuloApi("templates", "criar");
   if (acesso instanceof Response) return acesso;
   try {
     const b = await req.json() as Record<string, unknown>;

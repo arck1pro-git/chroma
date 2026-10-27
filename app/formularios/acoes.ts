@@ -54,7 +54,7 @@ const DESTINO_UNICO = new Set<DestinoCampo>([
  * primeira vez. Uma transação só: ou fica tudo, ou nada.
  */
 export async function salvarFormulario(e: EntradaFormulario): Promise<ResultadoAcao> {
-  await exigirModulo("formularios");
+  await exigirModulo("formularios", "editar");
   try {
     if (!/^\d+$/.test(e.formId)) throw new Recusa("Formulário inválido");
     const form = await formularioComPerguntas(e.formId);
@@ -182,7 +182,7 @@ export async function salvarFormulario(e: EntradaFormulario): Promise<ResultadoA
 
 /** Liga ou pausa o recebimento de um formulário já configurado. */
 export async function alternarFormulario(formId: string, ativo: boolean): Promise<ResultadoAcao> {
-  await exigirModulo("formularios");
+  await exigirModulo("formularios", "editar");
   if (!/^\d+$/.test(formId)) return { ok: false, erro: "Formulário inválido" };
   const feitos = await sql`
     UPDATE webhooks SET ativo = ${ativo}, data_atualizacao = now()
@@ -198,7 +198,7 @@ export async function estadoIntegracaoMeta(): Promise<EstadoIntegracaoMeta> {
 }
 
 export async function ligarRecebimentoMeta(): Promise<{ ok: boolean; mensagem: string }> {
-  await exigirModulo("formularios");
+  await exigirModulo("formularios", "editar");
   const base = enderecoDoCrm(await headers());
   try {
     const feito = await ligarRecebimento(base.url, base.publico);
@@ -219,7 +219,7 @@ export async function ligarRecebimentoMeta(): Promise<{ ok: boolean; mensagem: s
 export async function buscarLeadsAgora(
   formId: string,
 ): Promise<{ ok: true; resultado: ResultadoVarredura } | { ok: false; mensagem: string }> {
-  await exigirModulo("formularios");
+  await exigirModulo("formularios", "editar");
   const base = enderecoDoCrm(await headers());
   if (!base.publico) {
     return {

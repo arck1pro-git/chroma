@@ -42,7 +42,7 @@ const NOME_CRED = "Chroma · CRM (token de serviço)";
 // segunda-feira de madrugada, dentro da instância do n8n compartilhada com o
 // SprintHub. Publique pelo domínio público.
 export async function POST(req: Request) {
-  const sessao = await exigirModuloApi("blog");
+  const sessao = await exigirModuloApi("blog", "editar");
   if (sessao instanceof Response) return sessao;
   const { url: crmBaseUrl, publico, host } = enderecoDoCrm(req.headers);
   const token = process.env.CRM_SERVICE_TOKEN;

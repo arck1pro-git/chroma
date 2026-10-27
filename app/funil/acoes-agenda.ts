@@ -95,7 +95,7 @@ export async function marcarReuniaoDaOportunidade(
   hora: string,
   duracaoMin: number,
 ): Promise<{ ok: boolean; mensagem: string }> {
-  const { usuario } = await exigirModulo("inicio");
+  const { usuario } = await exigirModulo("inicio", "criar");
   if (!(await podeTocarOportunidade(oportunidadeId))) return { ok: false, mensagem: FORA_DO_ESCOPO };
 
   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data);

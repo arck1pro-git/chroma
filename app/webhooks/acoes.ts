@@ -46,7 +46,7 @@ const novoSegredo = () => randomBytes(32).toString("hex");
  * pior estado possível para depurar.
  */
 export async function criarWebhook(nome: string): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "criar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome é obrigatório" };
 
@@ -68,7 +68,7 @@ export async function editarWebhook(
   nome: string,
   descricao: string,
 ): Promise<ResultadoAcao> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "editar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome é obrigatório" };
   await sql`
@@ -81,7 +81,7 @@ export async function editarWebhook(
 }
 
 export async function alternarAtivo(id: string, ativo: boolean): Promise<void> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "editar");
   await sql`
     UPDATE webhooks SET ativo = ${ativo}, data_atualizacao = now()
     WHERE id = ${id}`;
@@ -93,7 +93,7 @@ export async function alternarAtivo(id: string, ativo: boolean): Promise<void> {
  * lado ser atualizado — é o ponto: é o botão de "vazou".
  */
 export async function girarSegredo(id: string): Promise<void> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "editar");
   await sql`
     UPDATE webhooks SET segredo = ${novoSegredo()}, data_atualizacao = now()
     WHERE id = ${id}`;
@@ -103,7 +103,7 @@ export async function girarSegredo(id: string): Promise<void> {
 // CASCADE leva campos, ações e recebimentos junto. O contato já criado fica: o
 // lead é dele, não da webhook.
 export async function excluirWebhook(id: string): Promise<void> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "excluir");
   await sql`DELETE FROM webhooks WHERE id = ${id}`;
   revalidar();
 }
@@ -121,7 +121,7 @@ export async function criarCampo(
   destino: DestinoCampo,
   destinoChave: string,
 ): Promise<ResultadoAcao> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "criar");
   const k = chave.trim();
   if (!k) return { ok: false, erro: "A chave do campo é obrigatória" };
   if (!/^[A-Za-z0-9_.-]+$/.test(k)) {
@@ -157,7 +157,7 @@ export async function editarCampo(
   destino: DestinoCampo,
   destinoChave: string,
 ): Promise<ResultadoAcao> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "editar");
   const precisaChave = destino.endsWith(".campo");
   const dc = destinoChave.trim();
   if (precisaChave && !dc) {
@@ -173,7 +173,7 @@ export async function editarCampo(
 }
 
 export async function excluirCampo(id: string): Promise<void> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "excluir");
   await sql`DELETE FROM webhook_campos WHERE id = ${id}`;
   revalidar();
 }
@@ -196,7 +196,7 @@ export async function configurarCriarLead(
   responsavelId = "",
   alternadoId = "",
 ): Promise<ResultadoAcao> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "editar");
   if (criarOportunidade && (!funilId || !etapaId)) {
     return { ok: false, erro: "Escolha o funil e a etapa onde o card vai nascer" };
   }
@@ -233,7 +233,7 @@ export async function adicionarAcao(
   tipo: "inscrever_fluxo" | "adicionar_segmento" | "adicionar_tag",
   alvoId: string,
 ): Promise<ResultadoAcao> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "criar");
   if (!alvoId) return { ok: false, erro: "Escolha o alvo da ação" };
 
   return comoResultado(
@@ -254,7 +254,7 @@ export async function adicionarAcao(
 
 // 'criar_lead' não sai: é ela que resolve o contato de quem as outras dependem.
 export async function excluirAcao(id: string): Promise<void> {
-  await exigirModulo("webhooks");
+  await exigirModulo("webhooks", "excluir");
   await sql`DELETE FROM webhook_acoes WHERE id = ${id} AND tipo <> 'criar_lead'`;
   revalidar();
 }

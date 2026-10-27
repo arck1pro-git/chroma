@@ -24,7 +24,7 @@ function revalidarTags() {
 }
 
 export async function criarTag(nome: string): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "criar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome da tag é obrigatório" };
   return comoResultado(
@@ -38,7 +38,7 @@ export async function criarTag(nome: string): Promise<ResultadoAcao<{ id: string
 }
 
 export async function editarTag(id: string, nome: string): Promise<ResultadoAcao> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome da tag é obrigatório" };
   return comoResultado(
@@ -52,7 +52,7 @@ export async function editarTag(id: string, nome: string): Promise<ResultadoAcao
 
 // CASCADE em contato_tags: apagar a tag tira ela de todos os contatos.
 export async function deletarTag(id: string): Promise<void> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "excluir");
   await sql`DELETE FROM tags WHERE id = ${id}`;
   revalidarTags();
 }
@@ -65,7 +65,7 @@ function revalidarSegmentos() {
 }
 
 export async function criarSegmento(nome: string): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "criar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome do segmento é obrigatório" };
   return comoResultado(
@@ -79,7 +79,7 @@ export async function criarSegmento(nome: string): Promise<ResultadoAcao<{ id: s
 }
 
 export async function editarSegmento(id: string, nome: string): Promise<ResultadoAcao> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome do segmento é obrigatório" };
   return comoResultado(
@@ -92,7 +92,7 @@ export async function editarSegmento(id: string, nome: string): Promise<Resultad
 }
 
 export async function deletarSegmento(id: string): Promise<void> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "excluir");
   await sql`DELETE FROM segmentos WHERE id = ${id}`;
   revalidarSegmentos();
 }

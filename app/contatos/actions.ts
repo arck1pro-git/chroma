@@ -3,7 +3,7 @@
 // Toda ação daqui é ponto de entrada de rede: o cliente posta direto nela.
 // O proxy já barra quem não tem cookie; esta linha acrescenta o que ele não
 // pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
-import { exigirAlgumModulo } from "@/lib/auth/dal";
+import { exigirAlgumModulo, exigirOperacaoEmAlgumModulo } from "@/lib/auth/dal";
 
 // Mutações de Contatos. Roda no servidor — trate a entrada como não confiável.
 import { revalidatePath } from "next/cache";
@@ -59,7 +59,7 @@ export async function adicionarAnotacao(
   contatoId: string,
   textoBruto: string,
 ): Promise<ResultadoAcao> {
-  const { usuario } = await exigirAlgumModulo("inicio", "contatos");
+  const { usuario } = await exigirOperacaoEmAlgumModulo("criar", "inicio", "contatos");
   if (!ehUuid(contatoId)) return { ok: false, erro: "Contato inválido." };
   const texto = textoBruto.trim().slice(0, 4000);
   if (!texto) return { ok: false, erro: "Escreva uma anotação." };
@@ -76,7 +76,7 @@ export async function adicionarAnotacao(
  * e anotação da IA (sem autor) não se apaga por aqui.
  */
 export async function apagarAnotacao(anotacaoId: string): Promise<ResultadoAcao> {
-  const { usuario } = await exigirAlgumModulo("inicio", "contatos");
+  const { usuario } = await exigirOperacaoEmAlgumModulo("excluir", "inicio", "contatos");
   if (!ehUuid(anotacaoId)) return { ok: false, erro: "Anotação inválida." };
   const [apagada] = await sql`
     DELETE FROM anotacoes WHERE id = ${anotacaoId}::uuid AND autor_id = ${usuario.id}::uuid
@@ -90,7 +90,7 @@ export async function apagarAnotacao(anotacaoId: string): Promise<ResultadoAcao>
 }
 
 export async function criarContato(dados: NovoContato): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirAlgumModulo("inicio", "contatos");
+  await exigirOperacaoEmAlgumModulo("criar", "inicio", "contatos");
   const nome = dados.nome.trim();
   if (!nome) return { ok: false, erro: "Nome é obrigatório" };
 
@@ -111,7 +111,7 @@ export async function atualizarContato(
   id: string,
   dados: NovoContato,
 ): Promise<ResultadoAcao> {
-  await exigirAlgumModulo("inicio", "contatos");
+  await exigirOperacaoEmAlgumModulo("editar", "inicio", "contatos");
   const nome = dados.nome.trim();
   if (!nome) return { ok: false, erro: "Nome é obrigatório" };
   // O UPDATE mora em lib/historico.ts junto com a linha que ele gera: dizer
@@ -135,7 +135,7 @@ export async function atualizarContato(
 // ON CONFLICT DO NOTHING: a PK (contato_id, x_id) já impede duplicar; ignora o
 // clique repetido em vez de estourar.
 export async function adicionarTag(contatoId: string, tagId: string) {
-  await exigirAlgumModulo("inicio", "contatos");
+  await exigirOperacaoEmAlgumModulo("editar", "inicio", "contatos");
   // RETURNING para não registrar o clique repetido: o ON CONFLICT engole a
   // segunda inserção, e sem esta checagem o histórico ganharia "Tag X
   // adicionada" duas vezes por uma tag só.
@@ -149,7 +149,7 @@ export async function adicionarTag(contatoId: string, tagId: string) {
 }
 
 export async function removerTag(contatoId: string, tagId: string) {
-  await exigirAlgumModulo("inicio", "contatos");
+  await exigirOperacaoEmAlgumModulo("editar", "inicio", "contatos");
   const linhas = await sql`
     DELETE FROM contato_tags
     WHERE contato_id = ${contatoId} AND tag_id = ${tagId}
@@ -160,7 +160,7 @@ export async function removerTag(contatoId: string, tagId: string) {
 }
 
 export async function adicionarSegmento(contatoId: string, segmentoId: string) {
-  await exigirAlgumModulo("inicio", "contatos");
+  await exigirOperacaoEmAlgumModulo("editar", "inicio", "contatos");
   await sql`
     INSERT INTO contato_segmentos (contato_id, segmento_id)
     VALUES (${contatoId}, ${segmentoId}) ON CONFLICT DO NOTHING`;
@@ -169,7 +169,7 @@ export async function adicionarSegmento(contatoId: string, segmentoId: string) {
 }
 
 export async function removerSegmento(contatoId: string, segmentoId: string) {
-  await exigirAlgumModulo("inicio", "contatos");
+  await exigirOperacaoEmAlgumModulo("editar", "inicio", "contatos");
   await sql`DELETE FROM contato_segmentos WHERE contato_id = ${contatoId} AND segmento_id = ${segmentoId}`;
   revalidatePath("/");
   revalidatePath("/contatos");
@@ -223,7 +223,7 @@ export async function resumoExclusaoContato(
 export type ResultadoExclusao = { ok: boolean; erro?: string };
 
 export async function excluirContato(id: string): Promise<ResultadoExclusao> {
-  await exigirAlgumModulo("inicio", "contatos");
+  await exigirOperacaoEmAlgumModulo("excluir", "inicio", "contatos");
 
   // Recontado aqui, e não confiando no número que a tela mostrou: entre abrir
   // a gaveta e clicar pode ter entrado uma oportunidade nova.

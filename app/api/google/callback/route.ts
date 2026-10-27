@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     return r;
   };
 
-  const acesso = await exigirModuloApi("integracoes");
+  const acesso = await exigirModuloApi("integracoes", "editar");
   if (acesso instanceof Response) return falhar("Sem acesso ao módulo Integrações.");
 
   const busca = req.nextUrl.searchParams;

@@ -67,7 +67,7 @@ async function assumirAoResponder(atendimentoId: string, usuarioId: string) {
 // ── Texto ───────────────────────────────────────────────────────────────────
 
 export async function enviarMensagem(atendimentoId: string, texto: string): Promise<Resultado> {
-  const { usuario } = await exigirModulo("chat");
+  const { usuario } = await exigirModulo("chat", "criar");
   // `crm` é gente digitando aqui — é o que cala a cadência para este contato
   // (migration-cadencia-controles.sql). O ciclo pendente → envio → retorno é o
   // mesmo da IA, e mora em lib/conversa-envio.ts.
@@ -102,7 +102,7 @@ export async function enviarDocumento(
   documentoId: string,
   legenda: string,
 ): Promise<Resultado> {
-  const { usuario } = await exigirModulo("chat");
+  const { usuario } = await exigirModulo("chat", "criar");
 
   const doc = ehUuid(documentoId) ? await comCaminho(documentoId) : null;
   if (!doc) return { erro: "Documento não encontrado na biblioteca." };
@@ -233,7 +233,7 @@ export async function enviarTemplate(
   idioma: string,
   valores: { cabecalho: string[]; corpo: string[] },
 ): Promise<Resultado> {
-  const { usuario } = await exigirModulo("chat");
+  const { usuario } = await exigirModulo("chat", "criar");
   const d = await destinoDa(atendimentoId);
   if (!d || !ehOficial(d)) return { erro: "Templates são só da API oficial." };
   if (!d.whatsapp) return { erro: "O contato não tem número de WhatsApp." };
@@ -322,7 +322,7 @@ export async function iniciarConversa(
   contatoId: string,
   canalChave: string,
 ): Promise<{ id?: string; erro?: string }> {
-  const { usuario } = await exigirModulo("chat");
+  const { usuario } = await exigirModulo("chat", "criar");
   if (!ehUuid(contatoId)) return { erro: "Contato inválido." };
 
   const canal = (await listarCanais()).find((c) => fim8(c.chave) === fim8(canalChave));
@@ -381,7 +381,7 @@ export async function iniciarConversa(
 
 /** Assumir: vira de quem clicou e abre. lido_em = agora zera as não lidas. */
 export async function assumirAtendimento(id: string): Promise<void> {
-  const { usuario } = await exigirModulo("chat");
+  const { usuario } = await exigirModulo("chat", "editar");
   if (!ehUuid(id)) return;
   await sql`
     UPDATE atendimentos
@@ -391,14 +391,14 @@ export async function assumirAtendimento(id: string): Promise<void> {
 }
 
 export async function encerrarAtendimento(id: string): Promise<void> {
-  await exigirModulo("chat");
+  await exigirModulo("chat", "editar");
   if (!ehUuid(id)) return;
   await sql`UPDATE atendimentos SET status = 'encerrado', lido_em = now() WHERE id = ${id}`;
   revalidatePath("/chat");
 }
 
 export async function reabrirAtendimento(id: string): Promise<void> {
-  const { usuario } = await exigirModulo("chat");
+  const { usuario } = await exigirModulo("chat", "editar");
   if (!ehUuid(id)) return;
   await sql`
     UPDATE atendimentos
@@ -417,7 +417,7 @@ export async function definirIaDoContatoNoChat(
   valor: boolean | null,
   iaId: string | null,
 ): Promise<Resultado> {
-  const { usuario } = await exigirModulo("chat");
+  const { usuario } = await exigirModulo("chat", "editar");
   if (!ehUuid(contatoId)) return { erro: "Contato inválido." };
   if (iaId !== null && !ehUuid(iaId)) return { erro: "IA inválida." };
   const r = await gravarIaDoContato(contatoId, valor, iaId, usuario.id);
@@ -429,7 +429,7 @@ export async function definirIaDoContatoNoChat(
 
 /** Abriu = leu. É o que zera as não lidas na lista e no canal. */
 export async function marcarLido(id: string): Promise<void> {
-  await exigirModulo("chat");
+  await exigirModulo("chat", "editar");
   if (!ehUuid(id)) return;
   await sql`UPDATE atendimentos SET lido_em = now() WHERE id = ${id}`;
   revalidatePath("/chat");
@@ -445,7 +445,7 @@ export async function criarOportunidade(
   valor: number,
   responsavelId: string | null,
 ): Promise<Resultado> {
-  await exigirModulo("chat");
+  await exigirModulo("chat", "criar");
   const n = nome.trim();
   if (!n) return { erro: "Dê um nome à oportunidade." };
   if (!ehUuid(contatoId)) return { erro: "Sem contato." };

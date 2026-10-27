@@ -17,7 +17,7 @@ export async function POST(
   _req: NextRequest,
   ctx: RouteContext<"/api/blogs/[id]/chave">,
 ) {
-  const sessao = await exigirModuloApi("blog");
+  const sessao = await exigirModuloApi("blog", "editar");
   if (sessao instanceof Response) return sessao;
   const bruto = (await ctx.params).id;
   if (!/^\d+$/.test(bruto)) {

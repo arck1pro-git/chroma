@@ -1,3 +1,4 @@
+import { exigirModulo } from "@/lib/auth/dal";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { CATALOGO } from "@/lib/automacoes/catalogo";
@@ -88,6 +89,7 @@ async function gravarDefinicao(
   nos: NoEntrado[],
   arestas: ArestaEntrada[],
 ): Promise<{ resposta: string; gravou: boolean }> {
+  await exigirModulo("automacoes", "editar");
   const mapa: DefinicaoFluxo["nos"] = {};
   for (const n of nos) {
     // A entrada é a raiz do grafo, não um bloco do catálogo: se o modelo a
@@ -326,6 +328,7 @@ export function ferramentasDeFluxos() {
         .describe("sobre quem o fluxo corre: um contato solto ou uma oportunidade (negócio no funil)"),
     }),
     run: async ({ nome, entidade_alvo }) => {
+      await exigirModulo("automacoes", "criar");
       const id = await criarFluxo(nome.trim().slice(0, 120), entidade_alvo);
       gravou = true;
       return JSON.stringify({ id, nome: nome.trim() });
@@ -342,6 +345,7 @@ export function ferramentasDeFluxos() {
       "Devolve o fluxo da cadência de uma etapa do funil, criando-o (vazio, em rascunho) se a etapa ainda não tiver um. É o mesmo que o botão \"Criar cadência\" da coluna. Depois monte as mensagens com escrever_fluxo.",
     inputSchema: z.object({ etapa_id: z.string().describe("id da etapa, de listar_funis") }),
     run: async ({ etapa_id }) => {
+      await exigirModulo("automacoes", "criar");
       if (!ehUuid(etapa_id)) return "Etapa inválida. Use um id de listar_funis.";
       const [etapa] = await sql`SELECT nome FROM etapas WHERE id = ${etapa_id}`;
       if (!etapa) return "Etapa não encontrada. Use um id de listar_funis.";

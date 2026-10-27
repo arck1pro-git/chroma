@@ -1,3 +1,4 @@
+import { exigirModulo } from "@/lib/auth/dal";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { carregarAlvos, detalheDoWebhook, listarWebhooks } from "@/lib/webhooks-dados";
@@ -217,6 +218,8 @@ export function ferramentasDeWebhooks() {
       campos: z.array(campoEntrada),
     }),
     run: async ({ webhook_id, campos: entrada }) => {
+      await exigirModulo("webhooks", "criar");
+      await exigirModulo("webhooks", "editar");
       const atuais = (await detalheDoWebhook(webhook_id)).campos;
       const porChave = new Map(atuais.map((c) => [c.chave, c]));
 
@@ -301,6 +304,7 @@ export function ferramentasDeWebhooks() {
         .optional(),
     }),
     run: async ({ webhook_id, criar_oportunidade, funil_id, etapa_id, acoes: extras }) => {
+      await exigirModulo("webhooks", "editar");
       const partes: string[] = [];
 
       try {

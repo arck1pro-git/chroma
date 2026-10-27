@@ -127,6 +127,7 @@ let chamadasExternas = 0;
 let vinculado = null;
 let existeUsuario = true;
 let emTransacao = false;
+let administrador = true;
 const sql = async (partes, ...valores) => {
   const query = partes.join("");
   if (query.includes("INSERT INTO instancias_uazapi")) {
@@ -142,7 +143,12 @@ const sql = async (partes, ...valores) => {
 };
 sql.begin = async (fn) => { emTransacao = true; try { return await fn(sql); } finally { emTransacao = false; } };
 const acoes = carregar(resolve(raiz, "app/configuracoes/acoes-whatsapp.ts"), {
-  "@/lib/auth/dal": { exigirModulo: async () => {} },
+  "@/lib/auth/dal": {
+    exigirModulo: async () => {},
+    exigirGestaoDeUsuarios: async () => {
+      if (!administrador) throw new Error("Apenas Admin pode alterar usuários");
+    },
+  },
   "next/cache": { revalidatePath: () => {} },
   "next/headers": { headers: async () => new Headers() },
   "@/lib/endereco": { enderecoDoCrm: () => ({ publico: false, host: "localhost" }) },
@@ -153,6 +159,11 @@ globalThis.fetch = async () => { chamadasExternas++; return Response.json({ inst
 process.env.UAZAPI_BASE_URL = "https://wpp.example";
 process.env.UAZAPI_ADMIN_TOKEN = "teste";
 try {
+  administrador = false;
+  await assert.rejects(acoes.vincularUsuarioInstancia(instanciaId, usuarioId), /Apenas Admin/);
+  assert.equal(vinculado, null, "não altera vínculo do usuário sem Admin");
+  assert.equal(chamadasExternas, 0);
+  administrador = true;
   // Recusa volta como { ok: false, erro } desde 2026-10-21 (lib/resultado-acao.ts).
   let recusa = await acoes.criarInstanciaNaUazapi("Comercial", "");
   assert.equal(recusa.ok, false);

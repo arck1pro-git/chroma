@@ -40,6 +40,8 @@ export async function POST(req: NextRequest) {
   try {
     const entrada = acaoAds.safeParse(await req.json());
     if (!entrada.success) return Response.json({ erro: entrada.error.issues[0].message }, { status: 400 });
+    const permissao = await exigirModuloApi("campanhas", entrada.data.acao === "editar" ? "editar" : "criar");
+    if (permissao instanceof Response) return permissao;
     return Response.json(await executarAcaoAds(entrada.data));
   } catch (e) { return respostaErroMeta(e); }
 }

@@ -22,7 +22,7 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const sessao = await exigirModuloApi("blog");
+  const sessao = await exigirModuloApi("blog", "criar");
   if (sessao instanceof Response) return sessao;
   const corpo = await lerCorpo(req);
   if (!corpo) return Response.json({ error: "Corpo inválido." }, { status: 400 });

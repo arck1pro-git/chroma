@@ -24,7 +24,7 @@ function texto(v: unknown, max: number): string {
 }
 
 export async function POST(req: NextRequest) {
-  const acesso = await exigirModuloApi("documentos");
+  const acesso = await exigirModuloApi("documentos", "criar");
   if (acesso instanceof Response) return acesso;
 
   // O `content-length` é dica, não garantia — um cliente pode mentir. Serve

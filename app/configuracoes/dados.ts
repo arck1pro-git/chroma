@@ -1,3 +1,4 @@
+import type { PermissoesPorModulo } from "@/lib/auth/permissoes";
 // Leitura das Configurações direto do Supabase. Só é importado pelos page.tsx
 // de cada seção.
 //
@@ -200,6 +201,7 @@ export type DepartamentoConfig = {
    * especial pra chegar inteiro do outro lado.
    */
   modulos: Partial<Record<ChaveModulo, Escopo>>;
+  permissoes: PermissoesPorModulo;
 };
 
 export type ParticipanteConfig = {
@@ -226,7 +228,10 @@ export async function carregarAcessos(): Promise<DadosAcessos> {
                jsonb_object_agg(dm.modulo, dm.escopo)
                  FILTER (WHERE dm.modulo IS NOT NULL),
                '{}'::jsonb
-             ) AS modulos
+             ) AS modulos,
+             COALESCE(jsonb_object_agg(dm.modulo,
+               jsonb_build_object('criar', dm.criar, 'editar', dm.editar, 'excluir', dm.excluir))
+               FILTER (WHERE dm.modulo IS NOT NULL), '{}'::jsonb) AS permissoes
         FROM departamentos d
         LEFT JOIN departamento_modulos dm ON dm.departamento_id = d.id
        GROUP BY d.id, d.nome, d.slug, d.nivel, d.sistema, d.gerencia_acessos

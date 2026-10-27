@@ -39,7 +39,7 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const sessao = await exigirModuloApi("blog");
+  const sessao = await exigirModuloApi("blog", "editar");
   if (sessao instanceof Response) return sessao;
   const id = idValido((await params).id);
   if (id === null) return Response.json(NAO_ENCONTRADO, { status: 404 });
@@ -78,7 +78,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const sessao = await exigirModuloApi("blog");
+  const sessao = await exigirModuloApi("blog", "excluir");
   if (sessao instanceof Response) return sessao;
   const id = idValido((await params).id);
   if (id === null) return Response.json(NAO_ENCONTRADO, { status: 404 });

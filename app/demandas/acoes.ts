@@ -130,7 +130,7 @@ async function gravarChamado(
  * é podeCriarPara, em lib/demandas.ts).
  */
 export async function criarDemanda(dados: DadosDemanda): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "criar");
 
   const campos = camposDe(dados);
   if ("erro" in campos) return { ok: false, mensagem: campos.erro };
@@ -192,6 +192,7 @@ export async function criarDemanda(dados: DadosDemanda): Promise<ResultadoDemand
  * esbarrou num acesso que não tem.
  */
 export async function abrirChamado(dados: DadosDemanda): Promise<ResultadoDemanda> {
+  await exigirModulo("demandas", "criar");
   const usuario = await exigirLogin();
 
   const campos = camposDe(dados);
@@ -214,6 +215,7 @@ export type ResultadoEnvio = { ok: true; id: string; url: string } | { ok: false
  * subir sem virar anexo de uma demanda não aparece para ninguém.
  */
 export async function prepararAnexoDemanda(tamanho: number): Promise<ResultadoEnvio> {
+  await exigirModulo("demandas", "criar");
   await exigirLogin();
   try {
     const r = await prepararEnvio(tamanho);
@@ -226,7 +228,7 @@ export async function prepararAnexoDemanda(tamanho: number): Promise<ResultadoEn
 
 /** Anexar depois de criada, pela gaveta. Só quem criou; vale para as cópias. */
 export async function adicionarAnexoDemanda(demandaId: string, anexo: AnexoDemanda): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "criar");
   if (!idValido(demandaId)) return { ok: false, mensagem: "Demanda inválida." };
   const r = await anexarDepois(demandaId, await copiasDe(demandaId), [anexo], usuario);
   if ("erro" in r) return { ok: false, mensagem: r.erro };
@@ -236,7 +238,7 @@ export async function adicionarAnexoDemanda(demandaId: string, anexo: AnexoDeman
 
 /** Tira o anexo (de todas as cópias). Só quem criou a demanda. */
 export async function removerAnexoDemanda(anexoId: string): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "excluir");
   const anexo = await anexoPorId(anexoId);
   if (!anexo) return { ok: false, mensagem: "Anexo não encontrado." };
   if (!(await tirarAnexo(anexo.nome, await copiasDe(anexo.demandaId), usuario))) {
@@ -247,7 +249,7 @@ export async function removerAnexoDemanda(anexoId: string): Promise<ResultadoDem
 }
 
 export async function marcarDemanda(id: string, feita: boolean): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "editar");
   if (!idValido(id)) return { ok: false, mensagem: "Demanda inválida." };
 
   const ok = await marcarFeita(id, feita === true, usuario);
@@ -259,7 +261,7 @@ export async function marcarDemanda(id: string, feita: boolean): Promise<Resulta
 
 /** O arraste para "Em andamento" (ou de volta para a coluna do prazo). */
 export async function andamentoDemanda(id: string, sim: boolean): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "editar");
   if (!idValido(id)) return { ok: false, mensagem: "Demanda inválida." };
 
   const ok = await marcarEmAndamento(id, sim === true, usuario);
@@ -271,7 +273,7 @@ export async function andamentoDemanda(id: string, sim: boolean): Promise<Result
 
 /** Editar não muda PARA QUEM: isso é outra demanda. */
 export async function editarDemanda(ids: string[], dados: DadosDemanda): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "editar");
   const validos = idsValidos(ids);
   if (!validos) return { ok: false, mensagem: "Demanda inválida." };
 
@@ -300,7 +302,7 @@ export async function editarDemanda(ids: string[], dados: DadosDemanda): Promise
  * calendário (ou para "Sem prazo", com `prazo` nulo). Só quem criou.
  */
 export async function mudarPrazoDemanda(ids: string[], prazo: string | null): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "editar");
   const validos = idsValidos(ids);
   if (!validos) return { ok: false, mensagem: "Demanda inválida." };
   if (prazo !== null && (typeof prazo !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(prazo))) {
@@ -323,7 +325,7 @@ export async function mudarPrazoDemanda(ids: string[], prazo: string | null): Pr
 }
 
 export async function excluirDemandas(ids: string[]): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "excluir");
   const validos = idsValidos(ids);
   if (!validos) return { ok: false, mensagem: "Demanda inválida." };
 
@@ -349,7 +351,7 @@ export async function excluirDemandas(ids: string[]): Promise<ResultadoDemanda> 
 const SO_QUEM_CRIOU = "Só quem criou a demanda monta o checklist.";
 
 export async function adicionarItemDemanda(demandaId: string, textoDoItem: string): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "criar");
   if (!idValido(demandaId)) return { ok: false, mensagem: "Demanda inválida." };
   const t = texto(textoDoItem, TETO_TEXTO_ITEM);
   if (!t) return { ok: false, mensagem: "Escreva o item." };
@@ -359,7 +361,7 @@ export async function adicionarItemDemanda(demandaId: string, textoDoItem: strin
 }
 
 export async function renomearItemDemanda(itemId: string, textoDoItem: string): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "editar");
   if (!idValido(itemId)) return { ok: false, mensagem: "Item inválido." };
   const t = texto(textoDoItem, TETO_TEXTO_ITEM);
   if (!t) return { ok: false, mensagem: "O item não pode ficar vazio." };
@@ -369,7 +371,7 @@ export async function renomearItemDemanda(itemId: string, textoDoItem: string): 
 }
 
 export async function removerItemDemanda(itemId: string): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "excluir");
   if (!idValido(itemId)) return { ok: false, mensagem: "Item inválido." };
   if (!(await removerItem(itemId, usuario))) return { ok: false, mensagem: SO_QUEM_CRIOU };
   revalidatePath("/demandas");
@@ -377,7 +379,7 @@ export async function removerItemDemanda(itemId: string): Promise<ResultadoDeman
 }
 
 export async function marcarItemDemanda(itemId: string, feito: boolean): Promise<ResultadoDemanda> {
-  const { usuario } = await exigirModulo("demandas");
+  const { usuario } = await exigirModulo("demandas", "editar");
   if (!idValido(itemId)) return { ok: false, mensagem: "Item inválido." };
   if (!(await marcarItem(itemId, feito === true, usuario))) {
     return { ok: false, mensagem: "Só quem recebeu a demanda marca os itens." };

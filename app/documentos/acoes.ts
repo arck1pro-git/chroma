@@ -35,7 +35,7 @@ export async function salvarDocumento(dados: {
   nome: unknown;
   descricao: unknown;
 }): Promise<Resultado> {
-  await exigirModulo("documentos");
+  await exigirModulo("documentos", "editar");
   if (!idValido(dados.id)) return { ok: false, mensagem: "Documento inválido." };
 
   const nome = texto(dados.nome, TETO_NOME);
@@ -66,7 +66,7 @@ export async function alternarArquivado(
   id: string,
   arquivado: boolean,
 ): Promise<Resultado> {
-  await exigirModulo("documentos");
+  await exigirModulo("documentos", "editar");
   if (!idValido(id)) return { ok: false, mensagem: "Documento inválido." };
 
   try {
@@ -105,7 +105,7 @@ export async function alternarArquivado(
  * fazer em vez de deixá-lo ler um erro de FK.
  */
 export async function removerDocumento(id: string): Promise<Resultado> {
-  await exigirModulo("documentos");
+  await exigirModulo("documentos", "excluir");
   if (!idValido(id)) return { ok: false, mensagem: "Documento inválido." };
 
   const usos = await usosDoDocumento(id);

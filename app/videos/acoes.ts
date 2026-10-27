@@ -37,7 +37,7 @@ export async function prepararEnvio(dados: {
   mime: unknown;
   tamanho: unknown;
 }): Promise<{ ok: true; caminho: string; url: string; urlCapa: string } | { ok: false; mensagem: string }> {
-  await exigirModulo("videos");
+  await exigirModulo("videos", "criar");
   const mime = typeof dados.mime === "string" ? dados.mime : "";
   const tamanho = Number(dados.tamanho);
   const nomeArquivo = typeof dados.nomeArquivo === "string" ? dados.nomeArquivo : "";
@@ -70,7 +70,7 @@ export async function registrarVideo(dados: {
   altura: unknown;
   temCapa: unknown;
 }): Promise<{ ok: true; id: string } | { ok: false; mensagem: string }> {
-  const { usuario } = await exigirModulo("videos");
+  const { usuario } = await exigirModulo("videos", "criar");
   const caminho = typeof dados.caminho === "string" ? dados.caminho : "";
   if (!CAMINHO_VALIDO.test(caminho)) return { ok: false, mensagem: "Envio inválido." };
 
@@ -101,7 +101,7 @@ export async function registrarVideo(dados: {
 }
 
 export async function salvarNome(id: unknown, nome: unknown): Promise<Resultado> {
-  await exigirModulo("videos");
+  await exigirModulo("videos", "editar");
   if (!idValido(id)) return { ok: false, mensagem: "Vídeo inválido." };
   const limpo = (typeof nome === "string" ? nome.trim() : "").slice(0, TETO_NOME);
   if (!limpo) return { ok: false, mensagem: "Dê um nome ao vídeo." };
@@ -115,7 +115,7 @@ export async function salvarNome(id: unknown, nome: unknown): Promise<Resultado>
  * passa a dar "não encontrado" — a tela avisa isso antes de confirmar.
  */
 export async function apagarVideo(id: unknown): Promise<Resultado> {
-  await exigirModulo("videos");
+  await exigirModulo("videos", "excluir");
   if (!idValido(id)) return { ok: false, mensagem: "Vídeo inválido." };
   const apagado = await excluirVideo(id);
   if (!apagado) return { ok: false, mensagem: "Este vídeo já não existe." };

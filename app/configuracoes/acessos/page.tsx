@@ -1,6 +1,6 @@
 import { carregarAcessos } from "../dados";
 import { AcessosSection } from "../secoes/acessos";
-import { exigirGerenciaAcessos } from "@/lib/auth/dal";
+import { gereUsuarios, exigirGerenciaAcessos } from "@/lib/auth/dal";
 
 export default async function AcessosPage() {
   // NÃO é `exigirModulo("configuracoes")`. Se fosse, quem tem Configurações
@@ -20,6 +20,7 @@ export default async function AcessosPage() {
       dados={dados}
       departamentoIdAtual={usuario.departamento?.id ?? null}
       usuarioIdAtual={usuario.id}
+      podeGerirUsuarios={gereUsuarios(usuario)}
     />
   );
 }

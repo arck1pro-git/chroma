@@ -48,6 +48,7 @@ export async function moverOportunidade(
   etapaId: string,
   funilId: string,
 ): Promise<ResultadoAcao> {
+  await exigirModulo("inicio", "editar");
   // No escopo "próprio", só a oportunidade de que a pessoa é responsável
   // (lib/auth/escopo-oportunidades.ts).
   if (!(await podeTocarOportunidade(id))) return { ok: false, erro: FORA_DO_ESCOPO };
@@ -80,6 +81,7 @@ export async function mudarStatusOportunidade(
   id: string,
   status: StatusOportunidade,
 ): Promise<{ ok: boolean; mensagem: string }> {
+  await exigirModulo("inicio", "editar");
   if (!(await podeTocarOportunidade(id))) return { ok: false, mensagem: FORA_DO_ESCOPO };
   if (!STATUS_OPORTUNIDADE.includes(status)) {
     return { ok: false, mensagem: "Status inválido." };
@@ -152,6 +154,7 @@ export async function mudarStatusOportunidade(
 export async function excluirOportunidade(
   id: string,
 ): Promise<{ ok: boolean; mensagem: string }> {
+  await exigirModulo("inicio", "excluir");
   if (!(await podeTocarOportunidade(id))) return { ok: false, mensagem: FORA_DO_ESCOPO };
   const [op] = await sql`SELECT nome FROM oportunidades WHERE id = ${id}`;
   if (!op) return { ok: false, mensagem: "Oportunidade não encontrada." };
@@ -222,6 +225,7 @@ export async function excluirOportunidade(
 export async function excluirOportunidades(
   oportunidadeIds: string[],
 ): Promise<ResultadoLote> {
+  await exigirModulo("inicio", "excluir");
   const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
   const lista = listaUuid(ids);
@@ -309,7 +313,7 @@ export async function criarOportunidade(
   funilId: string,
   etapaId: string,
 ): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirModulo("inicio");
+  await exigirModulo("inicio", "criar");
   const nome = dados.nome.trim();
   if (!nome) return { ok: false, erro: "Nome é obrigatório" };
   // contato_id é NOT NULL no schema (oportunidade é sempre de um contato).
@@ -370,6 +374,7 @@ export type ResultadoAutomacao = { ok: boolean; mensagem: string };
 export async function pausarAutomacao(
   execucaoId: string,
 ): Promise<ResultadoAutomacao> {
+  await exigirModulo("inicio", "editar");
   if (!(await podeTocarExecucao(execucaoId))) return { ok: false, mensagem: FORA_DO_ESCOPO };
   try {
     const n = await pausarExecucao(execucaoId, "Pausada na ficha da oportunidade");
@@ -387,6 +392,7 @@ export async function pausarAutomacao(
 export async function retomarAutomacao(
   execucaoId: string,
 ): Promise<ResultadoAutomacao> {
+  await exigirModulo("inicio", "editar");
   if (!(await podeTocarExecucao(execucaoId))) return { ok: false, mensagem: FORA_DO_ESCOPO };
   try {
     const n = await retomarExecucao(execucaoId);
@@ -433,6 +439,7 @@ export async function moverParaResponsavel(
   oportunidadeIds: string[],
   usuarioId: string | null,
 ): Promise<ResultadoLote> {
+  await exigirModulo("inicio", "editar");
   const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
 
@@ -479,6 +486,7 @@ export async function moverParaEtapa(
   etapaId: string,
   confirmado = false,
 ): Promise<ResultadoLote> {
+  await exigirModulo("inicio", "editar");
   const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
   if (!ehUuid(etapaId)) return { ok: false, mensagem: "Etapa inválida." };
@@ -525,6 +533,7 @@ export async function adicionarASegmento(
   oportunidadeIds: string[],
   segmentoId: string,
 ): Promise<ResultadoLote> {
+  await exigirModulo("inicio", "editar");
   const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
   if (!ehUuid(segmentoId)) {
@@ -557,6 +566,7 @@ export async function inscreverEmFluxo(
   oportunidadeIds: string[],
   fluxoId: string,
 ): Promise<ResultadoLote> {
+  await exigirModulo("inicio", "criar");
   const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds));
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
 

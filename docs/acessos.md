@@ -38,6 +38,30 @@ leem (`lib/auth/dal.ts` e `app/configuracoes/dados.ts`).
 
 ## Ausência de linha é negação
 
+### Operações por tipo de usuário (2026-10-27)
+
+Em **Configurações · Acessos**, cada departamento tem quatro controles por
+módulo: **Visualizar, Criar, Editar e Excluir**. Visualizar continua sendo a
+existência da linha em `departamento_modulos`; as três operações são colunas
+booleanas independentes. Desligar o módulo revoga todas as operações.
+
+`migration-permissoes-crud.sql` preserva as operações dos acessos existentes.
+Novas concessões começam só em leitura (`DEFAULT false` para escrita).
+Reexecutar a migração não redefine permissões já configuradas.
+
+As páginas e leituras usam `exigirModulo(chave)`. As mutações usam
+`exigirModulo(chave, operacao)`; APIs usam `exigirModuloApi(chave, operacao)`
+e respondem 403 quando a operação está negada. Ações compartilhadas exigem
+uma origem que conceda também a operação (`exigirOperacaoEmAlgumModulo`).
+Os filtros de proprietário continuam valendo. A IA também verifica as
+operações ao executar suas ferramentas de escrita. Integrações de serviço
+com credenciais próprias continuam seguindo sua autenticação específica.
+
+Usuários ficam fora da grade: somente Admin gerencia contas. A permissão
+de administrar acessos continua separada dos módulos, com suas travas.
+
+Validação: `node --test scripts/testar-permissoes.mjs`.
+
 Não existe linha "negado". Departamento novo nasce **sem nada** e recebe o que
 alguém marcar — mesmo princípio do `proxy.ts`, que fecha por padrão.
 
@@ -107,9 +131,10 @@ e "mexer em quem vê o quê" é outra.
 ### Quem cria contas
 
 Configurações · Usuários cria e edita a conta — e-mail, senha e departamento —
-e quem abre a tela é `gereUsuarios()` (lib/auth/dal.ts): **Admin e TI** pelo
-departamento, fixo no código como nas Demandas, e quem tem o módulo
-Configurações.
+e quem abre a tela é `gereUsuarios()` (lib/auth/dal.ts): **somente Admin**, pelo
+slug estável `admin`. Ter Configurações ou administrar acessos não concede
+esse direito. A troca de departamento em Acessos também exige Admin e a
+administração de acessos; vincular um usuário ao WhatsApp exige Admin.
 
 Abrir a tela não é poder tudo lá dentro. Quem **não** administra acessos tem um
 teto, conferido nas actions (`app/configuracoes/acoes-usuarios.ts`) e repetido no
@@ -182,8 +207,6 @@ ainda válido — é a DAL que pega.
 
 - **Sem registro de quem mudou o quê.** Não dá pra saber depois quem tirou o
   módulo de quem, nem quando.
-- **Permissão é por módulo, não por ação.** Quem alcança Blog pode publicar;
-  não existe "só leitura" em lugar nenhum.
 - **`nivel` não restringe nada.** Ordena a lista e documenta a hierarquia, e só.
   Não é ele que impede um departamento de mexer noutro — quem impede é
   `gerencia_acessos`, que só o TI tem.

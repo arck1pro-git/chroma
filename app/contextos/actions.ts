@@ -35,7 +35,7 @@ export async function salvarContexto(dados: {
   descricao: unknown;
   conteudo: unknown;
 }): Promise<Resultado> {
-  await exigirModulo("contextos");
+  await exigirModulo("contextos", dados.id ? "editar" : "criar");
   const nome = texto(dados.nome, TETO_NOME);
   const conteudo = texto(dados.conteudo, TETO_CONTEUDO);
 
@@ -67,7 +67,7 @@ export async function salvarContexto(dados: {
 }
 
 export async function ligarContexto(id: string, ativo: boolean): Promise<Resultado> {
-  await exigirModulo("contextos");
+  await exigirModulo("contextos", "editar");
   if (!ehUuid(id)) {
     return { ok: false, mensagem: "Contexto inválido." };
   }

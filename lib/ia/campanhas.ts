@@ -1,3 +1,4 @@
+import { exigirModulo } from "@/lib/auth/dal";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { sql } from "@/lib/db";
@@ -34,6 +35,7 @@ export function ferramentasDeCampanhas(usuarioId: string) {
     description:"Cria um rascunho completo. Não ativa nem envia. Use ids reais de listar_alvos_campanha.",
     inputSchema:z.object({nome:z.string(),segmento_ids:z.array(z.string()).min(1),waba_id:z.string(),telefone_id:z.string(),telefone_exibicao:z.string(),template_nome:z.string(),template_idioma:z.string(),espera_minutos:z.number().min(5).max(43200),ao_responder:z.array(acao),ao_expirar:z.array(acao)}),
     run:async entrada=>{
+      await exigirModulo("campanhas", "criar");
       const ids=[...new Set(entrada.segmento_ids)];
       const segmentos=await sql`SELECT id,nome FROM segmentos WHERE id=ANY(string_to_array(${ids.join(",")}, ',')::uuid[]) ORDER BY nome`;
       if(segmentos.length!==ids.length)return "RECUSADO: um dos segmentos não existe.";

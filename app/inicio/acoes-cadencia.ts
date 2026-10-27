@@ -47,7 +47,7 @@ export async function criarCadencia(
   etapaId: string,
   nomeEtapa: string,
 ): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "criar");
   if (!etapaId) return { ok: false, erro: "Etapa não informada" };
   const nome = `Cadência · ${nomeEtapa.trim() || "etapa"}`.slice(0, 120);
 
@@ -198,7 +198,7 @@ export async function salvarCadencia(
   subetapas: Subetapa[],
   inscreverAtuais: boolean,
 ): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "editar");
   if (!fluxoId) return { ok: false, erro: "Cadência não informada." };
   if (!Array.isArray(subetapas) || subetapas.length === 0) {
     return { ok: false, erro: "Uma cadência precisa de pelo menos uma mensagem." };
@@ -301,7 +301,7 @@ export async function alternarCadencia(
   fluxoId: string,
   rodar: boolean,
 ): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "editar");
   if (!fluxoId) return { ok: false, erro: "Cadência não informada." };
   const r = rodar ? await retomar(fluxoId) : await pausar(fluxoId);
   revalidatePath("/");
@@ -318,7 +318,7 @@ export async function alternarCadencia(
  * o segundo clique pega só quem entrou na etapa desde o primeiro.
  */
 export async function dispararCadencia(fluxoId: string): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "editar");
   const fluxo = await dadosDeDisparo(fluxoId);
   if (!fluxo) return { ok: false, erro: "Cadência não encontrada." };
   if (!fluxo.etapa_id) return { ok: false, erro: "Cadência sem etapa." };
@@ -408,7 +408,7 @@ export async function removerDaCadencia(
   fluxoId: string,
   oportunidadeId: string,
 ): Promise<Resultado> {
-  await exigirModulo("automacoes");
+  await exigirModulo("automacoes", "editar");
   if (!fluxoId || !oportunidadeId) {
     return { ok: false, erro: "Faltou a cadência ou a oportunidade." };
   }

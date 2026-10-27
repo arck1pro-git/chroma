@@ -24,7 +24,7 @@ export async function criarFunil(
   descricao: string,
   cor: string,
 ): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "criar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome do funil é obrigatório" };
 
@@ -54,7 +54,7 @@ export async function editarFunil(
   nome: string,
   descricao: string,
 ): Promise<ResultadoAcao> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome do funil é obrigatório" };
 
@@ -76,7 +76,7 @@ export async function editarFunil(
  * padrão, que é o comportamento útil aqui.
  */
 export async function editarCorDoFunil(id: string, cor: string): Promise<void> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   await sql`UPDATE funis SET cor = ${corValida(cor)} WHERE id = ${id}`;
   revalidatePath("/configuracoes", "layout");
   revalidatePath("/");
@@ -89,7 +89,7 @@ export async function criarEtapa(
   funilId: string,
   nome: string,
 ): Promise<ResultadoAcao<{ id: string }>> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "criar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome da etapa é obrigatório" };
 
@@ -110,7 +110,7 @@ export async function criarEtapa(
 }
 
 export async function editarEtapa(id: string, nome: string): Promise<ResultadoAcao> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Nome da etapa é obrigatório" };
   await sql`UPDATE etapas SET nome = ${n} WHERE id = ${id}`;
@@ -130,7 +130,7 @@ export async function definirEventoMetaDaEtapa(
   id: string,
   evento: string | null,
 ): Promise<ResultadoAcao> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   const e = evento?.trim() || null;
   if (e && !NOME_EVENTO_META.test(e)) {
     return {
@@ -147,7 +147,7 @@ export async function definirEventoMetaDaEtapa(
 // e regrava 1..N. Em transação: uma reordenação pela metade deixaria duas
 // etapas com o mesmo `ordem` e o quadro empilharia colunas.
 export async function reordenarEtapas(etapaIds: string[]): Promise<void> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "editar");
   await sql.begin(async (tx: typeof sql) => {
     for (let i = 0; i < etapaIds.length; i++) {
       await tx`UPDATE etapas SET ordem = ${i + 1} WHERE id = ${etapaIds[i]}`;
@@ -169,7 +169,7 @@ export async function removerEtapa(
   etapaId: string,
   destinoId: string | null,
 ): Promise<ResultadoRemocao> {
-  await exigirModulo("configuracoes");
+  await exigirModulo("configuracoes", "excluir");
   if (!ehUuid(etapaId) || (destinoId !== null && !ehUuid(destinoId))) {
     return { erro: "Etapa inválida." };
   }
