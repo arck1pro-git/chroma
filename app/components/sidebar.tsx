@@ -29,19 +29,24 @@
 //   gaveta), nome e departamento. Tema e Sair moram no menu dele — eram três
 //   controles soltos numa linha.
 //
-// · RECOLHIDA (60px), cada ícone mostra o nome numa etiqueta ao lado, no hover e
-//   no foco do teclado: o `title` do navegador demorava e não aparecia no
-//   teclado. A etiqueta é `fixed` porque a lista rola, e quem rola corta o que
-//   vaza para o lado. Os grupos viram um traço fino.
+// · RECOLHIDA (60px), cada módulo e Configurações mostram o nome numa etiqueta
+//   ao lado, no hover e no foco do teclado: o `title` do navegador demorava e não
+//   aparecia no teclado. A etiqueta é `fixed` porque a lista rola, e quem rola
+//   corta o que vaza para o lado. Para o leitor de tela o nome vai como texto
+//   oculto, e não aria-label, que esconderia a contagem de Demandas.
 //
 // Ficou como era: a barra não tem fundo próprio (mostra o --background, e a
 // borda à direita diz onde ela acaba); recolher é preferência do aparelho, e
 // abaixo de 1280px ela já nasce recolhida; Blog é sanfona com os blogs e o
 // "+ Novo blog".
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import type { ChaveModulo } from "@/lib/auth/modulos";
+import type { ContagemDemandas, SituacaoDemandas } from "@/lib/demandas-tipos";
+import { sair } from "@/app/login/acoes";
+import ItemDoTema from "./botao-tema";
 import {
   CalendarDays,
   ChartNoAxesColumn,
@@ -49,9 +54,9 @@ import {
   ChevronsUpDown,
   Clapperboard,
   ClipboardList,
-  FileText,
   Grid2x2,
   LayoutDashboard,
+  LayoutTemplate,
   Link2,
   ListChecks,
   LogOut,
@@ -70,14 +75,10 @@ import {
   type TipoIcone,
 } from "./icones";
 import ModalNovoBlog, { type BlogCriado } from "./modal-novo-blog";
-import SeloWhatsApp from "./selo-whatsapp";
-import { LigarAvisos, useVigiaDemandas } from "./vigia-demandas";
 import { criarPreferencia } from "./preferencia-local";
+import SeloWhatsApp from "./selo-whatsapp";
 import { tintaDe } from "./tinta";
-import ItemDoTema from "./botao-tema";
-import { sair } from "@/app/login/acoes";
-import type { ChaveModulo } from "@/lib/auth/modulos";
-import type { ContagemDemandas, SituacaoDemandas } from "@/lib/demandas-tipos";
+import { LigarAvisos, useVigiaDemandas } from "./vigia-demandas";
 
 // A lista de módulos vem do servidor, já peneirada pelo departamento de quem
 // está logado (app/layout.tsx → lib/auth/dal.ts). O que mora aqui é o DESENHO:
@@ -93,7 +94,7 @@ const ICONES: Record<ChaveModulo, TipoIcone> = {
   emails: Mail,
   automacoes: Workflow,
   campanhas: Megaphone,
-  templates: FileText,
+  templates: LayoutTemplate,
   blog: Newspaper,
   webhooks: Webhook,
   formularios: ClipboardList,
@@ -301,11 +302,11 @@ export default function Sidebar({
             type="button"
             onClick={alternarBlogs}
             aria-expanded={!recolhida && blogsAbertos}
-            aria-label={recolhida ? rotulo : undefined}
             className={classesDoItem(ativo, recolhida)}
             {...dicaDe(rotulo)}
           >
             <Icone className={classesDoIcone(ativo)} aria-hidden="true" />
+            {recolhida && <span className="sr-only">{rotulo}</span>}
             {!recolhida && (
               <>
                 <span className="flex-1 truncate text-left">{rotulo}</span>
@@ -363,13 +364,12 @@ export default function Sidebar({
         key={chave}
         href={href}
         aria-current={ativo ? "page" : undefined}
-        aria-label={recolhida ? rotulo : undefined}
         title={!recolhida && resumo ? resumo : undefined}
         className={classesDoItem(ativo, recolhida)}
         {...dicaDe(resumo ? `${rotulo} · ${resumo}` : rotulo)}
       >
         <Icone className={classesDoIcone(ativo)} aria-hidden="true" />
-        {!recolhida && <span className="truncate">{rotulo}</span>}
+        <span className={recolhida ? "sr-only" : "truncate"}>{rotulo}</span>
         {contador && contador.pendentes > 0 && <Contador contagem={contador} recolhida={recolhida} />}
       </Link>
     );
@@ -439,12 +439,11 @@ export default function Sidebar({
           <Link
             href="/configuracoes"
             aria-current={estaEm("/configuracoes") ? "page" : undefined}
-            aria-label={recolhida ? "Configurações" : undefined}
             className={classesDoItem(estaEm("/configuracoes"), recolhida)}
             {...dicaDe("Configurações")}
           >
             <Settings className={classesDoIcone(estaEm("/configuracoes"))} aria-hidden="true" />
-            {!recolhida && <span className="truncate">Configurações</span>}
+            <span className={recolhida ? "sr-only" : "truncate"}>Configurações</span>
           </Link>
         )}
 
@@ -473,37 +472,56 @@ const ITEM_DO_MENU =
   "flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-[13px] text-zinc-700 outline-none transition-colors hover:bg-zinc-100 hover:text-zinc-950 focus-visible:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 dark:focus-visible:bg-zinc-800";
 
 /**
- * A conta: avatar, nome e departamento; o clique abre o menu com o e-mail, o
- * tema e o Sair. Aberta, sobe acima do botão; na barra recolhida, abre ao lado.
- * Fecha no clique fora e no Esc.
+ * A conta: avatar, nome e departamento; o clique abre o painel com o e-mail, o
+ * tema e o Sair. Aberto, sobe acima do botão; na barra recolhida, abre ao lado.
+ *
+ * É um painel que abre e fecha (disclosure), e não um role="menu": esse papel
+ * promete setas e foco no primeiro item, que aqui não existem — o Tab percorre
+ * os botões como em qualquer lugar. Fecha no toque fora (pointerdown, que
+ * também chega no tablet), no Esc (devolvendo o foco ao botão, senão ele cai no
+ * <body> junto com o painel que sumiu) e quando o Tab sai dele.
  */
 function MenuDaConta({ usuario, recolhida }: { usuario: UsuarioDaBarra; recolhida: boolean }) {
   const [aberto, setAberto] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const botaoRef = useRef<HTMLButtonElement>(null);
+  const idPainel = useId();
 
   useEffect(() => {
     if (!aberto) return;
-    const fora = (e: MouseEvent) => {
+    const fora = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) setAberto(false);
     };
     const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAberto(false);
+      if (e.key !== "Escape") return;
+      if (ref.current?.contains(document.activeElement)) botaoRef.current?.focus();
+      setAberto(false);
     };
-    document.addEventListener("mousedown", fora);
+    document.addEventListener("pointerdown", fora);
     document.addEventListener("keydown", esc);
     return () => {
-      document.removeEventListener("mousedown", fora);
+      document.removeEventListener("pointerdown", fora);
       document.removeEventListener("keydown", esc);
     };
   }, [aberto]);
 
   const departamento = usuario.departamento ?? "Sem departamento";
   return (
-    <div ref={ref} className="relative">
+    <div
+      ref={ref}
+      className="relative"
+      // Só quando o foco vai para OUTRO elemento fora daqui (o Tab): clique em
+      // área sem foco dentro do painel não tem destino e não pode fechá-lo.
+      onBlur={(e) => {
+        const destino = e.relatedTarget as Node | null;
+        if (aberto && destino && !ref.current?.contains(destino)) setAberto(false);
+      }}
+    >
       <button
+        ref={botaoRef}
         type="button"
         onClick={() => setAberto((a) => !a)}
-        aria-haspopup="menu"
+        aria-controls={aberto ? idPainel : undefined}
         aria-expanded={aberto}
         aria-label={`Conta de ${usuario.nome}`}
         title={recolhida ? `${usuario.nome} · ${departamento}` : undefined}
@@ -532,8 +550,7 @@ function MenuDaConta({ usuario, recolhida }: { usuario: UsuarioDaBarra; recolhid
 
       {aberto && (
         <div
-          role="menu"
-          aria-label="Conta"
+          id={idPainel}
           className={`surge absolute z-40 w-60 rounded-xl border border-zinc-200 bg-white p-1 shadow-[0_12px_32px_-8px_rgba(0,0,0,0.25)] dark:border-zinc-800 dark:bg-zinc-900 ${
             recolhida ? "bottom-0 left-full ml-2" : "bottom-full left-0 mb-1.5"
           }`}
@@ -549,7 +566,7 @@ function MenuDaConta({ usuario, recolhida }: { usuario: UsuarioDaBarra; recolhid
           {/* <form> e não onClick: sair apaga o cookie, e o cookie só some numa
               resposta do servidor. */}
           <form action={sair}>
-            <button type="submit" role="menuitem" className={ITEM_DO_MENU}>
+            <button type="submit" className={ITEM_DO_MENU}>
               <LogOut className="size-4 shrink-0" aria-hidden="true" />
               Sair
             </button>

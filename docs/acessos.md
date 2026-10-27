@@ -193,9 +193,10 @@ cadência pelo dashboard.
 ## As duas exceções, e por quê
 
 `/api/ia` e `app/components/acoes-ia.ts` ficaram em `exigirLogin`, sem módulo.
-Não é esquecimento: o painel de IA abre em várias telas e a lista de conversas da
-barra lateral junta análises de módulos diferentes. Prender qualquer um dos dois
-a um módulo quebraria o recurso em todos os outros.
+Não é esquecimento: o painel de IA abre em várias telas, e a lista de conversas
+do painel fixo do TI junta análises de módulos diferentes (até 2026-10-27 a barra
+lateral também listava). Prender qualquer um dos dois a um módulo quebraria o
+recurso em todos os outros.
 
 O que a IA alcança é limitado noutro lugar — as ferramentas de leitura em
 `lib/ia/ferramentas.ts`. Se um dia uma delas devolver dado de módulo restrito, o

@@ -5,8 +5,8 @@
 // pode conferir sem ir ao banco — se a pessoa ainda existe e ainda está ativa.
 import { exigirLogin, usuarioAtual } from "@/lib/auth/dal";
 
-// `exigirLogin` e não `exigirModulo`: estas ações servem a lista de conversas da
-// barra lateral, que aparece em TODAS as telas e junta análises feitas em
+// `exigirLogin` e não `exigirModulo`: estas ações servem os painéis de IA, que
+// abrem em várias telas, e a lista do painel fixo do TI junta análises feitas em
 // módulos diferentes. Prender a um módulo esvaziaria a lista de quem está noutro.
 //
 // O DONO VEM DAQUI, do retorno de `exigirLogin`, e NUNCA de um parâmetro. É a
@@ -175,12 +175,13 @@ export async function apagarConversaIa(
 
 
 /**
- * As conversas que a sidebar lista, de todos os painéis juntos — e SÓ as de
- * quem está logado.
+ * As conversas de todos os painéis juntos — e SÓ as de quem está logado. Quem
+ * lista é o painel fixo do TI; até 2026-10-27 a barra lateral também listava,
+ * e o nome ficou.
  *
- * Falha em silêncio (lista vazia) em vez de propagar: a sidebar aparece em
- * TODAS as telas, e um banco fora do ar não pode derrubar a navegação do app
- * inteiro por causa de uma lista acessória.
+ * Falha em silêncio (lista vazia) em vez de propagar: o painel fixo está em
+ * TODAS as telas, e um banco fora do ar não pode derrubar o app inteiro por
+ * causa de uma lista acessória.
  *
  * SEM SESSÃO, LISTA VAZIA — e não o redirect de `exigirLogin`: o Next segue o
  * redirect da action no cliente, e numa tela pública (o vídeo do lead, a

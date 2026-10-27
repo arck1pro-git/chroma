@@ -15,7 +15,7 @@ import type { EtapaComTom, FichaContato } from "@/lib/contatos-ficha";
 import type { Ia } from "@/lib/ia/catalogo";
 import type { CampoPersonalizado, Contato, Etapa, Funil, Oportunidade } from "@/lib/entidades";
 import { dataDoInstante } from "@/lib/formato";
-import { ArrowUpRight, CalendarCheck2 } from "@/app/components/icones";
+import { ArrowRight, CalendarCheck2 } from "@/app/components/icones";
 import { CamposDoContato } from "../components/campos-personalizados";
 import IaDoContato from "../inicio/ia-contato";
 import { dinheiro, hora, lerObjecao, ReguaDoFunil, Selo, tempo, TituloDeGrupo, type Tom } from "./pecas";
@@ -123,7 +123,7 @@ export default function Lateral({
                     )}
                     <Selo tom={o.status === "ganha" ? "bom" : o.status === "perdida" ? "ruim" : "neutro"}>{o.status}</Selo>
                     <Link href={`/?op=${o.id}`} className={`${linkSutil} ml-auto`}>
-                      no quadro <ArrowUpRight className="size-3" aria-hidden="true" />
+                      no quadro <ArrowRight className="size-3" aria-hidden="true" />
                     </Link>
                   </div>
                   <p className="mt-0.5 truncate text-[12px] text-zinc-600 dark:text-zinc-300">{o.nome}</p>

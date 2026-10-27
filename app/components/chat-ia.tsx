@@ -83,7 +83,7 @@ function MarcaIa({ cor, girando = false }: { cor: string; girando?: boolean }) {
 
 
 // A conversa como a lista a mostra: título e tamanho, sem o texto. No painel
-// fixo do TI a lista é a de TODAS as telas (a mesma da barra), que traz o
+// fixo do TI a lista é a de TODAS as telas (a mesma que a barra lateral listava até 2026-10-27), que traz o
 // escopo no lugar do tamanho.
 type Resumo = { id: string; titulo: string; em: string; falas?: number; escopo?: string };
 
@@ -137,14 +137,12 @@ export function PainelIa({
   // vez de cobri-lo. É o modo da tela inicial, onde o quadro não pode ficar
   // escondido atrás da conversa.
   modo = "flutuante",
-  // Id de conversa vindo da URL (?ia=<id>), posto lá pela sidebar. Quando
-  // presente, o painel abre sozinho já nessa conversa — é o que faz clicar numa
-  // análise da barra voltar exatamente para onde ela parou.
+  // Id de conversa vindo da URL (?ia=<id>). Quando presente, o painel abre
+  // sozinho já nessa conversa. Até 2026-10-27 quem punha o ?ia= era a lista de
+  // conversas da barra lateral, que saiu; hoje só um link direto o traz.
   conversaInicial = null,
-  // O botão flutuante no canto. Desligado onde existe OUTRA porta de entrada —
-  // hoje a raiz, que abre a análise pelo "+" da sidebar. Nos painéis modais
-  // (cadência, editor de fluxo) ele continua ligado: ali a sidebar está coberta
-  // pelo véu, e sem o botão não haveria como abrir a IA.
+  // O botão flutuante no canto: a porta de entrada da IA em cada tela (o "+"
+  // da barra lateral saiu em 2026-10-27).
   botaoFlutuante = true,
   // Versão enxuta usada sobre construtores: só campo e balões, sem cartão,
   // cabeçalho ou tela de boas-vindas envolvendo a conversa.
@@ -154,8 +152,8 @@ export function PainelIa({
   // onde funil nenhum existe (editor de fluxo, webhooks) — lá fica o padrão.
   corIcone = tomEscuro(null),
   // O PAINEL FIXO do TI (./ia-global.tsx): montado no layout, vive em todas as
-  // telas. Muda duas coisas: a lista é a de todas as conversas (a da barra), e a
-  // conversa aberta pode ser de qualquer escopo — e continua gravando no dela.
+  // telas. Muda duas coisas: a lista é a de todas as conversas, e a conversa
+  // aberta pode ser de qualquer escopo — e continua gravando no dela.
   global = false,
 }: {
   contexto: string;
@@ -213,7 +211,7 @@ export function PainelIa({
   async function carregarLista() {
     setCarregandoLista(true);
     if (global) {
-      // A mesma lista da barra: o fixo abre conversa de qualquer tela.
+      // Todas as conversas: o fixo abre conversa de qualquer tela.
       setConversas(await conversasDaBarra());
       setCarregandoLista(false);
       return;
@@ -293,7 +291,7 @@ export function PainelIa({
      refator e os disables pontuais viram diretiva morta. */
   useEffect(() => {
     // O fixo não remonta ao trocar de tela: sem ?ia= na URL nova, esquece o
-    // que já atendeu, senão clicar de novo na mesma conversa da barra (com o
+    // que já atendeu, senão clicar de novo na mesma conversa por link (com o
     // painel fechado) não a reabriria.
     if (!conversaInicial) {
       if (global) atendidaRef.current = null;
@@ -303,13 +301,10 @@ export function PainelIa({
     abertoPelaSidebarRef.current = true;
     atendidaRef.current = conversaInicial;
 
-    // "nova" não é id de conversa: é o pedido do "+" da sidebar para abrir em
-    // branco. Consumido na hora — a URL volta a ficar sem ?ia= para que o
-    // PRÓXIMO clique no "+" seja uma navegação de verdade. Sem isso, clicar de
-    // novo estando na mesma URL não faria nada.
-    //
-    // Só o "nova" é consumido. O ?ia=<uuid> de uma conversa existente FICA na
-    // URL: é por ele que a sidebar marca qual está aberta.
+    // "nova" não é id de conversa: é o pedido para abrir em branco (era o "+"
+    // da barra lateral, que saiu em 2026-10-27; um link direto ainda funciona).
+    // Consumido na hora — a URL volta a ficar sem ?ia=. O ?ia=<uuid> de uma
+    // conversa existente fica na URL.
     if (conversaInicial === "nova") {
       abrirComLista();
       // Limpar o que estava aberto é o PONTO do "+": se o painel já estava numa
@@ -324,7 +319,7 @@ export function PainelIa({
     }
 
     // abrirComLista também garante o painel ABERTO. Na montagem o useState já
-    // abriu; isto cobre o outro caso: trocar de conversa pela sidebar SEM sair
+    // abriu; isto cobre o outro caso: trocar de conversa pelo ?ia= SEM sair
     // da tela (de ?ia=A para ?ia=B). Aí o componente não remonta, e um painel
     // que a pessoa tinha fechado precisa voltar.
     abrirComLista();
@@ -538,7 +533,7 @@ export function PainelIa({
     }
   }
 
-  // Conversa aberta pela sidebar (?ia=...) usa sempre a apresentação enxuta:
+  // Conversa aberta pela URL (?ia=...) usa sempre a apresentação enxuta:
   // ela sobe sobre a página como os chats de campanha, sem montar um painel.
   const compactoEfetivo = compacto || (!global && abertoPelaSidebarRef.current);
   const lateral = modo === "lateral" && !compactoEfetivo;

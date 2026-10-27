@@ -22,7 +22,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Alvos, DetalheWebhook } from "@/lib/webhooks-dados";
-import { Check, Pencil, Power, PowerOff, Trash2, Webhook as WebhookIcon } from "@/app/components/icones";
+import { Check, Pencil, ToggleLeft, ToggleRight, Trash2, Webhook as WebhookIcon } from "@/app/components/icones";
 import Configuracao, {
   AbasDaConfiguracao,
   calcularPendencias,
@@ -206,10 +206,11 @@ function Identificacao({
         aria-label={webhook.ativo ? "Desligar webhook" : "Ligar webhook"}
         className={botaoIcone}
       >
+        {/* A chave mostra o ESTADO (ligado em verde); o title diz a ação. */}
         {webhook.ativo ? (
-          <PowerOff className="size-4" aria-hidden="true" />
+          <ToggleRight className="size-[18px] text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
         ) : (
-          <Power className="size-4" aria-hidden="true" />
+          <ToggleLeft className="size-[18px]" aria-hidden="true" />
         )}
       </button>
 

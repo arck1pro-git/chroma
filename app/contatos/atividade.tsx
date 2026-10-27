@@ -16,7 +16,7 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
-  ArrowUpRight,
+  ArrowRight,
   Bot,
   Smartphone,
   Sparkles,
@@ -382,7 +382,7 @@ function Conteudo({
           <p className="text-[13px] text-zinc-900 dark:text-zinc-50">
             Assistiu <span className="font-medium">{v.nome}</span>
             <Link href={`/videos?video=${v.id}`} className={linkSutil}>
-              ver <ArrowUpRight className="size-3" aria-hidden="true" />
+              ver <ArrowRight className="size-3" aria-hidden="true" />
             </Link>
           </p>
           <div className="mt-1.5 flex max-w-xs items-center gap-2">
@@ -409,7 +409,7 @@ function Conteudo({
           <p className="text-[13px] text-zinc-900 dark:text-zinc-50">
             Chegou pela captação <span className="font-medium">{c.webhook}</span>
             <Link href={`/webhooks?webhook=${c.webhookId}`} className={linkSutil}>
-              ver <ArrowUpRight className="size-3" aria-hidden="true" />
+              ver <ArrowRight className="size-3" aria-hidden="true" />
             </Link>
           </p>
           <Meta quando={c.quando}>{c.estado === "ok" ? (c.resumo ?? "recebido") : (c.erro ?? c.estado)}</Meta>
@@ -508,7 +508,7 @@ function TrechoDeConversa({ dia, primeiroNome }: { dia: FichaContato["dias"][num
           · {dia.total} {dia.total === 1 ? "mensagem" : "mensagens"}
         </span>
         <Link href={`/chat?atendimento=${dia.atendimentoId}`} className={linkSutil}>
-          abrir no chat <ArrowUpRight className="size-3" aria-hidden="true" />
+          abrir no chat <ArrowRight className="size-3" aria-hidden="true" />
         </Link>
       </p>
 

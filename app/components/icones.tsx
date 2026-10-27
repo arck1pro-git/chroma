@@ -118,6 +118,7 @@ import {
   faLocationDot,
   faLock,
   faMagnifyingGlass,
+  faMagnifyingGlassMinus,
   faMessage,
   faMicrophone,
   faMinus,
@@ -136,8 +137,8 @@ import {
   faPlay,
   faPlug,
   faPlus,
-  faPowerOff,
   faQrcode,
+  faRectangleList,
   faRepeat,
   faReply,
   faRightFromBracket,
@@ -160,6 +161,8 @@ import {
   faTableColumns,
   faTag,
   faThumbsDown,
+  faToggleOff,
+  faToggleOn,
   faTrashCan,
   faTriangleExclamation,
   faTrophy,
@@ -293,7 +296,7 @@ export const Italic = icone(faItalic, "Italic");
 export const KeyRound = icone(faKey, "KeyRound");
 export const Layers = icone(faLayerGroup, "Layers");
 export const LayoutDashboard = icone(faGaugeHigh, "LayoutDashboard");
-export const LayoutTemplate = icone(faFileLines, "LayoutTemplate");
+export const LayoutTemplate = icone(faRectangleList, "LayoutTemplate");
 export const LifeBuoy = icone(faLifeRing, "LifeBuoy");
 export const Link2 = icone(faLink, "Link2");
 export const List = icone(faList, "List");
@@ -336,8 +339,6 @@ export const PhoneCall = icone(faPhoneVolume, "PhoneCall");
 export const Play = icone(faPlay, "Play");
 export const PlugZap = icone(faPlug, "PlugZap");
 export const Plus = icone(faPlus, "Plus");
-export const Power = icone(faPowerOff, "Power");
-export const PowerOff = icone(faPowerOff, "PowerOff");
 export const QrCode = icone(faQrcode, "QrCode");
 export const RefreshCw = icone(faArrowsRotate, "RefreshCw");
 export const Repeat = icone(faRepeat, "Repeat");
@@ -347,7 +348,7 @@ export const Route = icone(faRoute, "Route");
 export const Rss = icone(faRss, "Rss");
 export const Save = icone(faFloppyDisk, "Save");
 export const Search = icone(faMagnifyingGlass, "Search");
-export const SearchX = icone(faMagnifyingGlass, "SearchX");
+export const SearchX = icone(faMagnifyingGlassMinus, "SearchX");
 export const Send = icone(faPaperPlane, "Send");
 export const SendHorizonal = icone(faPaperPlane, "SendHorizonal");
 export const Settings = icone(faGear, "Settings");
@@ -365,6 +366,8 @@ export const Sun = icone(faSun, "Sun");
 export const Tag = icone(faTag, "Tag");
 export const ThumbsDown = icone(faThumbsDown, "ThumbsDown");
 export const Timer = icone(faStopwatch, "Timer");
+export const ToggleLeft = icone(faToggleOff, "ToggleLeft");
+export const ToggleRight = icone(faToggleOn, "ToggleRight");
 export const Trash2 = icone(faTrashCan, "Trash2");
 export const TrendingDown = icone(faArrowTrendDown, "TrendingDown");
 export const TrendingUp = icone(faArrowTrendUp, "TrendingUp");

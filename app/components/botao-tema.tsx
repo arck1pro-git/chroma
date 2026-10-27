@@ -28,7 +28,7 @@ function alternarTema() {
 /** A linha do menu: no claro oferece o escuro (lua), no escuro oferece o claro (sol). */
 export default function ItemDoTema({ className }: { className: string }) {
   return (
-    <button type="button" role="menuitem" onClick={alternarTema} className={className}>
+    <button type="button" onClick={alternarTema} className={className}>
       <Moon className="size-4 shrink-0 dark:hidden" aria-hidden="true" />
       <Sun className="hidden size-4 shrink-0 dark:block" aria-hidden="true" />
       <span className="dark:hidden">Modo escuro</span>

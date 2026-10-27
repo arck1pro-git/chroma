@@ -1,7 +1,7 @@
 import type { ComponentType, SVGProps } from "react";
 
-// Não é LucideIcon: o módulo da Meta entra com a logo da marca, que é um <svg>
-// nosso. Todo LucideIcon continua servindo — só o tipo é que abriu.
+// Não é TipoIcone (./icones): o módulo da Meta entra com a logo da marca, que é
+// um <svg> nosso. Todo ícone do projeto continua servindo — só o tipo é que abriu.
 type Icone = ComponentType<SVGProps<SVGSVGElement>>;
 
 export default function ModuloEmBreve({
