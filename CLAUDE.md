@@ -89,7 +89,10 @@ responde. Envio de mensagem, da equipe ou da IA, passa por `lib/conversa-envio.t
 uazapi, pela Meta ou pelo Instagram (escolha por canal, sem "senão é uazapi"), casa o retorno. Instagram: DM vira
 conversa comum (canal 'instagram'); comentários ficam em `instagram_comentarios`; todo envio ao Instagram sai pelo
 ponto único de `lib/instagram.ts`; a IA de comentário (`lib/ia/comentarios.ts`) só escolhe frase pública fixa. Automação: a tela desenha o fluxo, `lib/automacoes/compilador` gera o
-workflow, `lib/automacoes/motores/n8n/adaptador.ts` publica no n8n, e o n8n chama as rotas de serviço.
+workflow, `lib/automacoes/motores/n8n/adaptador.ts` publica no n8n, e o n8n chama as rotas de serviço. Campanha de
+WhatsApp oficial: a tela desenha os blocos (contrato em `lib/campanhas-fluxo.ts`, entrada conferida por
+`lib/campanhas-fluxo-entrada.ts`), o motor `lib/campanhas-whatsapp.ts` executa no tique do n8n em
+`/api/meta/whatsapp/processar`, e a IA do construtor (`lib/ia/campanhas-construtor.ts`) só desenha na tela, nunca grava.
 
 ## 3. Onde fica cada coisa
 
@@ -174,7 +177,11 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   `testar-filtro-campanhas.ts`, `testar-meta-ads.ts`, `testar-meta-eventos.ts` (pelo runner; este usa o DEV numa
   transação desfeita) e `testar-instagram.ts` (pelo runner; webhook, IA de comentário e envio do Instagram contra o
   DEV com Graph e modelo falsos, cenário marcado e apagado no fim), `testar-templates-whatsapp.ts` (pelo runner,
-  sem `.env`: as regras do editor de templates e as do envio, com dado do contato saneado, no chat e nas campanhas) e `scripts/testar-hooks.mjs`
+  sem `.env`: as regras do editor de templates e as do envio, com dado do contato saneado, no chat e nas campanhas),
+  `testar-campanhas-fluxo.ts` e `testar-campanhas-tela.ts` (pelo runner, sem `.env`: o contrato das campanhas em
+  blocos e as operações do construtor, com as pendências iguais às do servidor), `testar-campanhas-motor.ts`
+  e `testar-campanhas-construtor.ts` (pelo runner, contra o DEV com Graph e uazapi falsas: o motor das campanhas e a
+  IA do construtor, sem chamar a Anthropic) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
   falam com serviço e conta de verdade e só rodam a pedido.
 - **Script novo de verificação:** chama as funções reais pelo runner acima, contra o banco DEV: cria o cenário com
@@ -248,7 +255,8 @@ O fluxo completo, com delegação aos subagentes e revisão, está nas skills `/
 `lib/ia/atendente.ts`, `lib/automacoes/compilador/`, `lib/automacoes/motores/n8n/adaptador.ts`,
 `app/api/uazapi/webhook/route.ts`, `app/api/meta/whatsapp/webhook/route.ts`, `app/api/mcp/[segredo]/route.ts`,
 `app/api/meta/instagram/webhook/route.ts`, `lib/instagram.ts` (ponto único de envio e trava de dev),
-`lib/instagram-webhook.ts`, `lib/ia/comentarios.ts`.
+`lib/instagram-webhook.ts`, `lib/ia/comentarios.ts`, `lib/campanhas-whatsapp.ts` (motor que dispara para o segmento
+inteiro), `lib/campanhas-fluxo-entrada.ts`, `lib/aviso-equipe-whatsapp.ts`, `lib/ia/campanhas-construtor.ts`.
 
 **Dependências que importam:** `next` 16.3 (API diferente do treino, ver `AGENTS.md`), `postgres` (fora do
 bundle, `serverExternalPackages`), `jose`, `zod` 4, `@anthropic-ai/sdk` (o Storage do Supabase é chamado por `fetch` em `lib/armazenamento.ts`, sem SDK),

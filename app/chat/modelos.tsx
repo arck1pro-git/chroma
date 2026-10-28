@@ -6,18 +6,41 @@
 // contato vai ler, com um campo por variável ({{1}}, {{2}}…). O texto da
 // prévia é montado com o que está sendo digitado — é a melhor revisão possível
 // antes de mandar algo que não dá para editar depois.
-import { useEffect, useMemo, useState, useTransition } from "react";
-import { DADOS_DO_CONTATO, ROTULO_CATEGORIA as CATEGORIA, type DadosDoContato } from "@/lib/templates-whatsapp";
+//
+// Botão de link com variável (termina em {{1}}, desde 2026-10-27): um campo para
+// o final do link, com a parte fixa à vista antes dele. No link de vídeo do CRM
+// (/v/<código>?w=) o final é o WhatsApp do contato — é por ele que o vídeo sabe
+// quem assistiu —, então já vem preenchido e fica no menu Contato…. As regras do
+// final são as de problemaDoLinkVariavel, que o servidor confere de novo.
+import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import {
+  baseDoLink,
+  DADOS_DO_CONTATO,
+  ehLinkDeVideoDoCrm,
+  LIMITE,
+  problemaDoLinkVariavel,
+  ROTULO_CATEGORIA as CATEGORIA,
+  type DadosDoContato,
+} from "@/lib/templates-whatsapp";
 import { ArrowLeft, LayoutTemplate, Loader2, Lock, Search, SendHorizonal, X } from "@/app/components/icones";
 import { enviarTemplate, listarTemplates } from "./actions";
 import type { TemplateChat } from "./tipos";
-import { TextoWhatsApp } from "./ui";
+import { maiuscula, TextoWhatsApp } from "./ui";
 
 const preencher = (texto: string, valores: string[]) =>
   texto.replace(/\{\{(\d+)\}\}/g, (bruto, n) => {
     const v = valores[Number(n) - 1]?.trim();
     return v ? v : bruto;
   });
+
+/**
+ * O que impede mandar este final de link (null = pode). A lib escreve em
+ * minúscula para quem põe o botão na frente; aqui o botão está no rótulo.
+ */
+function problemaDoFinal(url: string, valor: string): string | null {
+  const problema = valor.trim() ? problemaDoLinkVariavel(url, valor.trim()) : "Preencha o final do link.";
+  return problema ? maiuscula(problema) : null;
+}
 
 export function SeletorTemplates({
   atendimentoId,
@@ -37,6 +60,8 @@ export function SeletorTemplates({
   const [escolhido, setEscolhido] = useState<TemplateChat | null>(null);
   const [cabecalho, setCabecalho] = useState<string[]>([]);
   const [corpo, setCorpo] = useState<string[]>([]);
+  /** O final de cada link com variável, pela posição do botão no template. */
+  const [links, setLinks] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, iniciar] = useTransition();
 
@@ -75,19 +100,33 @@ export function SeletorTemplates({
     const primeiroNome = contato?.primeiro_nome ?? "";
     setCabecalho(Array.from({ length: t.variaveisCabecalho }, () => ""));
     setCorpo(Array.from({ length: t.variaveisCorpo }, (_, i) => (i === 0 ? primeiroNome : "")));
+    // O link de vídeo do CRM quase sempre leva o WhatsApp do contato: já vem.
+    const numero = contato?.numero ?? "";
+    const tamanho = Math.max(0, ...t.linksVariaveis.map((l) => l.indice + 1));
+    setLinks(
+      Array.from({ length: tamanho }, (_, i) => {
+        const link = t.linksVariaveis.find((l) => l.indice === i);
+        return link && ehLinkDeVideoDoCrm(link.url) ? numero : "";
+      }),
+    );
   }
 
   const completo =
     escolhido !== null &&
     !escolhido.bloqueio &&
     cabecalho.every((v) => v.trim()) &&
-    corpo.every((v) => v.trim());
+    corpo.every((v) => v.trim()) &&
+    escolhido.linksVariaveis.every((l) => !problemaDoFinal(l.url, links[l.indice] ?? ""));
 
   function enviar() {
     if (!escolhido || !completo) return;
     setErro(null);
     iniciar(async () => {
-      const r = await enviarTemplate(atendimentoId, escolhido.nome, escolhido.idioma, { cabecalho, corpo });
+      const r = await enviarTemplate(atendimentoId, escolhido.nome, escolhido.idioma, {
+        cabecalho,
+        corpo,
+        botoes: links.map((v) => v.trim()),
+      });
       if (r.erro) setErro(r.erro);
       else aoEnviado();
     });
@@ -180,7 +219,7 @@ export function SeletorTemplates({
           </div>
 
           {/* Prévia e variáveis */}
-          <div className={`min-h-0 flex-1 flex-col sm:flex ${escolhido ? "flex" : "hidden"}`}>
+          <div className={`min-h-0 min-w-0 flex-1 flex-col sm:flex ${escolhido ? "flex" : "hidden"}`}>
             {!escolhido ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
                 <LayoutTemplate className="size-8 text-zinc-300 dark:text-zinc-700" />
@@ -210,9 +249,20 @@ export function SeletorTemplates({
                       {escolhido.rodape && <p className="mt-1.5 text-[11.5px] text-violet-900/60 dark:text-violet-200/60">{escolhido.rodape}</p>}
                       {escolhido.botoes.length > 0 && (
                         <div className="mt-2.5 flex flex-col gap-1 border-t border-violet-200/70 pt-2 dark:border-violet-400/20">
-                          {escolhido.botoes.map((b) => (
-                            <span key={b} className="text-center text-[12.5px] font-medium text-sky-600 dark:text-sky-400">{b}</span>
-                          ))}
+                          {escolhido.botoes.map((b, i) => {
+                            const link = escolhido.linksVariaveis.find((l) => l.indice === i);
+                            return (
+                              <span key={b} className="text-center text-[12.5px] font-medium text-sky-600 dark:text-sky-400">
+                                {b}
+                                {link && (
+                                  <span className="block break-all text-[10.5px] font-normal text-violet-900/60 dark:text-violet-200/60">
+                                    {baseDoLink(link.url)}
+                                    {links[i]?.trim() || "{{1}}"}
+                                  </span>
+                                )}
+                              </span>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -224,7 +274,7 @@ export function SeletorTemplates({
                       {escolhido.bloqueio}
                     </p>
                   ) : (
-                    (cabecalho.length > 0 || corpo.length > 0) && (
+                    (cabecalho.length > 0 || corpo.length > 0 || escolhido.linksVariaveis.length > 0) && (
                       <div className="flex flex-col gap-3">
                         <p className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">Variáveis</p>
                         {cabecalho.map((v, i) => (
@@ -232,6 +282,16 @@ export function SeletorTemplates({
                         ))}
                         {corpo.map((v, i) => (
                           <Campo key={`b${i}`} rotulo={`{{${i + 1}}}`} valor={v} contato={contato} aoMudar={(x) => setCorpo((a) => a.map((y, j) => (j === i ? x : y)))} />
+                        ))}
+                        {escolhido.linksVariaveis.map((l) => (
+                          <CampoFinalDoLink
+                            key={`l${l.indice}`}
+                            texto={l.texto}
+                            url={l.url}
+                            valor={links[l.indice] ?? ""}
+                            contato={contato}
+                            aoMudar={(x) => setLinks((a) => a.map((y, j) => (j === l.indice ? x : y)))}
+                          />
                         ))}
                       </div>
                     )
@@ -306,6 +366,87 @@ function Campo({
           </select>
         )}
       </div>
+    </div>
+  );
+}
+
+const ROTULO_WHATSAPP = DADOS_DO_CONTATO.find((d) => d.chave === "numero")?.rotulo ?? "WhatsApp";
+
+/**
+ * O final de um link com variável. A parte fixa vai antes do campo, cortada
+ * pela esquerda para o fim (o "?w=") ficar à vista; inteira no title. O erro
+ * aparece embaixo só com algo escrito — vazio, o Enviar fica apagado.
+ */
+function CampoFinalDoLink({
+  texto,
+  url,
+  valor,
+  contato,
+  aoMudar,
+}: {
+  texto: string;
+  url: string;
+  valor: string;
+  contato: DadosDoContato | null;
+  aoMudar: (v: string) => void;
+}) {
+  const id = useId();
+  const idBase = useId();
+  const idErro = useId();
+  const base = baseDoLink(url);
+  const problema = valor.trim() ? problemaDoFinal(url, valor) : null;
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
+        Final do link — <span className="font-medium text-zinc-700 dark:text-zinc-200">{texto}</span>
+      </label>
+      <div className="flex gap-2">
+        {/* Segundo <label> do mesmo campo: o clique na parte fixa leva ao campo. */}
+        <label
+          htmlFor={id}
+          className="flex min-w-0 flex-1 cursor-text items-center rounded-lg border border-zinc-200 bg-white transition focus-within:border-zinc-400 focus-within:ring-2 focus-within:ring-zinc-900/5 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-zinc-600"
+        >
+          <span id={idBase} dir="rtl" title={base} className="min-w-0 max-w-[65%] truncate pl-3 font-mono text-[11.5px] text-zinc-400 dark:text-zinc-500">
+            <span dir="ltr">{base}</span>
+          </span>
+          <input
+            id={id}
+            type="text"
+            value={valor}
+            onChange={(e) => aoMudar(e.target.value)}
+            maxLength={LIMITE.valorLink}
+            // Nome curto: os dois <label> juntos davam "Final do link — texto"
+            // seguido do link inteiro. A parte fixa e o erro vão como descrição.
+            aria-label={`Final do link ${texto}`}
+            aria-describedby={problema ? `${idErro} ${idBase}` : idBase}
+            aria-invalid={problema ? true : undefined}
+            spellCheck={false}
+            autoComplete="off"
+            className="min-w-0 flex-1 bg-transparent py-2 pl-0.5 pr-3 text-[13px] text-zinc-900 outline-none dark:text-zinc-50"
+          />
+        </label>
+        {contato && ehLinkDeVideoDoCrm(url) && (
+          <select
+            value=""
+            onChange={(e) => {
+              if (e.target.value) aoMudar(contato.numero);
+            }}
+            aria-label={`Preencher o final do link ${texto} com um dado do contato`}
+            className="w-28 shrink-0 cursor-pointer rounded-lg border border-zinc-200 bg-white px-2 py-2 text-[12px] text-zinc-600 outline-none transition hover:bg-zinc-50 focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            <option value="">Contato…</option>
+            <option value="numero" disabled={!contato.numero}>
+              {ROTULO_WHATSAPP}
+              {contato.numero ? `: ${contato.numero}` : " (vazio)"}
+            </option>
+          </select>
+        )}
+      </div>
+      {problema && (
+        <p id={idErro} className="text-[11.5px] leading-snug text-red-600 dark:text-red-400">
+          {problema}
+        </p>
+      )}
     </div>
   );
 }

@@ -59,7 +59,8 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "@/lib/db";
 import { enviarAudioNaConversa, enviarTextoNaConversa, type ResultadoEnvio } from "@/lib/conversa-envio";
-import { enviarTexto, instanciaExataPorNumero } from "@/lib/uazapi";
+import { instanciaExataPorNumero } from "@/lib/uazapi";
+import { enviarAvisoPelaInstancia } from "@/lib/aviso-equipe-whatsapp";
 import { soDigitos } from "@/lib/telefone";
 import { moverOportunidadeDeEtapa } from "@/lib/mover-etapa";
 import { vozConfigurada } from "@/lib/voz";
@@ -534,12 +535,6 @@ async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: st
   }
 }
 
-// track_id dos avisos à equipe. Com ele o eco volta marcado como nosso
-// (track_source) e o webhook o descarta; sem ele, o aviso virava uma conversa
-// do CRM com quem foi avisado, como se alguém tivesse escrito pelo celular. Não
-// é id de mensagem, então o webhook não casa com linha nenhuma.
-const RASTREIO_AVISO = "aviso-responsavel";
-
 type ConversaDoAviso = {
   atendimento_id: string;
   canal: string;
@@ -588,7 +583,9 @@ export function dadosDoLead(s: Situacao, c: ConversaDoAviso, valorDito: number |
 /**
  * Manda um aviso a alguém da equipe pelo MESMO número desta conversa. Devolve
  * como ficou, em poucas palavras, para a linha do histórico. Nunca lança: o
- * aviso que não saiu fica registrado com o motivo.
+ * aviso que não saiu fica registrado com o motivo. O envio em si (track_id de
+ * aviso, trava de ambiente) é o de lib/aviso-equipe-whatsapp.ts, o mesmo do
+ * aviso das campanhas.
  */
 export async function avisarNoWhatsApp(
   c: ConversaDoAviso,
@@ -607,7 +604,7 @@ export async function avisarNoWhatsApp(
     // Busca EXATA: a instância padrão faria o aviso sair de outro número.
     const instancia = c.numero_instancia ? await instanciaExataPorNumero(c.numero_instancia) : null;
     if (!instancia) return `${pessoa.nome} não avisado: o número desta conversa não está cadastrado`;
-    await enviarTexto(soDigitos(pessoa.whatsapp), texto, instancia, RASTREIO_AVISO);
+    await enviarAvisoPelaInstancia(instancia, pessoa.whatsapp, texto);
     return `${pessoa.nome} avisado no WhatsApp`;
   } catch (e) {
     console.error("[ia atendente] aviso não saiu:", pessoa.nome, e);

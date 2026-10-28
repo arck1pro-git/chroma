@@ -29,12 +29,17 @@ o `npx` baixaria pacotes do registro.
 | Meta Ads | mudou `lib/meta.ts` ou `lib/meta-ads-*` | `node --env-file=.env scripts/jiti.mjs scripts/testar-meta-ads.ts` |
 | Eventos da Meta | mudou `lib/meta-eventos.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-meta-eventos.ts` |
 | Templates do WhatsApp | mudou `lib/templates-whatsapp.ts`, `lib/campanhas-whatsapp.ts` ou `app/api/meta/templates/` | `node scripts/jiti.mjs scripts/testar-templates-whatsapp.ts` |
+| Campanhas em blocos | mudou `lib/campanhas-fluxo.ts` | `node scripts/jiti.mjs scripts/testar-campanhas-fluxo.ts` |
+| Construtor de campanhas | mudou `app/campanhas/fluxo/`, `lib/campanhas-fluxo.ts` ou `lib/campanhas-fluxo-envios.ts` | `node scripts/jiti.mjs scripts/testar-campanhas-tela.ts` |
+| Motor das campanhas | mudou `lib/campanhas-whatsapp.ts`, `lib/campanhas-fluxo*.ts`, `lib/aviso-equipe-whatsapp.ts` ou `app/api/meta/whatsapp/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-campanhas-motor.ts` |
+| IA do construtor de campanhas | mudou `lib/ia/campanhas-construtor*.ts`, `lib/campanhas-fluxo*.ts` ou `app/api/ia/campanhas/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-campanhas-construtor.ts` |
 | Agenda e horários da IA | mudou `lib/agenda.ts` ou `lib/google-oauth.ts` | `node scripts/testar-agenda-ocupados.mjs` |
 | Hooks do Claude Code | mudou `.claude/hooks/` ou `.claude/settings.json` | `node scripts/testar-hooks.mjs` |
 | Build | mudou `next.config.ts`, `proxy.ts`, `app/layout.tsx`, `package.json` ou `tsconfig.json`; rota ou página nova; alvo `build` ou `tudo` | `npm run build` |
 
 Os scripts simulam rede e serviços. O de eventos da Meta usa o banco DEV numa transação desfeita e devolve a etapa
-ao valor original. O de hooks usa uma pasta temporária com um `.env` falso. Nenhum outro script de `scripts/` entra aqui: `testar-gsc.ts` e `testar-login.ts` falam com
+ao valor original. O motor e a IA do construtor de campanhas usam o DEV com cenário marcado e apagado no fim, com a
+Graph e a uazapi falsas (nenhuma chamada à Anthropic). O de hooks usa uma pasta temporária com um `.env` falso. Nenhum outro script de `scripts/` entra aqui: `testar-gsc.ts` e `testar-login.ts` falam com
 serviço ou conta de verdade, e `rodar-sql.ts`, `criar-usuario.ts` e `carimbar-campanhas.ts` são operações
 que gravam dados.
 

@@ -26,7 +26,16 @@ export async function gravarIaDoContato(
    * instrução. É o caso da IA de comentário do Instagram (lib/ia/comentarios.ts):
    * ela nunca passa por cima de quem ligou ou desligou à mão.
    */
-  opcoes: { soSeNaoDefinida?: boolean } = {},
+  opcoes: {
+    soSeNaoDefinida?: boolean;
+    /**
+     * Ligar sem passar por cima de quem decidiu à mão: não religa a desligada
+     * (ia = false) nem troca outra IA escolhida (ia = true com outro ia_id), na
+     * mesma instrução. É o bloco "Passar para a IA" das campanhas
+     * (lib/campanhas-whatsapp.ts): antes ele lia e gravava em duas instruções.
+     */
+    respeitarEscolhaManual?: boolean;
+  } = {},
 ): Promise<{ erro?: string }> {
   let nomeIa: string | null = null;
   if (valor === true) {
@@ -42,7 +51,15 @@ export async function gravarIaDoContato(
      WHERE id = ${contatoId}
        AND (ia, ia_id) IS DISTINCT FROM (${valor}::boolean, ${id}::uuid)
        AND (NOT ${opcoes.soSeNaoDefinida === true}::boolean OR ia IS NULL)
+       AND (NOT ${opcoes.respeitarEscolhaManual === true}::boolean
+            OR (ia IS DISTINCT FROM false AND (ia IS NULL OR ia_id = ${id}::uuid)))
     RETURNING id`;
+  if (!linha && opcoes.respeitarEscolhaManual) {
+    // Só para dizer o porquê: a decisão já foi tomada pelo UPDATE acima.
+    const [c] = await sql`SELECT ia, ia_id FROM contatos WHERE id = ${contatoId}`;
+    if (c?.ia === false) return { erro: "A IA foi desligada à mão neste contato: não religada." };
+    if (c?.ia === true && c.ia_id !== id) return { erro: "O contato já está com outra IA: não trocada." };
+  }
   if (linha) {
     const base =
       valor === true

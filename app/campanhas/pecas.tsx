@@ -1,7 +1,10 @@
+import { useEffect, useId, useRef } from "react";
 import { type TipoIcone, TriangleAlert } from "@/app/components/icones";
 
 // As peças que as telas de Campanhas repetem: tokens de campo e botão, os
-// códigos da Meta em português e os dois avisos. Cada painel trazia a própria
+// códigos da Meta em português, os dois avisos e a faixa de confirmação (sair
+// do construtor com mudanças, salvar que tira contatos; a Confirmacao usa
+// hooks, e só componentes cliente importam este arquivo). Cada painel trazia a própria
 // cópia e elas já tinham divergido — canto arredondado, tamanho de texto e
 // "OUTCOME_LEADS" cru num lugar e traduzido no outro.
 //
@@ -47,6 +50,53 @@ export function Aviso({ texto, detalhe, erro }: { texto: string; detalhe?: strin
         {texto}
         {detalhe && <p className="mt-1 opacity-75">{detalhe}</p>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A pergunta antes de uma ação que perde trabalho ou tira gente da campanha,
+ * numa faixa no alto do que ela afeta — como o "Descartar o que foi escrito?"
+ * do editor de templates, sem modal. O foco começa em voltar (Enter não
+ * confirma por engano) e o Esc volta; o Esc tratado aqui não chega ao chat.
+ */
+export function Confirmacao({
+  texto,
+  rotuloConfirmar,
+  rotuloVoltar = "Voltar",
+  aoConfirmar,
+  aoVoltar,
+}: {
+  texto: string;
+  rotuloConfirmar: string;
+  rotuloVoltar?: string;
+  aoConfirmar: () => void;
+  aoVoltar: () => void;
+}) {
+  const id = useId();
+  const voltar = useRef<HTMLButtonElement>(null);
+  useEffect(() => voltar.current?.focus(), []);
+  return (
+    <div
+      role="alertdialog"
+      aria-labelledby={id}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        aoVoltar();
+      }}
+      className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-500/30 dark:bg-amber-500/10"
+    >
+      <TriangleAlert className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+      <p id={id} className="min-w-0 flex-1 text-[12.5px] leading-snug text-amber-900 dark:text-amber-200">
+        {texto}
+      </p>
+      <button ref={voltar} type="button" onClick={aoVoltar} className={`${botaoAds} shrink-0 bg-white dark:bg-zinc-950`}>
+        {rotuloVoltar}
+      </button>
+      <button type="button" onClick={aoConfirmar} className={`${botaoPrincipalAds} shrink-0`}>
+        {rotuloConfirmar}
+      </button>
     </div>
   );
 }

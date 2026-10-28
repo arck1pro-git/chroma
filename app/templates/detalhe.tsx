@@ -6,7 +6,7 @@
 // para corrigir (um template rejeitado não volta para análise com outro texto
 // por aqui).
 import { telefoneLegivel } from "@/lib/telefone";
-import { ROTULO_CATEGORIA, semEnvioPeloCrm, variaveisDo, type TemplateWhatsApp } from "@/lib/templates-whatsapp";
+import { linksVariaveisDe, motivoSemEnvio, ROTULO_CATEGORIA, variaveisDo, type TemplateWhatsApp } from "@/lib/templates-whatsapp";
 import {
   CircleCheck,
   CircleX,
@@ -72,18 +72,16 @@ const TOM_ORIENTACAO: Record<Tom, string> = {
 function orientacao(t: TemplateWhatsApp, podeCriar: boolean): { Icone: TipoIcone; tom: Tom; texto: string } | null {
   const corrigir = podeCriar ? " Duplique, ajuste e envie de novo com outro nome." : "";
   switch (t.status) {
-    case "APPROVED":
-      return semEnvioPeloCrm(t)
-        ? {
-            Icone: CircleCheck,
-            tom: "aviso",
-            texto: "Aprovado, mas o CRM ainda não envia template com cabeçalho de mídia ou link variável — nem pelo chat, nem por campanha.",
-          }
+    case "APPROVED": {
+      const semEnvio = motivoSemEnvio(t);
+      return semEnvio
+        ? { Icone: CircleCheck, tom: "aviso", texto: `Aprovado, mas o CRM não envia este template, nem pelo chat nem por campanha. ${semEnvio}` }
         : {
             Icone: CircleCheck,
             tom: "bom",
             texto: "Pronto para usar no chat, nas conversas da API oficial, e nas campanhas de WhatsApp. As variáveis podem levar dados do contato.",
           };
+    }
     case "PENDING":
     case "IN_APPEAL":
       return { Icone: Clock3, tom: "aviso", texto: "A Meta está analisando. Costuma levar alguns minutos — o botão de atualizar, no topo da lista, confere de novo." };
@@ -103,8 +101,15 @@ function orientacao(t: TemplateWhatsApp, podeCriar: boolean): { Icone: TipoIcone
 function contagemVariaveis(t: TemplateWhatsApp): string {
   const corpo = variaveisDo(t.corpo).length;
   const cabecalho = variaveisDo(t.cabecalho?.texto ?? "").length;
-  if (!corpo && !cabecalho) return "Nenhuma";
-  return [corpo ? `${corpo} no texto` : "", cabecalho ? `${cabecalho} no cabeçalho` : ""].filter(Boolean).join(" · ");
+  const links = linksVariaveisDe(t).length;
+  if (!corpo && !cabecalho && !links) return "Nenhuma";
+  return [
+    corpo ? `${corpo} no texto` : "",
+    cabecalho ? `${cabecalho} no cabeçalho` : "",
+    links ? `${links} ${links === 1 ? "no link" : "nos links"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export default function Detalhe({

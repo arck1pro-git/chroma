@@ -20,8 +20,9 @@ export function conferirDestino(numero: string): void {
   if (lista.length === 0) return;
   const alvo = chaveTelefone(numero);
   if (!lista.some((n) => chaveTelefone(n) === alvo)) {
+    // Só o fim do número: a mensagem vai para log, evento de campanha e tela.
     throw new Error(
-      `Envio bloqueado neste ambiente: ${soDigitos(numero)} não está em WHATSAPP_SO_PARA.`,
+      `Envio bloqueado neste ambiente: o número terminado em ${soDigitos(numero).slice(-4)} não está em WHATSAPP_SO_PARA.`,
     );
   }
 }

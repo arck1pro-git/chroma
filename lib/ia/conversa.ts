@@ -63,6 +63,10 @@ export type OpcoesConversa = {
   // a conversa de automações avisa a tela que o fluxo mudou — no fim, e não no
   // início da ferramenta, senão o builder recarregaria antes da gravação.
   eventosFinais?: () => Record<string, unknown>[];
+  // Teto de idas ao modelo nesta resposta (cada uma: resposta → ferramentas →
+  // resultados). Sem ele o laço só para quando o modelo para de chamar
+  // ferramenta. Quem não passa segue sem teto, como sempre foi.
+  maxIteracoes?: number;
 };
 
 export function conversar(opcoes: OpcoesConversa): Response {
@@ -95,6 +99,7 @@ export function conversar(opcoes: OpcoesConversa): Response {
       },
     ],
     stream: true,
+    ...(opcoes.maxIteracoes ? { max_iterations: opcoes.maxIteracoes } : {}),
   });
 
   const fluxo = new ReadableStream<Uint8Array>({

@@ -172,7 +172,8 @@ export async function enviarTextoNaConversa(e: {
   atendimentoId: string;
   texto: string;
   autorId: string | null;
-  enviadaPor: "crm" | "ia";
+  /** "automacao": o texto livre da campanha em blocos, a mesma marca das cadências. */
+  enviadaPor: "crm" | "ia" | "automacao";
   /**
    * Pausa antes de sair, como quem digita: a IA quebra a resposta em mensagens
    * curtas. Pela uazapi o cliente vê "Digitando..."; pela Meta é só a pausa.

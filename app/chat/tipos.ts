@@ -113,6 +113,12 @@ export type TemplateChat = {
   botoes: string[];
   variaveisCabecalho: number;
   variaveisCorpo: number;
-  /** Motivo quando não dá para mandar daqui (cabeçalho de mídia, botão com variável). */
+  /**
+   * Os botões de link que terminam em {{1}} (lib/templates-whatsapp.ts,
+   * linksVariaveisDe): cada um pede o final do link no envio, em
+   * `botoes[indice]` de enviarTemplate. `indice` é a posição entre todos os botões.
+   */
+  linksVariaveis: Array<{ indice: number; texto: string; url: string }>;
+  /** Motivo quando não dá para mandar daqui (cabeçalho de mídia, variável com nome, link fora do padrão). */
   bloqueio: string | null;
 };

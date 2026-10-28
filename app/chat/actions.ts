@@ -41,8 +41,10 @@ import {
   componentesDoEnvio,
   dadosDoContato,
   lerTemplate,
+  linksVariaveisDe,
+  motivoSemEnvio,
   parametroLimpo,
-  semEnvioPeloCrm,
+  problemaDoLinkVariavel,
   variaveisDoTemplate,
   type DadosDoContato,
 } from "@/lib/templates-whatsapp";
@@ -204,7 +206,8 @@ function paraTemplateChat(meta: TemplateMeta): TemplateChat {
     botoes: t.botoes.map((b) => b.texto).filter(Boolean),
     variaveisCabecalho: n.cabecalho,
     variaveisCorpo: n.corpo,
-    bloqueio: semEnvioPeloCrm(t) ? "Tem cabeçalho de mídia, link variável ou variável com nome, que o CRM ainda não envia." : null,
+    linksVariaveis: linksVariaveisDe(t),
+    bloqueio: motivoSemEnvio(t),
   };
 }
 
@@ -239,12 +242,17 @@ export async function listarTemplates(
  * Manda um template — o único jeito de falar pela API oficial fora da janela
  * de 24h. O template é conferido AQUI de novo (aprovado, variáveis
  * preenchidas): o que a tela manda é só o nome e os valores.
+ *
+ * `botoes[indice]` é o final de cada link com variável (TemplateChat
+ * .linksVariaveis), o valor que o atendente vê: sem marca {{…}} e pela mesma
+ * regra da campanha (problemaDoLinkVariavel). Resposta rápida não leva payload
+ * no chat: quem clica cai na conversa como mensagem comum.
  */
 export async function enviarTemplate(
   atendimentoId: string,
   nome: string,
   idioma: string,
-  valores: { cabecalho: string[]; corpo: string[] },
+  valores: { cabecalho: string[]; corpo: string[]; botoes?: string[] },
 ): Promise<Resultado> {
   const { usuario } = await exigirModulo("chat", "criar");
   const d = await destinoDa(atendimentoId);
@@ -271,7 +279,20 @@ export async function enviarTemplate(
     return { erro: "Para usar um dado do contato, escolha no menu Contato… ao lado do campo." };
   }
 
-  const componentes = componentesDoEnvio({ cabecalho, corpo });
+  // O que chega do navegador não é confiável: lista ou nada, texto ou vazio.
+  const botoes = Array.isArray(valores.botoes) ? valores.botoes : [];
+  const links: Array<{ indice: number; valor: string }> = [];
+  for (const l of template.linksVariaveis) {
+    const bruto = botoes[l.indice];
+    const valor = typeof bruto === "string" ? bruto.trim() : "";
+    if (!valor) return { erro: `Preencha o final do link do botão “${l.texto}”.` };
+    if (/\{\{|\}\}/.test(valor)) return { erro: `No link do botão “${l.texto}” vai o valor de verdade, sem marca {{…}}.` };
+    const problema = problemaDoLinkVariavel(l.url, valor);
+    if (problema) return { erro: `O link do botão “${l.texto}”: ${problema}` };
+    links.push({ indice: l.indice, valor });
+  }
+
+  const componentes = componentesDoEnvio({ cabecalho, corpo }, { links });
 
   const texto = textoDoTemplate(
     [

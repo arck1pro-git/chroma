@@ -30,7 +30,22 @@ import { tomEscuro } from "@/lib/cores-funil";
 // tela sem uma saber da outra.
 //
 // `aoAplicar` fecha o ciclo da segunda: quando o servidor avisa que gravou
-// alguma coisa, quem chamou decide o que recarregar.
+// alguma coisa, quem chamou decide o que recarregar. `aoEvento` recebe os
+// eventos do stream que o painel não trata (o construtor de campanhas recebe
+// por ali o fluxo que a IA desenhou, sem nada gravado).
+//
+// TRÊS APRESENTAÇÕES: o cartão flutuante (padrão), o compacto (só balões e
+// campo, flutuando sobre construtores e no painel fixo do TI) e a coluna
+// (`modo="lateral"`; com `compacto`, coluna estreita de 320px, que o construtor
+// de campanhas põe no lugar da paleta, 2026-10-28).
+//
+// ABRIR E CORTAR A RESPOSTA. Sem `aberto`, o painel abre e fecha sozinho, como
+// sempre: o X corta a resposta em andamento; o Esc só esconde, e a resposta
+// termina e é gravada. Com `aberto` (controlado pela tela, o construtor), a
+// tela abre e fecha, e fechar por qualquer caminho ou desmontar corta a
+// resposta: o desenho do fim cairia num editor que já não é o da pergunta.
+// O Esc respeita quem já o tratou (`defaultPrevented`, o modal de ativar) e,
+// na coluna, só vale com o foco dentro da conversa.
 //
 // AS CONVERSAS FICAM NO BANCO (ia_conversas, via ./acoes-ia.ts). Antes viviam
 // no localStorage: sumiam ao limpar o cache e não existiam em outro navegador.
@@ -135,7 +150,8 @@ export function PainelIa({
   // "lateral": o painel vira um elemento de FLUXO — quem o renderiza o coloca
   // como irmão do conteúdo num flex horizontal, e abrir empurra o conteúdo em
   // vez de cobri-lo. É o modo da tela inicial, onde o quadro não pode ficar
-  // escondido atrás da conversa.
+  // escondido atrás da conversa. Com `compacto`, é uma coluna estreita (w-80)
+  // só com os balões e o campo (o construtor de campanhas).
   modo = "flutuante",
   // Id de conversa vindo da URL (?ia=<id>). Quando presente, o painel abre
   // sozinho já nessa conversa. Até 2026-10-27 quem punha o ?ia= era a lista de
@@ -155,6 +171,19 @@ export function PainelIa({
   // telas. Muda duas coisas: a lista é a de todas as conversas, e a conversa
   // aberta pode ser de qualquer escopo — e continua gravando no dela.
   global = false,
+  // Os eventos do stream que este painel não trata (texto, ferramenta, erro e
+  // "mudou" são dele): quem chama decide. Vale a função do render mais
+  // recente, com o estado de agora da tela. Só no painel próprio — o registro
+  // no fixo do TI não leva (ver `proprio`, em ChatIa).
+  aoEvento,
+  // Aberto ou fechado pela TELA: com `aberto`, quem chama guarda o estado e
+  // abre por um botão dela (o construtor de campanhas, sem o flutuante); o
+  // painel só pede a mudança por `aoAbrirOuFechar` (Esc, fechar).
+  aberto: abertoDeFora,
+  aoAbrirOuFechar,
+  // A dica e as sugestões também no compacto, enquanto a conversa está vazia:
+  // no construtor de campanhas elas ensinam o jeito de pedir.
+  sugestoesNoCompacto = false,
 }: {
   contexto: string;
   endpoint?: string;
@@ -173,10 +202,19 @@ export function PainelIa({
   compacto?: boolean;
   corIcone?: string;
   global?: boolean;
+  aoEvento?: (t: string, v: unknown) => void;
+  aberto?: boolean;
+  aoAbrirOuFechar?: (aberto: boolean) => void;
+  sugestoesNoCompacto?: boolean;
 }) {
   // Já nasce aberto quando a URL trouxe uma conversa (?ia=): abrir num efeito
   // faria o painel piscar fechado antes de aparecer.
-  const [aberto, setAberto] = useState(!!conversaInicial);
+  const [abertoProprio, setAbertoProprio] = useState(!!conversaInicial);
+  const aberto = abertoDeFora ?? abertoProprio;
+  function setAberto(valor: boolean) {
+    setAbertoProprio(valor);
+    aoAbrirOuFechar?.(valor);
+  }
   // Onde a conversa ABERTA grava. É o `escopo` do painel, menos no fixo do TI
   // quando ele abre uma conversa de outra tela: aí ela segue no escopo dela.
   const [escopoAtual, setEscopoAtual] = useState(escopo);
@@ -203,6 +241,33 @@ export function PainelIa({
   const fimRef = useRef<HTMLDivElement>(null);
   const campoRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // O evento chega no fim do stream: a função guardada aqui é a do último
+  // render, não a do render em que a pergunta saiu — a pessoa pode ter mexido
+  // na tela enquanto a IA pensava.
+  const aoEventoRef = useRef(aoEvento);
+  useEffect(() => {
+    aoEventoRef.current = aoEvento;
+  });
+
+  const secaoRef = useRef<HTMLElement>(null);
+  // Lateral E compacto: a conversa enxuta como coluna estreita da tela, em vez
+  // de flutuar sobre ela (o construtor de campanhas, no lugar da paleta, para
+  // não cobrir o desenho que a IA acabou de fazer).
+  const colunaCompacta = modo === "lateral" && compacto;
+
+  // Só no chat CONTROLADO (o construtor: `aberto` vem da tela), fechar por
+  // qualquer caminho ou desmontar corta a resposta em andamento — o desenho do
+  // fim cairia num editor que já não é o da pergunta. Os outros seguem como
+  // sempre: o X corta (fechar()), o Esc só esconde, e a resposta termina e é
+  // gravada.
+  const controlado = abertoDeFora !== undefined;
+  useEffect(() => {
+    if (controlado && !aberto) abortRef.current?.abort();
+  }, [controlado, aberto]);
+  useEffect(() => {
+    if (!controlado) return;
+    return () => abortRef.current?.abort();
+  }, [controlado]);
 
   const atual = conversas.find((c) => c.id === atualId) ?? null;
 
@@ -241,13 +306,20 @@ export function PainelIa({
   useEffect(() => {
     if (!aberto) return;
     function aoTeclar(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
+      // Esc que outra peça já tratou (o modal de ativar fecha a si mesmo) não
+      // fecha o chat junto. Na coluna, que divide a tela com o canvas e os
+      // campos do bloco, só com o foco dentro da conversa.
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (colunaCompacta && !secaoRef.current?.contains(document.activeElement)) return;
       if (vendoLista) setVendoLista(false);
-      else setAberto(false);
+      else {
+        setAbertoProprio(false);
+        aoAbrirOuFechar?.(false);
+      }
     }
     document.addEventListener("keydown", aoTeclar);
     return () => document.removeEventListener("keydown", aoTeclar);
-  }, [aberto, vendoLista]);
+  }, [aberto, vendoLista, aoAbrirOuFechar, colunaCompacta]);
 
   /**
    * Abre o painel e garante a lista carregada.
@@ -490,24 +562,28 @@ export function PainelIa({
 
         for (const linha of linhas) {
           if (!linha.trim()) continue;
-          let evento: { t?: string; v?: string };
+          // `v` é texto nos eventos deste painel; nos outros, é o que quem
+          // chama combinou com o servidor (o desenho do construtor é objeto).
+          let evento: { t?: unknown; v?: unknown };
           try {
             evento = JSON.parse(linha);
           } catch {
             continue;
           }
+          if (!evento || typeof evento !== "object") continue;
+          const trecho = typeof evento.v === "string" ? evento.v : "";
 
-          if (evento.t === "ferramenta") setFerramenta(evento.v ?? null);
-          if (evento.t === "texto") {
+          if (evento.t === "ferramenta") setFerramenta(trecho || null);
+          else if (evento.t === "texto") {
             setFerramenta(null);
-            completa += evento.v ?? "";
+            completa += trecho;
             setParcial(completa);
-          }
-          if (evento.t === "erro") completa += `\n\n${evento.v ?? ""}`;
+          } else if (evento.t === "erro") completa += `\n\n${trecho}`;
           // O servidor gravou alguma coisa (hoje: o rascunho do fluxo). O
           // aviso vem depois da última palavra do modelo, então a tela
           // recarrega já com a versão nova no banco.
-          if (evento.t === "mudou") aoAplicar?.();
+          else if (evento.t === "mudou") aoAplicar?.();
+          else if (typeof evento.t === "string" && !controle.signal.aborted) aoEventoRef.current?.(evento.t, evento.v);
         }
       }
 
@@ -553,11 +629,14 @@ export function PainelIa({
                 // a borda; sem as duas, sobram os balões, e a profundidade passa
                 // a vir da sombra deles.
                 "surge flex h-full w-[26rem] max-w-[85vw] shrink-0 flex-col overflow-hidden"
-              : // acima do botão; a camada padrão fica sob os véus das fichas (z-40/50)
-                compactoEfetivo
+              : colunaCompacta
+                ? "surge flex h-full w-80 shrink-0 flex-col overflow-hidden border-r border-zinc-200 px-3 pb-3 dark:border-zinc-800"
+                : // acima do botão; a camada padrão fica sob os véus das fichas (z-40/50)
+                  compactoEfetivo
                   ? `fixed bottom-20 right-5 ${camada} flex max-h-[70vh] w-[26rem] max-w-[calc(100vw-6rem)] flex-col overflow-visible`
                   : `surge fixed bottom-20 right-5 ${camada} flex max-h-[70vh] w-[26rem] max-w-[calc(100vw-6rem)] flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-950`
           }
+          ref={secaoRef}
           aria-label={rotulo}
         >
           {!compactoEfetivo&&<header className="flex shrink-0 items-center gap-1 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
@@ -668,7 +747,7 @@ export function PainelIa({
               )}
             </div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <div className={`min-h-0 flex-1 overflow-y-auto py-3 ${colunaCompacta ? "px-1" : "px-4"}`}>
               {abrindo && (
                 <p className="flex items-center gap-1.5 text-[12px] text-zinc-400 dark:text-zinc-500">
                   <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -676,8 +755,10 @@ export function PainelIa({
                 </p>
               )}
 
-              {!compactoEfetivo && !abrindo && falas.length === 0 && !parcial && (
-                <div className="flex flex-col gap-2">
+              {(!compactoEfetivo || sugestoesNoCompacto) && !abrindo && falas.length === 0 && !parcial && (
+                // No compacto o painel não tem fundo: a abertura ganha a
+                // superfície de um balão.
+                <div className={`flex flex-col gap-2 ${compactoEfetivo ? `rounded-2xl bg-white p-3 ${SOMBRA} dark:bg-zinc-900` : ""}`}>
                   {/* Abertura: a marca ao lado do título dá cara de "converse
                       comigo" em vez de formulário vazio. */}
                   <div className="surge mb-1 flex items-center gap-2">
@@ -837,18 +918,27 @@ export function PainelIa({
   );
 }
 
-type PropsChatIa = Parameters<typeof PainelIa>[0];
+type PropsChatIa = Parameters<typeof PainelIa>[0] & {
+  /**
+   * Desenha o próprio painel também para quem tem o fixo (o TI): o chat é
+   * peça da tela, com endpoint, escopo e eventos que o fixo não conhece (o
+   * "Montar com IA" do construtor de campanhas, que recebe o desenho por
+   * `aoEvento`). Quem usa abre pelo próprio botão, sem o flutuante, que
+   * dividiria o canto com o do fixo.
+   */
+  proprio?: boolean;
+};
 
 /**
  * O chat de uma TELA. Para quem tem o painel fixo (o TI, ./ia-global.tsx), ele
  * não se desenha: só conta ao fixo o que está na tela — a frase de contexto, o
  * fluxo aberto, o que recarregar quando a IA gravar. Assim o TI tem UM botão de
  * IA, o mesmo em todas as abas, e ele não some nem fecha ao trocar de aba.
- * Para os demais, é o painel de sempre.
+ * Para os demais, é o painel de sempre. `proprio` é a exceção (acima).
  */
-export default function ChatIa(props: PropsChatIa) {
+export default function ChatIa({ proprio = false, ...props }: PropsChatIa) {
   const fixa = useIaFixa();
-  if (fixa) {
+  if (fixa && !proprio) {
     return (
       <RegistroNaIaFixa
         canal={fixa}

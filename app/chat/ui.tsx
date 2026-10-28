@@ -123,7 +123,8 @@ const fmtLongoAno = new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, day: "num
 export const diaDe = (iso: string) => fmtDia.format(new Date(iso));
 
 const DIA_MS = 86_400_000;
-const maiuscula = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** A primeira letra maiúscula (datas do chat e as frases da lib de templates, escritas em minúscula). */
+export const maiuscula = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Na lista: hora (hoje), "Ontem", dia da semana (até 6 dias) ou data. */
 export function quandoNaLista(iso: string, agora: number): string {

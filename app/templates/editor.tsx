@@ -7,14 +7,21 @@
 // falta em vez de só ficar apagado. As peças do formulário estão em
 // ./campos-editor.tsx.
 //
+// O botão de link pode terminar em {{1}} ("Link com variável", 2026-10-27): o
+// final é preenchido em cada envio — o uso típico é o link rastreável do vídeo
+// com o WhatsApp do contato — e a Meta pede um exemplo dele para analisar.
+//
 // Fechar com texto escrito pede confirmação no próprio rodapé (Esc, véu ou
 // Cancelar): um clique fora do modal não pode jogar fora um template inteiro.
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   avisosDo,
+  baseDoLink,
   emGrupos,
   LIMITE,
+  linksVariaveisDe,
   nomeDeTemplate,
+  problemaDoLinkVariavel,
   problemasDo,
   variaveisDo,
   type BotaoRascunho,
@@ -42,9 +49,19 @@ import {
   X,
   type TipoIcone,
 } from "@/app/components/icones";
+import { maiuscula } from "@/app/chat/ui";
 import CamadaTopo from "../components/camada-topo";
 import { BOTAO_PRIMARIO, BOTAO_SECUNDARIO, BotaoIcone, CAMPO } from "../components/gaveta";
-import { Bloco, CampoExemplo, Contador, Ferramenta, Situacao } from "./campos-editor";
+import {
+  Bloco,
+  CampoExemplo,
+  CampoLink,
+  Contador,
+  Ferramenta,
+  FIM_VARIAVEL,
+  OpcaoLinkVariavel,
+  Situacao,
+} from "./campos-editor";
 import { PreviaWhatsApp } from "./previa";
 
 const CATEGORIAS: Array<{ valor: Categoria; rotulo: string; descricao: string; Icone: TipoIcone }> = [
@@ -124,6 +141,8 @@ export default function Editor({
     exemplosCabecalho: r.exemplosCabecalho,
     exemplosCorpo: r.exemplosCorpo,
   };
+  // Pela posição do botão: os links que terminam em {{1}} (a regra é da lib).
+  const comVariavel = new Set(linksVariaveisDe(conteudo).map((l) => l.indice));
 
   useEffect(() => {
     const campo = nomeRef.current;
@@ -211,6 +230,27 @@ export default function Editor({
 
   const mudarBotao = (i: number, parcial: Partial<BotaoRascunho>) =>
     mudar({ botoes: r.botoes.map((b, j) => (j === i ? { ...b, ...parcial } : b)) });
+
+  // Ligar acrescenta o {{1}} no fim do link; desligar tira, junto com o exemplo.
+  function alternarLinkVariavel(i: number, ligar: boolean) {
+    const base = baseDoLink(r.botoes[i].destino);
+    mudarBotao(i, ligar ? { destino: base + FIM_VARIAVEL } : { destino: base, exemplo: undefined });
+  }
+
+  // Embaixo do link, como nos outros campos, só com algo escrito: primeiro o
+  // problema do link, depois o do exemplo. O "https://" do botão novo não
+  // conta. Exemplo com {{…}} fica com o rodapé: problemasDo tem a frase própria
+  // ("valor de verdade"), e a do envio falaria do WhatsApp do contato.
+  function erroDoLinkVariavel(b: BotaoRascunho): string | undefined {
+    const base = baseDoLink(b.destino);
+    if (!base || /^https:\/\/$/i.test(base)) return undefined;
+    const exemplo = b.exemplo?.trim() ?? "";
+    const problema =
+      problemaDoLinkVariavel(b.destino, null) ??
+      (exemplo && !/\{\{|\}\}/.test(exemplo) ? problemaDoLinkVariavel(b.destino, exemplo) : null);
+    // A lib escreve em minúscula para quem põe o botão na frente; aqui o botão é o de cima.
+    return problema ? maiuscula(problema) : undefined;
+  }
 
   async function enviar() {
     if (problemas.length || enviando) return;
@@ -460,40 +500,62 @@ export default function Editor({
                   <ul ref={botoesRef} className="flex flex-col gap-2">
                     {r.botoes.map((b, i) => {
                       const { Icone } = BOTAO_NOVO[b.tipo];
+                      const variavel = comVariavel.has(i);
+                      const erroLink = variavel ? erroDoLinkVariavel(b) : undefined;
                       return (
-                        <li key={i} className="flex items-center gap-2">
-                          <span
-                            className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400"
-                            title={BOTAO_NOVO[b.tipo].rotulo}
-                          >
-                            <Icone className="size-3.5" aria-hidden="true" />
-                          </span>
-                          <input
-                            data-botao={i}
-                            value={b.texto}
-                            onChange={(e) => mudarBotao(i, { texto: e.target.value })}
-                            maxLength={LIMITE.textoBotao}
-                            aria-label={`Texto do botão ${i + 1}`}
-                            placeholder="Texto do botão"
-                            className={`${CAMPO} ${b.tipo === "QUICK_REPLY" ? "flex-1" : "w-40 shrink-0"}`}
-                          />
-                          {b.tipo !== "QUICK_REPLY" && (
+                        <li key={i} className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400"
+                              title={BOTAO_NOVO[b.tipo].rotulo}
+                            >
+                              <Icone className="size-3.5" aria-hidden="true" />
+                            </span>
                             <input
-                              value={b.destino}
-                              onChange={(e) => mudarBotao(i, { destino: e.target.value })}
-                              maxLength={b.tipo === "URL" ? LIMITE.url : LIMITE.telefone}
-                              inputMode={b.tipo === "PHONE_NUMBER" ? "tel" : "url"}
-                              aria-label={b.tipo === "URL" ? `Link do botão ${i + 1}` : `Telefone do botão ${i + 1}`}
-                              placeholder={b.tipo === "URL" ? "https://…" : "47 99999-0000"}
-                              spellCheck={false}
-                              className={`${CAMPO} min-w-0 flex-1`}
+                              data-botao={i}
+                              value={b.texto}
+                              onChange={(e) => mudarBotao(i, { texto: e.target.value })}
+                              maxLength={LIMITE.textoBotao}
+                              aria-label={`Texto do botão ${i + 1}`}
+                              placeholder="Texto do botão"
+                              className={`${CAMPO} ${b.tipo === "QUICK_REPLY" ? "flex-1" : "w-40 shrink-0"}`}
+                            />
+                            {b.tipo === "URL" && (
+                              <CampoLink
+                                destino={b.destino}
+                                variavel={variavel}
+                                rotulo={`Link do botão ${i + 1}`}
+                                invalido={erroLink !== undefined}
+                                aoMudar={(destino) => mudarBotao(i, { destino })}
+                              />
+                            )}
+                            {b.tipo === "PHONE_NUMBER" && (
+                              <input
+                                value={b.destino}
+                                onChange={(e) => mudarBotao(i, { destino: e.target.value })}
+                                maxLength={LIMITE.telefone}
+                                inputMode="tel"
+                                aria-label={`Telefone do botão ${i + 1}`}
+                                placeholder="47 99999-0000"
+                                spellCheck={false}
+                                className={`${CAMPO} min-w-0 flex-1`}
+                              />
+                            )}
+                            <BotaoIcone
+                              Icone={Trash2}
+                              rotulo={`Tirar o botão ${b.texto || i + 1}`}
+                              onClick={() => mudar({ botoes: r.botoes.filter((_, j) => j !== i) })}
+                            />
+                          </div>
+                          {b.tipo === "URL" && (
+                            <OpcaoLinkVariavel
+                              ligado={variavel}
+                              exemplo={b.exemplo ?? ""}
+                              erro={erroLink}
+                              aoAlternar={(ligar) => alternarLinkVariavel(i, ligar)}
+                              aoMudarExemplo={(exemplo) => mudarBotao(i, { exemplo })}
                             />
                           )}
-                          <BotaoIcone
-                            Icone={Trash2}
-                            rotulo={`Tirar o botão ${b.texto || i + 1}`}
-                            onClick={() => mudar({ botoes: r.botoes.filter((_, j) => j !== i) })}
-                          />
                         </li>
                       );
                     })}
@@ -503,7 +565,7 @@ export default function Editor({
             </div>
 
             <aside className="hidden min-h-0 overflow-y-auto overscroll-contain border-l border-zinc-100 bg-zinc-50/60 px-5 py-5 md:block tela-baixa:py-4 dark:border-zinc-900 dark:bg-zinc-900/30">
-              <PreviaWhatsApp conteudo={conteudo} />
+              <PreviaWhatsApp conteudo={conteudo} exemplosBotoes={r.botoes.map((b) => b.exemplo ?? "")} />
               {avisos.length > 0 && (
                 <ul className="mt-4 flex flex-col gap-2" aria-label="Avisos">
                   {avisos.map((a) => (

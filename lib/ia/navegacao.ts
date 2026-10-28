@@ -13,6 +13,8 @@
 //   'automacoes:<fluxo_id>'  → o editor daquele fluxo
 //   'cadencia:<fluxo_id>'    → o painel de cadência daquela etapa, na raiz
 //   'webhooks'               → a tela de Webhooks
+//   'campanhas'              → a IA que grava rascunho de campanha
+//   'campanhas-construtor'   → a IA do construtor de campanha em blocos
 //
 // 'webhooks' não carrega id, e é a diferença de postura daquela conversa: ela
 // CRIA captação, e captação que ainda não existe não tem id para prender. A
@@ -30,5 +32,6 @@ export function lugarDoEscopo(escopo: EscopoConversa): string {
   if (escopo === "webhooks") return "Webhooks";
   if (escopo.startsWith("cadencia:")) return "Cadência";
   if (escopo.startsWith("automacoes")) return "Automação";
+  if (escopo.startsWith("campanhas")) return "Campanhas";
   return "CRM";
 }

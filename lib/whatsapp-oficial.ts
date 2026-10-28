@@ -9,6 +9,8 @@
 // Três entradas:
 //   · processarWebhookOficial → mensagens recebidas e status (enviado,
 //                               entregue, lido, falhou) do webhook da Meta.
+//                               Devolve cada mensagem (MensagemRecebida) para
+//                               as campanhas: botão clicado, citação, número.
 //   · registrarEnvioOficial   → o que NÓS mandamos por fora do /chat
 //                               (campanhas). A Meta não ecoa o que sai pela
 //                               API, então sem isto a conversa mostraria só a
@@ -41,11 +43,14 @@ type MensagemMeta = {
   sticker?: MidiaMeta;
   location?: { latitude?: number; longitude?: number; name?: string; address?: string };
   contacts?: Array<{ name?: { formatted_name?: string }; phones?: Array<{ phone?: string }> }>;
-  button?: { text?: string };
+  /** Clique em botão de resposta rápida de template: `payload` é o que mandamos no envio. */
+  button?: { text?: string; payload?: string };
   interactive?: {
-    button_reply?: { title?: string };
-    list_reply?: { title?: string; description?: string };
+    button_reply?: { id?: string; title?: string };
+    list_reply?: { id?: string; title?: string; description?: string };
   };
+  /** A mensagem que a pessoa citou ao responder (inclusive o template do botão clicado). */
+  context?: { id?: string; from?: string };
 };
 
 type StatusMeta = {
@@ -275,6 +280,42 @@ async function registrarRecebida(
 }
 
 /**
+ * Uma mensagem recebida, como as campanhas a leem (lib/campanhas-whatsapp.ts,
+ * registrarResposta). `nova` = gravada agora (reentrega da Meta vem false);
+ * `tipo` é o da Meta (text, button, interactive, reaction…); `texto` é o que a
+ * conversa mostra; `botaoPayload` e `contextoId` dizem a qual envio ela
+ * responde; `timestamp` em segundos, do WhatsApp.
+ */
+export type MensagemRecebida = {
+  numero: string;
+  id: string;
+  nova: boolean;
+  tipo: string;
+  texto: string;
+  botaoTexto: string | null;
+  botaoPayload: string | null;
+  contextoId: string | null;
+  phoneNumberId: string | null;
+  timestamp: number | null;
+};
+
+function mensagemRecebida(m: MensagemMeta & { from: string; id: string }, nova: boolean, phoneNumberId: string | null): MensagemRecebida {
+  const quando = Number(m.timestamp);
+  return {
+    numero: m.from,
+    id: m.id,
+    nova,
+    tipo: m.type ?? "",
+    texto: conteudoDaMensagem(m)?.texto ?? "",
+    botaoTexto: m.button?.text ?? m.interactive?.button_reply?.title ?? m.interactive?.list_reply?.title ?? null,
+    botaoPayload: m.button?.payload ?? m.interactive?.button_reply?.id ?? m.interactive?.list_reply?.id ?? null,
+    contextoId: m.context?.id ?? null,
+    phoneNumberId,
+    timestamp: Number.isFinite(quando) && quando > 0 ? quando : null,
+  };
+}
+
+/**
  * Processa um `value` do webhook (campo "messages"). Cada item é isolado: uma
  * mensagem que falha não impede as outras nem os status do mesmo lote.
  */
@@ -283,28 +324,32 @@ export async function processarWebhookOficial(
 ): Promise<{
   recebidas: number;
   comMidia: number;
-  remetentes: Array<{ numero: string; id: string }>;
-  /** As mensagens que entraram AGORA — é a elas que a IA pode responder. */
-  novas: Array<{ atendimentoId: string; mensagemId: string }>;
+  /** Cada mensagem gravada (nova ou reentrega), para as campanhas. */
+  mensagens: MensagemRecebida[];
+  /** As mensagens que entraram AGORA — é a elas que a IA pode responder. `id` é o da Meta. */
+  novas: Array<{ atendimentoId: string; mensagemId: string; id: string }>;
 }> {
   const numeroCanal = soDigitos(valor.metadata?.display_phone_number ?? "");
+  const phoneNumberId = valor.metadata?.phone_number_id ?? null;
   const nomes = new Map(
     (valor.contacts ?? []).map((c) => [soDigitos(c.wa_id ?? ""), c.profile?.name?.trim() || null]),
   );
 
   let recebidas = 0;
   let comMidia = 0;
-  const remetentes: Array<{ numero: string; id: string }> = [];
-  const novas: Array<{ atendimentoId: string; mensagemId: string }> = [];
+  const mensagens: MensagemRecebida[] = [];
+  const novas: Array<{ atendimentoId: string; mensagemId: string; id: string }> = [];
 
   if (numeroCanal) {
     for (const m of valor.messages ?? []) {
       try {
         const r = await registrarRecebida(m, numeroCanal, nomes.get(soDigitos(m.from ?? "")) ?? null);
         if (r.nova) recebidas++;
-        if (r.nova && r.atendimentoId && r.mensagemId) novas.push({ atendimentoId: r.atendimentoId, mensagemId: r.mensagemId });
         if (r.midia) comMidia++;
-        if (m.from && m.id) remetentes.push({ numero: m.from, id: m.id });
+        if (m.from && m.id) {
+          if (r.nova && r.atendimentoId && r.mensagemId) novas.push({ atendimentoId: r.atendimentoId, mensagemId: r.mensagemId, id: m.id });
+          mensagens.push(mensagemRecebida({ ...m, from: m.from, id: m.id }, r.nova, phoneNumberId));
+        }
       } catch (e) {
         console.error("[whatsapp oficial] falhei ao gravar mensagem", m.id, e);
       }
@@ -319,7 +364,7 @@ export async function processarWebhookOficial(
     }
   }
 
-  return { recebidas, comMidia, remetentes, novas };
+  return { recebidas, comMidia, mensagens, novas };
 }
 
 // ── Envio feito fora do /chat ───────────────────────────────────────────────

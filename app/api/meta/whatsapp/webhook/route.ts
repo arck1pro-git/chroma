@@ -13,7 +13,8 @@
 // (X-Hub-Signature-256). Sem META_APP_SECRET a rota recusa tudo.
 import { NextRequest, after } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { registrarResposta } from "@/lib/campanhas-whatsapp";
+import { alimentaCampanha, avancarExecucao, registrarResposta } from "@/lib/campanhas-whatsapp";
+import { iaResponde } from "@/lib/campanhas-fluxo-envios";
 import { processarWebhookOficial, type ValorWebhookMeta } from "@/lib/whatsapp-oficial";
 import { baixarPendentes } from "@/lib/midia";
 import { responderComIa } from "@/lib/ia/atendente";
@@ -54,8 +55,10 @@ export async function POST(req: NextRequest) {
 
   let recebidas = 0;
   let comMidia = 0;
-  let respostas = 0;
-  const novas: Array<{ atendimentoId: string; mensagemId: string }> = [];
+  const novas: Array<{ atendimentoId: string; mensagemId: string; id: string }> = [];
+  // As mensagens que uma campanha consumiu (id da Meta → execução a continuar,
+  // e se a IA fica calada nelas).
+  const daCampanha = new Map<string, { execucaoId: string; continuar: boolean; calaIa: boolean }>();
 
   // Daqui para baixo, SEMPRE 200. Assinatura válida é evento legítimo; se o
   // processamento falhar, o erro vai para o log. Devolver 500 faria a Meta
@@ -69,9 +72,17 @@ export async function POST(req: NextRequest) {
         recebidas += r.recebidas;
         comMidia += r.comMidia;
         novas.push(...r.novas);
-        // Campanhas: resposta do contato encerra a espera e dispara as ações.
-        for (const { numero, id } of r.remetentes) {
-          respostas += (await registrarResposta(numero, id)).encontradas;
+        // Campanhas: a resposta escolhe a saída do "Aguardar resposta". Toda
+        // mensagem nova menos reação, sistema e temporária (alimentaCampanha);
+        // uma por vez, e o erro numa não perde as outras.
+        for (const m of r.mensagens) {
+          if (!alimentaCampanha(m)) continue;
+          try {
+            const c = await registrarResposta(m);
+            if (c.consumida) daCampanha.set(m.id, { execucaoId: c.execucaoId, continuar: c.continuar, calaIa: c.calaIa });
+          } catch (e) {
+            console.error("[meta webhook] campanha não leu a resposta", m.id, e);
+          }
         }
       } catch (e) {
         console.error("[meta webhook] erro ao processar:", e);
@@ -82,15 +93,34 @@ export async function POST(req: NextRequest) {
   // Depois do 200 (a Meta espera resposta rápida), nesta ordem:
   //   1. A mídia: a URL da Meta vale minutos, então o download começa já, e o
   //      áudio sai transcrito (lib/midia.ts).
-  //   2. A IA (se o contato estiver com IA e ninguém da equipe na conversa,
+  //   2. As campanhas que a resposta destravou andam até a próxima espera. Se
+  //      isto morrer, o /processar retoma (o after não é fila).
+  //   3. A IA (se o contato estiver com IA e ninguém da equipe na conversa,
   //      decidido em lib/ia/atendente.ts). Depois da mídia porque responder um
   //      áudio antes da transcrição seria responder sem saber o que ele disse.
-  if (comMidia > 0 || novas.length > 0) {
+  //      Na mensagem que a campanha consumiu, a IA fica calada só se o caminho
+  //      que a resposta tomou manda mensagem ao contato antes da próxima espera
+  //      (calaIa; decisão de 2026-10-28, docs/campanhas-whatsapp.md). Se o
+  //      fluxo acabou de ligar a IA, ela responde de qualquer jeito.
+  if (comMidia > 0 || novas.length > 0 || daCampanha.size > 0) {
     after(async () => {
       if (comMidia > 0) await baixarPendentes();
-      await Promise.all(novas.map((n) => responderComIa(n.atendimentoId, n.mensagemId)));
+      const ligouIa = new Set<string>();
+      for (const [id, c] of daCampanha) {
+        if (!c.continuar) continue;
+        try {
+          if ((await avancarExecucao(c.execucaoId)).ligouIa) ligouIa.add(id);
+        } catch (e) {
+          console.error("[meta webhook] campanha não continuou", c.execucaoId, e);
+        }
+      }
+      await Promise.all(
+        novas
+          .filter((n) => iaResponde(daCampanha.get(n.id), ligouIa.has(n.id)))
+          .map((n) => responderComIa(n.atendimentoId, n.mensagemId)),
+      );
     });
   }
 
-  return Response.json({ ok: true, recebidas, respostas });
+  return Response.json({ ok: true, recebidas, respostas: daCampanha.size });
 }

@@ -8,8 +8,13 @@
 // que a Meta analisa; o seletor do canto mostra os {{n}} crus. Com mais de três
 // botões o WhatsApp mostra dois e esconde o resto em "Ver todas as opções" — a
 // prévia faz o mesmo, para não prometer uma tela que o contato não vê.
+//
+// O botão de link com variável (termina em {{1}}) mostra o link embaixo do
+// texto, com o exemplo ou com o {{1}}, conforme o seletor. O link fixo não: o
+// WhatsApp não mostra, e o detalhe já lista para onde cada botão leva. O
+// exemplo do botão só existe no editor (exemplosBotoes); fora dele, {{1}}.
 import { Fragment, useState, type ReactNode } from "react";
-import type { ConteudoTemplate } from "@/lib/templates-whatsapp";
+import { linksVariaveisDe, type ConteudoTemplate } from "@/lib/templates-whatsapp";
 import {
   Copy,
   ExternalLink,
@@ -102,10 +107,18 @@ function TextoFormatado({ texto, v }: { texto: string; v: Variaveis }) {
   return <>{partes}</>;
 }
 
-export function PreviaWhatsApp({ conteudo }: { conteudo: ConteudoTemplate }) {
+export function PreviaWhatsApp({
+  conteudo,
+  exemplosBotoes = [],
+}: {
+  conteudo: ConteudoTemplate;
+  /** O exemplo do final de cada link com variável, pela posição do botão. */
+  exemplosBotoes?: string[];
+}) {
   const [comExemplos, setComExemplos] = useState(true);
   const { cabecalho, corpo, rodape, botoes } = conteudo;
-  const temVariaveis = /\{\{\d+\}\}/.test(`${cabecalho?.texto ?? ""} ${corpo}`);
+  const links = new Map(linksVariaveisDe(conteudo).map((l) => [l.indice, l.url]));
+  const temVariaveis = /\{\{\d+\}\}/.test(`${cabecalho?.texto ?? ""} ${corpo}`) || links.size > 0;
   // A pontinha do balão é a do WhatsApp; o horário é enfeite, sempre o mesmo.
   const midia = cabecalho && cabecalho.formato !== "TEXT" ? (MIDIA[cabecalho.formato] ?? MIDIA.IMAGE) : null;
   const vistos = botoes.length > 3 ? botoes.slice(0, 2) : botoes;
@@ -176,13 +189,21 @@ export function PreviaWhatsApp({ conteudo }: { conteudo: ConteudoTemplate }) {
             <ul className="mt-[3px] flex flex-col gap-[3px]">
               {vistos.map((b, i) => {
                 const Icone = ICONE_BOTAO[b.tipo] ?? MousePointerClick;
+                const link = links.get(i);
                 return (
                   <li
                     key={i}
-                    className="flex items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-2 text-[13px] font-medium text-sky-600 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] dark:bg-zinc-800 dark:text-sky-400"
+                    className="flex flex-col items-center rounded-lg bg-white px-3 py-2 text-[13px] font-medium text-sky-600 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] dark:bg-zinc-800 dark:text-sky-400"
                   >
-                    <Icone className="size-3.5 shrink-0" aria-hidden="true" />
-                    <span className="truncate">{b.texto.trim() || "Texto do botão"}</span>
+                    <span className="flex max-w-full items-center gap-1.5">
+                      <Icone className="size-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{b.texto.trim() || "Texto do botão"}</span>
+                    </span>
+                    {link && (
+                      <span className="mt-0.5 max-w-full break-all text-center text-[10.5px] font-normal leading-snug text-zinc-500 dark:text-zinc-400">
+                        {comVariaveis(link, { exemplos: [exemplosBotoes[i] ?? ""], comExemplos })}
+                      </span>
+                    )}
                   </li>
                 );
               })}
