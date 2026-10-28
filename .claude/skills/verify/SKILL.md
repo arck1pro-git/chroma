@@ -34,13 +34,18 @@ o `npx` baixaria pacotes do registro.
 | Motor das campanhas | mudou `lib/campanhas-whatsapp.ts`, `lib/campanhas-fluxo*.ts`, `lib/aviso-equipe-whatsapp.ts` ou `app/api/meta/whatsapp/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-campanhas-motor.ts` |
 | IA do construtor de campanhas | mudou `lib/ia/campanhas-construtor*.ts`, `lib/campanhas-fluxo*.ts` ou `app/api/ia/campanhas/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-campanhas-construtor.ts` |
 | Agenda e horários da IA | mudou `lib/agenda.ts` ou `lib/google-oauth.ts` | `node scripts/testar-agenda-ocupados.mjs` |
+| Assistente de reuniões | mudou `lib/reunioes-*.ts`, `lib/ia/reuniao.ts` ou `app/api/reunioes/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-reunioes-assistente.ts` |
+| Extensão de reuniões | mudou `extensao-reunioes/` | `node scripts/testar-extensao-reunioes.mjs` (o service worker; o áudio de verdade só no Chrome, ver o LEIAME da pasta) |
 | Atendimento humano | mudou `lib/atendimento-humano.ts`, `lib/automacoes/mover-pela-cadencia.ts`, `avancarPelaIa`/`passarParaHumano` em `lib/ia/atendente.ts` ou a pill em `lib/funil.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-atendimento-humano.ts` |
 | Hooks do Claude Code | mudou `.claude/hooks/` ou `.claude/settings.json` | `node scripts/testar-hooks.mjs` |
 | Build | mudou `next.config.ts`, `proxy.ts`, `app/layout.tsx`, `package.json` ou `tsconfig.json`; rota ou página nova; alvo `build` ou `tudo` | `npm run build` |
 
 Os scripts simulam rede e serviços. O de eventos da Meta usa o banco DEV numa transação desfeita e devolve a etapa
-ao valor original. O de atendimento humano cria no DEV um funil de teste marcado e o apaga no fim. O motor e a IA do construtor de campanhas usam o DEV com cenário marcado e apagado no fim, com a
-Graph e a uazapi falsas (nenhuma chamada à Anthropic). O de hooks usa uma pasta temporária com um `.env` falso. Nenhum outro script de `scripts/` entra aqui: `testar-gsc.ts` e `testar-login.ts` falam com
+ao valor original. O de atendimento humano cria no DEV um funil de teste marcado e o apaga no fim; o do assistente de
+reuniões, um contato marcado, com a Anthropic falsa num servidor local. O motor e a IA do
+construtor de campanhas usam o DEV com cenário marcado e apagado no fim, com a Graph e a uazapi falsas (nenhuma
+chamada à Anthropic). O de hooks usa uma
+pasta temporária com um `.env` falso. Nenhum outro script de `scripts/` entra aqui: `testar-gsc.ts` e `testar-login.ts` falam com
 serviço ou conta de verdade, e `rodar-sql.ts`, `criar-usuario.ts` e `carimbar-campanhas.ts` são operações
 que gravam dados.
 

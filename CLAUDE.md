@@ -50,6 +50,7 @@ lib/                  regra de negócio, consultas, integrações, tipos e utili
   mcp/                conector MCP do Claude (leitura de leads, posts, demandas)
   social/             posts agendados no Instagram e no Facebook
   <dominio>.ts        demais domínios em arquivos por prefixo (meta-*, blog-*, contatos-*...)
+extensao-reunioes/    extensão do Chrome do assistente de reuniões (JS puro, sem build; ver LEIAME.md)
 proxy.ts              porta da rua: fecha tudo por padrão (o antigo middleware)
 next.config.ts        cabeçalhos de segurança, driver do banco fora do bundle
 schema.sql            schema base; schema-automacoes.sql; migration-*.sql (raiz, em ordem de criação)
@@ -83,6 +84,7 @@ templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, c
 | Serviço (n8n) | `/api/automacoes/enviar` e `/mover`, `/api/ia/retomar`, `/api/meta/leads/varrer`, `/api/social/publicar`, `/api/midia/fila`, `/api/meta/whatsapp/processar`, `/api/blogs/rss/gerar` e `/pauta` | `Authorization: Bearer CRM_SERVICE_TOKEN`, via `autorizado()` |
 | Públicas | `/api/publico/[chave]` (blog), `/v/[slug]` e `/api/v/*` (vídeos), `/api/mcp/[segredo]` (Claude) | chave, slug sorteado ou segredo na URL |
 | IA de interface | `/api/ia`, `/api/ia/automacoes`, `/api/ia/campanhas`, `/api/ia/webhooks` | sessão; alcance limitado nas ferramentas |
+| Extensão de reuniões | `/api/reunioes/assistente/*` (lead da sala, busca, trecho de áudio, análise, resumo, salvar na ficha) | sessão + Origin exato da extensão + módulo Agenda, em `lib/reunioes-extensao.ts`; o lead segue Dashboard/Contatos e o Chat |
 
 Mensagem que chega pelo WhatsApp é gravada e, depois da resposta (`after`), `lib/ia/atendente.ts` decide se a IA
 responde. Envio de mensagem, da equipe ou da IA, passa por `lib/conversa-envio.ts`: grava pendente, envia pela
@@ -181,9 +183,11 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   `testar-campanhas-fluxo.ts` e `testar-campanhas-tela.ts` (pelo runner, sem `.env`: o contrato das campanhas em
   blocos e as operações do construtor, com as pendências iguais às do servidor), `testar-campanhas-motor.ts`
   e `testar-campanhas-construtor.ts` (pelo runner, contra o DEV com Graph e uazapi falsas: o motor das campanhas e a
-  IA do construtor, sem chamar a Anthropic), `testar-atendimento-humano.ts` (pelo runner, contra o DEV com um funil de
-  teste apagado no fim: o fim da cadência, a IA que passa o lead para a equipe e a pill "Atendimento humano") e
-  `scripts/testar-hooks.mjs`
+  IA do construtor, sem chamar a Anthropic), `testar-atendimento-humano.ts` (pelo runner, contra o DEV com um funil de teste apagado no fim: o fim da cadência,
+  a IA que passa o lead para a equipe e a pill "Atendimento humano"), `testar-reunioes-assistente.ts` (pelo runner, contra
+  o DEV com cenário marcado e a Anthropic falsa num servidor local: a porta, o lead e o copiloto da extensão de reuniões),
+  `scripts/testar-extensao-reunioes.mjs` (direto com `node`: o service worker da extensão com um `chrome` falso; o áudio
+  de verdade só no Chrome, ver `extensao-reunioes/LEIAME.md`) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
   falam com serviço e conta de verdade e só rodam a pedido.
 - **Script novo de verificação:** chama as funções reais pelo runner acima, contra o banco DEV: cria o cenário com
@@ -258,7 +262,9 @@ O fluxo completo, com delegação aos subagentes e revisão, está nas skills `/
 `app/api/uazapi/webhook/route.ts`, `app/api/meta/whatsapp/webhook/route.ts`, `app/api/mcp/[segredo]/route.ts`,
 `app/api/meta/instagram/webhook/route.ts`, `lib/instagram.ts` (ponto único de envio e trava de dev),
 `lib/instagram-webhook.ts`, `lib/ia/comentarios.ts`, `lib/campanhas-whatsapp.ts` (motor que dispara para o segmento
-inteiro), `lib/campanhas-fluxo-entrada.ts`, `lib/aviso-equipe-whatsapp.ts`, `lib/ia/campanhas-construtor.ts`.
+inteiro), `lib/campanhas-fluxo-entrada.ts`, `lib/aviso-equipe-whatsapp.ts`, `lib/ia/campanhas-construtor.ts`,
+`lib/reunioes-extensao.ts` (Origin e freio da extensão de reuniões), `lib/reunioes-lead.ts`, `lib/ia/reuniao.ts`,
+`extensao-reunioes/manifest.json` (permissões e a chave que fixa o ID) e `extensao-reunioes/service-worker.js`.
 
 **Dependências que importam:** `next` 16.3 (API diferente do treino, ver `AGENTS.md`), `postgres` (fora do
 bundle, `serverExternalPackages`), `jose`, `zod` 4, `@anthropic-ai/sdk` (o Storage do Supabase é chamado por `fetch` em `lib/armazenamento.ts`, sem SDK),
@@ -274,8 +280,8 @@ bundle, `serverExternalPackages`), `jose`, `zod` 4, `@anthropic-ai/sdk` (o Stora
 | Meta | WhatsApp Cloud API, leads, Ads, Conversions API, posts, Instagram (DM e comentários) | `lib/whatsapp-oficial.ts`, `lib/meta*.ts`, `lib/social/`, `lib/instagram*.ts` | eventos sempre ligados na produção; app compartilhado (WhatsApp, leads, Instagram): mexer só na assinatura do objeto em questão |
 | n8n | executa cadências e agendadores | `lib/automacoes/motores/n8n/` | instância compartilhada; só tocar o que o CRM criou |
 | Google | Agenda (OAuth), Drive e gravações do Meet (conta de serviço), Search Console | `lib/google-*.ts`, `lib/agenda.ts`, `lib/gravacoes.ts`, `lib/search-console.ts` | escopo mínimo |
-| Anthropic | IAs de atendimento e de interface | `lib/ia/` | prompt com dado de cliente sanitizado |
-| Groq, Magnific | transcrição de áudio, voz da IA | `lib/transcricao.ts`, `lib/voz.ts` | número por extenso antes da voz |
+| Anthropic | IAs de atendimento e de interface, copiloto de reuniões da extensão (`lib/ia/reuniao.ts`) | `lib/ia/` | prompt com dado de cliente sanitizado; a mesma chave e o mesmo limite de uso servem às três |
+| Groq, Magnific | transcrição de áudio (chat e reuniões da extensão), voz da IA | `lib/transcricao.ts`, `lib/voz.ts` | número por extenso antes da voz; a extensão divide a chave da Groq com o chat |
 | Claude (MCP) | conector de leitura e posts | `app/api/mcp/[segredo]`, `lib/mcp/` | telefone e e-mail mascarados |
 
 ## 9. Regras permanentes de qualidade

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reuniões · AmaanOffice</title>
+  <link rel="stylesheet" href="painel.css">
+</head>
+<body>
+  <header class="topo">
+    <div>
+      <h1>Reuniões</h1>
+      <p id="status" class="status">Parada</p>
+    </div>
+    <button id="parar" class="botao perigo" hidden>Parar</button>
+  </header>
+
+  <p id="erro" class="faixa erro" hidden></p>
+  <p id="aviso" class="faixa aviso" hidden></p>
+  <p id="lembrete" class="faixa info" hidden>Gravando. O lead não vê aviso nenhum da extensão: a reunião só deve ser gravada com o conhecimento dele. Ao compartilhar a tela, compartilhe só a aba da reunião, para o lead não ver este painel.</p>
+
+  <section id="ocioso" class="cartao">
+    <p>Abra a reunião do Meet ou do Zoom no navegador e clique no ícone da extensão (ou <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>).</p>
+  </section>
+
+  <section id="pronta" class="cartao" hidden>
+    <h2>Antes de gravar</h2>
+    <label class="confirma">
+      <input id="consentimento" type="checkbox">
+      <span>Avisei os participantes que a reunião será gravada e transcrita, e eles concordaram.</span>
+    </label>
+    <button id="comecar" class="botao" disabled>Começar a gravar</button>
+  </section>
+
+  <section id="silencio" class="cartao destaque" hidden>
+    <p>A reunião está sem som há 15 minutos. Se ninguém confirmar em 2 minutos, a gravação para.</p>
+    <button id="continuar" class="botao">A reunião continua</button>
+  </section>
+
+  <section id="microfone" class="cartao" hidden>
+    <p>O microfone ainda não foi liberado para a extensão: sem ele, só a voz do lead é transcrita.</p>
+    <button id="liberar-mic" class="botao leve">Liberar microfone</button>
+  </section>
+
+  <section id="conducao" class="cartao destaque" hidden>
+    <div class="linha">
+      <h2>Condução</h2>
+      <button id="sugerir" class="botao leve">Analisar agora</button>
+    </div>
+    <div id="objecao" class="objecao" hidden>
+      <p class="rotulo">Objeção: <span id="objecao-tipo"></span></p>
+      <p id="objecao-frase" class="citacao"></p>
+      <p id="objecao-portras" class="suave"></p>
+    </div>
+    <ul id="sugestoes" class="lista"></ul>
+    <p id="proximo" class="proximo" hidden></p>
+    <p id="analise-quando" class="suave pequeno"></p>
+  </section>
+
+  <section id="lead" class="cartao" hidden>
+    <div class="linha">
+      <h2 id="lead-nome">Lead</h2>
+      <button id="trocar-lead" class="botao leve">Trocar</button>
+    </div>
+    <ul id="lead-resumo" class="lista suave"></ul>
+    <ul id="perfil" class="lista"></ul>
+  </section>
+
+  <section id="escolha" class="cartao" hidden>
+    <h2>Quem é o lead?</h2>
+    <div id="candidatos" class="opcoes"></div>
+    <input id="busca" type="search" placeholder="Buscar por nome, telefone ou e-mail" autocomplete="off">
+    <div id="resultados" class="opcoes"></div>
+  </section>
+
+  <section id="gravacao" class="cartao" hidden>
+    <h2>Gravação</h2>
+    <p class="suave">Fica só neste computador. Baixe para guardar ou descarte.</p>
+    <div class="linha">
+      <button id="baixar" class="botao">Baixar gravação</button>
+      <button id="descartar" class="botao leve">Descartar</button>
+    </div>
+  </section>
+
+  <section id="resumo" class="cartao" hidden>
+    <h2>Resumo para a ficha</h2>
+    <button id="gerar-resumo" class="botao leve">Gerar resumo</button>
+    <textarea id="resumo-texto" rows="10" hidden></textarea>
+    <button id="salvar-resumo" class="botao" hidden>Salvar na ficha</button>
+    <p id="resumo-status" class="suave pequeno"></p>
+  </section>
+
+  <section id="transcricao" class="cartao" hidden>
+    <h2>Transcrição</h2>
+    <ol id="falas" class="falas"></ol>
+  </section>
+
+  <button id="nova" class="botao leve largo" hidden>Nova reunião</button>
+
+  <footer class="rodape">
+    <label>CRM
+      <select id="crm">
+        <option value="producao">Produção</option>
+        <option value="local">Local (localhost:3000)</option>
+      </select>
+    </label>
+  </footer>
+
+  <script type="module" src="painel.js"></script>
+</body>
+</html>

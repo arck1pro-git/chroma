@@ -1,0 +1,147 @@
+/* Painel lateral: a paleta zinc do CRM, com modo escuro pelo sistema. */
+:root {
+  --fundo: #fafafa;
+  --cartao: #ffffff;
+  --borda: #e4e4e7;
+  --texto: #18181b;
+  --suave: #71717a;
+  --destaque: #fff1f2;
+  --destaque-borda: #fecdd3;
+  --destaque-texto: #be123c;
+  --info: #f4f4f5;
+  --aviso: #fffbeb;
+  --aviso-texto: #92400e;
+  --erro: #fef2f2;
+  --erro-texto: #b91c1c;
+  --gravando: #dc2626;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: #09090b;
+    --cartao: #18181b;
+    --borda: #27272a;
+    --texto: #fafafa;
+    --suave: #a1a1aa;
+    --destaque: rgba(244, 63, 94, 0.1);
+    --destaque-borda: rgba(244, 63, 94, 0.3);
+    --destaque-texto: #fda4af;
+    --info: #27272a;
+    --aviso: rgba(245, 158, 11, 0.12);
+    --aviso-texto: #fcd34d;
+    --erro: rgba(239, 68, 68, 0.12);
+    --erro-texto: #fca5a5;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 12px;
+  background: var(--fundo);
+  color: var(--texto);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 { margin: 0; font-size: 15px; font-weight: 600; }
+h2 { margin: 0; font-size: 13px; font-weight: 600; }
+p { margin: 0; }
+
+.topo, .linha { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.topo { margin-bottom: 10px; }
+
+.status { color: var(--suave); font-size: 12px; font-variant-numeric: tabular-nums; }
+.status.gravando { color: var(--gravando); font-weight: 600; }
+.status.gravando::before { content: "● "; }
+
+.cartao {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  background: var(--cartao);
+  display: grid;
+  gap: 8px;
+}
+.cartao.destaque { border-color: var(--destaque-borda); }
+
+.faixa { margin-bottom: 10px; padding: 8px 10px; border-radius: 10px; font-size: 12px; }
+.faixa.info { background: var(--info); }
+.faixa.aviso { background: var(--aviso); color: var(--aviso-texto); }
+.faixa.erro { background: var(--erro); color: var(--erro-texto); }
+
+.objecao { padding: 8px 10px; border-radius: 10px; background: var(--destaque); display: grid; gap: 4px; }
+.objecao .rotulo { color: var(--destaque-texto); font-weight: 600; }
+.citacao { font-style: italic; }
+.proximo { font-weight: 600; }
+.suave { color: var(--suave); }
+.pequeno { font-size: 11px; }
+
+.lista { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.lista:empty { display: none; }
+
+.botao {
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: var(--texto);
+  color: var(--fundo);
+  padding: 5px 10px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.botao.leve { background: transparent; color: var(--texto); font-weight: 500; }
+.botao.perigo { background: var(--gravando); border-color: var(--gravando); color: #fff; }
+.botao:disabled { opacity: 0.5; cursor: default; }
+
+.opcoes { display: grid; gap: 4px; }
+.opcoes:empty { display: none; }
+.opcao {
+  text-align: left;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--texto);
+  padding: 6px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+.opcao small { display: block; color: var(--suave); }
+
+input[type="search"], select {
+  width: 100%;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: var(--cartao);
+  color: var(--texto);
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.falas { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; max-height: 40vh; overflow-y: auto; }
+.falas li b { font-weight: 600; }
+.falas li.lead b { color: var(--destaque-texto); }
+
+.rodape { margin-top: 4px; color: var(--suave); font-size: 12px; }
+.rodape label { display: grid; gap: 4px; }
+
+kbd { padding: 0 4px; border: 1px solid var(--borda); border-radius: 4px; font: 11px ui-monospace, monospace; }
+
+.confirma { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.confirma input { margin-top: 2px; }
+
+textarea {
+  width: 100%;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: var(--cartao);
+  color: var(--texto);
+  padding: 6px 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+.largo { width: 100%; margin-bottom: 10px; }

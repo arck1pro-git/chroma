@@ -53,6 +53,27 @@ Estão listadas em `proxy.ts`. Cada uma tem outra tranca no lugar:
 Rota nova nasce **protegida**. Para abrir uma, é preciso editar essa lista — e
 esse é o ponto.
 
+## Rotas da extensão de reuniões: sessão e Origin
+
+`/api/reunioes/assistente/*` (a extensão do Chrome em `extensao-reunioes/`, desde
+2026-10-28) **não** está na lista acima: exige a sessão como qualquer rota. A
+extensão manda o cookie porque tem permissão de host para o CRM. Por cima da
+sessão, `lib/reunioes-extensao.ts` confere quatro coisas, nesta ordem.
+
+- **Origin exato** `chrome-extension://<ID fixo>`, e Origin ausente é recusado.
+  O cookie é SameSite=Lax, e para ele qualquer `*.amaan.com.br` é o mesmo site.
+  Route Handler não confere Origin sozinho.
+- **Content-Type** de JSON ou multipart. Como multipart e `text/plain` dispensam o preflight, é o
+  Origin que barra outro site.
+- **Módulo Agenda**, o interruptor do assistente (o que cada dado do lead pede está em `docs/acessos.md`).
+- **Freio por pessoa**, em memória, como o do login: best-effort por instância, não é teto de custo.
+
+O cookie que vale é o de `amaanoffice.amaan.com.br`: quem entra no CRM por outro endereço (o da Vercel)
+não tem sessão para a extensão.
+
+O ID vem da chave pública do `manifest.json`. Trocar a chave obriga a trocar o ID. O ID não autentica a
+extensão, porque a chave está no repositório: quem autentica é a sessão.
+
 Dois 401 diferentes, e a diferença ajuda a depurar:
 `{"erro":"não autenticado"}` vem do proxy (falta cookie);
 `{"erro":"não autorizado"}` vem de `lib/automacoes/servico.ts` (falta o Bearer).

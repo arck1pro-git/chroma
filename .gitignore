@@ -86,3 +86,7 @@ public/video*.txt
 # Saídas de scripts e testes locais.
 /tmp/
 *.log
+
+# Extensão de reuniões (extensao-reunioes/) empacotada: o .crx e a chave
+# privada que o gera (*.pem, acima) nunca entram no repositório público.
+*.crx

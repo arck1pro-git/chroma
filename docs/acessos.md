@@ -190,6 +190,18 @@ consulta quando a pessoa não tem o módulo.
 Sem isso, tirar Automações do Admin não teria efeito nenhum: ele dispararia
 cadência pelo dashboard.
 
+## Assistente de reuniões: Agenda liga, cada dado pede o seu módulo
+
+A extensão de reuniões (`extensao-reunioes/`, 2026-10-28) chama
+`/api/reunioes/assistente/*`. O interruptor é o módulo `agenda`: sem ele, a
+rota responde 403. O dado do lead segue a regra da gaveta de contatos
+(`lib/reunioes-lead.ts`):
+
+- ver, buscar e escolher o lead exige `inicio` ou `contatos`;
+- as oportunidades seguem o escopo do primeiro deles: no "próprio", só as de que a pessoa é responsável;
+- a conversa do WhatsApp só entra na análise para quem tem `chat`;
+- salvar o resumo na ficha pede a operação `criar` em `inicio` ou `contatos`, como a anotação da gaveta.
+
 ## As duas exceções, e por quê
 
 `/api/ia` e `app/components/acoes-ia.ts` ficaram em `exigirLogin`, sem módulo.

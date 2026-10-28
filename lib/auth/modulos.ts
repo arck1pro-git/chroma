@@ -104,7 +104,7 @@ export const MODULOS: readonly Modulo[] = [
     escopavel: false,
     naBarra: true,
     descricao:
-      "Compromissos da semana no Google Calendar da conta conectada em Integrações, com o lead de cada reunião marcada pelo CRM.",
+      "Compromissos da semana no Google Calendar da conta conectada em Integrações, com o lead de cada reunião marcada pelo CRM. Libera também o assistente de reuniões da extensão do Chrome, que grava e transcreve a reunião.",
   },
   {
     chave: "demandas",

@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "AmaanOffice · Reuniões",
+  "version": "0.1.0",
+  "description": "Grava a reunião do Meet ou do Zoom (web), transcreve e sugere como conduzir quando o lead levanta uma objeção.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2ZcozAgBPAMC0PajfjPMhjJLm3CpOZxz+/4D84H4IQb6aV2JFQY5H2JwCLZMs1dc4cgmXOjcX91eloUBhMHPqp9Lw3U5WmnYSdX6YxogbDOWYu2d0HiyCwO6GwKRNkELdc0CcXWPCJ/SzMO4BSwC6sycVwEz8XRovyaBY+UwGJNb0Ns0cGXhV9bDarnPzg7fIQjoLkz2u9wVYky+C0CvEmndoN3gnfgbOp3OoSoEesEktOR4DLGm7tqofJey3+vqiCqOZ+Kv1tDz5tfw1J8I+kA9xy1F7UzZCTCWhpy75AfMC5+xRhuvav052ggNl/yZeIhNUI9v06GScXCLrMsZOwIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "tabCapture",
+    "offscreen",
+    "sidePanel",
+    "storage",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://amaanoffice.amaan.com.br/*",
+    "http://localhost:3000/*",
+    "https://meet.google.com/*",
+    "https://zoom.us/*",
+    "https://*.zoom.us/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Gravar a reunião e abrir o copiloto"
+  },
+  "side_panel": {
+    "default_path": "painel.html"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+G"
+      },
+      "description": "Gravar a reunião e abrir o copiloto"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://meet.google.com/*",
+        "https://zoom.us/wc/*",
+        "https://*.zoom.us/wc/*"
+      ],
+      "js": [
+        "aviso-reuniao.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
