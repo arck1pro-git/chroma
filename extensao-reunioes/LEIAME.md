@@ -9,8 +9,9 @@ No fim, gera um resumo que o vendedor revisa e salva como anotação na ficha do
 1. No Chrome, abra `chrome://extensions` e ligue o **Modo do desenvolvedor**, no canto de cima.
 2. Clique em **Carregar sem compactação** e escolha esta pasta (`extensao-reunioes`).
 3. Fixe o ícone da extensão na barra.
-4. Entre no AmaanOffice neste mesmo navegador, por `amaanoffice.amaan.com.br`. A extensão usa a sessão do CRM e não
-   tem senha própria; o login pelo endereço da Vercel não vale para ela.
+4. Entre no AmaanOffice neste mesmo navegador, por `amaanoffice.amaan.com.br` ou por `chromacrm.vercel.app`.
+   A extensão usa a sessão do CRM e não tem senha própria. Ela procura o login nos dois endereços, e o topo do painel
+   mostra em qual está conectada. Sem login, aparecem **Abrir o CRM** e **Tentar de novo**.
 5. No painel da extensão, clique em **Liberar microfone** uma vez.
 
 O ID da extensão é fixo (`eohffkhganngbodiakbkccchdjndkjpf`), definido pela chave do `manifest.json`.
@@ -24,7 +25,9 @@ O ID não é senha: a chave está no repositório. Ele barra pedidos de páginas
 3. Avise os participantes que a reunião será gravada e transcrita. Marque a confirmação e clique em **Começar a gravar**.
    O ícone mostra **REC** enquanto grava. Se o painel disser **Falta um clique**, clique no ícone da extensão de novo,
    com a aba da reunião aberta: o Chrome só libera o áudio da aba por esse clique, e a gravação começa na hora.
-4. O painel procura o lead pela reunião marcada no CRM. Quando não acha, mostra as reuniões de agora e uma busca.
+4. O painel procura o lead pela reunião marcada no CRM. Quando não acha, lista as reuniões de hoje e uma busca de lead.
+   Clicar numa reunião (ou num lead da busca) pede confirmação. Só depois de **Anexar** a gravação passa a usar a
+   ficha desse lead. **Trocar** volta a mostrar a lista.
 5. Quando o lead fala, o copiloto atualiza a **Condução** no máximo uma vez por minuto.
    **Analisar agora** força a atualização.
 6. **Parar** encerra a gravação. Depois, escolha **Baixar gravação**, que salva em `Downloads/AmaanOffice`, ou **Descartar**.

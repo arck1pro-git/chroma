@@ -4,7 +4,7 @@ import { acessoAFicha, escopoDoLead, fichaDoLead, fichaVisivel, leadDaSala, type
 
 // O começo da reunião na extensão do Chrome (extensao-reunioes/): quem é o lead
 // desta sala. Com `sala` (o endereço da reunião), tenta casar com uma reunião do
-// CRM e devolve também as reuniões de agora, para a escolha à mão; com
+// CRM e devolve também as reuniões de hoje, para a escolha à mão; com
 // `contato_id`, é a escolha feita. A porta (Origin da extensão, módulo Agenda,
 // freio) está em lib/reunioes-extensao.ts; o que se vê do lead, em
 // lib/reunioes-lead.ts.

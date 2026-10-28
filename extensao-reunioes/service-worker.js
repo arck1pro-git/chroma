@@ -20,7 +20,7 @@
 //      reunião sem ninguém confirmar que ela segue, 3 h de gravação): a gravação
 //      fica na memória do gravador até a pessoa escolher Baixar ou Descartar. A
 //      transcrição fica no estado até "Nova reunião".
-import { CRMS, ehReuniao, enderecoDoCrm } from "./comum.js";
+import { CRMS, descobrirCrm, ehReuniao } from "./comum.js";
 
 const VAZIA = {
   status: "parada", // parada | pronta | comecando | gravando | encerrada
@@ -32,7 +32,7 @@ const VAZIA = {
   inicio: null,
   fim: null,
   lead: null,
-  candidatos: [],
+  candidatos: null, // as reuniões de hoje; null = o CRM ainda não respondeu
   falas: [],
   analise: null,
   analiseEm: null,
@@ -135,7 +135,12 @@ async function comecar(consentimentoEm) {
 
 /** Captura a aba e liga o gravador. Pelo botão Começar ou pelo clique no ícone. */
 async function iniciar(aba, consentimentoEm) {
-  const crm = await enderecoDoCrm();
+  // Sem login no CRM não adianta gravar: nada seria transcrito nem analisado.
+  // Confere na hora (a pessoa pode ter entrado ou saído depois de abrir o painel).
+  const conexao = await descobrirCrm();
+  await chrome.storage.session.set({ crmAtivo: conexao.url });
+  if (!conexao.conectado) throw new Error(conexao.erro);
+  const crm = conexao.url;
   if (!Object.values(CRMS).includes(crm)) throw new Error("Endereço do CRM fora da lista.");
 
   await mudar({ status: "comecando", consentimentoEm, esperandoClique: false, sessao: crypto.randomUUID(), sala: aba.url, erro: null, aviso: null });

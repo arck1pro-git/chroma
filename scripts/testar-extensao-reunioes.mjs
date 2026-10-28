@@ -37,6 +37,17 @@ let gravadorFalha = false;
 
 const ouvinte = (lista) => ({ addListener: (f) => lista.push(f) });
 
+// O CRM falso: onde a pessoa está logada. Começa logada só pelo endereço da
+// Vercel, o caso que quebrou na primeira vez (2026-10-28).
+let logadoEm = new Set(["https://chromacrm.vercel.app"]);
+globalThis.fetch = async (url) => {
+  const origem = new URL(url).origin;
+  return new Response(JSON.stringify(logadoEm.has(origem) ? { lead: null, candidatos: [] } : { erro: "não autenticado" }), {
+    status: logadoEm.has(origem) ? 200 : 401,
+    headers: { "content-type": "application/json" },
+  });
+};
+
 async function gravadorFalso(msg) {
   pedidosAoGravador.push(msg);
   if (msg.tipo === "iniciar") return gravadorFalha ? { ok: false, erro: "o microfone travou" } : { ok: true };
@@ -129,10 +140,16 @@ r = await estado();
 conferir(r.status === "pronta" && !pedidosAoGravador.length, "Começar vindo da página da reunião (content script) é ignorado");
 const semAviso = await enviar({ alvo: "sw", tipo: "comecar" });
 conferir(semAviso?.ok === false && /avisou/.test(semAviso.erro), "sem a confirmação do aviso, não começa", semAviso?.erro);
+logadoEm = new Set();
+const semLogin = await enviar({ alvo: "sw", tipo: "comecar", consentimentoEm: new Date().toISOString() });
+r = await estado();
+conferir(semLogin?.ok === false && /login no CRM/.test(semLogin.erro) && !pedidosAoGravador.length, "sem login em nenhum endereço do CRM: avisa e não grava", semLogin?.erro);
+await clicar(7);
+logadoEm = new Set(["https://chromacrm.vercel.app"]);
 const comecou = await enviar({ alvo: "sw", tipo: "comecar", consentimentoEm: new Date().toISOString() });
 r = await estado();
 conferir(comecou?.ok === true && r.status === "gravando", "com a confirmação: o estado vira gravando", r.status);
-conferir(pedidosAoGravador.some((p) => p.tipo === "iniciar" && p.crm === "https://amaanoffice.amaan.com.br" && p.streamId === "stream-7"), "o gravador recebe a captura da aba e o CRM de produção");
+conferir(pedidosAoGravador.some((p) => p.tipo === "iniciar" && p.crm === "https://chromacrm.vercel.app" && p.streamId === "stream-7"), "logado só pela Vercel: o gravador fala com o CRM pela Vercel");
 conferir(typeof r.sessao === "string" && r.sessao.length === 36 && Boolean(r.consentimentoEm), "sessão e hora do aviso guardadas para o resumo");
 conferir(badges.some((b) => b.tabId === 7 && b.text === "REC") && badges.some((b) => !b.tabId && b.text === "REC"), "REC na aba da reunião e no ícone");
 

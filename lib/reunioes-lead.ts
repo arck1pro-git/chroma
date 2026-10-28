@@ -6,7 +6,8 @@
 //   1. quem está nesta sala? No Meet, o código da sala (abc-defg-hij) casa com o
 //      link do evento do Google que o CRM criou (agenda_reunioes.google_evento_id
 //      → hangoutLink). No Zoom, e quando o evento não foi criado pelo CRM, a
-//      tela mostra as reuniões de agora e a busca para a pessoa escolher.
+//      tela lista as reuniões de hoje e a busca; o clique pede confirmação
+//      antes de anexar a gravação ao lead (pedido dele, 2026-10-28).
 //   2. o que quem chamou pode ver? A regra da gaveta de contatos
 //      (app/contatos/actions.ts, dadosDoContato), revista pela auditoria de
 //      2026-10-28: o contato é de quem tem Dashboard ou Contatos (contato não tem
@@ -48,7 +49,8 @@ export type FichaLead = {
   iaId: string | null;
 };
 
-// Uma reunião dura pouco: a janela cobre quem atrasou e quem entrou antes.
+// O link do Meet só é conferido nas reuniões perto de agora: cada uma é uma
+// leitura no Google, e a janela cobre quem atrasou e quem entrou antes.
 const JANELA_MS = 3 * 60 * 60 * 1000;
 const CODIGO_MEET = /^https:\/\/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})(?:[/?#]|$)/i;
 
@@ -64,8 +66,9 @@ export function escopoDoLead(usuario: UsuarioLogado): Escopo | null {
 }
 
 /**
- * As reuniões do CRM de agora (±3 h) e qual delas é a desta sala, quando o link
- * do Meet bate. Quem não vê lead não recebe nada.
+ * As reuniões do CRM de hoje (dia de Brasília), a mais perto de agora primeiro,
+ * e qual delas é a desta sala, quando o link do Meet bate. Quem não vê lead não
+ * recebe nada.
  */
 export async function leadDaSala(usuario: UsuarioLogado, sala: string): Promise<{ contatoId: string | null; candidatos: CandidatoReuniao[] }> {
   if (!escopoDoLead(usuario)) return { contatoId: null, candidatos: [] };
@@ -73,9 +76,10 @@ export async function leadDaSala(usuario: UsuarioLogado, sala: string): Promise<
   const reunioes = (await sql`
     SELECT r.google_evento_id, r.contato_id, r.inicio, c.nome
       FROM agenda_reunioes r JOIN contatos c ON c.id = r.contato_id
-     WHERE r.inicio BETWEEN ${new Date(agora - JANELA_MS)} AND ${new Date(agora + JANELA_MS)}
+     WHERE r.inicio >= date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'
+       AND r.inicio <  (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') + interval '1 day') AT TIME ZONE 'America/Sao_Paulo'
      ORDER BY abs(extract(epoch FROM r.inicio - now()))
-     LIMIT 10`) as unknown as { google_evento_id: string; contato_id: string; inicio: Date; nome: string }[];
+     LIMIT 20`) as unknown as { google_evento_id: string; contato_id: string; inicio: Date; nome: string }[];
 
   const candidatos = reunioes.map((r) => ({
     contatoId: r.contato_id,
@@ -86,6 +90,7 @@ export async function leadDaSala(usuario: UsuarioLogado, sala: string): Promise<
   const codigo = CODIGO_MEET.exec(sala)?.[1]?.toLowerCase();
   if (!codigo) return { contatoId: null, candidatos };
   for (const r of reunioes) {
+    if (Math.abs(new Date(r.inicio).getTime() - agora) > JANELA_MS) break;
     try {
       const evento = await eventoPorId(r.google_evento_id);
       if (evento?.meet && CODIGO_MEET.exec(evento.meet)?.[1]?.toLowerCase() === codigo) return { contatoId: r.contato_id, candidatos };

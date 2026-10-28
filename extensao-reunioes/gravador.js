@@ -46,7 +46,7 @@ function emitir(parcial) {
 }
 
 function erroDoCrm(status, erro) {
-  if (status === 401) return "Entre no AmaanOffice (amaanoffice.amaan.com.br) neste navegador para transcrever e receber sugestões.";
+  if (status === 401) return "O login no CRM saiu durante a reunião. Entre no AmaanOffice neste navegador para continuar transcrevendo.";
   if (status === 403 && (!erro || erro === "sem acesso ao módulo")) return "Seu acesso não inclui o módulo Agenda, que libera o assistente de reuniões.";
   return erro || `O CRM respondeu ${status}.`;
 }
@@ -266,7 +266,8 @@ async function escolherLead({ contatoId }) {
   if (!r) throw new Error("Não há reunião.");
   const { lead } = await chamar("/api/reunioes/assistente/inicio", json({ contato_id: contatoId }));
   r.leadId = lead.contatoId;
-  emitir({ lead, candidatos: [], erro: null });
+  // A lista de reuniões fica: o "Trocar" volta a mostrá-la.
+  emitir({ lead, erro: null });
   return {};
 }
 

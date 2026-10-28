@@ -96,6 +96,23 @@ async function parte3() {
   conferir(sala.contatoId === null && sala.candidatos.some((c) => c.contatoId === contato.id), "Zoom: não casa sozinho, mas a reunião de agora aparece para escolher");
   conferir((await leadDaSala(usuario(dono, [["agenda", "todos"]]), "https://app.zoom.us/wc/1")).candidatos.length === 0, "só Agenda: nenhum candidato");
 
+  // A lista é do dia de Brasília: a reunião de 00:01 de hoje entra (fora das ±3 h
+  // do casamento com o Meet), a das 23:00 de ontem não.
+  const [dia] = await sql`
+    SELECT date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo' AS inicio,
+           (now() AT TIME ZONE 'America/Sao_Paulo')::time > '03:01' AS longe_de_meia_noite`;
+  await sql`
+    INSERT INTO agenda_reunioes (google_evento_id, contato_id, inicio, fim)
+    VALUES (${`${MARCA}-cedo`}, ${contato.id}, ${dia.inicio}::timestamptz + interval '1 minute', ${dia.inicio}::timestamptz + interval '31 minutes'),
+           (${`${MARCA}-ontem`}, ${contato.id}, ${dia.inicio}::timestamptz - interval '1 hour', ${dia.inicio}::timestamptz - interval '30 minutes')`;
+  const doDia = (await leadDaSala(todos, "https://app.zoom.us/wc/123/join")).candidatos.filter((c) => c.contatoId === contato.id);
+  if (dia.longe_de_meia_noite) {
+    conferir(doDia.some((c) => c.detalhe === "reunião às 00:01"), "reunião de hoje mais de 3 h atrás aparece na lista", JSON.stringify(doDia));
+  } else {
+    console.log("pulado: antes das 03:01 a reunião de 00:01 ainda está nas ±3 h");
+  }
+  conferir(!doDia.some((c) => c.detalhe === "reunião às 23:00"), "reunião de ontem fica fora da lista", JSON.stringify(doDia));
+
   const fichaTodos = await fichaDoLead(contato.id, acessoAFicha(todos, "todos"));
   conferir(fichaTodos?.contexto.oportunidade?.nome === `${MARCA} do colega`, "escopo todos: a oportunidade mais recente, mesmo de outro responsável");
   conferir(fichaTodos?.contexto.whatsapp.length === 1 && fichaTodos.contexto.whatsapp[0].quem === "lead", "com o Chat: a conversa do WhatsApp entra");

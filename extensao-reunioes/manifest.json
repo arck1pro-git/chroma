@@ -14,6 +14,7 @@
   ],
   "host_permissions": [
     "https://amaanoffice.amaan.com.br/*",
+    "https://chromacrm.vercel.app/*",
     "http://localhost:3000/*",
     "https://meet.google.com/*",
     "https://zoom.us/*",

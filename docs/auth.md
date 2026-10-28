@@ -68,8 +68,9 @@ sessão, `lib/reunioes-extensao.ts` confere quatro coisas, nesta ordem.
 - **Módulo Agenda**, o interruptor do assistente (o que cada dado do lead pede está em `docs/acessos.md`).
 - **Freio por pessoa**, em memória, como o do login: best-effort por instância, não é teto de custo.
 
-O cookie que vale é o de `amaanoffice.amaan.com.br`: quem entra no CRM por outro endereço (o da Vercel)
-não tem sessão para a extensão.
+O domínio da empresa (`amaanoffice.amaan.com.br`) e o da Vercel (`chromacrm.vercel.app`) são o mesmo CRM,
+mas cada um tem o seu cookie. A extensão procura o login nos dois e usa o primeiro que responde
+(`descobrirCrm`, em `extensao-reunioes/comum.js`).
 
 O ID vem da chave pública do `manifest.json`. Trocar a chave obriga a trocar o ID. O ID não autentica a
 extensão, porque a chave está no repositório: quem autentica é a sessão.

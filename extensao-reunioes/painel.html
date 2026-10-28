@@ -15,6 +15,15 @@
     <button id="parar" class="botao perigo" hidden>Parar</button>
   </header>
 
+  <p id="conectado" class="conexao" hidden></p>
+  <section id="desconectado" class="faixa erro" hidden>
+    <p id="desconectado-motivo"></p>
+    <div class="linha">
+      <button id="abrir-crm" class="botao">Abrir o CRM</button>
+      <button id="tentar-de-novo" class="botao leve">Tentar de novo</button>
+    </div>
+  </section>
+
   <p id="erro" class="faixa erro" hidden></p>
   <p id="aviso" class="faixa aviso" hidden></p>
   <p id="lembrete" class="faixa info" hidden>Gravando. O lead não vê aviso nenhum da extensão: a reunião só deve ser gravada com o conhecimento dele. Ao compartilhar a tela, compartilhe só a aba da reunião, para o lead não ver este painel.</p>
@@ -67,9 +76,18 @@
   </section>
 
   <section id="escolha" class="cartao" hidden>
-    <h2>Quem é o lead?</h2>
+    <h2>Reuniões de hoje</h2>
+    <p id="sem-reunioes" class="suave" hidden>Nenhuma reunião marcada no CRM para hoje.</p>
     <div id="candidatos" class="opcoes"></div>
-    <input id="busca" type="search" placeholder="Buscar por nome, telefone ou e-mail" autocomplete="off">
+    <div id="anexar" class="confirmacao" hidden>
+      <p id="anexar-texto"></p>
+      <p class="suave pequeno">A condução e o resumo passam a usar a ficha deste lead.</p>
+      <div class="linha">
+        <button id="anexar-sim" class="botao">Anexar</button>
+        <button id="anexar-nao" class="botao leve">Cancelar</button>
+      </div>
+    </div>
+    <input id="busca" type="search" placeholder="Não está na lista? Busque o lead por nome, telefone ou e-mail" autocomplete="off">
     <div id="resultados" class="opcoes"></div>
   </section>
 
@@ -100,7 +118,7 @@
   <footer class="rodape">
     <label>CRM
       <select id="crm">
-        <option value="producao">Produção</option>
+        <option value="producao">Produção (amaanoffice ou vercel, o que estiver logado)</option>
         <option value="local">Local (localhost:3000)</option>
       </select>
     </label>

@@ -1,11 +1,14 @@
 // O painel lateral: mostra o estado da reunião (chrome.storage.session, que só o
 // service worker grava) e manda os comandos. Tudo o que vem do CRM e da
 // transcrição entra como textContent, nunca como HTML: é texto dito pelo lead.
-import { enderecoDoCrm } from "./comum.js";
+import { CRMS, descobrirCrm, enderecoDoCrm } from "./comum.js";
 
 const $ = (id) => document.getElementById(id);
 let atual = { status: "parada" };
 let trocandoLead = false;
+// A reunião (ou o lead da busca) clicada, esperando o "Anexar": o clique
+// sozinho não troca o lead da gravação.
+let pendente = null;
 // Os pedidos do painel em andamento ("gerar", "salvar"): o botão não religa no meio.
 const emAndamento = new Set();
 // O que o CRM aceita no resumo (lib/ia/reuniao.ts): o painel manda o fim da
@@ -42,11 +45,28 @@ function preencherLista(id, itens) {
   $(id).replaceChildren(...(itens ?? []).map((t) => texto("li", t)));
 }
 
+const chaveDa = (lead) => `${lead.contatoId}|${lead.detalhe ?? ""}`;
+
 function opcao(lead) {
   const b = texto("button", lead.nome, "opcao");
   if (lead.detalhe) b.append(texto("small", lead.detalhe));
-  b.addEventListener("click", () => escolher(lead));
+  b.dataset.chave = chaveDa(lead);
+  b.addEventListener("click", () => {
+    pendente = lead;
+    desenhar(atual);
+  });
   return b;
+}
+
+/** A confirmação do anexo e a marca na opção clicada (na lista e na busca). */
+function desenharAnexo() {
+  mostrar("anexar", Boolean(pendente));
+  $("anexar-texto").textContent = pendente
+    ? `Anexar a gravação a ${pendente.nome}${pendente.detalhe ? ` (${pendente.detalhe})` : ""}?`
+    : "";
+  for (const b of $("escolha").querySelectorAll(".opcao")) {
+    b.classList.toggle("escolhida", Boolean(pendente) && b.dataset.chave === chaveDa(pendente));
+  }
 }
 
 function duracao(ms) {
@@ -108,6 +128,8 @@ function desenhar(r) {
   preencherLista("perfil", a?.perfil);
   mostrar("escolha", emReuniao && (!r.lead || trocandoLead));
   $("candidatos").replaceChildren(...(r.candidatos ?? []).map(opcao));
+  mostrar("sem-reunioes", Array.isArray(r.candidatos) && !r.candidatos.length);
+  desenharAnexo();
 
   // A reunião ficou sem som: o gravador para em 2 min se ninguém confirmar.
   mostrar("silencio", gravando && Boolean(r.silencioDesde));
@@ -141,6 +163,7 @@ function desenhar(r) {
 
 async function escolher(lead) {
   trocandoLead = false;
+  pendente = null;
   desenhar(atual);
   const r = await chrome.runtime.sendMessage({ alvo: "gravador", tipo: "lead", contatoId: lead.contatoId }).catch(() => null);
   if (r?.ok) return;
@@ -149,7 +172,7 @@ async function escolher(lead) {
   // e o service worker, que é quem grava o estado, a guarda.
   try {
     const dado = await crm("/api/reunioes/assistente/inicio", { contato_id: lead.contatoId });
-    await comando("estado", { parcial: { lead: dado.lead, candidatos: [], erro: null } });
+    await comando("estado", { parcial: { lead: dado.lead, erro: null } });
   } catch (e) {
     await comando("estado", { parcial: { erro: e.message } });
   }
@@ -166,6 +189,7 @@ $("busca").addEventListener("input", async (e) => {
     const { leads = [] } = await crm("/api/reunioes/assistente/leads", { termo });
     if (minha !== busca) return;
     $("resultados").replaceChildren(...(leads.length ? leads.map(opcao) : [texto("p", "Nenhum lead encontrado.", "suave")]));
+    desenharAnexo();
   } catch (erro) {
     $("resultados").replaceChildren(texto("p", erro.message, "suave"));
   }
@@ -182,8 +206,17 @@ $("comecar").addEventListener("click", async () => {
 
 $("trocar-lead").addEventListener("click", () => {
   trocandoLead = true;
+  pendente = null;
   desenhar(atual);
   $("busca").focus();
+});
+
+$("anexar-sim").addEventListener("click", () => {
+  if (pendente) escolher(pendente);
+});
+$("anexar-nao").addEventListener("click", () => {
+  pendente = null;
+  desenhar(atual);
 });
 
 $("parar").addEventListener("click", async () => {
@@ -274,6 +307,7 @@ $("continuar").addEventListener("click", () => {
 });
 
 $("nova").addEventListener("click", async () => {
+  pendente = null;
   $("resumo-texto").value = "";
   $("resumo-status").textContent = "";
   mostrar("resumo-texto", false);
@@ -283,7 +317,32 @@ $("nova").addEventListener("click", async () => {
 
 $("liberar-mic").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("permissao.html") }));
 
-$("crm").addEventListener("change", (e) => chrome.storage.session.set({ crm: e.target.value }));
+// A CONEXÃO COM O CRM, à vista no topo do painel: a extensão usa o login do
+// CRM neste navegador, e quem entrou por outro endereço (ou não entrou) via só
+// os erros das chamadas. Confere ao abrir, ao voltar para o painel (no máximo a
+// cada 30 s, pelo freio das rotas) e no "Tentar de novo".
+let ultimaConferencia = 0;
+async function conferirConexao(agora = false) {
+  if (!agora && Date.now() - ultimaConferencia < 30_000) return;
+  ultimaConferencia = Date.now();
+  const c = await descobrirCrm();
+  await chrome.storage.session.set({ crmAtivo: c.url });
+  $("conectado").textContent = c.conectado ? `Conectado ao CRM (${new URL(c.url).host})` : "";
+  mostrar("conectado", c.conectado);
+  $("desconectado-motivo").textContent = c.erro ?? "";
+  mostrar("desconectado", !c.conectado);
+}
+
+$("crm").addEventListener("change", async (e) => {
+  await chrome.storage.session.set({ crm: e.target.value });
+  conferirConexao(true);
+});
+$("tentar-de-novo").addEventListener("click", () => conferirConexao(true));
+$("abrir-crm").addEventListener("click", async () => {
+  const { crm: escolha } = await chrome.storage.session.get("crm");
+  chrome.tabs.create({ url: `${escolha === "local" ? CRMS.local : CRMS.producao}/login` });
+});
+window.addEventListener("focus", () => conferirConexao());
 
 async function conferirMicrofone() {
   const p = await navigator.permissions.query({ name: "microphone" }).catch(() => null);
@@ -304,3 +363,4 @@ const { crm: escolhido } = await chrome.storage.session.get("crm");
 $("crm").value = escolhido === "local" ? "local" : "producao";
 desenhar((await chrome.storage.session.get("reuniao")).reuniao ?? { status: "parada" });
 conferirMicrofone();
+conferirConexao(true);
