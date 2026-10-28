@@ -203,7 +203,7 @@ mas qualquer pessoa com Contatos tira).
 | Rota | O que faz |
 |---|---|
 | `POST …/[id]/pausar` | ativa → pausada; nada anda (o agendador segue chamando) |
-| `PUT …/[id]` | grava o fluxo de uma campanha pausada ou rascunho |
+| `PUT …/[id]` | grava o fluxo de uma campanha pausada ou rascunho e, com `segmentoIds`, o público |
 | `POST …/[id]/retomar` | pausada → ativa, revalidando tudo |
 
 - **Resposta durante a pausa:** a saída fica gravada (`em_andamento`) e anda na
@@ -214,6 +214,16 @@ mas qualquer pessoa com Contatos tira).
   tipo, e um id que já rodou nesta campanha e saiu da definição (aposentado)
   não volta. A recusa vem com `{ erro, problemas }`, conferida com a linha
   travada na mesma transação da gravação (`salvarEdicao`).
+- **Trocar o público** (desde 2026-10-28, no nó de início do editor): o `PUT`
+  com `segmentoIds` passa pelas conferências da criação (ao menos um segmento,
+  todos existem, há contato com WhatsApp). Na mesma transação, troca
+  `campanha_whatsapp_segmentos` e as colunas antigas `segmento_id` e
+  `segmento_nome`. Quem não está em nenhum segmento da campanha e não terminou
+  (`na_fila`, `em_andamento`, `aguardando_resposta`) vira `concluida`, com o
+  evento `fora_do_publico`; isso vale também para quem saiu do segmento por
+  conta própria. Quem entrou nos segmentos é inscrito quando a campanha vai ao
+  ar (ativação ou retomada). A tela pede confirmação quando um segmento sai.
+  Pela IA do construtor, o público só muda em campanha nova.
 - **Retomar:** com a linha travada, confere que a definição gravada é a que foi
   conferida (outra aba pode ter salvo no meio: 409, retome de novo) e inscreve
   quem entrou nos segmentos durante a pausa.

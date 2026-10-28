@@ -770,7 +770,7 @@ async function parteFormatoAntigo(ids: Ids) {
   const e5 = await inscrever(c, l5.id, { estado: "aguardando_resposta", wamid: "wamid.L5", enviadoHaMin: 10, prazoEmMin: 60 });
   const novo = fluxo("envio", { envio: envio("t"), t: tag(ids.tagA, null) });
   const ed = await salvarEdicao({ campanhaId: c, nome: null, fluxo: novo, usuarioId: QUEM_EDITA });
-  assert.deepEqual(ed, { concluidas: 1 });
+  assert.deepEqual(ed, { concluidas: 1, foraDoPublico: 0 });
   x = await execucao(e5);
   assert.equal(x.estado, "concluida");
   assert.ok((await eventos(e5)).some((v) => v.tipo === "bloco_removido" && v.detalhe.bloco === "aguardar"));
@@ -1021,7 +1021,7 @@ async function parteIdAposentado(ids: Ids) {
   const r2 = await salvarEdicao({ campanhaId: c, nome: null, fluxo: volta("meio"), usuarioId: QUEM_EDITA });
   assert.ok(r2 && "problemas" in r2 && r2.problemas.some((p) => p.blocoId === "meio"), "envio começado também aposenta");
   const r3 = await salvarEdicao({ campanhaId: c, nome: null, fluxo: volta("novo"), usuarioId: QUEM_EDITA });
-  assert.deepEqual(r3, { concluidas: 0 }, "id novo passa");
+  assert.deepEqual(r3, { concluidas: 0, foraDoPublico: 0 }, "id novo passa");
   passo("trava de id: id aposentado (rodou e saiu da definição) não volta em salvarEdicao");
 }
 

@@ -1,9 +1,14 @@
 "use client";
 
 // Montar uma campanha nova (POST, que já ativa depois da confirmação) ou
-// editar uma pausada ou em rascunho (PUT, sem mexer no público). A barra de
-// cima tem o nome e os botões; o público mora no nó de início do canvas, onde
-// o fluxo começa.
+// editar uma pausada ou em rascunho (PUT). A barra de cima tem o nome e os
+// botões; o público mora no nó de início do canvas, onde o fluxo começa.
+//
+// PÚBLICO NA EDIÇÃO (2026-10-28, pedido dele: "no bloco início deixa
+// configurável pra escolher qual público"): os segmentos também mudam na
+// campanha pausada ou em rascunho. Salvar com segmento a menos pede
+// confirmação: quem ficou fora e não terminou sai da campanha. Quem entrou é
+// inscrito quando ela vai ao ar.
 //
 // MONTAR COM IA (2026-10-28): o chat (../ia-campanhas.tsx) manda o fluxo
 // aberto e a IA devolve o fluxo inteiro num evento. O editor só aplica o
@@ -58,6 +63,8 @@ const numero = (n: number) => n.toLocaleString("pt-BR");
 // e um [] novo a cada vez refaria as pendências e redesenharia todos os cartões.
 const NADA_DO_SERVIDOR: ProblemaDoFluxo[] = [];
 
+const mesmosSegmentos = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id));
+
 export default function EditorCampanha({
   conta,
   templates,
@@ -72,8 +79,8 @@ export default function EditorCampanha({
   conta: ContaWhatsApp;
   templates: TemplateWhatsApp[];
   opcoes: OpcoesFluxo;
-  /** Campanha pausada ou rascunho: salva por PUT; o público fica como está. */
-  existente?: { id: string; nome: string; publico: string; fluxo: Fluxo; metricas?: MetricasFluxo | null };
+  /** Campanha pausada ou rascunho: salva por PUT, com os segmentos de agora. */
+  existente?: { id: string; nome: string; segmentoIds: string[]; fluxo: Fluxo; metricas?: MetricasFluxo | null };
   /** O chat "Montar com IA": quem lista guarda, para o botão de lá abrir a campanha nova já com ele. */
   iaAberta: boolean;
   mudarIa: (aberta: boolean) => void;
@@ -85,10 +92,10 @@ export default function EditorCampanha({
   // Como abriu: é contra isto que "há mudança não salva" se mede.
   const [inicial] = useState(() => {
     const f = existente?.fluxo ?? fluxoInicial(templates);
-    return { fluxo: f, json: JSON.stringify(f), nome: existente?.nome ?? "" };
+    return { fluxo: f, json: JSON.stringify(f), nome: existente?.nome ?? "", segmentoIds: existente?.segmentoIds ?? [] };
   });
   const [nome, setNome] = useState(inicial.nome);
-  const [segmentoIds, setSegmentoIds] = useState<string[]>([]);
+  const [segmentoIds, setSegmentoIds] = useState<string[]>(inicial.segmentoIds);
   const [fluxo, setFluxo] = useState<Fluxo>(inicial.fluxo);
   const [doServidor, setDoServidor] = useState(NADA_DO_SERVIDOR);
   const [erro, setErro] = useState("");
@@ -106,7 +113,8 @@ export default function EditorCampanha({
   const [tiraContatos, setTiraContatos] = useState<string | null>(null);
 
   const fluxoMudou = useMemo(() => JSON.stringify(fluxo) !== inicial.json, [fluxo, inicial.json]);
-  const sujo = fluxoMudou || nome !== inicial.nome || segmentoIds.length > 0;
+  const publicoMudou = !mesmosSegmentos(segmentoIds, inicial.segmentoIds);
+  const sujo = fluxoMudou || nome !== inicial.nome || publicoMudou;
   useEffect(() => aoMudarSujo(sujo), [sujo, aoMudarSujo]);
   useEffect(() => () => aoMudarSujo(false), [aoMudarSujo]);
 
@@ -138,7 +146,7 @@ export default function EditorCampanha({
     setDoServidor(NADA_DO_SERVIDOR);
     setErro("");
     if (desenho.nome) setNome(desenho.nome.slice(0, 160));
-    // O público só muda em campanha nova, e só com segmento que existe.
+    // Pela IA, o público só muda em campanha nova, e só com segmento que existe.
     if (!existente && desenho.segmentoIds) setSegmentoIds(desenho.segmentoIds.filter((id) => opcoes.segmentos.some((s) => s.id === id)));
     setDesenhoDaIa(true);
     setVista((n) => n + 1);
@@ -166,13 +174,11 @@ export default function EditorCampanha({
   const { versao, inicio, blocos } = fluxo;
   const problemas = useMemo(() => {
     const comContato = opcoes.segmentos.some((s) => segmentoIds.includes(s.id) && s.contatos > 0);
-    const doPublico: ProblemaDoFluxo[] = existente
-      ? []
-      : !segmentoIds.length
-        ? [{ blocoId: null, mensagem: "Escolha pelo menos um segmento." }]
-        : !comContato
-          ? [{ blocoId: null, mensagem: "Os segmentos escolhidos não têm contato com WhatsApp." }]
-          : [];
+    const doPublico: ProblemaDoFluxo[] = !segmentoIds.length
+      ? [{ blocoId: null, mensagem: "Escolha pelo menos um segmento." }]
+      : !comContato
+        ? [{ blocoId: null, mensagem: "Os segmentos escolhidos não têm contato com WhatsApp." }]
+        : [];
     const semPosicoes = { versao, inicio, blocos, posicoes: {} };
     return [
       ...doPublico,
@@ -193,16 +199,14 @@ export default function EditorCampanha({
   // Só no title do botão: o campo vazio e a pílula de pendências já estão à vista.
   const motivo = !nome.trim() ? "Falta o nome da campanha" : problemas.length ? "Há pendências no fluxo" : "";
 
-  const publico = existente
-    ? existente.publico
-    : escolhidos.length
-      ? `${escolhidos.map((s) => s.nome).join(", ")} · até ${quantosContatos(contatos)}`
-      : "Nenhum segmento escolhido";
+  const publico = escolhidos.length
+    ? `${escolhidos.map((s) => s.nome).join(", ")} · até ${quantosContatos(contatos)}`
+    : "Nenhum segmento escolhido";
 
   /**
    * Antes do PUT: quem está agora num bloco que o fluxo novo não tem termina a
-   * campanha ali (o servidor encerra). Salvar assim pede confirmação, com
-   * quantos saem e de onde.
+   * campanha ali (o servidor encerra), e segmento tirado do público tira da
+   * campanha quem ficou fora e não terminou. Salvar assim pede confirmação.
    */
   function pedirSalvar() {
     if (!existente) return;
@@ -210,10 +214,18 @@ export default function EditorCampanha({
     const saem = Object.keys(existente.fluxo.blocos)
       .filter((id) => !Object.hasOwn(fluxo.blocos, id) && (porBloco[id]?.agora ?? 0) > 0)
       .map((id) => ({ id, agora: porBloco[id].agora }));
-    if (!saem.length) return void salvar();
-    const total = saem.reduce((soma, s) => soma + s.agora, 0);
-    const onde = saem.map((s) => `${numero(s.agora)} em “${rotuloDoBloco(existente.fluxo.blocos[s.id], opcoes)}”`).join(", ");
-    setTiraContatos(`Salvar encerra a campanha para ${quantosContatos(total)} em blocos apagados (${onde}).`);
+    const tirados = opcoes.segmentos.filter((s) => inicial.segmentoIds.includes(s.id) && !segmentoIds.includes(s.id));
+    const avisos: string[] = [];
+    if (saem.length) {
+      const total = saem.reduce((soma, s) => soma + s.agora, 0);
+      const onde = saem.map((s) => `${numero(s.agora)} em “${rotuloDoBloco(existente.fluxo.blocos[s.id], opcoes)}”`).join(", ");
+      avisos.push(`Salvar encerra a campanha para ${quantosContatos(total)} em blocos apagados (${onde}).`);
+    }
+    if (tirados.length) {
+      avisos.push(`Quem estava só em ${tirados.map((s) => `“${s.nome}”`).join(", ")} e não terminou sai da campanha e não recebe mais nada.`);
+    }
+    if (!avisos.length) return void salvar();
+    setTiraContatos(avisos.join(" "));
   }
 
   async function salvar() {
@@ -222,17 +234,30 @@ export default function EditorCampanha({
     setEnviando(true);
     setErro("");
     try {
-      const r = await pedirCampanha<{ concluidas?: number }>(`/api/meta/whatsapp/campanhas/${existente.id}`, "PUT", { nome: nome.trim(), definicao: fluxo });
+      const r = await pedirCampanha<{ concluidas?: number; foraDoPublico?: number }>(`/api/meta/whatsapp/campanhas/${existente.id}`, "PUT", {
+        nome: nome.trim(),
+        definicao: fluxo,
+        // O público só vai quando mudou: o servidor só mexe nos segmentos (e em quem saiu) se receber.
+        ...(publicoMudou ? { segmentoIds } : {}),
+      });
       if (!r.ok) {
         setErro(r.erro);
         setDoServidor(r.problemas);
         return;
       }
-      // Quem estava num bloco apagado termina ali (o servidor conta): quem salvou precisa saber.
+      // Quem estava num bloco apagado ou ficou fora do público termina ali (o servidor conta): quem salvou precisa saber.
       const encerrados = r.dados.concluidas ?? 0;
+      const fora = r.dados.foraDoPublico ?? 0;
       aoConcluir(
         existente.id,
-        encerrados ? `Alterações salvas. ${quantosContatos(encerrados)} em blocos apagados terminaram a campanha.` : "Alterações salvas.",
+        [
+          "Alterações salvas.",
+          encerrados ? `${quantosContatos(encerrados)} em blocos apagados terminaram a campanha.` : "",
+          fora ? `${quantosContatos(fora)} fora do público saíram da campanha.` : "",
+          publicoMudou ? "Quem entrou nos segmentos é inscrito quando a campanha voltar ao ar." : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
     } catch {
       setErro("Não consegui falar com o servidor. Confira a conexão e tente de novo.");
@@ -269,16 +294,16 @@ export default function EditorCampanha({
     }
   }
 
-  const painelInicio = existente ? (
-    <div className="space-y-3 text-[12px] text-zinc-700 dark:text-zinc-200">
-      <Grupo rotulo="Público" dica="Não muda depois que a campanha foi criada.">
-        <p>{existente.publico}</p>
-      </Grupo>
-      <p className="text-zinc-500 dark:text-zinc-400">Envia por {conta.telefone}</p>
-    </div>
-  ) : (
+  const painelInicio = (
     <div className="space-y-4">
-      <Grupo rotulo="Segmentos" dica="Entram os contatos com WhatsApp. Quem está em mais de um segmento entra uma vez só.">
+      <Grupo
+        rotulo="Segmentos"
+        dica={
+          existente
+            ? "Ao salvar, quem entrou nos segmentos é inscrito quando a campanha for ao ar, e quem ficou fora e não terminou sai dela. Quem está em mais de um segmento entra uma vez só."
+            : "Entram os contatos com WhatsApp. Quem está em mais de um segmento entra uma vez só."
+        }
+      >
         <div className="max-h-80 space-y-0.5 overflow-y-auto rounded-lg border border-zinc-300 p-1.5 dark:border-zinc-700">
           {opcoes.segmentos.map((s) => (
             <label
@@ -402,8 +427,8 @@ export default function EditorCampanha({
           metricas={existente?.metricas ?? null}
           inicio={{
             // Sem segmento, a faixa de pendência do cartão já diz o que fazer.
-            resumo: existente ? existente.publico : escolhidos.length ? escolhidos.map((s) => s.nome).join(", ") : "Nenhum segmento escolhido",
-            detalhe: existente ? conta.telefone : escolhidos.length ? `até ${quantosContatos(contatos)}` : "",
+            resumo: escolhidos.length ? escolhidos.map((s) => s.nome).join(", ") : "Nenhum segmento escolhido",
+            detalhe: escolhidos.length ? `até ${quantosContatos(contatos)}` : "",
             painel: painelInicio,
           }}
           faixa={

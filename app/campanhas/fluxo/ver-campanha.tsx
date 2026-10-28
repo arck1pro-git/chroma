@@ -32,6 +32,8 @@ export type CampanhaWpp = {
   id: string;
   nome: string;
   segmento_nome: string;
+  /** Os segmentos do público (o nó de início edita na campanha pausada ou em rascunho). */
+  segmento_ids?: string[];
   telefone_exibicao: string;
   status: string;
   total: number;

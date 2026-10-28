@@ -122,9 +122,40 @@ async function concluirForaDoFluxo(tx: typeof sql, campanhaId: string, f: FluxoC
 }
 
 /**
+ * Quem não está em nenhum segmento da campanha e não terminou sai dela
+ * ('concluida', evento 'fora_do_publico'). Roda quando o público é trocado na
+ * edição (pedido dele, 2026-10-28: "deixa configurável pra escolher qual
+ * público"): quem foi tirado não recebe mais nada, nem o que estava no meio do
+ * fluxo. Pega também quem saiu do segmento por conta própria durante a
+ * campanha. 'enviando' fica de fora, como em concluirForaDoFluxo.
+ */
+async function concluirForaDoPublico(tx: typeof sql, campanhaId: string): Promise<number> {
+  const fora = await tx`
+    WITH fora AS (
+      UPDATE campanha_whatsapp_execucoes e
+         SET estado = 'concluida', prazo_resposta = NULL, finalizado_em = now()
+       WHERE e.campanha_id = ${campanhaId}::uuid
+         AND e.estado IN ('na_fila', 'em_andamento', 'aguardando_resposta')
+         AND NOT EXISTS (
+           SELECT 1 FROM campanha_whatsapp_segmentos cws
+             JOIN contato_segmentos cs ON cs.segmento_id = cws.segmento_id
+            WHERE cws.campanha_id = e.campanha_id AND cs.contato_id = e.contato_id)
+      RETURNING e.id)
+    INSERT INTO campanha_whatsapp_eventos (campanha_id, execucao_id, tipo, detalhe)
+    SELECT ${campanhaId}::uuid, fora.id, 'fora_do_publico', '{}'::jsonb FROM fora
+    RETURNING id`;
+  return fora.length;
+}
+
+/**
  * Grava o fluxo editado de uma campanha PAUSADA ou RASCUNHO (null = não está
  * em nenhum dos dois). Tudo numa transação: a definição nova e quem saiu do
  * fluxo por estar num bloco apagado.
+ *
+ * `publico` (opcional) troca os segmentos: quem ficou fora sai
+ * (concluirForaDoPublico) e quem entrou é inscrito quando a campanha vai ao ar
+ * (ativação ou retomada, por inscreverDosSegmentos). Os ids já vêm conferidos
+ * pela rota, com os nomes na ordem de exibição.
  *
  * TRAVA DE ID (revisões de 2026-10-28): bloco que já existe na definição
  * gravada não muda de tipo, e id que já rodou e foi apagado não volta
@@ -138,7 +169,8 @@ export async function salvarEdicao(e: {
   nome: string | null;
   fluxo: FluxoCampanha;
   usuarioId: string;
-}): Promise<{ concluidas: number } | { problemas: ProblemaDoFluxo[] } | null> {
+  publico?: Array<{ id: string; nome: string }> | null;
+}): Promise<{ concluidas: number; foraDoPublico: number } | { problemas: ProblemaDoFluxo[] } | null> {
   const tpl = templateDaCampanha(e.fluxo);
   return sql.begin(async (tx: typeof sql) => {
     const [atual] = (await tx`
@@ -158,9 +190,23 @@ export async function salvarEdicao(e: {
       RETURNING id`;
     if (!c) return null;
     const concluidas = await concluirForaDoFluxo(tx, e.campanhaId, e.fluxo);
+    let foraDoPublico = 0;
+    if (e.publico?.length) {
+      const ids = listaUuid(e.publico.map((s) => s.id));
+      await tx`DELETE FROM campanha_whatsapp_segmentos
+                WHERE campanha_id = ${e.campanhaId}::uuid AND NOT (segmento_id = ANY(string_to_array(${ids}, ',')::uuid[]))`;
+      await tx`INSERT INTO campanha_whatsapp_segmentos (campanha_id, segmento_id)
+               SELECT ${e.campanhaId}::uuid, s FROM unnest(string_to_array(${ids}, ',')::uuid[]) AS s
+               ON CONFLICT DO NOTHING`;
+      // As colunas antigas seguem preenchidas: a lista e a ficha do contato ainda leem delas.
+      await tx`UPDATE campanhas_whatsapp SET segmento_id = ${e.publico[0].id}::uuid, segmento_nome = ${e.publico.map((s) => s.nome).join(", ")}
+                WHERE id = ${e.campanhaId}::uuid`;
+      foraDoPublico = await concluirForaDoPublico(tx, e.campanhaId);
+    }
+    const detalhe = { usuario: e.usuarioId, concluidas, ...(e.publico?.length ? { segmentos: e.publico.map((s) => s.id), foraDoPublico } : {}) };
     await tx`INSERT INTO campanha_whatsapp_eventos (campanha_id, execucao_id, tipo, detalhe)
-             VALUES (${e.campanhaId}::uuid, NULL, 'campanha_editada', ${sql.json({ usuario: e.usuarioId, concluidas } as never)})`;
-    return { concluidas };
+             VALUES (${e.campanhaId}::uuid, NULL, 'campanha_editada', ${sql.json(detalhe as never)})`;
+    return { concluidas, foraDoPublico };
   });
 }
 

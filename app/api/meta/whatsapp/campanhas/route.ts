@@ -35,6 +35,7 @@ export async function GET() {
     const campanhas = await sql`
       SELECT id, nome, segmento_id,
              COALESCE((SELECT string_agg(s.nome, ', ' ORDER BY s.nome) FROM campanha_whatsapp_segmentos cs JOIN segmentos s ON s.id=cs.segmento_id WHERE cs.campanha_id=c.id), segmento_nome) AS segmento_nome,
+             (SELECT COALESCE(jsonb_agg(cs.segmento_id), '[]'::jsonb) FROM campanha_whatsapp_segmentos cs WHERE cs.campanha_id=c.id) AS segmento_ids,
              template_nome, definicao, motor_workflow_id,
              template_idioma, telefone_exibicao, status, total, enviados,
              falhas, data_criacao, data_conclusao,

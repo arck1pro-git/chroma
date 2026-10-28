@@ -38,7 +38,6 @@ import { lerTemplate } from "@/lib/templates-whatsapp";
 import { BarChart3, LoaderCircle, MessageCircle, PanelLeft, PanelLeftClose, Send, Sparkles, type TipoIcone } from "@/app/components/icones";
 import { criarPreferencia } from "@/app/components/preferencia-local";
 import EditorCampanha, { type ContaWhatsApp } from "./fluxo/editor-campanha";
-import { quantosContatos } from "./fluxo/grafo";
 import VerCampanha, { rotuloDoStatus, type CampanhaWpp } from "./fluxo/ver-campanha";
 import PainelAds from "./painel-ads";
 import { Aviso, botaoAds, Confirmacao, Vazio } from "./pecas";
@@ -279,7 +278,7 @@ function WhatsApp({ status, opcoes, mudarFoco }: { status: StatusMeta; opcoes: O
         existente={{
           id: campanha.id,
           nome: campanha.nome,
-          publico: `${campanha.segmento_nome} · ${quantosContatos(campanha.total ?? 0)}`,
+          segmentoIds: campanha.segmento_ids ?? [],
           fluxo: campanha.definicao,
           metricas: campanha.metricas ?? null,
         }}
