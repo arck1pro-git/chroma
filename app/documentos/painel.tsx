@@ -7,9 +7,9 @@
 // é o mesmo retângulo cinza. A lista mostra o que diferencia: nome, tipo,
 // tamanho, quem subiu, quando.
 //
-// O UPLOAD VAI PARA UMA ROTA, não para uma server action: corpo de server action
-// topa 1 MB (ver app/api/documentos/route.ts). É por isso que esta tela tem
-// `fetch` em vez do `useTransition` que o resto do CRM usa para mutação.
+// O ARQUIVO VAI DIRETO PARA O SUPABASE, não pelo CRM: a Vercel corta o corpo
+// da requisição em ~4,5 MB (o 413 de 2026-10-28) e server action topa 1 MB. O
+// servidor só assina o envio e depois grava a linha (ver ./acoes.ts).
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Documento, TipoDocumento } from "@/lib/documentos";
@@ -33,6 +33,8 @@ import {
 } from "@/app/components/icones";
 import {
   alternarArquivado,
+  prepararEnvio,
+  registrarEnvio,
   removerDocumento,
   salvarDocumento,
 } from "./acoes";
@@ -101,12 +103,12 @@ export default function PainelDocumentos({
   const arquivados = documentos.filter((d) => d.arquivado).length;
 
   /**
-   * Sobe os arquivos escolhidos, UM POR REQUISIÇÃO.
+   * Sobe os arquivos escolhidos, UM DE CADA VEZ.
    *
-   * Em série e não em paralelo: dez arquivos de 20 MB disparados juntos põem
-   * 200 MB na memória do servidor ao mesmo tempo. Em série, cada um termina
-   * antes do próximo começar, e o que falha não leva os outros junto — o aviso
-   * no fim diz quantos entraram e quantos não.
+   * Em série e não em paralelo: dez arquivos de 20 MB disparados juntos
+   * disputam a mesma conexão e nenhum termina antes dos outros. Em série, cada
+   * um termina antes do próximo começar, e o que falha não leva os outros
+   * junto — o aviso no fim diz quantos entraram e quantos não.
    */
   async function subir(arquivos: FileList | null) {
     if (!arquivos?.length) return;
@@ -117,13 +119,26 @@ export default function PainelDocumentos({
     const erros: string[] = [];
 
     for (const arquivo of Array.from(arquivos)) {
-      const form = new FormData();
-      form.append("arquivo", arquivo);
       try {
-        const res = await fetch("/api/documentos", { method: "POST", body: form });
-        const dados = await res.json().catch(() => ({}));
-        if (res.ok) entraram++;
-        else erros.push(`${arquivo.name}: ${dados?.erro ?? `erro ${res.status}`}`);
+        const preparo = await prepararEnvio({ nomeArquivo: arquivo.name, tamanho: arquivo.size });
+        if (!preparo.ok) {
+          erros.push(`${arquivo.name}: ${preparo.mensagem}`);
+          continue;
+        }
+        // O mesmo formato do supabase-js (e dos vídeos e anexos de demandas):
+        // PUT multipart, campo sem nome, sem Authorization — o token está na URL.
+        const corpo = new FormData();
+        corpo.append("cacheControl", "3600");
+        corpo.append("", arquivo, arquivo.name);
+        const res = await fetch(preparo.url, { method: "PUT", headers: { "x-upsert": "false" }, body: corpo });
+        if (!res.ok) {
+          const motivo = await res.json().then((j: { message?: string }) => j.message).catch(() => null);
+          erros.push(`${arquivo.name}: não subiu${motivo ? ` (${motivo})` : ""}`);
+          continue;
+        }
+        const r = await registrarEnvio({ caminho: preparo.caminho, nomeArquivo: arquivo.name });
+        if (r.ok) entraram++;
+        else erros.push(`${arquivo.name}: ${r.mensagem}`);
       } catch {
         erros.push(`${arquivo.name}: falhou no envio`);
       }

@@ -36,6 +36,7 @@ o `npx` baixaria pacotes do registro.
 | IA do construtor de campanhas | mudou `lib/ia/campanhas-construtor*.ts`, `lib/campanhas-fluxo*.ts` ou `app/api/ia/campanhas/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-campanhas-construtor.ts` |
 | Agenda e horários da IA | mudou `lib/agenda.ts` ou `lib/google-oauth.ts` | `node scripts/testar-agenda-ocupados.mjs` |
 | Assistente de reuniões | mudou `lib/reunioes-*.ts`, `lib/ia/reuniao.ts` ou `app/api/reunioes/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-reunioes-assistente.ts` |
+| Documentos (envio direto) | mudou `lib/documentos.ts`, `app/documentos/acoes.ts` ou `urlDeEnvio`/`infoDoObjeto` em `lib/armazenamento.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-documentos-envio.ts` |
 | Extensão de reuniões | mudou `extensao-reunioes/` | `node scripts/testar-extensao-reunioes.mjs` (o service worker; o áudio de verdade só no Chrome, ver o LEIAME da pasta) |
 | Atendimento humano | mudou `lib/atendimento-humano.ts`, `lib/automacoes/mover-pela-cadencia.ts`, `avancarPelaIa`/`passarParaHumano` em `lib/ia/atendente.ts` ou a pill em `lib/funil.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-atendimento-humano.ts` |
 | Hooks do Claude Code | mudou `.claude/hooks/` ou `.claude/settings.json` | `node scripts/testar-hooks.mjs` |

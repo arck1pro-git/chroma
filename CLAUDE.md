@@ -187,6 +187,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   falsa: o funil, as falhas por motivo e o gasto pelo template_analytics), `testar-atendimento-humano.ts` (pelo runner, contra o DEV com um funil de teste apagado no fim: o fim da cadência,
   a IA que passa o lead para a equipe e a pill "Atendimento humano"), `testar-reunioes-assistente.ts` (pelo runner, contra
   o DEV com cenário marcado e a Anthropic falsa num servidor local: a porta, o lead e o copiloto da extensão de reuniões),
+  `testar-documentos-envio.ts` (pelo runner, contra o DEV e o Storage do `.env`, com marca apagada no fim: o envio direto
+  da biblioteca de Documentos pela URL assinada e as recusas do registro),
   `scripts/testar-extensao-reunioes.mjs` (direto com `node`: o service worker da extensão com um `chrome` falso; o áudio
   de verdade só no Chrome, ver `extensao-reunioes/LEIAME.md`) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`

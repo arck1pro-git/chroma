@@ -111,7 +111,8 @@ export async function baixar(bucket: string, caminho: string): Promise<Buffer> {
  * URL para o NAVEGADOR subir um objeto direto no Storage, sem passar pelo CRM.
  *
  * Existe por causa dos vídeos: na Vercel o corpo de uma requisição para no
- * ~4,5 MB, e vídeo passa disso fácil. Com esta URL o arquivo vai do navegador
+ * ~4,5 MB, e vídeo passa disso fácil (hoje também os anexos de demandas e os
+ * documentos da biblioteca sobem assim). Com esta URL o arquivo vai do navegador
  * para o Supabase, e o CRM só assina — a chave de servidor nunca sai daqui.
  * Quem sobe usa só o token da URL (PUT multipart, como o supabase-js faz), que
  * vale para ESTE caminho e expira em 2 h.

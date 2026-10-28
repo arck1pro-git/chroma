@@ -21,10 +21,18 @@
 // `caminho` continua guardando um caminho RELATIVO, e é por isso que a troca
 // foi de adaptador e não de schema: mudou o que lê e escreve os bytes, não o
 // que a tabela guarda.
+//
+// O ARQUIVO NÃO PASSA PELO CRM desde 2026-10-28: a Vercel corta o corpo da
+// requisição em ~4,5 MB e devolvia 413 para qualquer vídeo. É o caminho dos
+// vídeos e dos anexos de demandas, em três tempos: o servidor sorteia o
+// caminho e assina o envio (app/documentos/acoes.ts), o navegador sobe direto
+// para o Supabase, e `registrarDocumento` confere no Storage o que chegou antes
+// de gravar a linha.
 import "server-only";
 import path from "path";
 import { sql } from "@/lib/db";
-import { BUCKET_DOCUMENTOS, baixar, remover, subir } from "@/lib/armazenamento";
+import { BUCKET_DOCUMENTOS, baixar, infoDoObjeto, remover } from "@/lib/armazenamento";
+import { Recusa } from "@/lib/resultado-acao";
 import { ehUuid } from "@/lib/validacao";
 
 /** O que a uazapi precisa saber para escolher como a mídia chega no WhatsApp. */
@@ -51,7 +59,7 @@ type DocumentoComCaminho = Documento & { caminho: string };
 // WhatsApp recusa documento acima de ~100 MB, mas o gargalo real aqui é o
 // envio em base64 (ver `enviarMidia` em lib/uazapi.ts) — o arquivo vira ~1,37×
 // de JSON na memória do processo a cada disparo.
-const TETO_BYTES = Number(process.env.DOCUMENTOS_TETO_MB ?? 32) * 1024 * 1024;
+export const TETO_BYTES = Number(process.env.DOCUMENTOS_TETO_MB ?? 32) * 1024 * 1024;
 
 export const TETO_MB = Math.round(TETO_BYTES / 1024 / 1024);
 
@@ -182,53 +190,78 @@ export async function comCaminho(
 }
 
 /**
- * Sobe os bytes para o Storage e grava a linha no banco.
+ * Onde o arquivo vai morar no bucket: AAAA/MM/<sorteio>.<ext>.
  *
- * O STORAGE VEM ANTES DO BANCO, e a ordem não é arbitrária: invertida, uma
- * falha de upload deixaria uma linha apontando para um objeto que não existe —
- * e isso só apareceria no dia em que alguém tentasse mandar o documento para um
- * lead, que foi exatamente como o bug do disco local apareceu. Nesta ordem, a
- * falha do banco deixa um objeto órfão no bucket, que não quebra nada e não
- * engana ninguém (e o catch abaixo ainda o remove).
+ * Pasta por ano/mês: mantém o bucket navegável quando forem milhares de
+ * arquivos, em vez de uma pasta só com tudo dentro. Separador literal "/" — é
+ * caminho de objeto no Storage, não do sistema de arquivos, então `path.join`
+ * aqui produziria "\" no Windows e quebraria a URL. O nome do objeto é
+ * sorteado, não é o do usuário: dois "contrato.pdf" não podem se sobrescrever,
+ * e o nome original fica guardado na coluna.
  */
-export async function criarDocumento(dados: {
+export function novoCaminho(arquivoNome: string): string {
+  const agora = new Date();
+  const pasta = `${agora.getUTCFullYear()}/${String(agora.getUTCMonth() + 1).padStart(2, "0")}`;
+  const unico = `${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
+  const ext = path.extname(nomeSeguro(arquivoNome)).toLowerCase();
+  return `${pasta}/${unico}${/^\.[a-z0-9]{1,8}$/.test(ext) ? ext : ""}`;
+}
+
+/** O formato de `novoCaminho`: o registro só aceita caminho que o servidor sorteou. */
+export const CAMINHO_VALIDO = /^\d{4}\/\d{2}\/[a-z0-9]+-[0-9a-f]{8}(\.[a-z0-9]{1,8})?$/;
+
+/** Já há documento ativo com este nome (a regra do índice ux_documentos_nome)? */
+export async function nomeEmUso(nome: string): Promise<boolean> {
+  const [l] = await sql`
+    SELECT 1 FROM documentos
+     WHERE lower(btrim(nome)) = lower(btrim(${nome})) AND arquivado = false
+     LIMIT 1`;
+  return Boolean(l);
+}
+
+/**
+ * Grava a linha de um arquivo que o navegador já subiu para `caminho`.
+ *
+ * Tamanho e tipo saem do Storage, não do que o navegador disse: é o teto de
+ * DOCUMENTOS_TETO_MB que segura o envio em base64 (ver `paraEnvio`), e o
+ * upload direto não passou por ele. Arquivo acima do teto sai do bucket.
+ *
+ * O STORAGE VEM ANTES DO BANCO, e a ordem não é arbitrária: uma linha
+ * apontando para um objeto que não existe só apareceria no dia em que alguém
+ * tentasse mandar o documento para um lead, que foi exatamente como o bug do
+ * disco local apareceu. Se a linha não entra, o objeto sai.
+ */
+export async function registrarDocumento(dados: {
   nome: string;
   descricao: string | null;
   arquivoNome: string;
-  mime: string;
-  bytes: Uint8Array;
+  caminho: string;
   criadoPor: string | null;
 }): Promise<Documento> {
-  const { bytes } = dados;
-  if (bytes.byteLength === 0) throw new Error("Arquivo vazio.");
-  if (bytes.byteLength > TETO_BYTES) {
-    throw new Error(`Arquivo acima do limite de ${TETO_MB} MB.`);
-  }
+  const { caminho } = dados;
+  if (!CAMINHO_VALIDO.test(caminho)) throw new Recusa("Envio inválido.");
 
-  const arquivoNome = nomeSeguro(dados.arquivoNome);
-  const mime = (dados.mime || "application/octet-stream").split(";")[0].trim();
-  const tipo = tipoDeMime(mime, arquivoNome);
+  const info = await infoDoObjeto(BUCKET_DOCUMENTOS, caminho);
+  if (!info) throw new Recusa("O arquivo não chegou ao Supabase. Tente subir de novo.");
 
-  // Pasta por ano/mês: mantém o bucket navegável quando forem milhares de
-  // arquivos, em vez de uma pasta só com tudo dentro. Separador literal "/" —
-  // é caminho de objeto no Storage, não do sistema de arquivos, então `path.join`
-  // aqui produziria "\" no Windows e quebraria a URL.
-  const agora = new Date();
-  const pasta = `${agora.getUTCFullYear()}/${String(agora.getUTCMonth() + 1).padStart(2, "0")}`;
-  // Nome do objeto é sorteado, não é o do usuário: dois "contrato.pdf" não podem
-  // se sobrescrever, e o nome original já está guardado na coluna.
-  const unico = `${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`;
-  const caminho = `${pasta}/${unico}${path.extname(arquivoNome)}`;
-
-  await subir(BUCKET_DOCUMENTOS, caminho, bytes, mime);
+  // Caminho que já é de outro documento não vira um segundo: além de não ser
+  // um envio novo, apagar um dos dois levaria o arquivo do outro junto.
+  const [jaRegistrado] = await sql`SELECT 1 FROM documentos WHERE caminho = ${caminho} LIMIT 1`;
+  if (jaRegistrado) throw new Recusa("Envio inválido.");
 
   try {
+    if (info.tamanho === 0) throw new Recusa("Arquivo vazio.");
+    if (info.tamanho > TETO_BYTES) throw new Recusa(`Arquivo acima do limite de ${TETO_MB} MB.`);
+
+    const arquivoNome = nomeSeguro(dados.arquivoNome);
+    const mime = (info.mime || "application/octet-stream").split(";")[0].trim();
+    const tipo = tipoDeMime(mime, arquivoNome);
     const [l] = await sql`
       INSERT INTO documentos
         (nome, descricao, arquivo_nome, caminho, mime, tamanho, tipo, criado_por)
       VALUES
         (${dados.nome}, ${dados.descricao}, ${arquivoNome}, ${caminho},
-         ${mime}, ${bytes.byteLength}, ${tipo}, ${dados.criadoPor})
+         ${mime}, ${info.tamanho}, ${tipo}, ${dados.criadoPor})
       RETURNING id, nome, descricao, arquivo_nome, caminho, mime, tamanho,
                 tipo, criado_por, data_criacao, arquivado`;
     return semCaminho(daLinha({ ...l, autor: null }));
