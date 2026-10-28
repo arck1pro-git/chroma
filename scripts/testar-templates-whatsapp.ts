@@ -1,7 +1,7 @@
 // As regras de lib/templates-whatsapp.ts: as do editor de templates, que a rota
 // app/api/meta/templates aplica antes de criar o template na Meta, e as do envio
-// — variáveis com dado do contato no chat e nas campanhas. Puro: sem banco, sem
-// rede e sem .env.
+// — variáveis com dado do contato e cabeçalho de imagem, vídeo ou documento, no
+// chat e nas campanhas. Puro: sem banco, sem rede e sem .env.
 //
 //   node scripts/jiti.mjs scripts/testar-templates-whatsapp.ts
 import assert from "node:assert/strict";
@@ -17,8 +17,11 @@ import {
   emGrupos,
   lerTemplate,
   linksVariaveisDe,
+  midiaDoCabecalho,
   motivoSemEnvio,
   nomeDeTemplate,
+  problemaDaMidia,
+  problemaDoArquivoDoCabecalho,
   problemaDoLinkVariavel,
   problemaNoEnvio,
   problemasDo,
@@ -176,6 +179,8 @@ const completo = lerTemplate(meta({
     ] },
   ],
 }));
+const comCabecalho = (formato: string) =>
+  lerTemplate(meta({ components: [{ type: "HEADER", format: formato }, { type: "BODY", text: "Olá {{1}}, veja o material." }] }));
 caso("lerTemplate entende o JSON da Meta", () => {
   assert.equal(completo.motivoRejeicao, "PROMOTIONAL");
   assert.equal(completo.qualidade, "GREEN");
@@ -184,9 +189,11 @@ caso("lerTemplate entende o JSON da Meta", () => {
   assert.equal(completo.botoes[0].destino, "https://x.com/{{1}}");
   assert.equal(lerTemplate(meta({ rejected_reason: "NONE" })).motivoRejeicao, null);
 });
-caso("cabeçalho de mídia o CRM não envia; link com variável no padrão envia", () => {
+caso("cabeçalho de localização o CRM não envia; link com variável no padrão envia", () => {
+  // `completo` tem imagem (que vai desde 2026-10-28) e um botão de copiar código (que não vai).
   assert.equal(semEnvioPeloCrm(completo), true);
-  assert.match(motivoSemEnvio(completo) ?? "", /mídia/);
+  assert.match(motivoSemEnvio(completo) ?? "", /Copiar código/);
+  assert.match(motivoSemEnvio(comCabecalho("LOCATION")) ?? "", /^Tem cabeçalho de mídia, que o CRM ainda não envia\.$/);
   assert.equal(semEnvioPeloCrm(lerTemplate(meta({ components: [{ type: "BODY", text: "Oi" }] }))), false);
   const soLink = (url: string) => lerTemplate(meta({ components: [{ type: "BODY", text: "Oi" }, { type: "BUTTONS", buttons: [{ type: "URL", text: "Site", url }] }] }));
   assert.equal(semEnvioPeloCrm(soLink("https://x.com/{{1}}")), false);
@@ -238,7 +245,7 @@ caso("campanha: começa com o primeiro nome na {{1}} e confere cada variável", 
   assert.match(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{primeiro_nome}}", ""] }) ?? "", /\{\{2\}\}/);
   assert.match(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{apelido}}", "x"] }) ?? "", /não é dado do contato/);
   assert.equal(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{primeiro_nome}}", "pela manhã"] }), null);
-  assert.match(problemaNoEnvio(completo, { cabecalho: [], corpo: ["Ana"] }) ?? "", /mídia/);
+  assert.match(problemaNoEnvio(comCabecalho("LOCATION"), { cabecalho: [], corpo: ["Ana"] }) ?? "", /cabeçalho de mídia/);
 });
 caso("campanha: marca com erro de digitação não sai literal", () => {
   for (const errada of ["{{Primeiro_nome}}", "{{ primeiro_nome }}", "{{primeiro nome}}", "{{1}}", "Olá }}"])
@@ -383,6 +390,89 @@ caso("revisão: botões no fim, com o link completo e [WhatsApp do contato]", ()
       "[Ver vídeo] https://amaanoffice.amaan.com.br/v/abc12345?w=[WhatsApp do contato]\n" +
       "[Site] https://amaan.com.br/lp/lancamento",
   ));
+
+// ── Cabeçalho de mídia: imagem, vídeo e documento da biblioteca ─────────────
+const DOC = "0b9d2f4e-6c1a-4e8b-9f3d-2a7c5e1b8d40";
+const imagem = comCabecalho("IMAGE");
+const video = comCabecalho("VIDEO");
+const documento = comCabecalho("DOCUMENT");
+const corpoAna = { cabecalho: [], corpo: ["{{primeiro_nome}}"] };
+caso("mídia: midiaDoCabecalho diz qual arquivo cada cabeçalho pede", () => {
+  assert.equal(midiaDoCabecalho(imagem), "imagem");
+  assert.equal(midiaDoCabecalho(video), "video");
+  assert.equal(midiaDoCabecalho(documento), "documento");
+  assert.equal(midiaDoCabecalho(comCabecalho("LOCATION")), null);
+  assert.equal(midiaDoCabecalho(doisCampos), null);
+  assert.equal(midiaDoCabecalho(lerTemplate(meta({ components: [{ type: "BODY", text: "Oi" }] }))), null);
+  for (const t of [imagem, video, documento]) {
+    assert.equal(motivoSemEnvio(t), null);
+    assert.deepEqual(variaveisDoTemplate(t), { cabecalho: 0, corpo: 1, links: [] });
+  }
+});
+caso("mídia: sem o arquivo é problema; com o id do documento passa", () => {
+  assert.equal(problemaNoEnvio(imagem, corpoAna), "Escolha a imagem do cabeçalho.");
+  assert.equal(problemaNoEnvio(video, { ...corpoAna, midia: null }), "Escolha o vídeo do cabeçalho.");
+  assert.equal(problemaNoEnvio(documento, { ...corpoAna, midia: "  " }), "Escolha o documento do cabeçalho.");
+  assert.match(problemaNoEnvio(imagem, { ...corpoAna, midia: "foto.jpg" }) ?? "", /não é um documento da biblioteca/);
+  for (const t of [imagem, video, documento]) assert.equal(problemaNoEnvio(t, { ...corpoAna, midia: DOC }), null);
+  // O resto da conferência continua valendo com a mídia escolhida.
+  assert.match(problemaNoEnvio(imagem, { cabecalho: [], corpo: [""], midia: DOC }) ?? "", /\{\{1\}\}/);
+});
+caso("mídia: arquivo num template sem cabeçalho de mídia barra, como valor sobrando", () => {
+  assert.match(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{primeiro_nome}}", "x"], midia: DOC }) ?? "", /não tem cabeçalho de mídia/);
+  assert.equal(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{primeiro_nome}}", "x"], midia: null }), null);
+  assert.equal(problemaDaMidia(null, ""), null);
+  assert.equal(problemaDaMidia(null, 123), null);
+  assert.equal(problemaDaMidia("imagem", 123), "Escolha a imagem do cabeçalho.");
+});
+caso("mídia: o arquivo da biblioteca segue o formato e o tamanho da Cloud API", () => {
+  const MB = 1024 * 1024;
+  const ok = (pede: Parameters<typeof problemaDoArquivoDoCabecalho>[0], tipo: string, mime: string, tamanho: number) =>
+    problemaDoArquivoDoCabecalho(pede, { tipo, mime, tamanho });
+  assert.equal(ok("imagem", "imagem", "image/jpeg", 5 * MB), null);
+  assert.equal(ok("imagem", "imagem", "image/png", 100), null);
+  assert.match(ok("imagem", "imagem", "image/webp", 100) ?? "", /JPG ou PNG de até 5 MB/);
+  assert.match(ok("imagem", "imagem", "image/jpeg", 5 * MB + 1) ?? "", /5 MB/);
+  assert.match(ok("imagem", "documento", "application/pdf", 100) ?? "", /uma imagem/);
+  assert.equal(ok("video", "video", "video/mp4", 16 * MB), null);
+  assert.equal(ok("video", "video", "video/3gpp", 100), null);
+  assert.match(ok("video", "video", "video/quicktime", 100) ?? "", /MP4 ou 3GPP de até 16 MB/);
+  assert.match(ok("video", "video", "video/mp4", 16 * MB + 1) ?? "", /16 MB/);
+  assert.equal(ok("documento", "documento", "application/pdf", 100 * MB), null);
+  // Template só aceita PDF no cabeçalho de documento (Word sai só como mensagem livre).
+  assert.match(ok("documento", "documento", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 100) ?? "", /um PDF/);
+  assert.equal(ok("documento", "documento", "Application/PDF; charset=binary", 100), null);
+  assert.match(ok("documento", "documento", "application/zip", 100) ?? "", /um PDF de até 100 MB/);
+  assert.match(ok("documento", "documento", "application/pdf", 100 * MB + 1) ?? "", /100 MB/);
+  assert.match(ok("documento", "documento", "application/pdf", 0) ?? "", /PDF/);
+  assert.match(problemaDoArquivoDoCabecalho("imagem", { tipo: "imagem", mime: "image/png", tamanho: 100, arquivado: true }) ?? "", /arquivado/);
+});
+caso("mídia: o componente do cabeçalho vai com o id da Meta, e o documento com o nome", () => {
+  const corpo = { type: "body", parameters: [{ type: "text", text: "Ana" }] };
+  assert.deepEqual(componentesDoEnvio({ cabecalho: [], corpo: ["Ana"] }, undefined, { tipo: "imagem", id: "111", arquivoNome: "fachada.jpg" }), [
+    { type: "header", parameters: [{ type: "image", image: { id: "111" } }] },
+    corpo,
+  ]);
+  assert.deepEqual(componentesDoEnvio({ cabecalho: [], corpo: ["Ana"] }, {}, { tipo: "video", id: "222", arquivoNome: "tour.mp4" })[0], {
+    type: "header",
+    parameters: [{ type: "video", video: { id: "222" } }],
+  });
+  assert.deepEqual(componentesDoEnvio({ cabecalho: [], corpo: ["Ana"] }, {}, { tipo: "documento", id: "333", arquivoNome: "tabela.pdf" })[0], {
+    type: "header",
+    parameters: [{ type: "document", document: { id: "333", filename: "tabela.pdf" } }],
+  });
+  // Sem a mídia resolvida, nada de cabeçalho: o id do documento sozinho não vira parâmetro.
+  assert.deepEqual(componentesDoEnvio({ cabecalho: [], corpo: ["Ana"], midia: DOC }), [corpo]);
+});
+caso("mídia: o id do documento atravessa ajustarValores e valoresParaContato", () => {
+  const v = { cabecalho: [""], corpo: ["{{primeiro_nome}}", ""], midia: DOC };
+  const ajustados = ajustarValores(v, variaveisDoTemplate(imagem));
+  assert.deepEqual(ajustados, { cabecalho: [], corpo: ["{{primeiro_nome}}"], midia: DOC });
+  assert.deepEqual(valoresParaContato(ajustados, ana), { cabecalho: [], corpo: ["Ana"], midia: DOC });
+  assert.deepEqual(valoresParaContato({ cabecalho: [], corpo: ["Ana"], midia: null }, ana), { cabecalho: [], corpo: ["Ana"] });
+  assert.deepEqual(valoresIniciais(imagem), { cabecalho: [], corpo: ["{{primeiro_nome}}"] });
+  assert.equal(textoParaRevisao(imagem, { ...corpoAna, midia: DOC }), "Olá [Primeiro nome do contato], veja o material.");
+});
 
 caso("duplicar: próximo nome livre, botões agrupados e o que ficou de fora", () => {
   const { rascunho, deFora } = rascunhoDe(completo, new Set(["x_v2"]));

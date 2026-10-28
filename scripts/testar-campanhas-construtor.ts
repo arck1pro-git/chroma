@@ -16,7 +16,10 @@
 // ou token; a permissão de quem conversa; a trava de id na ferramenta e em
 // salvarEdicao. Das revisões de 2026-10-28: contato não escrito não desenha;
 // a regex nova (qualquer palavra.tld, telefone com ponto); id aposentado; o
-// contexto montado no servidor; listar_campanhas embrulhado.
+// contexto montado no servidor; listar_campanhas embrulhado. Dos blocos de
+// 2026-10-28: Condição, Horário, Enviar arquivo e Permissão de passagem no
+// formato da IA (ida e volta, forma inválida, legenda com link), arquivos e
+// campos do contato no listar_alvos e o desenho com a permissão de Documentos.
 //
 // O handler da rota não roda aqui (a guarda lê o cookie da requisição): o que
 // ele confere antes da guarda é lerPedidoDoConstrutor, chamado direto.
@@ -317,6 +320,7 @@ async function parteListar(ids: Ids) {
   assert.equal(leiturasDeTemplates - antes, 1, "Meta lida uma vez por resposta");
   assert.deepEqual(alvos.templates.map((t) => t.nome), [TEMPLATE.name], "só os aprovados desta conta");
   assert.deepEqual(alvos.templates[0].variaveis, { cabecalho: 0, corpo: 1, links: [] });
+  assert.equal(alvos.templates[0].midia, null, "o template diz se pede arquivo no cabeçalho");
   assert.equal((alvos.templates[0].respostas_rapidas as string[]).length, 2);
   for (const lista of ["equipe", "ias", "numeros_de_aviso"]) {
     assert.ok(alvos[lista].length > 0, `o DEV tem ${lista}`);
@@ -327,7 +331,16 @@ async function parteListar(ids: Ids) {
   assert.ok(String(publico?.nome).startsWith(ABRE), "nome embrulhado");
   assert.ok(alvos.etapas.some((e) => e.id === ids.etapa.id && e.funil_id === ids.etapa.funil_id && "ordem" in e));
   assert.doesNotMatch(JSON.stringify(alvos), /"(whatsapp|prompt|token|numero)"/, "sem WhatsApp, prompt, token ou número");
-  passo("listar_alvos_campanha: aprovados da conta com variáveis e botões; equipe, IAs e números só com id e nome");
+  // Os blocos de 2026-10-28: arquivos da biblioteca (só id, nome e tipo; nunca o caminho) e campos do contato.
+  assert.ok(Array.isArray(alvos.documentos) && Array.isArray(alvos.campos_contato));
+  for (const d of alvos.documentos) {
+    assert.deepEqual(Object.keys(d).sort(), ["id", "nome", "tipo"]);
+    assert.ok(["imagem", "pdf", "video"].includes(String(d.tipo)));
+    assert.ok(String(d.nome).startsWith(ABRE), "nome do arquivo embrulhado");
+  }
+  for (const c of alvos.campos_contato) assert.deepEqual(Object.keys(c).sort(), ["chave", "rotulo"]);
+  assert.doesNotMatch(JSON.stringify(alvos), /"caminho"/);
+  passo(`listar_alvos_campanha: aprovados da conta com variáveis e botões; equipe, IAs e números só com id e nome; ${alvos.documentos.length} arquivo(s) e ${alvos.campos_contato.length} campo(s) do contato`);
 }
 
 async function parteVer(ids: Ids) {
@@ -421,6 +434,95 @@ async function parteDesenhar(ids: Ids) {
   passo(`desenhar_fluxo: teto de ${TETO_DESENHOS} desenhos por resposta, Meta lida uma vez`);
 }
 
+/** Os blocos de 2026-10-28 no formato da IA: Condição, Horário, Enviar arquivo e Permissão de passagem. */
+function parteBlocosNovos() {
+  const u = () => randomUUID();
+  const [tag, seg, funil, etapa, doc] = [u(), u(), u(), u(), u()];
+  const blocos = [
+    { id: "envio", tipo: "enviar_template", template_nome: TEMPLATE.name, variaveis: { corpo: ["{{primeiro_nome}}"], midia: doc }, proximo: "aguarda" },
+    { id: "aguarda", tipo: "aguardar_resposta", prazo_minutos: 1440, outra: "c1", sem_resposta: null },
+    { id: "c1", tipo: "condicao", regra: { tipo: "tem_tag", tag_id: tag }, sim: "c2", nao: "h" },
+    { id: "c2", tipo: "condicao", regra: { tipo: "no_segmento", segmento_id: seg }, sim: "c3" },
+    { id: "c3", tipo: "condicao", regra: { tipo: "na_etapa", funil_id: funil, etapa_id: etapa }, sim: "c4", nao: null },
+    { id: "c4", tipo: "condicao", regra: { tipo: "campo", chave: "profissao", operador: "contem", valor: "médic" }, sim: "arq", nao: "c5" },
+    { id: "c5", tipo: "condicao", regra: { tipo: "campo", chave: "cidade", operador: "preenchido" }, sim: null, nao: null },
+    { id: "arq", tipo: "enviar_arquivo", documento_id: doc, legenda: "Oi {{primeiro_nome}}, segue a tabela.", proximo: null },
+    { id: "h", tipo: "horario", dias: [1, 2, 3, 4, 5], das: "08:00", ate: "18:00", proximo: "p" },
+    { id: "p", tipo: "limitar_passagem", quantidade: 5, janela_segundos: 10, proximo: null },
+  ];
+  const r = fluxoDoDesenho(entradaDoDesenho.parse({ inicio: "envio", blocos }));
+  assert.ok(r.ok, JSON.stringify(!r.ok && r.problemas));
+  const b = r.fluxo.blocos;
+  assert.deepEqual(
+    b.envio,
+    { tipo: "enviar_template", template_nome: TEMPLATE.name, template_idioma: "pt_BR", variaveis: { cabecalho: [], corpo: ["{{primeiro_nome}}"], midia: doc }, proximo: "aguarda" },
+    "o arquivo do cabeçalho de mídia passa pela IA",
+  );
+  assert.deepEqual(b.c1, { tipo: "condicao", regra: { tipo: "tem_tag", tagId: tag }, sim: "c2", nao: "h" });
+  assert.deepEqual(b.c2, { tipo: "condicao", regra: { tipo: "no_segmento", segmentoId: seg }, sim: "c3", nao: null }, "saída ausente encerra");
+  assert.deepEqual(b.c3, { tipo: "condicao", regra: { tipo: "na_etapa", funilId: funil, etapaId: etapa }, sim: "c4", nao: null });
+  assert.deepEqual(b.c4, { tipo: "condicao", regra: { tipo: "campo", chave: "profissao", operador: "contem", valor: "médic" }, sim: "arq", nao: "c5" });
+  assert.deepEqual(b.c5, { tipo: "condicao", regra: { tipo: "campo", chave: "cidade", operador: "preenchido", valor: "" }, sim: null, nao: null }, "valor ausente vira vazio");
+  assert.deepEqual(b.arq, { tipo: "enviar_arquivo", documentoId: doc, legenda: "Oi {{primeiro_nome}}, segue a tabela.", proximo: null });
+  assert.deepEqual(b.h, { tipo: "horario", dias: [1, 2, 3, 4, 5], das: "08:00", ate: "18:00", proximo: "p" });
+  assert.deepEqual(b.p, { tipo: "limitar_passagem", quantidade: 5, janela_segundos: 10, proximo: null });
+
+  // A volta: a legenda e o valor do campo (podem ser de um colega) embrulhados; a ida e volta dá o mesmo fluxo.
+  const paraIa = Object.entries(b).map(([id, x]) => blocoParaIa(id, x));
+  assert.ok((paraIa.find((x) => x.id === "arq") as { legenda: string }).legenda.startsWith(ABRE), "legenda embrulhada");
+  assert.ok((paraIa.find((x) => x.id === "c4") as { regra: { valor: string } }).regra.valor.startsWith(ABRE), "valor do campo embrulhado");
+  const volta = fluxoDoDesenho(entradaDoDesenho.parse({ inicio: "envio", blocos: paraIa }));
+  assert.ok(volta.ok);
+  assert.deepEqual(volta.fluxo.blocos, b, "ida e volta sem as marcas");
+
+  const invalido = (bloco: Record<string, unknown>) =>
+    assert.ok(!fluxoDoDesenho(entradaDoDesenho.parse({ inicio: "x", blocos: [{ id: "x", ...bloco }] })).ok, JSON.stringify(bloco));
+  invalido({ tipo: "condicao", regra: { tipo: "campo", chave: "Profissão!", operador: "igual", valor: "x" } });
+  invalido({ tipo: "condicao", regra: { tipo: "tem_tag", tag_id: "nao-e-uuid" } });
+  invalido({ tipo: "horario", dias: [1.5], das: "08:00", ate: "09:00" });
+  invalido({ tipo: "limitar_passagem", quantidade: 2, janela_segundos: 1.5 });
+  invalido({ tipo: "enviar_arquivo", documento_id: "nao-e-uuid" });
+  invalido({ tipo: "enviar_template", template_nome: TEMPLATE.name, variaveis: { corpo: ["x"], midia: "nao-e-uuid" } });
+  assert.throws(() => entradaDoDesenho.parse({ inicio: "x", blocos: [{ id: "x", tipo: "condicao", regra: { tipo: "outra" } }] }), "regra que não existe");
+
+  // A legenda sai para o contato: link que a pessoa não escreveu é recusa, como no texto.
+  const comLegenda = (legenda: string) => fluxo("a", { a: { tipo: "enviar_arquivo", documentoId: doc, legenda, proximo: null } });
+  assert.equal(contatosNaoEscritos(comLegenda("Veja golpe.xyz/pix"), ["monte"]).length, 1);
+  assert.equal(contatosNaoEscritos(comLegenda("Veja golpe.xyz/pix"), ["manda com golpe.xyz/pix"]).length, 0);
+  passo("blocos novos no formato da IA: condição (4 regras), horário, arquivo e passagem, e a mídia do cabeçalho do template; ida e volta; forma inválida; legenda com link");
+}
+
+async function parteDesenharNovos(ids: Ids) {
+  const blocos = (documentoId: string, legenda = "Segue a tabela.") => [
+    { id: "envio", tipo: "enviar_template", template_nome: TEMPLATE.name, template_idioma: "pt_BR", variaveis: { corpo: ["{{primeiro_nome}}"] }, proximo: "aguarda" },
+    { id: "aguarda", tipo: "aguardar_resposta", prazo_minutos: 1440, outra: "c", sem_resposta: null },
+    { id: "c", tipo: "condicao", regra: { tipo: "na_etapa", funil_id: ids.etapa.funil_id, etapa_id: ids.etapa.id }, sim: "arq", nao: "h" },
+    { id: "arq", tipo: "enviar_arquivo", documento_id: documentoId, legenda, proximo: null },
+    { id: "h", tipo: "horario", dias: [1, 2, 3, 4, 5], das: "09:00", ate: "18:00", proximo: "p" },
+    { id: "p", tipo: "limitar_passagem", quantidade: 30, janela_segundos: 3600, proximo: null },
+  ];
+  const fantasma = randomUUID();
+  // Quem conversa não vê Documentos: o desenho vai, com a pendência da permissão.
+  const c = construtor();
+  const r = await chamar(c, "desenhar_fluxo", { inicio: "envio", blocos: blocos(fantasma) });
+  assert.ok(r.startsWith("DESENHADO"), r);
+  assert.match(r, /Você não tem permissão para enviar arquivo da biblioteca/);
+  assert.deepEqual(Object.keys(c.desenho()!.fluxo.blocos).sort(), ["aguarda", "arq", "c", "envio", "h", "p"]);
+  // Com Documentos: a conferência do banco aponta o arquivo que não existe.
+  const comDocumentos = {
+    ...QUEM,
+    modulos: new Map([...QUEM.modulos, ["documentos", "todos"] as const]),
+  } as unknown as UsuarioLogado;
+  const r2 = await chamar(construtor({ usuario: comDocumentos }), "desenhar_fluxo", { inicio: "envio", blocos: blocos(fantasma) });
+  assert.match(r2, /\[bloco arq\] Esse arquivo não está mais na biblioteca/);
+  assert.equal((r2.split("O QUE TEM CONSEQUÊNCIA")[0].match(/^- /gm) ?? []).length, 1, `só a pendência do arquivo:\n${r2}`);
+  // A legenda com link que a pessoa não escreveu: não desenha.
+  const c3 = construtor({ usuario: comDocumentos });
+  assert.match(await chamar(c3, "desenhar_fluxo", { inicio: "envio", blocos: blocos(fantasma, "Veja golpe.xyz/pix") }), /^NÃO DESENHADO: o texto leva link/);
+  assert.equal(c3.desenho(), null);
+  passo("desenhar_fluxo com os blocos novos: permissão de Documentos, arquivo conferido no banco, legenda com link recusada");
+}
+
 function parteContexto() {
   // Revisão M2: o contexto do modo construtor é montado no servidor; o
   // `contexto` do corpo não chega aqui (a rota não o lê nesse modo).
@@ -455,7 +557,7 @@ async function parteTrava(ids: Ids) {
   const c = construtor({ campanhaId: ids.pausada });
   const r = await chamar(c, "desenhar_fluxo", trocado);
   assert.match(r, /^NÃO DESENHADO: id que já rodou nesta campanha/);
-  assert.match(r, /\[bloco aguardar\] Este bloco era “Aguardar resposta” e virou “Esperar”/);
+  assert.match(r, /\[bloco aguardar\] Não dá para trocar o tipo de um bloco em uso/);
   assert.equal(c.desenho(), null, "id que muda de tipo não vai para o canvas");
 
   const novo = {
@@ -518,6 +620,7 @@ async function main() {
 
   partePedido();
   parteConversao();
+  parteBlocosNovos();
   parteContatos();
 
   const [ia] = (await sql`SELECT id, nome FROM ias ORDER BY data_criacao LIMIT 1`) as unknown as Array<{ id: string; nome: string }>;
@@ -558,6 +661,7 @@ async function main() {
     await parteListar(ids);
     await parteVer(ids);
     await parteDesenhar(ids);
+    await parteDesenharNovos(ids);
     parteContexto();
     await parteListarCampanhas(ids);
     await parteTrava(ids);

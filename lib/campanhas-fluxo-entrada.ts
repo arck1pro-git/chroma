@@ -13,7 +13,10 @@
 //     (o motor roda sem sessão: a autoridade é a dessa pessoa), os templates da
 //     conta na Meta (nunca os que vieram no corpo; a regra de cada envio é
 //     problemasDosEnvios, lib/campanhas-fluxo-envios.ts) e o banco (tag,
-//     segmento, funil e etapa coerentes, usuário ativo, IA, número de aviso).
+//     segmento, funil e etapa coerentes, usuário ativo, IA, número de aviso,
+//     arquivo da biblioteca ativo e de tipo que a campanha manda, campo
+//     personalizado do contato; os da Condição também; o arquivo do cabeçalho de
+//     mídia do template, do tipo que o cabeçalho pede).
 //   · travaDeIds: na edição, id que já rodou não muda de tipo nem volta depois
 //     de aposentado (o motor guarda o estado de cada contato pelo id).
 //
@@ -30,7 +33,13 @@ import { podeOperar } from "@/lib/auth/permissoes";
 import type { UsuarioLogado } from "@/lib/auth/dal";
 import { ehUuid } from "@/lib/validacao";
 import { instanciasParaAviso } from "@/lib/aviso-equipe-whatsapp";
-import { lerTemplate, type TemplateWhatsApp, type ValoresDoEnvio } from "@/lib/templates-whatsapp";
+import {
+  lerTemplate,
+  midiaDoCabecalho,
+  problemaDoArquivoDoCabecalho,
+  type TemplateWhatsApp,
+  type ValoresDoEnvio,
+} from "@/lib/templates-whatsapp";
 import {
   blocosQueMudaramDeTipo,
   exigenciasDoFluxo,
@@ -43,8 +52,9 @@ import {
   type BlocoCampanha,
   type FluxoCampanha,
   type ProblemaDoFluxo,
+  type RegraCondicao,
 } from "@/lib/campanhas-fluxo";
-import { problemasDosEnvios } from "@/lib/campanhas-fluxo-envios";
+import { problemaDoArquivoDaCampanha, problemasDosEnvios } from "@/lib/campanhas-fluxo-envios";
 
 // ── Forma ───────────────────────────────────────────────────────────────────
 
@@ -68,7 +78,22 @@ const variaveis = z.object({
   cabecalho: z.array(valor(500)).max(1),
   corpo: z.array(valor(500)).max(100),
   botoes: z.array(valor(100)).max(10).optional(),
+  /** O arquivo da biblioteca no cabeçalho de imagem, vídeo ou documento do template (2026-10-28). */
+  midia: z.string().refine(ehUuid, "id inválido").nullable().optional(),
 });
+
+/** A pergunta da "Condição". A chave do campo segue o formato de campos_personalizados (app/configuracoes/acoes-campos.ts). */
+const regraEsquema = z.discriminatedUnion("tipo", [
+  z.object({ tipo: z.literal("tem_tag"), tagId: uuidOuVazio }),
+  z.object({ tipo: z.literal("no_segmento"), segmentoId: uuidOuVazio }),
+  z.object({ tipo: z.literal("na_etapa"), funilId: uuidOuVazio, etapaId: uuidOuVazio }),
+  z.object({
+    tipo: z.literal("campo"),
+    chave: z.string().regex(/^[a-z0-9_]{0,40}$/),
+    operador: z.enum(["preenchido", "igual", "contem"]),
+    valor: z.string().max(200),
+  }),
+]);
 
 const blocoEsquema = z.discriminatedUnion("tipo", [
   z.object({
@@ -104,6 +129,23 @@ const blocoEsquema = z.discriminatedUnion("tipo", [
     proximo: destino,
   }),
   z.object({ tipo: z.literal("ligar_ia"), iaId: uuidOuVazio, proximo: destino }),
+  // Blocos de 2026-10-28. Os limites com frase própria (dias, HH:MM, quantidade,
+  // intervalo) são de problemasDoFluxo; aqui, só o teto contra abuso.
+  z.object({ tipo: z.literal("condicao"), regra: regraEsquema, sim: destino, nao: destino }),
+  z.object({
+    tipo: z.literal("horario"),
+    dias: z.array(z.number().int().min(-1_000).max(1_000)).max(7),
+    das: z.string().max(5),
+    ate: z.string().max(5),
+    proximo: destino,
+  }),
+  z.object({ tipo: z.literal("enviar_arquivo"), documentoId: uuidOuVazio, legenda: z.string().max(4000), proximo: destino }),
+  z.object({
+    tipo: z.literal("limitar_passagem"),
+    quantidade: z.number().int().min(0).max(1_000_000),
+    janela_segundos: z.number().int().min(0).max(100_000_000),
+    proximo: destino,
+  }),
 ]);
 
 const coordenada = z.number().min(-1_000_000).max(1_000_000);
@@ -308,7 +350,44 @@ export async function conferirFluxo(e: {
     ...problemasDoFluxo(e.fluxo, aprovados.map(templateDoFluxo)),
     ...problemasDosEnvios(e.fluxo, templates),
     ...(await problemasNoBanco(e.fluxo)),
+    ...(await problemasDaMidia(e.fluxo, templates)),
   ];
+}
+
+/**
+ * O arquivo do cabeçalho de mídia de cada "Enviar template" (variaveis.midia,
+ * pedido dele em 2026-10-28: "templates aprovados com vídeo e fotos"), contra a
+ * linha do banco: existe na biblioteca e serve ao cabeçalho que o template pede
+ * (problemaDoArquivoDoCabecalho: não arquivado, tipo, formato e tamanho que a
+ * Meta aceita). Arquivo faltando ou sobrando é de problemaNoEnvio; template
+ * fora da conta, de problemasDosEnvios.
+ */
+async function problemasDaMidia(f: FluxoCampanha, templates: TemplateWhatsApp[]): Promise<ProblemaDoFluxo[]> {
+  const comMidia = Object.entries(f.blocos).flatMap(([id, b]) =>
+    b.tipo === "enviar_template" && b.variaveis.midia ? [{ id, b, midia: b.variaveis.midia }] : [],
+  );
+  if (!comMidia.length) return [];
+  const docs = new Map(
+    (
+      (await sql`SELECT id, tipo, mime, tamanho::float8 AS tamanho, arquivado FROM documentos
+                  WHERE id = ANY(string_to_array(${listaUuid([...new Set(comMidia.map((x) => x.midia).filter(ehUuid))])}, ',')::uuid[])`) as unknown as Array<{
+        id: string;
+        tipo: string;
+        mime: string;
+        tamanho: number;
+        arquivado: boolean;
+      }>
+    ).map((d) => [d.id, d]),
+  );
+  const p: ProblemaDoFluxo[] = [];
+  for (const { id, b, midia } of comMidia) {
+    const d = docs.get(midia);
+    const t = templates.find((x) => x.nome === b.template_nome && x.idioma === b.template_idioma);
+    const pede = t ? midiaDoCabecalho(t) : null;
+    const m = !d ? "O arquivo do cabeçalho não está mais na biblioteca." : pede ? problemaDoArquivoDoCabecalho(pede, d) : null;
+    if (m) p.push({ blocoId: id, mensagem: m });
+  }
+  return p;
 }
 
 /** exigenciasDoFluxo contra quem está salvando: basta uma das opções de cada exigência. */
@@ -317,7 +396,9 @@ export function faltasDePermissao(f: FluxoCampanha, usuario: QuemConfere): Probl
     .filter(
       (ex) =>
         !ex.algumDe.some(
-          (o) => podeOperar(usuario, o.modulo, o.operacao) && (!o.escopoTodos || usuario.modulos.get(o.modulo) === "todos"),
+          (o) =>
+            (o.operacao ? podeOperar(usuario, o.modulo, o.operacao) : usuario.modulos.has(o.modulo)) &&
+            (!o.escopoTodos || usuario.modulos.get(o.modulo) === "todos"),
         ),
     )
     .map((ex) => ({ blocoId: null, mensagem: `Você não tem permissão para ${ex.motivo}: tire esse bloco ou peça a quem tem.` }));
@@ -330,26 +411,35 @@ async function problemasNoBanco(f: FluxoCampanha): Promise<ProblemaDoFluxo[]> {
     blocos.filter((x): x is [string, Extract<BlocoCampanha, { tipo: T }>] => x[1].tipo === tipo);
   const uuids = (lista: string[]) => listaUuid([...new Set(lista.filter(ehUuid))]);
 
-  const tags = de("mudar_tag").map(([, b]) => b.tagId);
-  const segmentos = de("mudar_segmento").map(([, b]) => b.segmentoId);
-  const naOportunidade = [...de("criar_oportunidade"), ...de("mover_oportunidade")];
+  // As regras das Condições entram nas mesmas consultas dos blocos de ação.
+  const regras = de("condicao").map(([, b]) => b.regra);
+  const regraDe = <T extends RegraCondicao["tipo"]>(tipo: T) => regras.filter((r): r is Extract<RegraCondicao, { tipo: T }> => r.tipo === tipo);
+  const tags = [...de("mudar_tag").map(([, b]) => b.tagId), ...regraDe("tem_tag").map((r) => r.tagId)];
+  const segmentos = [...de("mudar_segmento").map(([, b]) => b.segmentoId), ...regraDe("no_segmento").map((r) => r.segmentoId)];
+  const naOportunidade = [...de("criar_oportunidade").map(([, b]) => b), ...de("mover_oportunidade").map(([, b]) => b), ...regraDe("na_etapa")];
   const avisos = de("avisar_equipe");
-  const funis = [...naOportunidade.map(([, b]) => b.funilId), ...avisos.flatMap(([, b]) => (b.responsavelDoFunil ? [b.responsavelDoFunil] : []))];
+  const funis = [...naOportunidade.map((b) => b.funilId), ...avisos.flatMap(([, b]) => (b.responsavelDoFunil ? [b.responsavelDoFunil] : []))];
   const usuarios = avisos.flatMap(([, b]) => b.usuarioIds);
   const ias = de("ligar_ia").map(([, b]) => b.iaId);
+  const documentos = de("enviar_arquivo").map(([, b]) => b.documentoId);
+  const campos = regraDe("campo").length > 0;
 
   const ids = (linhas: Array<{ id: string }>) => new Set(linhas.map((l) => l.id));
   const vazio = Promise.resolve([] as Array<{ id: string; funil_id?: string }>);
-  const [achadasTags, achadosSegmentos, achadosFunis, etapas, ativos, achadasIas, instancias] = await Promise.all([
+  const [achadasTags, achadosSegmentos, achadosFunis, etapas, ativos, achadasIas, instancias, achadosDocumentos, chaves] = await Promise.all([
     tags.length ? sql`SELECT id FROM tags WHERE id = ANY(string_to_array(${uuids(tags)}, ',')::uuid[])` : vazio,
     segmentos.length ? sql`SELECT id FROM segmentos WHERE id = ANY(string_to_array(${uuids(segmentos)}, ',')::uuid[])` : vazio,
     funis.length ? sql`SELECT id FROM funis WHERE id = ANY(string_to_array(${uuids(funis)}, ',')::uuid[])` : vazio,
     naOportunidade.length
-      ? sql`SELECT id, funil_id FROM etapas WHERE id = ANY(string_to_array(${uuids(naOportunidade.map(([, b]) => b.etapaId))}, ',')::uuid[])`
+      ? sql`SELECT id, funil_id FROM etapas WHERE id = ANY(string_to_array(${uuids(naOportunidade.map((b) => b.etapaId))}, ',')::uuid[])`
       : vazio,
     usuarios.length ? sql`SELECT id FROM usuarios WHERE ativo AND id = ANY(string_to_array(${uuids(usuarios)}, ',')::uuid[])` : vazio,
     ias.length ? sql`SELECT id FROM ias WHERE id = ANY(string_to_array(${uuids(ias)}, ',')::uuid[])` : vazio,
     avisos.length ? instanciasParaAviso() : Promise.resolve([]),
+    documentos.length
+      ? sql`SELECT id, tipo, mime, tamanho::float8 AS tamanho, arquivado FROM documentos WHERE id = ANY(string_to_array(${uuids(documentos)}, ',')::uuid[])`
+      : Promise.resolve([]),
+    campos ? sql`SELECT chave FROM campos_personalizados WHERE entidade = 'contato'` : Promise.resolve([]),
   ]);
   const setTags = ids(achadasTags);
   const setSegmentos = ids(achadosSegmentos);
@@ -358,6 +448,27 @@ async function problemasNoBanco(f: FluxoCampanha): Promise<ProblemaDoFluxo[]> {
   const setAtivos = ids(ativos);
   const setIas = ids(achadasIas);
   const setInstancias = new Set(instancias.map((i) => i.id));
+  const docs = new Map(
+    (achadosDocumentos as unknown as Array<{ id: string; tipo: string; mime: string; tamanho: number; arquivado: boolean }>).map((d) => [d.id, d]),
+  );
+  const setChaves = new Set((chaves as unknown as Array<{ chave: string }>).map((c) => c.chave));
+  const funilEEtapa = (b: { funilId: string; etapaId: string }): string | null => {
+    if (!b.funilId || !b.etapaId) return null;
+    if (!setFunis.has(b.funilId)) return "Esse funil não existe mais.";
+    return funilDaEtapa.get(b.etapaId) === b.funilId ? null : "A etapa não é deste funil.";
+  };
+  const regraNoBanco = (r: RegraCondicao): string | null => {
+    switch (r.tipo) {
+      case "tem_tag":
+        return r.tagId && !setTags.has(r.tagId) ? "A tag da condição não existe mais." : null;
+      case "no_segmento":
+        return r.segmentoId && !setSegmentos.has(r.segmentoId) ? "O segmento da condição não existe mais." : null;
+      case "na_etapa":
+        return funilEEtapa(r);
+      case "campo":
+        return r.chave && !setChaves.has(r.chave) ? "Esse campo não é um campo personalizado do contato." : null;
+    }
+  };
 
   const p: ProblemaDoFluxo[] = [];
   for (const [id, b] of blocos) {
@@ -369,9 +480,16 @@ async function problemasNoBanco(f: FluxoCampanha): Promise<ProblemaDoFluxo[]> {
           return b.segmentoId && !setSegmentos.has(b.segmentoId) ? "Esse segmento não existe mais." : null;
         case "criar_oportunidade":
         case "mover_oportunidade":
-          if (!b.funilId || !b.etapaId) return null;
-          if (!setFunis.has(b.funilId)) return "Esse funil não existe mais.";
-          return funilDaEtapa.get(b.etapaId) === b.funilId ? null : "A etapa não é deste funil.";
+          return funilEEtapa(b);
+        case "condicao":
+          return regraNoBanco(b.regra);
+        case "enviar_arquivo": {
+          if (!b.documentoId) return null;
+          const d = docs.get(b.documentoId);
+          if (!d) return "Esse arquivo não está mais na biblioteca.";
+          if (d.arquivado) return "Esse arquivo foi arquivado na biblioteca.";
+          return problemaDoArquivoDaCampanha(d);
+        }
         case "avisar_equipe":
           if (b.instanciaId && !setInstancias.has(b.instanciaId))
             return "Esse número não manda aviso (removido, sem WhatsApp pareado ou compartilhado com o SprintHub).";

@@ -1,8 +1,9 @@
 // Mandar uma mensagem numa conversa do CRM — pelo canal que ELA tem.
 //
-// Existe porque duas vozes mandam texto na mesma conversa com o mesmo ciclo:
-// a equipe pelo /chat (app/chat/actions.ts) e a IA que atende o contato
-// (lib/ia/atendente.ts). O ciclo é um só e não pode divergir entre elas:
+// Existe porque várias vozes mandam na mesma conversa com o mesmo ciclo: a
+// equipe pelo /chat (app/chat/actions.ts), a IA que atende o contato
+// (lib/ia/atendente.ts) e as campanhas em blocos (texto livre e arquivo da
+// biblioteca). O ciclo é um só e não pode divergir entre elas:
 //
 //   1. grava a linha 'pendente' ANTES de falar com o WhatsApp (a mensagem não
 //      se perde se a rede cair);
@@ -22,8 +23,9 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
 import { enviarMidia, enviarTexto, instanciaPorNumero } from "@/lib/uazapi";
-import { enviarMidiaMeta, enviarTextoMeta, subirMidiaMeta } from "@/lib/meta";
+import { enviarMidiaMeta, enviarTextoMeta, subirMidiaMeta, type TipoMidiaMeta } from "@/lib/meta";
 import { canalOficial } from "@/lib/canais";
+import { comCaminho, lerArquivo } from "@/lib/documentos";
 import { soDigitos } from "@/lib/telefone";
 import { conferirDestino } from "@/lib/destino-permitido";
 import { guardarMidia } from "@/lib/midia";
@@ -243,6 +245,98 @@ async function textoPeloCanal(
       const instancia = await instanciaPorNumero(d.numero_instancia ?? null);
       return (await enviarTexto(soDigitos(d.whatsapp ?? ""), corpo, instancia, mensagemId, digitandoMs)).messageid;
     }
+  }
+}
+
+// O que a Cloud API aceita como imagem é só JPEG e PNG; o resto vai como
+// documento em vez de ser recusado.
+function tipoParaMeta(tipo: string, mime: string): TipoMidiaMeta {
+  if (tipo === "imagem") return /^image\/(jpe?g|png)$/i.test(mime) ? "image" : "document";
+  if (tipo === "video") return /^video\/(mp4|3gpp)$/i.test(mime) ? "video" : "document";
+  if (tipo === "audio") return "audio";
+  return "document";
+}
+
+/**
+ * Manda um documento da BIBLIOTECA (lib/documentos.ts) nesta conversa, pelo
+ * mesmo ciclo do texto: o anexo do /chat (app/chat/actions.ts) e o bloco
+ * "Enviar arquivo" das campanhas (lib/campanhas-whatsapp-envios.ts). Era do
+ * chat até 2026-10-28; veio para cá para a campanha sair pelo MESMO caminho.
+ *
+ * O ARQUIVO NÃO É COPIADO para a conversa: a mensagem aponta para a linha em
+ * `documentos` (documento_id), e o balão pede o arquivo por /api/midia/<id da
+ * mensagem>. Mandar a mesma tabela de preços para 300 contatos guarda um
+ * arquivo, não 300. No direct do Instagram só vai texto; na API oficial, só com
+ * a janela de 24h aberta. Não mexe em dono nem status da conversa.
+ */
+export async function enviarDocumentoNaConversa(e: {
+  atendimentoId: string;
+  documentoId: string;
+  legenda: string;
+  autorId: string | null;
+  enviadaPor: "crm" | "automacao";
+}): Promise<ResultadoEnvio> {
+  const doc = ehUuid(e.documentoId) ? await comCaminho(e.documentoId) : null;
+  if (!doc) return { erro: "Documento não encontrado na biblioteca." };
+  const texto = e.legenda.trim().slice(0, 1024);
+
+  const d = await destinoDa(e.atendimentoId);
+  if (!d) return { erro: "Conversa não encontrada." };
+  // Canal exaustivo: no direct do Instagram o CRM manda só texto, e canal
+  // desconhecido é recusa (nunca "senão é uazapi").
+  const canal = canalDeEnvio(d);
+  if (canal === "instagram") return { erro: "No direct do Instagram o CRM manda só texto." };
+  const recusa = recusaDoDestino(d);
+  if (!canal || recusa) return { erro: recusa ?? "O CRM não envia mensagem pelo canal desta conversa." };
+  if (ehOficial(d) && !janelaAberta(d)) {
+    return { erro: "A janela de 24h está fechada. Envie um template antes do anexo." };
+  }
+  const whatsapp = soDigitos(d.whatsapp ?? "");
+
+  const [msg] = await sql`
+    INSERT INTO mensagens
+      (atendimento_id, origem, autor_id, texto, status, enviada_por,
+       tipo, documento_id, midia_estado, midia_mime, midia_nome, midia_tamanho)
+    VALUES
+      (${e.atendimentoId}, 'agente', ${e.autorId}, ${texto}, 'pendente', ${e.enviadaPor},
+       ${doc.tipo}, ${doc.id}, 'salva', ${doc.mime}, ${doc.arquivoNome}, ${doc.tamanho})
+    RETURNING id`;
+  const mensagemId = msg.id as string;
+
+  try {
+    const bytes = await lerArquivo(doc.caminho);
+    let idExterno: string | null;
+    switch (canal) {
+      case "whatsapp_oficial": {
+        const telefoneId = await telefoneOficial(d);
+        const midiaId = await subirMidiaMeta(telefoneId, bytes, doc.mime, doc.arquivoNome);
+        const r = await enviarMidiaMeta(telefoneId, whatsapp, tipoParaMeta(doc.tipo, doc.mime), midiaId, {
+          legenda: texto,
+          arquivoNome: doc.arquivoNome,
+        });
+        idExterno = r.messages?.[0]?.id ?? null;
+        break;
+      }
+      case "whatsapp": {
+        const instancia = await instanciaPorNumero(d.numero_instancia ?? null);
+        // Base64 e não URL: ver `paraEnvio` em lib/documentos.ts.
+        const r = await enviarMidia(
+          whatsapp,
+          bytes.toString("base64"),
+          { tipo: doc.tipo, texto, arquivoNome: doc.arquivoNome, mime: doc.mime },
+          instancia,
+          mensagemId,
+        );
+        idExterno = r.messageid;
+        break;
+      }
+    }
+    await confirmarEnvio(mensagemId, idExterno);
+    await sql`UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${e.atendimentoId}`;
+    return { mensagemId };
+  } catch (erro) {
+    await marcarErro(mensagemId, erro);
+    return { erro: motivo(erro), registrada: true, mensagemId };
   }
 }
 

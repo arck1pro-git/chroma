@@ -183,7 +183,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   `testar-campanhas-fluxo.ts` e `testar-campanhas-tela.ts` (pelo runner, sem `.env`: o contrato das campanhas em
   blocos e as operações do construtor, com as pendências iguais às do servidor), `testar-campanhas-motor.ts`
   e `testar-campanhas-construtor.ts` (pelo runner, contra o DEV com Graph e uazapi falsas: o motor das campanhas e a
-  IA do construtor, sem chamar a Anthropic), `testar-atendimento-humano.ts` (pelo runner, contra o DEV com um funil de teste apagado no fim: o fim da cadência,
+  IA do construtor, sem chamar a Anthropic), `testar-campanhas-metricas.ts` (pelo runner, contra o DEV com a Graph
+  falsa: o funil, as falhas por motivo e o gasto pelo template_analytics), `testar-atendimento-humano.ts` (pelo runner, contra o DEV com um funil de teste apagado no fim: o fim da cadência,
   a IA que passa o lead para a equipe e a pill "Atendimento humano"), `testar-reunioes-assistente.ts` (pelo runner, contra
   o DEV com cenário marcado e a Anthropic falsa num servidor local: a porta, o lead e o copiloto da extensão de reuniões),
   `scripts/testar-extensao-reunioes.mjs` (direto com `node`: o service worker da extensão com um `chrome` falso; o áudio
@@ -261,8 +262,9 @@ O fluxo completo, com delegação aos subagentes e revisão, está nas skills `/
 `lib/ia/atendente.ts`, `lib/automacoes/compilador/`, `lib/automacoes/motores/n8n/adaptador.ts`,
 `app/api/uazapi/webhook/route.ts`, `app/api/meta/whatsapp/webhook/route.ts`, `app/api/mcp/[segredo]/route.ts`,
 `app/api/meta/instagram/webhook/route.ts`, `lib/instagram.ts` (ponto único de envio e trava de dev),
-`lib/instagram-webhook.ts`, `lib/ia/comentarios.ts`, `lib/campanhas-whatsapp.ts` (motor que dispara para o segmento
-inteiro), `lib/campanhas-fluxo-entrada.ts`, `lib/aviso-equipe-whatsapp.ts`, `lib/ia/campanhas-construtor.ts`,
+`lib/instagram-webhook.ts`, `lib/ia/comentarios.ts`, `lib/campanhas-whatsapp*.ts` (o motor que dispara para o segmento
+inteiro, dividido por assunto; sobretudo `-rodada`, `-envios` e `-controle`), `lib/campanhas-fluxo-entrada.ts`,
+`lib/aviso-equipe-whatsapp.ts`, `lib/ia/campanhas-construtor.ts`, `lib/whatsapp-custo.ts` (lê o gasto na Graph),
 `lib/reunioes-extensao.ts` (Origin e freio da extensão de reuniões), `lib/reunioes-lead.ts`, `lib/ia/reuniao.ts`,
 `extensao-reunioes/manifest.json` (permissões e a chave que fixa o ID) e `extensao-reunioes/service-worker.js`.
 

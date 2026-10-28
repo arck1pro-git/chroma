@@ -66,6 +66,7 @@ import {
   LIMITE,
   lerTemplate,
   linksVariaveisDe,
+  midiaDoCabecalho,
   motivoSemEnvio,
   respostasRapidasDe,
   variaveisDoTemplate,
@@ -126,7 +127,13 @@ export function lerPedidoDoConstrutor(
     const blocos = Object.values(fluxoAberto.fluxo.blocos);
     if (blocos.length > LIMITES_FLUXO.blocos)
       return recusa(`O fluxo aberto passa de ${LIMITES_FLUXO.blocos} blocos. Tire os que sobram antes de pedir à IA.`);
-    if (blocos.some((b) => (b.tipo === "enviar_texto" || b.tipo === "avisar_equipe") && b.texto.length > LIMITES_FLUXO.texto))
+    if (
+      blocos.some(
+        (b) =>
+          ((b.tipo === "enviar_texto" || b.tipo === "avisar_equipe") && b.texto.length > LIMITES_FLUXO.texto) ||
+          (b.tipo === "enviar_arquivo" && b.legenda.length > LIMITES_FLUXO.texto),
+      )
+    )
       return recusa(`Um texto do fluxo aberto passa de ${LIMITES_FLUXO.texto} caracteres. Encurte antes de pedir à IA.`);
     if (JSON.stringify(fluxoAberto.fluxo).length > TETO_FLUXO)
       return recusa("O fluxo aberto é grande demais para a IA. Divida a campanha ou encurte os textos.");
@@ -178,11 +185,17 @@ function textoDosAlvos(opcoes: OpcoesDaCampanha, aprovados: TemplateWhatsApp[]):
         respostas_rapidas: respostasRapidasDe(t).map((r) => comoDado(r)),
         links_com_variavel: linksVariaveisDe(t).map((l) => ({ indice: l.indice, texto: comoDado(l.texto), url: comoDado(l.url) })),
         variaveis: variaveisDoTemplate(t),
+        // O arquivo que o cabeçalho pede ("imagem", "video" ou "documento"), que vai em variaveis.midia; null = nenhum.
+        midia: midiaDoCabecalho(t),
       };
     }),
     equipe: embrulhados(opcoes.usuarios),
     ias: embrulhados(opcoes.ias),
     numeros_de_aviso: embrulhados(opcoes.instancias),
+    // O "Enviar arquivo" e a "Condição" por campo: só id, nome e tipo do
+    // arquivo (nunca o caminho), e a chave e o rótulo do campo.
+    documentos: opcoes.documentos.map((d) => ({ id: d.id, nome: comoDado(d.nome), tipo: d.tipo })),
+    campos_contato: opcoes.camposContato.map((c) => ({ chave: c.chave, rotulo: comoDado(c.rotulo) })),
   });
 }
 
@@ -323,7 +336,7 @@ export function ferramentasDoConstrutor(o: {
   const listarAlvos = betaZodTool({
     name: "listar_alvos_campanha",
     description:
-      "Lista segmentos (com quantos contatos têm WhatsApp), tags, funis, etapas, os templates aprovados da conta desta campanha (texto, respostas rápidas, links com variável e quantas variáveis pedem), a equipe, as IAs e os números que mandam aviso. Chame antes de desenhar; use só ids daqui.",
+      "Lista segmentos (com quantos contatos têm WhatsApp), tags, funis, etapas, os templates aprovados da conta desta campanha (texto, respostas rápidas, links com variável e quantas variáveis pedem), a equipe, as IAs, os números que mandam aviso, os arquivos da biblioteca (documentos) e os campos do contato (campos_contato). Chame antes de desenhar; use só ids daqui.",
     inputSchema: z.object({}),
     run: async () => {
       const [lidas, todos] = await Promise.all([opcoes(), templates()]);
@@ -436,7 +449,7 @@ COMO TRABALHAR
 - Quando a pessoa pedir um ajuste, ou se o canvas pode já ter blocos, comece por ver_fluxo_aberto. desenhar_fluxo substitui o canvas inteiro: mande TODOS os blocos, inclusive os que não mudaram. Se ver_fluxo_aberto disser que o fluxo está fora do formato, conte à pessoa e pergunte antes de desenhar do zero.
 - Campanha já salva (ver_fluxo_aberto diz "existente"): os ids dos blocos que já existem são fixos. Bloco que continua mantém o id e o tipo; bloco novo ganha um id novo, nunca o de um bloco que saiu nem o de outro tipo, nem um dos ids_aposentados que ver_fluxo_aberto lista. O público dela não muda por aqui: não mande segmento_ids.
 - Ids de bloco curtos e descritivos: minúsculas, números, _ ou - ("convite", "aguarda1", "aviso_vendas").
-- Segmentos, quem recebe aviso, o número que manda o aviso e a IA: só os que a pessoa nomeou. Se ela não disse, ou se o nome bate com mais de um, PERGUNTE antes de desenhar. O mesmo para o que vai numa variável do template.
+- Segmentos, quem recebe aviso, o número que manda o aviso, a IA e o arquivo: só os que a pessoa nomeou. Se ela não disse, ou se o nome bate com mais de um, PERGUNTE antes de desenhar. O mesmo para o que vai numa variável do template.
 - desenhar_fluxo devolve PENDÊNCIAS e O QUE TEM CONSEQUÊNCIA. Corrija o que puder com outro desenhar_fluxo; o que depende da pessoa, pergunte. Se ele responder NÃO DESENHADO ou RECUSADO, nada foi para o canvas.
 
 BLOCOS (o "tipo" de cada um)
@@ -448,10 +461,14 @@ REGRAS DO FLUXO
 - "aguardar_resposta" vem depois de um "enviar_template". Em "botoes", uma saída por resposta rápida do ÚLTIMO template enviado antes dele, com o texto EXATO do botão; "palavras" pega resposta escrita que contém o texto; "outra" é qualquer outra resposta; "sem_resposta" é o prazo vencido. Prazo de ${LIMITES_FLUXO.prazoMinimo} a ${LIMITES_FLUXO.prazoMaximo} minutos (1 dia = 1440); se a pessoa não disser, use 1440.
 - "esperar": de ${LIMITES_FLUXO.prazoMinimo} a ${LIMITES_FLUXO.prazoMaximo} minutos.
 - "enviar_texto" só depois de uma resposta do contato (saída de botão, de palavra ou "outra" de um aguardar_resposta): a Meta só aceita texto livre com a janela de 24 horas aberta. Fora disso, use um template. Até ${LIMITES_FLUXO.texto} caracteres; as únicas marcas que funcionam no texto são ${DADOS_NA_CAMPANHA.map((d) => `{{${d.chave}}}`).join(", ")}.
-- Variáveis do template: preencha exatamente as {{n}} que ele pede ("variaveis" em listar_alvos_campanha), na ordem, cada uma com um dado do contato — ${MARCAS_DO_CONTATO} — ou com um texto fixo curto (até ${LIMITE.valorFixo} caracteres). E-mail e telefone do contato não vão em campanha. Link com variável: em variaveis.botoes, na posição "indice" do botão, o final do link.
+- Variáveis do template: preencha exatamente as {{n}} que ele pede ("variaveis" em listar_alvos_campanha), na ordem, cada uma com um dado do contato — ${MARCAS_DO_CONTATO} — ou com um texto fixo curto (até ${LIMITE.valorFixo} caracteres). E-mail e telefone do contato não vão em campanha. Link com variável: em variaveis.botoes, na posição "indice" do botão, o final do link. Template cujo "midia" em listar_alvos_campanha não é null (cabeçalho de imagem, vídeo ou documento): variaveis.midia com o id de um arquivo de "documentos" do mesmo tipo (documento = pdf), só o que a pessoa nomeou; no ajuste, mantenha o que veio em ver_fluxo_aberto.
 - "avisar_equipe": instancia_id de numeros_de_aviso; usuario_ids da equipe e/ou responsavel_do_funil (o id do funil cujo responsável da oportunidade aberta recebe). Texto curto, até ${LIMITE_AVISO.texto} caracteres. O aviso já leva o nome do contato e o link da conversa; nunca telefone ou e-mail.
 - "criar_oportunidade": funil e uma etapa desse funil; no nome, {{nome}} vira o nome do contato. "mover_oportunidade": leva a oportunidade aberta do contato NESTE funil para a etapa.
 - "mudar_tag" e "mudar_segmento": acao "adicionar" ou "remover".
+- "enviar_arquivo": documento_id de "documentos" (imagem, PDF ou vídeo da biblioteca); legenda opcional, com as mesmas marcas e o mesmo limite do texto. Como o enviar_texto, só depois de uma resposta do contato (janela de 24 horas).
+- "condicao": divide o caminho pela regra, conferida quando o contato chega ao bloco — "tem_tag" (tag_id), "no_segmento" (segmento_id), "na_etapa" (funil_id e etapa_id desse funil: a oportunidade aberta mais recente do contato nele está na etapa) ou "campo" (chave de campos_contato; operador "preenchido", "igual" ou "contem", com valor nos dois últimos, sem diferença de maiúscula e acento). "sim" é a saída quando vale; "nao", quando não vale.
+- "horario": só deixa passar nos dias (0 = domingo … 6 = sábado) e entre "das" e "ate" (HH:MM, horário de Brasília, "ate" depois de "das"); fora disso o contato espera a próxima abertura. Se a pessoa disser "horário comercial", pergunte os dias e as horas.
+- "limitar_passagem" (permissão de passagem): deixa passar "quantidade" contatos a cada "janela_segundos" (1 segundo a 30 dias; 60 = 1 minuto, 3600 = 1 hora, 86400 = 1 dia); quem excede espera a vez, na ordem de chegada. O motor roda a cada minuto: intervalo menor que 60 segundos vale pela mesma taxa por minuto ("5 a cada 10 segundos" são até 30 por minuto).
 
 NUNCA
 - Link, telefone ou e-mail que a pessoa não escreveu nesta conversa (ou que já não estava no fluxo aberto): o desenho é recusado. Se a mensagem precisa de um, pergunte qual. Qualquer palavra.tld conta como link: ponha espaço depois do ponto final.

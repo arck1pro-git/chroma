@@ -21,6 +21,12 @@
 // (fluxo, nome ou segmentos diferentes de como abriu), para a saída pedir
 // confirmação; e Salvar que tira gente de blocos apagados (os números da
 // campanha que já rodou) pergunta antes, dizendo quantos e de onde.
+//
+// MODO FOCO (2026-10-28, "o canvas fica espremido"): enquanto se edita, quem
+// lista esconde as colunas de Campanhas e a lista (painel-meta.tsx), e o
+// editor ocupa a largura do módulo. Cancelar ou Esc com nada aberto no canvas
+// sai. A barra de cima não repete pendência nem pede o nome por extenso: o
+// botão de ativar diz no title o que falta, e a pílula do canvas abre a lista.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { blocosQueMudaramDeTipo, EVENTO_DESENHO, type FluxoCampanha as Fluxo, type ProblemaDoFluxo } from "@/lib/campanhas-fluxo";
 import type { TemplateWhatsApp } from "@/lib/templates-whatsapp";
@@ -28,7 +34,7 @@ import { LoaderCircle, RotateCcw, Save, Send, Sparkles, TriangleAlert, X } from 
 import FluxoCampanha, { type AtualizarFluxo } from "../fluxo-campanha";
 import IaCampanhas from "../ia-campanhas";
 import { botaoAds, botaoPrincipalAds, campoAds, Confirmacao } from "../pecas";
-import { Ajuda, Grupo } from "./campos";
+import { Grupo } from "./campos";
 import ConfirmarAtivacao from "./confirmar-ativacao";
 import {
   fluxoInicial,
@@ -184,7 +190,8 @@ export default function EditorCampanha({
     [versao, inicio, blocos, conta.waba, existente?.id],
   );
 
-  const motivo = !nome.trim() ? "Dê um nome à campanha." : problemas.length ? "Resolva as pendências do fluxo." : "";
+  // Só no title do botão: o campo vazio e a pílula de pendências já estão à vista.
+  const motivo = !nome.trim() ? "Falta o nome da campanha" : problemas.length ? "Há pendências no fluxo" : "";
 
   const publico = existente
     ? existente.publico
@@ -206,7 +213,7 @@ export default function EditorCampanha({
     if (!saem.length) return void salvar();
     const total = saem.reduce((soma, s) => soma + s.agora, 0);
     const onde = saem.map((s) => `${numero(s.agora)} em “${rotuloDoBloco(existente.fluxo.blocos[s.id], opcoes)}”`).join(", ");
-    setTiraContatos(`Salvar tira ${quantosContatos(total)} da campanha, que estão em blocos apagados: ${onde}. Eles terminam ali e não recebem mais nada.`);
+    setTiraContatos(`Salvar encerra a campanha para ${quantosContatos(total)} em blocos apagados (${onde}).`);
   }
 
   async function salvar() {
@@ -264,13 +271,14 @@ export default function EditorCampanha({
 
   const painelInicio = existente ? (
     <div className="space-y-3 text-[12px] text-zinc-700 dark:text-zinc-200">
-      <p>{existente.publico}</p>
-      <Ajuda>O público não muda depois que a campanha foi criada.</Ajuda>
+      <Grupo rotulo="Público" dica="Não muda depois que a campanha foi criada.">
+        <p>{existente.publico}</p>
+      </Grupo>
       <p className="text-zinc-500 dark:text-zinc-400">Envia por {conta.telefone}</p>
     </div>
   ) : (
     <div className="space-y-4">
-      <Grupo rotulo="Segmentos" ajuda="Entram os contatos com WhatsApp. Quem está em mais de um segmento entra uma vez só.">
+      <Grupo rotulo="Segmentos" dica="Entram os contatos com WhatsApp. Quem está em mais de um segmento entra uma vez só.">
         <div className="max-h-80 space-y-0.5 overflow-y-auto rounded-lg border border-zinc-300 p-1.5 dark:border-zinc-700">
           {opcoes.segmentos.map((s) => (
             <label
@@ -303,6 +311,7 @@ export default function EditorCampanha({
       <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-4 py-2.5 tela-baixa:py-2 dark:border-zinc-800">
         <input
           aria-label="Nome da campanha"
+          aria-required="true"
           className={`${campoAds} min-w-40 max-w-72 flex-1`}
           value={nome}
           maxLength={160}
@@ -314,12 +323,10 @@ export default function EditorCampanha({
           }}
         />
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          {erro ? (
+          {erro && (
             <p role="alert" className="min-w-0 truncate text-[12px] text-rose-600 dark:text-rose-400" title={erro}>
               {erro}
             </p>
-          ) : (
-            motivo && <p className="min-w-0 truncate text-[12px] text-zinc-500 dark:text-zinc-400">{motivo}</p>
           )}
           <button
             type="button"
@@ -334,7 +341,13 @@ export default function EditorCampanha({
             Cancelar
           </button>
           {existente ? (
-            <button type="button" onClick={pedirSalvar} disabled={enviando || !!motivo || !!tiraContatos} className={`${botaoPrincipalAds} shrink-0`}>
+            <button
+              type="button"
+              onClick={pedirSalvar}
+              disabled={enviando || !!motivo || !!tiraContatos}
+              title={motivo || undefined}
+              className={`${botaoPrincipalAds} shrink-0`}
+            >
               {enviando ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : <Save className="size-3.5" aria-hidden="true" />}
               Salvar alterações
             </button>
@@ -346,6 +359,7 @@ export default function EditorCampanha({
                 setConfirmando(true);
               }}
               disabled={enviando || !!motivo}
+              title={motivo || undefined}
               className={`${botaoPrincipalAds} shrink-0`}
             >
               <Send className="size-3.5" aria-hidden="true" />
@@ -360,21 +374,26 @@ export default function EditorCampanha({
       )}
 
       {/* O chat fica FORA do canvas, que remonta a cada desenho (key): a
-          conversa não pode ir junto. Aberto, ele ocupa o lugar da paleta. */}
+          conversa não pode ir junto. Aberto, ele ocupa o lugar da paleta. O
+          Esc lá dentro é dele (data-esc-proprio, ver ../fluxo-campanha.tsx);
+          `contents` não cria caixa e o chat segue sendo a coluna do flex. */}
       <div className="flex min-h-0 flex-1">
-        <IaCampanhas
-          campanhaId={existente?.id ?? null}
-          aberta={iaAberta}
-          mudarAberta={mudarIa}
-          contexto={existente ? `construtor da campanha de WhatsApp “${existente.nome}”, em edição` : "construtor de uma campanha nova de WhatsApp"}
-          extra={extraDaIa}
-          templates={templates}
-          aoEvento={receberDaIa}
-        />
+        <div data-esc-proprio className="contents">
+          <IaCampanhas
+            campanhaId={existente?.id ?? null}
+            aberta={iaAberta}
+            mudarAberta={mudarIa}
+            contexto={existente ? `construtor da campanha de WhatsApp “${existente.nome}”, em edição` : "construtor de uma campanha nova de WhatsApp"}
+            extra={extraDaIa}
+            templates={templates}
+            aoEvento={receberDaIa}
+          />
+        </div>
         <FluxoCampanha
           key={vista}
           fluxo={fluxo}
           mudar={mudar}
+          aoSair={enviando || confirmando || tiraContatos ? undefined : aoCancelar}
           semPaleta={iaAberta}
           reorganizarAoMedir={desenhoDaIa ? setFluxo : undefined}
           templates={templates}

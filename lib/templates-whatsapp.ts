@@ -15,8 +15,15 @@
 // não pedia), variáveis numeradas e em sequência, texto que não começa nem
 // termina com variável, até 10 botões com no máximo 2 links e 1 telefone,
 // respostas rápidas agrupadas separadas dos botões de ação.
-// Cabeçalho só de texto: imagem, vídeo e documento exigem subir a mídia na Meta
-// antes (upload retomável), o que este editor não faz.
+// O editor CRIA só cabeçalho de texto: imagem, vídeo e documento exigem subir a
+// mídia na Meta antes (upload retomável), o que ele não faz.
+//
+// CABEÇALHO DE MÍDIA NO ENVIO (2026-10-28, pedido dele: "templates aprovados
+// com vídeo e fotos"): o template já aprovado com imagem, vídeo ou PDF no
+// cabeçalho sai pelo chat e pela campanha com um documento da biblioteca
+// (ValoresDoEnvio.midia, o id). Aqui ficam só as regras puras (qual arquivo
+// cada cabeçalho aceita, o componente do envio); ler o documento e subir para
+// a Meta é do servidor (lib/whatsapp-oficial.ts, prepararMidiaDoCabecalho).
 //
 // LINK COM VARIÁVEL (2026-10-27): o botão de link pode terminar em {{1}}, que
 // o CRM completa no envio (chat e campanha). As regras da revisão de segurança
@@ -25,6 +32,7 @@
 import type { TemplateMeta } from "@/lib/meta";
 import { ENDERECO_DO_CRM } from "@/lib/link-do-crm";
 import { soDigitos } from "@/lib/telefone";
+import { ehUuid } from "@/lib/validacao";
 
 export const IDIOMA_PADRAO = "pt_BR";
 
@@ -121,14 +129,18 @@ export function lerTemplate(t: TemplateMeta): TemplateWhatsApp {
 
 /**
  * Por que o CRM não envia este template, nem pelo chat nem por campanha; null
- * quando envia. Barra o cabeçalho de mídia e a variável com nome
+ * quando envia. Barra o cabeçalho de localização (e qualquer formato que não
+ * seja texto, imagem, vídeo ou documento) e a variável com nome
  * ({{first_name}}, criada no WhatsApp Manager): os dois envios só preenchem
- * variável de texto numerada. Link com variável o CRM envia desde 2026-10-27,
- * desde que a base siga problemaDoLinkVariavel; o que foge dela (criado fora
- * do editor) também barra aqui, antes de alguém preencher o valor à toa.
+ * variável de texto numerada. Imagem, vídeo e documento no cabeçalho o CRM
+ * envia desde 2026-10-28 (midiaDoCabecalho). Link com variável, desde
+ * 2026-10-27, desde que a base siga problemaDoLinkVariavel; o que foge dela
+ * (criado fora do editor) também barra aqui, antes de alguém preencher o valor
+ * à toa.
  */
 export function motivoSemEnvio(t: ConteudoTemplate): string | null {
-  if (t.cabecalho !== null && t.cabecalho.formato !== "TEXT") return "Tem cabeçalho de mídia, que o CRM ainda não envia.";
+  if (t.cabecalho !== null && t.cabecalho.formato !== "TEXT" && !midiaDoCabecalho(t))
+    return "Tem cabeçalho de mídia, que o CRM ainda não envia.";
   if (temVariavelForaDoPadrao(`${t.cabecalho?.texto ?? ""} ${t.corpo}`))
     return "Tem variável com nome (como {{first_name}}), que o CRM ainda não envia.";
   // Botão que pede parâmetro no envio e o CRM não manda (copiar código, código
@@ -147,6 +159,70 @@ export function motivoSemEnvio(t: ConteudoTemplate): string | null {
 
 export function semEnvioPeloCrm(t: ConteudoTemplate): boolean {
   return motivoSemEnvio(t) !== null;
+}
+
+// ── Cabeçalho de mídia no envio ─────────────────────────────────────────────
+
+/** O tipo do documento da biblioteca (documentos.tipo) que um cabeçalho de mídia pede. */
+export type MidiaDoCabecalho = "imagem" | "video" | "documento";
+
+const MIDIA_DO_FORMATO: Partial<Record<string, MidiaDoCabecalho>> = { IMAGE: "imagem", VIDEO: "video", DOCUMENT: "documento" };
+
+/**
+ * Que arquivo o cabeçalho deste template pede no envio; null quando o
+ * cabeçalho é de texto, não existe ou é de localização (que o CRM não envia).
+ */
+export function midiaDoCabecalho(t: ConteudoTemplate): MidiaDoCabecalho | null {
+  return (t.cabecalho && MIDIA_DO_FORMATO[t.cabecalho.formato]) ?? null;
+}
+
+const MB = 1024 * 1024;
+
+/**
+ * O arquivo que cada cabeçalho aceita, pelas regras da Cloud API (2026-10):
+ * imagem só JPEG ou PNG, até 5 MB; vídeo MP4 ou 3GPP (H.264 com AAC), até
+ * 16 MB; documento PDF, Word, Excel, PowerPoint ou texto, até 100 MB. Fora
+ * disso a Meta recusa o envio inteiro. A codificação do vídeo não dá para
+ * conferir pelo mime: um MP4 em outro codec só a Meta recusa.
+ */
+export const ARQUIVO_DO_CABECALHO: Record<
+  MidiaDoCabecalho,
+  { mimes: readonly string[]; maxBytes: number; escolha: string; pede: string }
+> = {
+  imagem: { mimes: ["image/jpeg", "image/png"], maxBytes: 5 * MB, escolha: "a imagem", pede: "uma imagem JPG ou PNG de até 5 MB" },
+  video: { mimes: ["video/mp4", "video/3gpp"], maxBytes: 16 * MB, escolha: "o vídeo", pede: "um vídeo MP4 ou 3GPP de até 16 MB" },
+  // Cabeçalho de documento de template só aceita PDF na Meta (a mensagem livre
+  // aceita mais formatos, o template não).
+  documento: { mimes: ["application/pdf"], maxBytes: 100 * MB, escolha: "o documento", pede: "um PDF de até 100 MB" },
+};
+
+/**
+ * O que impede este documento da biblioteca de ir no cabeçalho (null = vai).
+ * Puro: a tela usa para filtrar a lista e o servidor confere de novo com a
+ * linha do banco, antes de subir o arquivo para a Meta.
+ */
+export function problemaDoArquivoDoCabecalho(
+  pede: MidiaDoCabecalho,
+  d: { tipo: string; mime: string; tamanho: number; arquivado?: boolean },
+): string | null {
+  const regra = ARQUIVO_DO_CABECALHO[pede];
+  if (d.arquivado) return "O arquivo do cabeçalho foi arquivado na biblioteca.";
+  const mime = d.mime.split(";")[0].trim().toLowerCase();
+  if (d.tipo !== pede || !regra.mimes.includes(mime) || !(d.tamanho > 0) || d.tamanho > regra.maxBytes)
+    return `O cabeçalho deste template pede ${regra.pede}.`;
+  return null;
+}
+
+/**
+ * O que impede o valor de `midia` (o id do documento) neste envio. `pede` é
+ * midiaDoCabecalho do template. Arquivo num template sem cabeçalho de mídia
+ * também barra, como valor de variável sobrando.
+ */
+export function problemaDaMidia(pede: MidiaDoCabecalho | null, valor: unknown): string | null {
+  const id = typeof valor === "string" ? valor.trim() : "";
+  if (!pede) return id ? "O template não tem cabeçalho de mídia: tire o arquivo escolhido." : null;
+  if (!id) return `Escolha ${ARQUIVO_DO_CABECALHO[pede].escolha} do cabeçalho.`;
+  return ehUuid(id) ? null : "O arquivo do cabeçalho não é um documento da biblioteca.";
 }
 
 // ── O que o editor monta ────────────────────────────────────────────────────
@@ -488,9 +564,11 @@ export type DadosDoContato = Record<ChaveDoContato, string>;
 /**
  * O valor de cada {{n}}, na ordem: cabecalho[0] é a {{1}} do cabeçalho.
  * `botoes[i]` é o valor do {{1}} do botão de link variável na posição `i` dos
- * botões do template (as outras posições ficam vazias).
+ * botões do template (as outras posições ficam vazias). `midia` é o id do
+ * documento da biblioteca (tabela `documentos`) que vai no cabeçalho de
+ * imagem, vídeo ou documento (midiaDoCabecalho); sem cabeçalho de mídia, vazio.
  */
-export type ValoresDoEnvio = { cabecalho: string[]; corpo: string[]; botoes?: string[] };
+export type ValoresDoEnvio = { cabecalho: string[]; corpo: string[]; botoes?: string[]; midia?: string | null };
 
 const MARCA_DO_CONTATO = /\{\{([a-z_]+)\}\}/g;
 const ehChaveDoContato = (x: string): x is ChaveDoContato => DADOS_DO_CONTATO.some((d) => d.chave === x);
@@ -548,7 +626,8 @@ export const parametroLimpo = (texto: string) => texto.replace(/\s+/g, " ").trim
  * `botoes` também: é ali que o {{numero}} do link de vídeo vira o WhatsApp do
  * contato. Posição vazia em `botoes` é botão sem link com variável e continua
  * vazia. QUAL marca pode ir em cada lugar quem decide é problemaNoEnvio, que o
- * disparo chama antes (o {{numero}} só no link de vídeo do CRM).
+ * disparo chama antes (o {{numero}} só no link de vídeo do CRM). `midia` passa
+ * igual: é o mesmo arquivo para todos.
  */
 export function valoresParaContato(v: ValoresDoEnvio, dados: DadosDoContato): ValoresDoEnvio | { falta: string } {
   const faltas: string[] = [];
@@ -569,6 +648,7 @@ export function valoresParaContato(v: ValoresDoEnvio, dados: DadosDoContato): Va
     cabecalho: resolver(v.cabecalho, (i) => `a {{${i + 1}}} do cabeçalho`),
     corpo: resolver(v.corpo, (i) => `a {{${i + 1}}}`),
     ...(v.botoes ? { botoes: resolver(v.botoes, (i) => `o link do botão ${i + 1}`, true) } : {}),
+    ...(v.midia ? { midia: v.midia } : {}),
   };
   return faltas.length ? { falta: faltas[0] } : resolvidos;
 }
@@ -585,12 +665,27 @@ export type BotoesDoEnvio = {
 };
 
 /**
- * Os parâmetros no formato de `components` do envio de template da Graph API.
- * Sem `botoes`, só cabeçalho e corpo, como sempre foi.
+ * A mídia do cabeçalho já na Meta: o servidor lê o documento da biblioteca,
+ * sobe e passa o id (lib/whatsapp-oficial.ts, prepararMidiaDoCabecalho).
+ * `arquivoNome` é o nome que o contato vê no documento.
  */
-export function componentesDoEnvio(v: ValoresDoEnvio, botoes?: BotoesDoEnvio): Array<Record<string, unknown>> {
+export type MidiaNaMeta = { tipo: MidiaDoCabecalho; id: string; arquivoNome: string };
+
+const TIPO_NA_GRAPH: Record<MidiaDoCabecalho, "image" | "video" | "document"> = { imagem: "image", video: "video", documento: "document" };
+
+/**
+ * Os parâmetros no formato de `components` do envio de template da Graph API.
+ * Sem `botoes`, só cabeçalho e corpo, como sempre foi. Com `midia`, o
+ * cabeçalho é o da imagem, do vídeo ou do documento (um cabeçalho é de texto
+ * OU de mídia; o de mídia não tem variável de texto).
+ */
+export function componentesDoEnvio(v: ValoresDoEnvio, botoes?: BotoesDoEnvio, midia?: MidiaNaMeta | null): Array<Record<string, unknown>> {
   const componentes: Array<Record<string, unknown>> = [];
-  if (v.cabecalho.length) componentes.push({ type: "header", parameters: v.cabecalho.map((text) => ({ type: "text", text })) });
+  if (midia) {
+    const tipo = TIPO_NA_GRAPH[midia.tipo];
+    const valor = tipo === "document" ? { id: midia.id, filename: midia.arquivoNome } : { id: midia.id };
+    componentes.push({ type: "header", parameters: [{ type: tipo, [tipo]: valor }] });
+  } else if (v.cabecalho.length) componentes.push({ type: "header", parameters: v.cabecalho.map((text) => ({ type: "text", text })) });
   if (v.corpo.length) componentes.push({ type: "body", parameters: v.corpo.map((text) => ({ type: "text", text })) });
   const doBotao = [
     ...(botoes?.links ?? []).map((l) => ({
@@ -650,11 +745,14 @@ function naPosicaoDosLinks(links: number[], valor: (indice: number) => string): 
  * Os valores cortados no que o template pede. A sobra vazia (um cabeçalho [""]
  * num template sem cabeçalho, vindo da IA) passa na conferência, mas no disparo
  * viraria parâmetro — e a Meta recusa parâmetro a mais. Em `botoes` só fica o
- * valor das posições que são link com variável (`n.links`).
+ * valor das posições que são link com variável (`n.links`). `midia` passa como
+ * está: quem decide se vai é o cabeçalho do template, no servidor
+ * (prepararMidiaDoCabecalho), e o arquivo sobrando já barrou em problemaNoEnvio.
  */
 export function ajustarValores(v: ValoresDoEnvio, n: { cabecalho: number; corpo: number; links?: number[] }): ValoresDoEnvio {
   const ajustados: ValoresDoEnvio = { cabecalho: v.cabecalho.slice(0, n.cabecalho), corpo: v.corpo.slice(0, n.corpo) };
   if (v.botoes) ajustados.botoes = naPosicaoDosLinks(n.links ?? [], (i) => v.botoes?.[i] ?? "");
+  if (v.midia) ajustados.midia = v.midia;
   return ajustados;
 }
 
@@ -683,10 +781,16 @@ export function valoresIniciais(t: ConteudoTemplate): ValoresDoEnvio {
  * Link com variável: cada um pede valor em `v.botoes[indice]`, conferido por
  * problemaDoLinkVariavel (texto fixo, ou {{numero}} só no link de vídeo do
  * CRM). E-mail e WhatsApp continuam fora do cabeçalho e do corpo.
+ *
+ * Cabeçalho de mídia: pede `v.midia`, o id de um documento da biblioteca
+ * (problemaDaMidia). Se o documento existe, está ativo e é do tipo e do tamanho
+ * certos, só o servidor sabe: prepararMidiaDoCabecalho confere no envio.
  */
 export function problemaNoEnvio(t: ConteudoTemplate, v: ValoresDoEnvio): string | null {
   const semEnvio = motivoSemEnvio(t);
   if (semEnvio) return semEnvio;
+  const daMidia = problemaDaMidia(midiaDoCabecalho(t), v.midia);
+  if (daMidia) return daMidia;
   const n = variaveisDoTemplate(t);
   const listas: Array<[string[], number, string, number]> = [
     [v.cabecalho, n.cabecalho, " do cabeçalho", LIMITE.cabecalho],
@@ -733,7 +837,9 @@ const paraRevisao = (valor: string) =>
  * A mensagem como a campanha vai mandar, com cada {{n}} trocado pelo que vai
  * ali — "[Primeiro nome do contato]" ou o texto fixo — e os botões no fim, com
  * o link já completo ("[WhatsApp do contato]" no lugar do {{numero}}). É o que
- * se confere antes de ativar, inclusive o rascunho que a IA montou.
+ * se confere antes de ativar, inclusive o rascunho que a IA montou. A mídia do
+ * cabeçalho não entra no texto: o nome do arquivo está no banco, e a tela o
+ * mostra à parte (no título da revisão e na prévia).
  */
 export function textoParaRevisao(t: ConteudoTemplate, v: ValoresDoEnvio): string {
   const trocar = (texto: string, lista: string[]) =>

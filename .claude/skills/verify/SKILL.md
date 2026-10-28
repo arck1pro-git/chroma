@@ -28,10 +28,11 @@ o `npx` baixaria pacotes do registro.
 | Filtro de campanhas | mudou `app/inicio/filtro-campanhas.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-filtro-campanhas.ts` |
 | Meta Ads | mudou `lib/meta.ts` ou `lib/meta-ads-*` | `node --env-file=.env scripts/jiti.mjs scripts/testar-meta-ads.ts` |
 | Eventos da Meta | mudou `lib/meta-eventos.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-meta-eventos.ts` |
-| Templates do WhatsApp | mudou `lib/templates-whatsapp.ts`, `lib/campanhas-whatsapp.ts` ou `app/api/meta/templates/` | `node scripts/jiti.mjs scripts/testar-templates-whatsapp.ts` |
+| Templates do WhatsApp | mudou `lib/templates-whatsapp.ts`, `lib/campanhas-whatsapp*.ts`, `lib/whatsapp-oficial.ts` ou `app/api/meta/templates/` | `node scripts/jiti.mjs scripts/testar-templates-whatsapp.ts` |
 | Campanhas em blocos | mudou `lib/campanhas-fluxo.ts` | `node scripts/jiti.mjs scripts/testar-campanhas-fluxo.ts` |
 | Construtor de campanhas | mudou `app/campanhas/fluxo/`, `lib/campanhas-fluxo.ts` ou `lib/campanhas-fluxo-envios.ts` | `node scripts/jiti.mjs scripts/testar-campanhas-tela.ts` |
-| Motor das campanhas | mudou `lib/campanhas-whatsapp.ts`, `lib/campanhas-fluxo*.ts`, `lib/aviso-equipe-whatsapp.ts` ou `app/api/meta/whatsapp/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-campanhas-motor.ts` |
+| Motor das campanhas | mudou `lib/campanhas-whatsapp*.ts`, `lib/campanhas-fluxo*.ts`, `lib/aviso-equipe-whatsapp.ts`, `lib/conversa-envio.ts` ou `app/api/meta/whatsapp/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-campanhas-motor.ts` |
+| Métricas e gasto das campanhas | mudou `lib/campanhas-metricas*.ts`, `lib/whatsapp-custo.ts` ou `app/api/meta/whatsapp/campanhas/[id]/metricas/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-campanhas-metricas.ts` |
 | IA do construtor de campanhas | mudou `lib/ia/campanhas-construtor*.ts`, `lib/campanhas-fluxo*.ts` ou `app/api/ia/campanhas/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-campanhas-construtor.ts` |
 | Agenda e horários da IA | mudou `lib/agenda.ts` ou `lib/google-oauth.ts` | `node scripts/testar-agenda-ocupados.mjs` |
 | Assistente de reuniões | mudou `lib/reunioes-*.ts`, `lib/ia/reuniao.ts` ou `app/api/reunioes/` | `node --env-file=.env scripts/jiti.mjs scripts/testar-reunioes-assistente.ts` |

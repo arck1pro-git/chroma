@@ -25,15 +25,13 @@ function sugestoesPara(templates: TemplateWhatsApp[]): string[] {
   const aprovados = templates.filter((t) => t.status === "APPROVED");
   const comBotao = aprovados.find((t) => respostasRapidasDe(t).length > 0);
   const primeiro = comBotao ?? aprovados[0];
-  if (!primeiro)
-    return ["Use o template X, espere 1 dia; quem clicar em “Quero saber mais” vira oportunidade e avise a equipe; quem não responder recebe o template Y"];
+  // Curtas (pedido dele, 2026-10-28: "muito texto"): o exemplo mostra o jeito de pedir, não o fluxo inteiro.
+  if (!primeiro) return ["Template X; quem clicar em “Quero saber mais” vira oportunidade"];
   const botao = comBotao ? respostasRapidasDe(comBotao)[0] : null;
   const outro = aprovados.find((t) => t.nome !== primeiro.nome);
   return [
-    `Use o template ${primeiro.nome}, espere 1 dia; ${botao ? `quem clicar em “${botao}”` : "quem responder"} vira oportunidade e avise a equipe${
-      outro ? `; quem não responder recebe o template ${outro.nome}` : ""
-    }`,
-    `Com o template ${primeiro.nome}: quem responder conta como conversão; quem não responder em 2 dias ganha uma tag`,
+    `Template ${primeiro.nome}; ${botao ? `quem clicar em “${botao}”` : "quem responder"} vira oportunidade${outro ? `; sem resposta em 1 dia, ${outro.nome}` : ""}`,
+    `Template ${primeiro.nome}; quem responder é conversão`,
   ];
 }
 
@@ -65,7 +63,7 @@ export default function IaCampanhas({
       escopo={campanhaId ? `campanhas-construtor:${campanhaId}` : "campanhas-construtor"}
       titulo="Montar com IA"
       rotulo="Montar campanha com IA"
-      dica="Diga o template, quanto esperar e o que fazer com cada resposta. A IA desenha no canvas; nada sai antes de você revisar e ativar."
+      dica="Diga o template e o que fazer com cada resposta. Nada sai antes de você ativar."
       sugestoes={sugestoesPara(templates)}
       // Curto: a coluna tem 320px e o campo nasce numa linha.
       campo="Diga o template e o que fazer…"

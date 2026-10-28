@@ -7,14 +7,20 @@
 //
 // Na campanha no ar o mesmo painel aparece dentro de um <fieldset disabled>:
 // mostra tudo o que foi configurado, sem deixar mexer.
+//
+// Menos texto desde 2026-10-28 (pedido dele): rótulo curto, a regra que
+// importa num "?" (Dica, ./campos.tsx), sem a frase de arrastar a bolinha nem
+// a da janela de 24 h (o selo no cabeçalho do painel explica). Os blocos de
+// controle e o horário moram em ./formularios-controle.tsx.
 import { useRef } from "react";
 import { LIMITES_FLUXO, saidasDe, type BlocoCampanha, type FluxoCampanha } from "@/lib/campanhas-fluxo";
 import { DADOS_NA_CAMPANHA, marcaDoContato, type TemplateWhatsApp } from "@/lib/templates-whatsapp";
 import { BotaoIcone } from "@/app/components/gaveta";
-import { AlertTriangle, Plus, X } from "@/app/components/icones";
+import { Plus, X } from "@/app/components/icones";
 import { campoAds } from "../pecas";
-import { Ajuda, Alternar, Campo, CampoDuracao, Grupo } from "./campos";
+import { Ajuda, Alternar, Campo, CampoDuracao, Escolha, FunilEEtapa, Grupo } from "./campos";
 import EditorTemplate from "./editor-template";
+import { FormularioCondicao, FormularioHorario, FormularioPassagem } from "./formularios-controle";
 import { fechaLaco, rotuloDoBloco, type MetricasFluxo, type OpcoesFluxo } from "./grafo";
 
 type Props = {
@@ -43,30 +49,27 @@ export default function PainelDoBloco(p: Props) {
 function Configuracao({ id, bloco: b, templates, opcoes: o, mudar }: Props) {
   switch (b.tipo) {
     case "enviar_template":
-      return <EditorTemplate bloco={b} templates={templates} mudar={mudar} />;
+      return <EditorTemplate bloco={b} templates={templates} documentos={o.documentos} mudar={mudar} />;
 
     case "aguardar_resposta": {
       const botoes = Object.keys(b.botoes);
       return (
         <div className="space-y-4">
           <CampoDuracao key={id} rotulo="Prazo para responder" minutos={b.prazo_minutos} mudar={(m) => mudar({ ...b, prazo_minutos: m })} />
-          <Grupo rotulo="Botões do template">
+          <Grupo rotulo="Botões do template" dica="Vêm do “Enviar template” ligado antes deste bloco.">
             {botoes.length ? (
               <ul className="flex flex-wrap gap-1">
                 {botoes.map((t) => (
-                  <li key={t} className="rounded-md border border-zinc-200 px-1.5 py-0.5 text-[11px] text-sky-700 dark:border-zinc-700 dark:text-sky-300">
+                  <li key={t} className="rounded-md border border-zinc-200 px-1.5 py-0.5 text-[12px] text-sky-700 dark:border-zinc-700 dark:text-sky-300">
                     {t}
                   </li>
                 ))}
               </ul>
             ) : (
-              <Ajuda>Aparecem sozinhos quando um “Enviar template” com botões de resposta vem antes deste bloco.</Ajuda>
+              <p className="text-[12px] text-zinc-400 dark:text-zinc-500">Nenhum</p>
             )}
           </Grupo>
-          <Grupo
-            rotulo="Palavras na resposta escrita"
-            ajuda="Vale a primeira da lista que a resposta contiver, sem diferença de maiúscula e acento."
-          >
+          <Grupo rotulo="Palavras na resposta" dica="Vale a primeira que a resposta contiver. Maiúscula e acento não contam.">
             <div className="space-y-1.5">
               {b.palavras.map((p, i) => (
                 <div key={i} className="flex items-center gap-1">
@@ -92,31 +95,46 @@ function Configuracao({ id, bloco: b, templates, opcoes: o, mudar }: Props) {
               </button>
             </div>
           </Grupo>
-          <Ajuda>Quem responde só “sair”, “parar” ou “stop” sai da campanha, por qualquer caminho.</Ajuda>
         </div>
       );
     }
 
     case "enviar_texto":
-      return <EditorTexto bloco={b} mudar={mudar} />;
+      return <TextoComMarcas rotulo="Texto" valor={b.texto} linhas={5} mudar={(texto) => mudar({ ...b, texto })} />;
+
+    case "enviar_arquivo":
+      return (
+        <div className="space-y-3">
+          <Escolha
+            rotulo="Arquivo"
+            dica="Imagem, PDF ou vídeo da biblioteca de Documentos."
+            valor={b.documentoId}
+            opcoes={o.documentos}
+            vazio="Escolha o arquivo"
+            mudar={(documentoId) => mudar({ ...b, documentoId })}
+          />
+          {!o.documentos.length && <Ajuda>Nenhum arquivo. Suba em Documentos.</Ajuda>}
+          <TextoComMarcas rotulo="Legenda" valor={b.legenda} linhas={3} placeholder="Opcional" mudar={(legenda) => mudar({ ...b, legenda })} />
+        </div>
+      );
 
     case "esperar":
       return <CampoDuracao key={id} rotulo="Esperar" minutos={b.minutos} mudar={(m) => mudar({ ...b, minutos: m })} />;
+
+    case "horario":
+      return <FormularioHorario bloco={b} mudar={mudar} />;
+
+    case "condicao":
+      return <FormularioCondicao key={id} bloco={b} opcoes={o} mudar={mudar} />;
+
+    case "limitar_passagem":
+      return <FormularioPassagem key={id} bloco={b} mudar={mudar} />;
 
     case "mudar_tag":
       return (
         <div className="space-y-3">
           <Alternar rotulo="O que fazer" valor={b.acao} opcoes={[["adicionar", "Adicionar"], ["remover", "Tirar"]]} mudar={(acao) => mudar({ ...b, acao })} />
-          <Campo rotulo="Tag">
-            <select className={campoAds} value={b.tagId} onChange={(e) => mudar({ ...b, tagId: e.target.value })}>
-              <option value="">Escolha a tag</option>
-              {o.tags.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.nome}
-                </option>
-              ))}
-            </select>
-          </Campo>
+          <Escolha rotulo="Tag" valor={b.tagId} opcoes={o.tags} vazio="Escolha a tag" mudar={(tagId) => mudar({ ...b, tagId })} />
         </div>
       );
 
@@ -124,16 +142,7 @@ function Configuracao({ id, bloco: b, templates, opcoes: o, mudar }: Props) {
       return (
         <div className="space-y-3">
           <Alternar rotulo="O que fazer" valor={b.acao} opcoes={[["adicionar", "Pôr"], ["remover", "Tirar"]]} mudar={(acao) => mudar({ ...b, acao })} />
-          <Campo rotulo="Segmento">
-            <select className={campoAds} value={b.segmentoId} onChange={(e) => mudar({ ...b, segmentoId: e.target.value })}>
-              <option value="">Escolha o segmento</option>
-              {o.segmentos.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.nome}
-                </option>
-              ))}
-            </select>
-          </Campo>
+          <Escolha rotulo="Segmento" valor={b.segmentoId} opcoes={o.segmentos} vazio="Escolha o segmento" mudar={(segmentoId) => mudar({ ...b, segmentoId })} />
         </div>
       );
 
@@ -141,55 +150,30 @@ function Configuracao({ id, bloco: b, templates, opcoes: o, mudar }: Props) {
     case "mover_oportunidade":
       return (
         <div className="space-y-3">
-          <Campo rotulo="Funil">
-            <select className={campoAds} value={b.funilId} onChange={(e) => mudar({ ...b, funilId: e.target.value, etapaId: "" })}>
-              <option value="">Escolha o funil</option>
-              {o.funis.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.nome}
-                </option>
-              ))}
-            </select>
-          </Campo>
-          <Campo rotulo="Etapa">
-            <select className={campoAds} value={b.etapaId} disabled={!b.funilId} onChange={(e) => mudar({ ...b, etapaId: e.target.value })}>
-              <option value="">Escolha a etapa</option>
-              {o.etapas
-                .filter((x) => x.funil_id === b.funilId)
-                .map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.nome}
-                  </option>
-                ))}
-            </select>
-          </Campo>
-          {b.tipo === "criar_oportunidade" ? (
-            <Campo rotulo="Nome da oportunidade" ajuda="{{nome}} vira o nome do contato.">
+          <FunilEEtapa
+            funis={o.funis}
+            etapas={o.etapas}
+            funilId={b.funilId}
+            etapaId={b.etapaId}
+            dica={b.tipo === "mover_oportunidade" ? "Move a oportunidade aberta mais recente do contato neste funil. Sem nenhuma, ele segue em frente." : undefined}
+            mudar={(funilId, etapaId) => mudar({ ...b, funilId, etapaId })}
+          />
+          {b.tipo === "criar_oportunidade" && (
+            <Campo rotulo="Nome da oportunidade" dica="{{nome}} vira o nome do contato.">
               <input className={campoAds} value={b.nome} maxLength={160} onChange={(e) => mudar({ ...b, nome: e.target.value })} />
             </Campo>
-          ) : (
-            <Ajuda>Move a oportunidade aberta mais recente do contato neste funil. Sem nenhuma, o contato segue em frente.</Ajuda>
           )}
         </div>
       );
 
     case "registrar_conversao":
-      return <Ajuda>O contato que passa por aqui conta como resultado da campanha.</Ajuda>;
+      return <p className="text-[12px] text-zinc-400 dark:text-zinc-500">Nada a configurar.</p>;
 
     case "avisar_equipe":
       return (
         <div className="space-y-3">
-          <Campo rotulo="Número que manda o aviso">
-            <select className={campoAds} value={b.instanciaId} onChange={(e) => mudar({ ...b, instanciaId: e.target.value })}>
-              <option value="">Escolha o número</option>
-              {o.instancias.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.nome}
-                </option>
-              ))}
-            </select>
-          </Campo>
-          {!o.instancias.length && <Ajuda>Nenhum número disponível para avisos. Os números ficam em Configurações › WhatsApp.</Ajuda>}
+          <Escolha rotulo="Número que avisa" valor={b.instanciaId} opcoes={o.instancias} vazio="Escolha o número" mudar={(instanciaId) => mudar({ ...b, instanciaId })} />
+          {!o.instancias.length && <Ajuda>Nenhum número. Cadastre em Configurações › WhatsApp.</Ajuda>}
           <Grupo rotulo="Quem recebe">
             <div className="max-h-40 space-y-0.5 overflow-y-auto rounded-lg border border-zinc-300 p-1.5 dark:border-zinc-700">
               {o.usuarios.map((u) => (
@@ -207,7 +191,7 @@ function Configuracao({ id, bloco: b, templates, opcoes: o, mudar }: Props) {
               {!o.usuarios.length && <p className="px-1.5 py-1 text-[12px] text-zinc-400 dark:text-zinc-500">Ninguém da equipe disponível.</p>}
             </div>
           </Grupo>
-          <Campo rotulo="Também o responsável da oportunidade">
+          <Campo rotulo="Também o responsável">
             <select className={campoAds} value={b.responsavelDoFunil ?? ""} onChange={(e) => mudar({ ...b, responsavelDoFunil: e.target.value || null })}>
               <option value="">Não</option>
               {o.funis.map((x) => (
@@ -217,7 +201,7 @@ function Configuracao({ id, bloco: b, templates, opcoes: o, mudar }: Props) {
               ))}
             </select>
           </Campo>
-          <Campo rotulo="Aviso" ajuda="Vai com o nome do contato e o link da conversa, nunca telefone, e-mail ou o que ele respondeu. Os avisos de cada pessoa saem agrupados.">
+          <Campo rotulo="Aviso" dica="Vai com o nome do contato e o link da conversa, nunca telefone, e-mail ou a resposta. Sai agrupado por pessoa.">
             <textarea
               className={area}
               rows={3}
@@ -231,29 +215,31 @@ function Configuracao({ id, bloco: b, templates, opcoes: o, mudar }: Props) {
       );
 
     case "ligar_ia":
-      return (
-        <Campo rotulo="IA de atendimento" ajuda="A IA passa a responder este contato daqui em diante.">
-          <select className={campoAds} value={b.iaId} onChange={(e) => mudar({ ...b, iaId: e.target.value })}>
-            <option value="">Escolha a IA</option>
-            {o.ias.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.nome}
-              </option>
-            ))}
-          </select>
-        </Campo>
-      );
+      return <Escolha rotulo="IA de atendimento" valor={b.iaId} opcoes={o.ias} vazio="Escolha a IA" mudar={(iaId) => mudar({ ...b, iaId })} />;
   }
 }
 
-function EditorTexto({ bloco, mudar }: { bloco: Extract<BlocoCampanha, { tipo: "enviar_texto" }>; mudar: (b: BlocoCampanha) => void }) {
+/** Texto com as marcas do contato ({{primeiro_nome}}…): o do Enviar texto e a legenda do Enviar arquivo. */
+function TextoComMarcas({
+  rotulo,
+  valor,
+  linhas,
+  placeholder,
+  mudar,
+}: {
+  rotulo: string;
+  valor: string;
+  linhas: number;
+  placeholder?: string;
+  mudar: (texto: string) => void;
+}) {
   const campo = useRef<HTMLTextAreaElement>(null);
   // A marca entra onde está o cursor, e o cursor fica logo depois dela.
   function inserir(marca: string) {
     const el = campo.current;
-    const inicio = el?.selectionStart ?? bloco.texto.length;
+    const inicio = el?.selectionStart ?? valor.length;
     const fim = el?.selectionEnd ?? inicio;
-    mudar({ ...bloco, texto: (bloco.texto.slice(0, inicio) + marca + bloco.texto.slice(fim)).slice(0, LIMITES_FLUXO.texto) });
+    mudar((valor.slice(0, inicio) + marca + valor.slice(fim)).slice(0, LIMITES_FLUXO.texto));
     requestAnimationFrame(() => {
       el?.focus();
       el?.setSelectionRange(inicio + marca.length, inicio + marca.length);
@@ -261,18 +247,15 @@ function EditorTexto({ bloco, mudar }: { bloco: Extract<BlocoCampanha, { tipo: "
   }
   return (
     <div className="space-y-2">
-      <p className="flex gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] leading-snug text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
-        <AlertTriangle className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
-        Só sai com a janela de 24 horas aberta: o contato respondeu há menos de 24 horas. Ligue este bloco depois de uma resposta.
-      </p>
-      <Campo rotulo="Texto">
+      <Campo rotulo={rotulo}>
         <textarea
           ref={campo}
           className={area}
-          rows={5}
+          rows={linhas}
           maxLength={LIMITES_FLUXO.texto}
-          value={bloco.texto}
-          onChange={(e) => mudar({ ...bloco, texto: e.target.value })}
+          value={valor}
+          placeholder={placeholder}
+          onChange={(e) => mudar(e.target.value)}
         />
       </Campo>
       <div className="flex flex-wrap items-center gap-1">
@@ -288,7 +271,7 @@ function EditorTexto({ bloco, mudar }: { bloco: Extract<BlocoCampanha, { tipo: "
           </button>
         ))}
         <span className="ml-auto text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500">
-          {bloco.texto.length}/{LIMITES_FLUXO.texto}
+          {valor.length}/{LIMITES_FLUXO.texto}
         </span>
       </div>
     </div>
@@ -298,24 +281,33 @@ function EditorTexto({ bloco, mudar }: { bloco: Extract<BlocoCampanha, { tipo: "
 function Saidas({ id, bloco, fluxo, opcoes, metricas, ligar }: Props) {
   const outros = Object.entries(fluxo.blocos).filter(([outro]) => outro !== id);
   const voltaria = new Set(outros.filter(([outro]) => fechaLaco(fluxo, id, outro)).map(([outro]) => outro));
+  const varias = bloco.tipo === "aguardar_resposta" || bloco.tipo === "condicao";
   return (
     <Grupo
-      rotulo={bloco.tipo === "aguardar_resposta" ? "Para onde vai cada resposta" : "Depois"}
-      ajuda="Também dá para ligar arrastando a bolinha da direita do bloco até outro."
+      rotulo={bloco.tipo === "aguardar_resposta" ? "Para onde vai cada resposta" : varias ? "Para onde vai" : "Depois"}
+      dica={bloco.tipo === "aguardar_resposta" ? "Quem responde só “sair”, “parar” ou “stop” sai da campanha." : undefined}
     >
       <ul className="space-y-2.5">
         {saidasDe(bloco).map((s) => (
           <li key={s.id}>
             <label className="block">
-              <span className="flex items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-300">
-                <span className="min-w-0 flex-1 truncate">{s.rotulo || "Próximo bloco"}</span>
-                {metricas && (
-                  <span className="shrink-0 tabular-nums text-zinc-400 dark:text-zinc-500">
-                    {numero(metricas.porSaida[`${id}|${s.id}`] ?? 0)} pessoas
-                  </span>
-                )}
-              </span>
-              <select className={`${campoAds} mt-1`} value={s.destino ?? ""} onChange={(e) => ligar(s.id, e.target.value || null)}>
+              {/* Bloco de saída única: o "Depois" do grupo já é o rótulo. */}
+              {(varias || metricas) && (
+                <span className="mb-1 flex items-center gap-2 text-[12px] text-zinc-600 dark:text-zinc-300">
+                  <span className="min-w-0 flex-1 truncate">{s.rotulo || "Próximo bloco"}</span>
+                  {metricas && (
+                    <span className="shrink-0 tabular-nums text-zinc-400 dark:text-zinc-500">
+                      {numero(metricas.porSaida[`${id}|${s.id}`] ?? 0)} pessoas
+                    </span>
+                  )}
+                </span>
+              )}
+              <select
+                aria-label={varias ? undefined : "Próximo bloco"}
+                className={campoAds}
+                value={s.destino ?? ""}
+                onChange={(e) => ligar(s.id, e.target.value || null)}
+              >
                 <option value="">Fim do fluxo</option>
                 {outros.map(([outro, b]) => (
                   <option key={outro} value={outro} disabled={voltaria.has(outro)}>

@@ -107,6 +107,7 @@ export default function ConfirmarAtivacao({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            {/* "Podem": cada contato recebe só as do caminho que tomar. */}
             <h3 className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
               Mensagens que podem sair ({mensagens.length})
             </h3>
@@ -124,7 +125,6 @@ export default function ConfirmarAtivacao({
                 );
               })}
             </ol>
-            <p className="mt-2 text-[11px] text-zinc-400 dark:text-zinc-500">Cada contato recebe só as do caminho que tomar.</p>
 
             {efeitos.length > 0 && (
               <>

@@ -17,7 +17,7 @@
 import "server-only";
 import { z } from "zod";
 import { ehIdDeBloco, lerFluxoDaEntrada } from "@/lib/campanhas-fluxo-entrada";
-import { VERSAO_FLUXO, type BlocoCampanha, type Destino, type FluxoCampanha, type ProblemaDoFluxo } from "@/lib/campanhas-fluxo";
+import { VERSAO_FLUXO, type BlocoCampanha, type Destino, type FluxoCampanha, type ProblemaDoFluxo, type RegraCondicao } from "@/lib/campanhas-fluxo";
 import { dadoDoValor, IDIOMA_PADRAO } from "@/lib/templates-whatsapp";
 import { soDigitos } from "@/lib/telefone";
 import { comoDado } from "./sanitizar";
@@ -38,9 +38,14 @@ const blocoDaIa = z.discriminatedUnion("tipo", [
     template_nome: z.string(),
     template_idioma: z.string().optional().describe("O idioma do template em listar_alvos_campanha."),
     variaveis: z
-      .object({ cabecalho: z.array(z.string()).optional(), corpo: z.array(z.string()).optional(), botoes: z.array(z.string()).optional() })
+      .object({
+        cabecalho: z.array(z.string()).optional(),
+        corpo: z.array(z.string()).optional(),
+        botoes: z.array(z.string()).optional(),
+        midia: z.string().nullable().optional().describe("Id de documentos para o cabeçalho de imagem, vídeo ou documento do template."),
+      })
       .optional()
-      .describe("O valor de cada {{n}}, na ordem: dado do contato ou texto fixo curto. Em botoes, o final de cada link com variável, na posição (indice) do botão."),
+      .describe("O valor de cada {{n}}, na ordem: dado do contato ou texto fixo curto. Em botoes, o final de cada link com variável, na posição (indice) do botão. Em midia, o arquivo do cabeçalho de mídia."),
     proximo,
   }),
   z.object({
@@ -71,6 +76,47 @@ const blocoDaIa = z.discriminatedUnion("tipo", [
     proximo,
   }),
   z.object({ id: idBloco, tipo: z.literal("ligar_ia"), ia_id: z.string(), proximo }),
+  z.object({
+    id: idBloco,
+    tipo: z.literal("condicao"),
+    regra: z
+      .discriminatedUnion("tipo", [
+        z.object({ tipo: z.literal("tem_tag"), tag_id: z.string() }),
+        z.object({ tipo: z.literal("no_segmento"), segmento_id: z.string() }),
+        z.object({ tipo: z.literal("na_etapa"), funil_id: z.string(), etapa_id: z.string() }),
+        z.object({
+          tipo: z.literal("campo"),
+          chave: z.string().describe("A chave de um campo de campos_contato."),
+          operador: z.enum(["preenchido", "igual", "contem"]),
+          valor: z.string().optional().describe("O valor comparado (sem diferença de maiúscula e acento); vazio em preenchido."),
+        }),
+      ])
+      .describe("A pergunta sobre o contato quando ele chega ao bloco."),
+    sim: proximo.describe("A regra vale."),
+    nao: proximo.describe("A regra não vale."),
+  }),
+  z.object({
+    id: idBloco,
+    tipo: z.literal("horario"),
+    dias: z.array(z.number()).describe("Dias em que passa: 0 = domingo, 1 = segunda … 6 = sábado."),
+    das: z.string().describe("Começo da janela, HH:MM, no horário de Brasília."),
+    ate: z.string().describe("Fim da janela, HH:MM, depois do começo."),
+    proximo,
+  }),
+  z.object({
+    id: idBloco,
+    tipo: z.literal("enviar_arquivo"),
+    documento_id: z.string().describe("Um id de documentos."),
+    legenda: z.string().optional(),
+    proximo,
+  }),
+  z.object({
+    id: idBloco,
+    tipo: z.literal("limitar_passagem"),
+    quantidade: z.number().describe("Quantos contatos passam por intervalo (1 a 10000)."),
+    janela_segundos: z.number().describe("O intervalo, em segundos: 60 = 1 minuto, 3600 = 1 hora, 86400 = 1 dia (até 30 dias)."),
+    proximo,
+  }),
 ]);
 
 export const entradaDoDesenho = z.object({
@@ -104,6 +150,7 @@ function blocoDoDesenho(b: BlocoDaIa): BlocoCampanha {
           cabecalho: (v.cabecalho ?? []).map(semMarcas),
           corpo: (v.corpo ?? []).map(semMarcas),
           ...(v.botoes ? { botoes: v.botoes.map(semMarcas) } : {}),
+          ...(v.midia?.trim() ? { midia: v.midia.trim() } : {}),
         },
         proximo: ate(b.proximo),
       };
@@ -142,6 +189,27 @@ function blocoDoDesenho(b: BlocoDaIa): BlocoCampanha {
       };
     case "ligar_ia":
       return { tipo: b.tipo, iaId: b.ia_id.trim(), proximo: ate(b.proximo) };
+    case "condicao":
+      return { tipo: b.tipo, regra: regraDoDesenho(b.regra), sim: ate(b.sim), nao: ate(b.nao) };
+    case "horario":
+      return { tipo: b.tipo, dias: b.dias, das: semMarcas(b.das).trim(), ate: semMarcas(b.ate).trim(), proximo: ate(b.proximo) };
+    case "enviar_arquivo":
+      return { tipo: b.tipo, documentoId: b.documento_id.trim(), legenda: semMarcas(b.legenda ?? ""), proximo: ate(b.proximo) };
+    case "limitar_passagem":
+      return { tipo: b.tipo, quantidade: b.quantidade, janela_segundos: b.janela_segundos, proximo: ate(b.proximo) };
+  }
+}
+
+function regraDoDesenho(r: Extract<BlocoDaIa, { tipo: "condicao" }>["regra"]): RegraCondicao {
+  switch (r.tipo) {
+    case "tem_tag":
+      return { tipo: r.tipo, tagId: r.tag_id.trim() };
+    case "no_segmento":
+      return { tipo: r.tipo, segmentoId: r.segmento_id.trim() };
+    case "na_etapa":
+      return { tipo: r.tipo, funilId: r.funil_id.trim(), etapaId: r.etapa_id.trim() };
+    case "campo":
+      return { tipo: r.tipo, chave: semMarcas(r.chave).trim(), operador: r.operador, valor: semMarcas(r.valor ?? "") };
   }
 }
 
@@ -181,6 +249,8 @@ export function blocoParaIa(id: string, b: BlocoCampanha): BlocoDaIa {
           cabecalho: b.variaveis.cabecalho.map(valorParaIa),
           corpo: b.variaveis.corpo.map(valorParaIa),
           ...(b.variaveis.botoes ? { botoes: b.variaveis.botoes.map(valorParaIa) } : {}),
+          // Um id, não texto: vai como está, e volta igual se o modelo não mexer.
+          ...(b.variaveis.midia ? { midia: b.variaveis.midia } : {}),
         },
         proximo: b.proximo,
       };
@@ -220,6 +290,28 @@ export function blocoParaIa(id: string, b: BlocoCampanha): BlocoDaIa {
       };
     case "ligar_ia":
       return { id, tipo: b.tipo, ia_id: b.iaId, proximo: b.proximo };
+    case "condicao":
+      return { id, tipo: b.tipo, regra: regraParaIa(b.regra), sim: b.sim, nao: b.nao };
+    case "horario":
+      return { id, tipo: b.tipo, dias: b.dias, das: b.das, ate: b.ate, proximo: b.proximo };
+    case "enviar_arquivo":
+      return { id, tipo: b.tipo, documento_id: b.documentoId, legenda: b.legenda ? comoDado(b.legenda) : "", proximo: b.proximo };
+    case "limitar_passagem":
+      return { id, tipo: b.tipo, quantidade: b.quantidade, janela_segundos: b.janela_segundos, proximo: b.proximo };
+  }
+}
+
+function regraParaIa(r: RegraCondicao): Extract<BlocoDaIa, { tipo: "condicao" }>["regra"] {
+  switch (r.tipo) {
+    case "tem_tag":
+      return { tipo: r.tipo, tag_id: r.tagId };
+    case "no_segmento":
+      return { tipo: r.tipo, segmento_id: r.segmentoId };
+    case "na_etapa":
+      return { tipo: r.tipo, funil_id: r.funilId, etapa_id: r.etapaId };
+    case "campo":
+      // O valor pode ter sido escrito por um colega: embrulhado, como o texto livre.
+      return { tipo: r.tipo, chave: r.chave, operador: r.operador, valor: r.valor ? comoDado(r.valor) : "" };
   }
 }
 
@@ -228,6 +320,7 @@ export function blocoParaIa(id: string, b: BlocoCampanha): BlocoDaIa {
 /** O texto de um bloco que sai do CRM: para o contato, para a equipe ou para o card. */
 export function textosQueSaem(b: BlocoCampanha): string[] {
   if (b.tipo === "enviar_texto" || b.tipo === "avisar_equipe") return [b.texto];
+  if (b.tipo === "enviar_arquivo") return [b.legenda];
   if (b.tipo === "criar_oportunidade") return [b.nome];
   if (b.tipo === "enviar_template") return [...b.variaveis.cabecalho, ...b.variaveis.corpo, ...(b.variaveis.botoes ?? [])].map((v) => v ?? "");
   return [];

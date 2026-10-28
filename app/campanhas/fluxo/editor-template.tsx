@@ -5,7 +5,15 @@
 // igual para todos) e o que completa cada botão de link com variável (texto
 // fixo; o WhatsApp do contato só no link de vídeo do CRM). A conferência é a
 // de lib/templates-whatsapp.ts (problemaNoEnvio e problemaDoLinkVariavel), que
-// o painel mostra no topo e o servidor repete.
+// a lista de pendências mostra e o servidor repete. As regras que importam vão
+// num "?" ao lado do rótulo (2026-10-28), sem parágrafo embaixo.
+//
+// CABEÇALHO COM MÍDIA (2026-10-28, pedido dele: "templates aprovados com vídeo
+// e fotos"): template com imagem, vídeo ou documento no cabeçalho
+// (midiaDoCabecalho) pede o arquivo da biblioteca de Documentos, do mesmo
+// tipo, gravado em variaveis.midia (o id). A pendência sem arquivo vem de
+// lib/. A prévia mostra o nome do arquivo; miniatura não, porque o bucket é
+// privado e a tela não tem o link.
 import type { BlocoCampanha } from "@/lib/campanhas-fluxo";
 import {
   DADOS_NA_CAMPANHA,
@@ -14,7 +22,7 @@ import {
   ehLinkDeVideoDoCrm,
   linksVariaveisDe,
   marcaDoContato,
-  respostasRapidasDe,
+  midiaDoCabecalho,
   textoParaRevisao,
   valoresIniciais,
   variaveisDoTemplate,
@@ -22,22 +30,37 @@ import {
   type TemplateWhatsApp,
   type ValoresDoEnvio,
 } from "@/lib/templates-whatsapp";
+import { FileText, Image as ImagemIcone, Video, type TipoIcone } from "@/app/components/icones";
 import { campoAds } from "../pecas";
-import { Ajuda, Campo, Grupo } from "./campos";
-import { acharTemplate } from "./grafo";
+import { Ajuda, Campo, Escolha, Grupo } from "./campos";
+import { acharTemplate, type OpcoesFluxo } from "./grafo";
 
 type EnviarTemplate = Extract<BlocoCampanha, { tipo: "enviar_template" }>;
 type Lista = "cabecalho" | "corpo" | "botoes";
 
 const chaveDe = (nome: string, idioma: string) => `${nome}::${idioma}`;
 
+/**
+ * A mídia do cabeçalho (midiaDoCabecalho) e o tipo do arquivo da biblioteca
+ * que serve (tipoDoArquivoDaCampanha, lib/campanhas-fluxo-envios.ts: o
+ * documento do WhatsApp é PDF).
+ */
+const MIDIA: Record<"imagem" | "video" | "documento", { arquivo: string; rotulo: string; vazio: string; nenhum: string; Icone: TipoIcone }> = {
+  imagem: { arquivo: "imagem", rotulo: "Imagem do cabeçalho", vazio: "Escolha a imagem", nenhum: "Nenhuma imagem", Icone: ImagemIcone },
+  video: { arquivo: "video", rotulo: "Vídeo do cabeçalho", vazio: "Escolha o vídeo", nenhum: "Nenhum vídeo", Icone: Video },
+  documento: { arquivo: "pdf", rotulo: "PDF do cabeçalho", vazio: "Escolha o PDF", nenhum: "Nenhum PDF", Icone: FileText },
+};
+
 export default function EditorTemplate({
   bloco,
   templates,
+  documentos,
   mudar,
 }: {
   bloco: EnviarTemplate;
   templates: TemplateWhatsApp[];
+  /** A biblioteca de Documentos, para o cabeçalho com mídia. */
+  documentos: OpcoesFluxo["documentos"];
   mudar: (b: EnviarTemplate) => void;
 }) {
   const aprovados = templates.filter((t) => t.status === "APPROVED");
@@ -48,7 +71,10 @@ export default function EditorTemplate({
   // configurado continua à vista.
   const n = t ? variaveisDoTemplate(t) : { cabecalho: bloco.variaveis.cabecalho.length, corpo: bloco.variaveis.corpo.length };
   const links = t ? linksVariaveisDe(t) : [];
-  const respostas = t ? respostasRapidasDe(t) : [];
+  const tipoDaMidia = t ? midiaDoCabecalho(t) : null;
+  const midia = tipoDaMidia ? MIDIA[tipoDaMidia] : null;
+  const arquivos = midia ? documentos.filter((d) => d.tipo === midia.arquivo) : [];
+  const arquivoEscolhido = bloco.variaveis.midia ? documentos.find((d) => d.id === bloco.variaveis.midia) : undefined;
 
   function trocar(chave: string) {
     const novo = aprovados.find((x) => chaveDe(x.nome, x.idioma) === chave);
@@ -91,16 +117,35 @@ export default function EditorTemplate({
           ))}
         </select>
       </Campo>
-      {!aprovados.length && <Ajuda>Nenhum template aprovado nesta conta. Crie um em Templates e espere a Meta aprovar.</Ajuda>}
+      {!aprovados.length && <Ajuda>Nenhum template aprovado. Crie em Templates.</Ajuda>}
+
+      {midia && (
+        <div>
+          <Escolha
+            rotulo={midia.rotulo}
+            valor={bloco.variaveis.midia ?? ""}
+            opcoes={arquivos}
+            vazio={midia.vazio}
+            mudar={(id) => mudar({ ...bloco, variaveis: { ...bloco.variaveis, midia: id || null } })}
+          />
+          {!arquivos.length && <Ajuda>{midia.nenhum}. Suba em Documentos.</Ajuda>}
+        </div>
+      )}
 
       {t && (
-        <p className="whitespace-pre-wrap break-words rounded-lg bg-zinc-50 p-3 text-[12px] leading-relaxed text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
-          {textoParaRevisao(t, bloco.variaveis)}
-        </p>
+        <div className="rounded-lg bg-zinc-50 p-3 text-[12px] leading-relaxed text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+          {midia && (
+            <p className="mb-1.5 flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+              <midia.Icone className="size-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{arquivoEscolhido?.nome ?? midia.vazio}</span>
+            </p>
+          )}
+          <p className="whitespace-pre-wrap break-words">{textoParaRevisao(t, bloco.variaveis)}</p>
+        </div>
       )}
 
       {linhas.length > 0 && (
-        <Grupo rotulo="O que vai em cada variável" ajuda="Contato sem o dado escolhido não recebe; a falha fica registrada.">
+        <Grupo rotulo="Variáveis" dica="Contato sem o dado escolhido não recebe; a falha fica registrada.">
           <div className="space-y-2.5">
             {linhas.map((l) => (
               <ValorDaVariavel
@@ -116,7 +161,7 @@ export default function EditorTemplate({
       )}
 
       {links.length > 0 && (
-        <Grupo rotulo="Botões de link" ajuda="O que completa o fim do link de cada botão.">
+        <Grupo rotulo="Botões de link" dica="O que completa o fim do link de cada botão.">
           <div className="space-y-2.5">
             {links.map((l) => {
               const valor = bloco.variaveis.botoes?.[l.indice] ?? "";
@@ -154,12 +199,6 @@ export default function EditorTemplate({
             })}
           </div>
         </Grupo>
-      )}
-
-      {respostas.length > 0 && (
-        <Ajuda>
-          Os botões {respostas.map((r) => `“${r}”`).join(", ")} viram saídas do “Aguardar resposta” ligado depois deste bloco.
-        </Ajuda>
       )}
     </div>
   );

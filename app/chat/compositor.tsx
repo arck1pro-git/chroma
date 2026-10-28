@@ -245,39 +245,16 @@ export function Compositor({
         {/* A biblioteca e não upload: o arquivo entra pelo módulo Documentos,
             senão cada atendente teria a sua cópia da tabela de preços. */}
         {biblioteca && (
-          <div className="veu-surge overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Biblioteca</span>
-              <button type="button" onClick={() => setBiblioteca(false)} aria-label="Fechar biblioteca" className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
-                <X className="size-3.5" />
-              </button>
-            </div>
-            {documentos.length === 0 ? (
-              <p className="px-3 py-4 text-center text-[12px] text-zinc-400">
-                Nenhum documento na biblioteca. Suba os arquivos em Documentos.
-              </p>
-            ) : (
-              <ul className="max-h-52 overflow-y-auto">
-                {documentos.map((d) => (
-                  <li key={d.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAnexo(d);
-                        setBiblioteca(false);
-                        campo.current?.focus();
-                      }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-900"
-                    >
-                      <FileText className="size-3.5 shrink-0 text-zinc-400" />
-                      <span className="min-w-0 flex-1 truncate text-[12.5px] text-zinc-800 dark:text-zinc-100">{d.nome}</span>
-                      <span className="shrink-0 text-[10.5px] text-zinc-400">{d.arquivoNome}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <ListaDaBiblioteca
+            documentos={documentos}
+            vazio="Nenhum documento na biblioteca. Suba os arquivos em Documentos."
+            aoEscolher={(d) => {
+              setAnexo(d);
+              setBiblioteca(false);
+              campo.current?.focus();
+            }}
+            aoFechar={() => setBiblioteca(false)}
+          />
         )}
 
         <div className="flex items-end gap-2">
@@ -334,6 +311,53 @@ export function Compositor({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Os arquivos da biblioteca para escolher um (vêm de documentosEscolhiveis, pelo
+ * dados.ts do chat). Serve ao anexo daqui e à mídia do cabeçalho do template
+ * (modelos.tsx), que passa a lista já filtrada pelo tipo.
+ */
+export function ListaDaBiblioteca({
+  documentos,
+  vazio,
+  aoEscolher,
+  aoFechar,
+}: {
+  documentos: Documento[];
+  vazio: string;
+  aoEscolher: (d: Documento) => void;
+  aoFechar: () => void;
+}) {
+  return (
+    <div className="veu-surge overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Biblioteca</span>
+        <button type="button" onClick={aoFechar} aria-label="Fechar biblioteca" className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+          <X className="size-3.5" />
+        </button>
+      </div>
+      {documentos.length === 0 ? (
+        <p className="px-3 py-4 text-center text-[12px] text-zinc-400">{vazio}</p>
+      ) : (
+        <ul className="max-h-52 overflow-y-auto">
+          {documentos.map((d) => (
+            <li key={d.id}>
+              <button
+                type="button"
+                onClick={() => aoEscolher(d)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-900"
+              >
+                <FileText className="size-3.5 shrink-0 text-zinc-400" />
+                <span className="min-w-0 flex-1 truncate text-[12.5px] text-zinc-800 dark:text-zinc-100">{d.nome}</span>
+                <span className="shrink-0 text-[10.5px] text-zinc-400">{d.arquivoNome}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

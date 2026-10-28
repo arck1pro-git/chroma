@@ -4,6 +4,7 @@ import type { Atendimento, Contato, Etapa, Funil, Mensagem, Oportunidade, Usuari
 import type { Documento } from "@/lib/documentos";
 import type { EstadoIaContato, IaResumo } from "@/lib/ia/catalogo";
 import type { ComentariosDaConta } from "@/lib/instagram-tipos";
+import type { MidiaDoCabecalho } from "@/lib/templates-whatsapp";
 
 /** "instagram" = uma conta profissional do Instagram (DMs e comentários), desde 2026-10-26. */
 export type TipoCanal = "web" | "api" | "instagram";
@@ -119,6 +120,12 @@ export type TemplateChat = {
    * `botoes[indice]` de enviarTemplate. `indice` é a posição entre todos os botões.
    */
   linksVariaveis: Array<{ indice: number; texto: string; url: string }>;
-  /** Motivo quando não dá para mandar daqui (cabeçalho de mídia, variável com nome, link fora do padrão). */
+  /**
+   * O arquivo que o cabeçalho de mídia pede (midiaDoCabecalho, desde
+   * 2026-10-28): o tipo do documento da biblioteca que vai em `midia` de
+   * enviarTemplate. null = cabeçalho de texto ou sem cabeçalho.
+   */
+  midia: MidiaDoCabecalho | null;
+  /** Motivo quando não dá para mandar daqui (cabeçalho de localização, variável com nome, link fora do padrão). */
   bloqueio: string | null;
 };

@@ -15,6 +15,9 @@
 //                               (campanhas). A Meta não ecoa o que sai pela
 //                               API, então sem isto a conversa mostraria só a
 //                               resposta do cliente, sem a mensagem que a puxou.
+//   · prepararMidiaDoCabecalho → o documento da biblioteca que vai no
+//                               cabeçalho de imagem, vídeo ou documento de um
+//                               template (chat e campanha), já subido na Meta.
 //
 // Contrato do webhook (documentação da Cloud API, "messages"):
 //   entry[].changes[].value = {
@@ -26,6 +29,15 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { chaveTelefone, soDigitos } from "@/lib/telefone";
+import { subirMidiaMeta } from "@/lib/meta";
+import { comCaminho, lerArquivo } from "@/lib/documentos";
+import { conferirDestino } from "@/lib/destino-permitido";
+import {
+  problemaDaMidia,
+  problemaDoArquivoDoCabecalho,
+  type MidiaDoCabecalho,
+  type MidiaNaMeta,
+} from "@/lib/templates-whatsapp";
 import type { TipoMensagem } from "@/lib/midia";
 
 type MidiaMeta = { id?: string; mime_type?: string; caption?: string; filename?: string };
@@ -376,6 +388,10 @@ export async function processarWebhookOficial(
  *
  * Conversa nova nasce 'aberto' e SEM dono: é a automação falando, ninguém da
  * equipe assumiu. Quando o contato responder, o webhook a joga para a fila.
+ *
+ * `midia`: o template saiu com imagem, vídeo ou documento no cabeçalho. A linha
+ * aponta para o documento da biblioteca (documento_id), como o anexo do chat
+ * (lib/conversa-envio.ts), e o balão mostra o arquivo com o texto embaixo.
  */
 export async function registrarEnvioOficial(e: {
   contatoId: string;
@@ -384,7 +400,9 @@ export async function registrarEnvioOficial(e: {
   wamid: string | null;
   enviadaPor: "automacao" | "crm";
   autorId?: string | null;
+  midia?: MidiaDoCabecalhoPronta | null;
 }): Promise<void> {
+  const m = e.midia ?? null;
   try {
     const numeroCanal = soDigitos(e.numeroCanal);
     if (!numeroCanal) return;
@@ -396,12 +414,92 @@ export async function registrarEnvioOficial(e: {
       RETURNING id`;
     await sql`
       INSERT INTO mensagens
-        (atendimento_id, origem, autor_id, texto, status, id_externo, enviada_por)
+        (atendimento_id, origem, autor_id, texto, status, id_externo, enviada_por,
+         tipo, documento_id, midia_estado, midia_mime, midia_nome, midia_tamanho)
       VALUES
-        (${at.id}, 'agente', ${e.autorId ?? null}, ${e.texto}, 'enviado', ${e.wamid}, ${e.enviadaPor})
+        (${at.id}, 'agente', ${e.autorId ?? null}, ${e.texto}, 'enviado', ${e.wamid}, ${e.enviadaPor},
+         ${m?.tipo ?? "texto"}, ${m?.documentoId ?? null}, ${m ? "salva" : "ausente"},
+         ${m?.mime ?? null}, ${m?.arquivoNome ?? null}, ${m?.tamanho ?? null})
       ON CONFLICT (id_externo) WHERE id_externo IS NOT NULL DO NOTHING`;
   } catch (erro) {
     console.error("[whatsapp oficial] não registrei o envio na conversa:", erro);
+  }
+}
+
+// ── Cabeçalho de mídia do template ──────────────────────────────────────────
+//
+// Template aprovado com imagem, vídeo ou documento no cabeçalho (desde
+// 2026-10-28) leva um documento da BIBLIOTECA. Sai pelo mesmo caminho do anexo
+// do chat (lib/conversa-envio.ts): os bytes sobem para /<PHONE_ID>/media
+// (subirMidiaMeta) e o envio leva o id. Link assinado não: a Meta busca o link
+// quando quer, e a biblioteca é acervo atrás de login.
+//
+// Numa campanha o mesmo arquivo vai para muitos contatos: o id fica guardado em
+// memória por número e documento para não subir a cada envio. A Meta guarda a
+// mídia por 30 dias; aqui ela vale 7, com folga. É memória do processo, não
+// fila: outra instância da Vercel sobe de novo, uma vez. O documento não muda
+// de bytes (renomear muda só o nome), então a chave não envelhece por isso.
+
+/** A mídia pronta para componentesDoEnvio e para registrarEnvioOficial. */
+export type MidiaDoCabecalhoPronta = MidiaNaMeta & { documentoId: string; mime: string; tamanho: number };
+
+const VALIDADE_DO_ID_MS = 7 * 24 * 60 * 60 * 1000;
+const MAXIMO_DE_IDS = 200;
+const idsNaMeta = new Map<string, { id: Promise<string>; ate: number }>();
+
+function idNaMeta(telefoneId: string, doc: { id: string; caminho: string; mime: string; arquivoNome: string }): Promise<string> {
+  const chave = `${telefoneId}|${doc.id}`;
+  const guardado = idsNaMeta.get(chave);
+  if (guardado && guardado.ate > Date.now()) return guardado.id;
+  // A promessa, e não o id: dois envios ao mesmo tempo esperam o mesmo upload.
+  const id = lerArquivo(doc.caminho).then((bytes) => subirMidiaMeta(telefoneId, bytes, doc.mime, doc.arquivoNome));
+  idsNaMeta.delete(chave);
+  if (idsNaMeta.size >= MAXIMO_DE_IDS) idsNaMeta.delete(idsNaMeta.keys().next().value as string);
+  idsNaMeta.set(chave, { id, ate: Date.now() + VALIDADE_DO_ID_MS });
+  // Upload que falhou sai da memória: a próxima tentativa sobe de novo. Quem
+  // espera `id` recebe o erro do mesmo jeito.
+  id.catch(() => {
+    if (idsNaMeta.get(chave)?.id === id) idsNaMeta.delete(chave);
+  });
+  return id;
+}
+
+/**
+ * O cabeçalho de mídia deste envio, pronto: confere o documento (existe, não
+ * está arquivado, é do tipo, do formato e do tamanho que a Cloud API aceita,
+ * por problemaDoArquivoDoCabecalho) e sobe para a Meta, ou reaproveita o id
+ * já subido. `pede` é midiaDoCabecalho do template; `{ midia: null }` quando
+ * o template não tem cabeçalho de mídia. Recusa e falha do upload voltam como
+ * `{ erro }`: o chat mostra, a campanha registra no contato.
+ *
+ * `para` é o WhatsApp do contato: a trava do dev (WHATSAPP_SO_PARA) vem antes
+ * do upload, como antes da voz da IA. Sem ela o arquivo subiria para a Meta e
+ * só o envio seria barrado.
+ */
+export async function prepararMidiaDoCabecalho(e: {
+  telefoneId: string;
+  para: string;
+  pede: MidiaDoCabecalho | null;
+  documentoId: unknown;
+}): Promise<{ midia: MidiaDoCabecalhoPronta | null } | { erro: string }> {
+  const recusa = problemaDaMidia(e.pede, e.documentoId);
+  if (recusa) return { erro: recusa };
+  if (!e.pede || typeof e.documentoId !== "string") return { midia: null };
+  const doc = await comCaminho(e.documentoId.trim());
+  if (!doc) return { erro: "O arquivo do cabeçalho não está mais na biblioteca." };
+  const problema = problemaDoArquivoDoCabecalho(e.pede, doc);
+  if (problema) return { erro: problema };
+  try {
+    conferirDestino(e.para);
+  } catch (bloqueio) {
+    return { erro: bloqueio instanceof Error ? bloqueio.message : String(bloqueio) };
+  }
+  try {
+    const id = await idNaMeta(e.telefoneId, doc);
+    return { midia: { tipo: e.pede, id, arquivoNome: doc.arquivoNome, documentoId: doc.id, mime: doc.mime, tamanho: doc.tamanho } };
+  } catch (falha) {
+    console.error("[whatsapp oficial] não subi o arquivo do cabeçalho", doc.id, falha);
+    return { erro: `O arquivo do cabeçalho não subiu para a Meta: ${(falha instanceof Error ? falha.message : String(falha)).slice(0, 300)}` };
   }
 }
 

@@ -12,7 +12,14 @@
 // (/v/<código>?w=) o final é o WhatsApp do contato — é por ele que o vídeo sabe
 // quem assistiu —, então já vem preenchido e fica no menu Contato…. As regras do
 // final são as de problemaDoLinkVariavel, que o servidor confere de novo.
+//
+// Cabeçalho de imagem, vídeo ou documento (desde 2026-10-28): o arquivo sai da
+// biblioteca de Documentos, pela mesma lista do anexo do compositor, só com os
+// arquivos do tipo do cabeçalho. Vai o id do documento; o servidor confere o
+// tipo e manda. Na prévia, a imagem aparece em miniatura; vídeo e documento,
+// pelo nome (o vídeo inteiro não é baixado só para mostrar um quadro).
 import { useEffect, useId, useMemo, useState, useTransition } from "react";
+import type { Documento } from "@/lib/documentos";
 import {
   baseDoLink,
   DADOS_DO_CONTATO,
@@ -22,10 +29,30 @@ import {
   ROTULO_CATEGORIA as CATEGORIA,
   type DadosDoContato,
 } from "@/lib/templates-whatsapp";
-import { ArrowLeft, LayoutTemplate, Loader2, Lock, Search, SendHorizonal, X } from "@/app/components/icones";
+import {
+  ArrowLeft,
+  FileText,
+  Film,
+  ImageIcon,
+  LayoutTemplate,
+  Loader2,
+  Lock,
+  Search,
+  SendHorizonal,
+  X,
+} from "@/app/components/icones";
 import { enviarTemplate, listarTemplates } from "./actions";
+import { ListaDaBiblioteca } from "./compositor";
 import type { TemplateChat } from "./tipos";
 import { maiuscula, TextoWhatsApp } from "./ui";
+
+type MidiaDoCabecalho = NonNullable<TemplateChat["midia"]>;
+
+const MIDIA: Record<MidiaDoCabecalho, { rotulo: string; Icone: typeof FileText; vazio: string }> = {
+  imagem: { rotulo: "Imagem", Icone: ImageIcon, vazio: "Nenhuma imagem na biblioteca. Suba em Documentos." },
+  video: { rotulo: "Vídeo", Icone: Film, vazio: "Nenhum vídeo na biblioteca. Suba em Documentos." },
+  documento: { rotulo: "Documento", Icone: FileText, vazio: "Nenhum documento na biblioteca. Suba em Documentos." },
+};
 
 const preencher = (texto: string, valores: string[]) =>
   texto.replace(/\{\{(\d+)\}\}/g, (bruto, n) => {
@@ -45,11 +72,14 @@ function problemaDoFinal(url: string, valor: string): string | null {
 export function SeletorTemplates({
   atendimentoId,
   nomeContato,
+  documentos,
   aoFechar,
   aoEnviado,
 }: {
   atendimentoId: string;
   nomeContato: string;
+  /** A biblioteca, para o cabeçalho de mídia (a mesma lista do compositor). */
+  documentos: Documento[];
   aoFechar: () => void;
   aoEnviado: () => void;
 }) {
@@ -62,6 +92,8 @@ export function SeletorTemplates({
   const [corpo, setCorpo] = useState<string[]>([]);
   /** O final de cada link com variável, pela posição do botão no template. */
   const [links, setLinks] = useState<string[]>([]);
+  /** O arquivo do cabeçalho de mídia; null enquanto ninguém escolheu. */
+  const [midia, setMidia] = useState<Documento | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, iniciar] = useTransition();
 
@@ -95,6 +127,7 @@ export function SeletorTemplates({
   function escolher(t: TemplateChat) {
     setEscolhido(t);
     setErro(null);
+    setMidia(null);
     // O primeiro campo do corpo quase sempre é o nome — já vem preenchido. Os
     // outros dados do contato ficam no menu de cada campo.
     const primeiroNome = contato?.primeiro_nome ?? "";
@@ -114,6 +147,7 @@ export function SeletorTemplates({
   const completo =
     escolhido !== null &&
     !escolhido.bloqueio &&
+    (!escolhido.midia || midia !== null) &&
     cabecalho.every((v) => v.trim()) &&
     corpo.every((v) => v.trim()) &&
     escolhido.linksVariaveis.every((l) => !problemaDoFinal(l.url, links[l.indice] ?? ""));
@@ -126,6 +160,7 @@ export function SeletorTemplates({
         cabecalho,
         corpo,
         botoes: links.map((v) => v.trim()),
+        midia: escolhido.midia ? (midia?.id ?? null) : null,
       });
       if (r.erro) setErro(r.erro);
       else aoEnviado();
@@ -205,6 +240,7 @@ export function SeletorTemplates({
                         <span className="rounded-full bg-zinc-100 px-1.5 py-px text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                           {CATEGORIA[t.categoria] ?? t.categoria}
                         </span>
+                        {t.midia && <SeloMidia tipo={t.midia} />}
                         {t.bloqueio && (
                           <span className="inline-flex items-center gap-1 text-[10px] text-zinc-400">
                             <Lock className="size-2.5" /> só por Campanhas
@@ -240,6 +276,7 @@ export function SeletorTemplates({
                   <div className="rounded-2xl bg-zinc-100 p-4 dark:bg-zinc-900/60">
                     <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">Prévia</p>
                     <div className="ml-auto max-w-sm rounded-2xl rounded-tr-md bg-violet-50 px-3.5 py-2.5 text-[13.5px] leading-relaxed text-violet-950 ring-1 ring-violet-200 dark:bg-violet-500/10 dark:text-violet-50 dark:ring-violet-400/25">
+                      {escolhido.midia && <PreviaMidia tipo={escolhido.midia} documento={midia} />}
                       {escolhido.cabecalho !== null && (
                         <p className="mb-1 font-semibold">{preencher(escolhido.cabecalho, cabecalho)}</p>
                       )}
@@ -274,9 +311,18 @@ export function SeletorTemplates({
                       {escolhido.bloqueio}
                     </p>
                   ) : (
-                    (cabecalho.length > 0 || corpo.length > 0 || escolhido.linksVariaveis.length > 0) && (
+                    (escolhido.midia || cabecalho.length > 0 || corpo.length > 0 || escolhido.linksVariaveis.length > 0) && (
                       <div className="flex flex-col gap-3">
                         <p className="text-[10.5px] font-semibold uppercase tracking-wider text-zinc-400">Variáveis</p>
+                        {escolhido.midia && (
+                          <CampoMidia
+                            key={`${escolhido.nome}|${escolhido.idioma}`}
+                            tipo={escolhido.midia}
+                            escolhido={midia}
+                            documentos={documentos}
+                            aoEscolher={setMidia}
+                          />
+                        )}
                         {cabecalho.map((v, i) => (
                           <Campo key={`c${i}`} rotulo={`Cabeçalho {{${i + 1}}}`} valor={v} contato={contato} aoMudar={(x) => setCabecalho((a) => a.map((y, j) => (j === i ? x : y)))} />
                         ))}
@@ -315,6 +361,96 @@ export function SeletorTemplates({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Na lista: o template tem cabeçalho de mídia. */
+function SeloMidia({ tipo }: { tipo: MidiaDoCabecalho }) {
+  const { rotulo, Icone } = MIDIA[tipo];
+  const texto = `Cabeçalho com ${rotulo.toLowerCase()}`;
+  return (
+    <span title={texto} className="inline-flex text-zinc-400 dark:text-zinc-500">
+      <Icone className="size-3" aria-label={texto} />
+    </span>
+  );
+}
+
+/** A mídia no topo da prévia: a imagem em miniatura; vídeo e documento pelo nome. */
+function PreviaMidia({ tipo, documento }: { tipo: MidiaDoCabecalho; documento: Documento | null }) {
+  const { rotulo, Icone } = MIDIA[tipo];
+  if (tipo === "imagem" && documento) {
+    return (
+      // <img> e não next/image: a origem é a rota da biblioteca, que exige
+      // sessão, com tamanho que o build não conhece (mesmo motivo de ui.tsx).
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={`/api/documentos/${documento.id}`}
+        alt={documento.nome}
+        className="mb-2 block max-h-48 w-full rounded-xl bg-violet-100 object-cover dark:bg-violet-500/10"
+      />
+    );
+  }
+  return (
+    <div className="mb-2 flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2.5 text-[12px] ring-1 ring-violet-200/70 dark:bg-zinc-950/40 dark:ring-violet-400/20">
+      <Icone className="size-4 shrink-0 text-violet-400 dark:text-violet-300" />
+      <span className={`min-w-0 flex-1 truncate ${documento ? "" : "text-violet-900/50 dark:text-violet-200/50"}`}>
+        {documento ? documento.arquivoNome : rotulo}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * O arquivo do cabeçalho de mídia, escolhido na lista da biblioteca do
+ * compositor, só com os arquivos do tipo que o template pede.
+ */
+function CampoMidia({
+  tipo,
+  escolhido,
+  documentos,
+  aoEscolher,
+}: {
+  tipo: MidiaDoCabecalho;
+  escolhido: Documento | null;
+  documentos: Documento[];
+  aoEscolher: (d: Documento) => void;
+}) {
+  const [aberta, setAberta] = useState(false);
+  const idRotulo = useId();
+  const idBotao = useId();
+  const { rotulo, Icone, vazio } = MIDIA[tipo];
+  const doTipo = useMemo(() => documentos.filter((d) => d.tipo === tipo), [documentos, tipo]);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span id={idRotulo} className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
+        {rotulo} do cabeçalho
+      </span>
+      <button
+        id={idBotao}
+        type="button"
+        onClick={() => setAberta((v) => !v)}
+        aria-expanded={aberta}
+        aria-labelledby={`${idRotulo} ${idBotao}`}
+        className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:focus-visible:ring-zinc-600"
+      >
+        <Icone className="size-3.5 shrink-0 text-zinc-400" />
+        <span className={`min-w-0 flex-1 truncate text-[13px] ${escolhido ? "text-zinc-900 dark:text-zinc-50" : "text-zinc-400 dark:text-zinc-500"}`}>
+          {escolhido ? escolhido.nome : "Escolher da biblioteca"}
+        </span>
+        {escolhido && <span className="max-w-[40%] shrink-0 truncate text-[10.5px] text-zinc-400">{escolhido.arquivoNome}</span>}
+      </button>
+      {aberta && (
+        <ListaDaBiblioteca
+          documentos={doTipo}
+          vazio={vazio}
+          aoEscolher={(d) => {
+            aoEscolher(d);
+            setAberta(false);
+          }}
+          aoFechar={() => setAberta(false)}
+        />
+      )}
     </div>
   );
 }

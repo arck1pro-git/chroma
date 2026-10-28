@@ -8,8 +8,10 @@
 //
 // COMO UM CONTATO ANDA: entra pelo início (inscrito pelos segmentos), executa
 // os blocos imediatos em sequência e para nos de espera — "Aguardar resposta"
-// (até responder ou vencer o prazo) e "Esperar" (um tempo). O bloco onde ele
-// está fica em campanha_whatsapp_execucoes.bloco_atual; `proximo: null` é o fim.
+// (até responder ou vencer o prazo), "Esperar" (um tempo), "Horário de envio"
+// (fora da janela, até ela abrir) e "Permissão de passagem" (cheia, até a vez
+// dele). O bloco onde ele está fica em campanha_whatsapp_execucoes.bloco_atual;
+// `proximo: null` é o fim. A "Condição" tem duas saídas, sim e não.
 //
 // As ligações moram em cada bloco (`proximo`, ou as saídas do Aguardar), e não
 // numa lista de arestas à parte: uma fonte só, sem aresta apontando para bloco
@@ -93,7 +95,49 @@ export type BlocoCampanha =
       texto: string;
       proximo: Destino;
     }
-  | { tipo: "ligar_ia"; iaId: string; proximo: Destino };
+  | { tipo: "ligar_ia"; iaId: string; proximo: Destino }
+  // ── Blocos de 2026-10-28 (pedido dele: "crie mais blocos") ─────────────────
+  | {
+      tipo: "condicao";
+      /** A pergunta sobre o contato, no instante em que ele chega ao bloco. */
+      regra: RegraCondicao;
+      sim: Destino;
+      nao: Destino;
+    }
+  | {
+      tipo: "horario";
+      /** Dias em que passa, 0 = domingo … 6 = sábado, no fuso de Brasília. */
+      dias: number[];
+      /** "HH:MM". `ate` maior que `das`. Fora da janela, o contato espera a próxima abertura. */
+      das: string;
+      ate: string;
+      proximo: Destino;
+    }
+  | {
+      tipo: "enviar_arquivo";
+      /** Arquivo da biblioteca de Documentos (imagem, PDF ou vídeo). Como o texto livre, só sai com a janela de 24h aberta. */
+      documentoId: string;
+      /** Legenda opcional; aceita marcas do contato. */
+      legenda: string;
+      proximo: Destino;
+    }
+  | {
+      tipo: "limitar_passagem";
+      /** Quantos contatos passam por janela ("permissão de passagem", pedido dele). */
+      quantidade: number;
+      /** O tamanho da janela, em segundos (1 s a 30 dias). Quem excede espera a vez, na ordem de chegada. */
+      janela_segundos: number;
+      proximo: Destino;
+    };
+
+/** A pergunta do bloco Condição. */
+export type RegraCondicao =
+  | { tipo: "tem_tag"; tagId: string }
+  | { tipo: "no_segmento"; segmentoId: string }
+  /** A oportunidade aberta mais recente do contato NESTE funil está nesta etapa. */
+  | { tipo: "na_etapa"; funilId: string; etapaId: string }
+  /** Campo do contato (contatos.campos, a chave do campo personalizado). */
+  | { tipo: "campo"; chave: string; operador: "preenchido" | "igual" | "contem"; valor: string };
 
 export type TipoBloco = BlocoCampanha["tipo"];
 
@@ -108,7 +152,7 @@ export type FluxoCampanha = {
 
 // ── Catálogo ────────────────────────────────────────────────────────────────
 
-export type GrupoBloco = "mensagem" | "espera" | "crm" | "equipe";
+export type GrupoBloco = "mensagem" | "espera" | "controle" | "crm" | "equipe";
 
 /** O que a tela mostra de cada tipo. As saídas do Aguardar dependem do template (saidasDe). */
 export const CATALOGO_CAMPANHA: Record<TipoBloco, { rotulo: string; descricao: string; grupo: GrupoBloco }> = {
@@ -123,6 +167,10 @@ export const CATALOGO_CAMPANHA: Record<TipoBloco, { rotulo: string; descricao: s
   registrar_conversao: { rotulo: "Registrar conversão", descricao: "Conta o contato como resultado da campanha.", grupo: "crm" },
   avisar_equipe: { rotulo: "Avisar a equipe", descricao: "WhatsApp agrupado para alguém do time ou para o responsável.", grupo: "equipe" },
   ligar_ia: { rotulo: "Passar para a IA", descricao: "Liga a IA de atendimento no contato daqui em diante.", grupo: "equipe" },
+  enviar_arquivo: { rotulo: "Enviar arquivo", descricao: "Imagem, PDF ou vídeo da biblioteca. Só depois que o contato respondeu.", grupo: "mensagem" },
+  horario: { rotulo: "Horário de envio", descricao: "Só deixa passar nos dias e horas escolhidos.", grupo: "espera" },
+  condicao: { rotulo: "Condição", descricao: "Divide o caminho por tag, segmento, etapa ou campo.", grupo: "controle" },
+  limitar_passagem: { rotulo: "Permissão de passagem", descricao: "Deixa passar X contatos a cada intervalo.", grupo: "controle" },
 };
 
 export const LIMITES_FLUXO = {
@@ -133,6 +181,10 @@ export const LIMITES_FLUXO = {
   prazoMaximo: 43_200,
   texto: 1000,
   palavras: 10,
+  /** Permissão de passagem: de 1 a 10 mil contatos por janela, janela de 1 s a 30 dias. */
+  passagemQuantidadeMaxima: 10_000,
+  passagemJanelaMinima: 1,
+  passagemJanelaMaxima: 2_592_000,
 } as const;
 
 /** Uma saída de bloco, como o canvas desenha (o id é o `sourceHandle` da ligação). */
@@ -144,6 +196,12 @@ export type SaidaBloco = { id: string; rotulo: string; destino: Destino };
  * "sem_resposta"; nos demais, "proximo".
  */
 export function saidasDe(b: BlocoCampanha): SaidaBloco[] {
+  if (b.tipo === "condicao") {
+    return [
+      { id: "sim", rotulo: "Sim", destino: b.sim },
+      { id: "nao", rotulo: "Não", destino: b.nao },
+    ];
+  }
   if (b.tipo !== "aguardar_resposta") return [{ id: "proximo", rotulo: "", destino: b.proximo }];
   return [
     ...Object.entries(b.botoes).map(([texto, destino]) => ({ id: `botao:${texto}`, rotulo: texto, destino })),
@@ -155,6 +213,11 @@ export function saidasDe(b: BlocoCampanha): SaidaBloco[] {
 
 /** Liga a saída `saidaId` do bloco a `destino`, devolvendo o bloco novo (imutável). */
 export function ligar(b: BlocoCampanha, saidaId: string, destino: Destino): BlocoCampanha {
+  if (b.tipo === "condicao") {
+    if (saidaId === "sim") return { ...b, sim: destino };
+    if (saidaId === "nao") return { ...b, nao: destino };
+    return b;
+  }
   if (b.tipo !== "aguardar_resposta") return { ...b, proximo: destino };
   if (saidaId.startsWith("botao:")) return { ...b, botoes: { ...b.botoes, [saidaId.slice(6)]: destino } };
   if (saidaId.startsWith("palavra:")) {
@@ -212,7 +275,8 @@ export function ehDescadastro(texto: string): boolean {
  */
 export type Exigencia = {
   motivo: string;
-  algumDe: Array<{ modulo: ChaveModulo; operacao: Operacao; escopoTodos?: boolean }>;
+  /** Sem `operacao`, basta VER o módulo (lib/auth/permissoes.ts só tem criar, editar e excluir). */
+  algumDe: Array<{ modulo: ChaveModulo; operacao?: Operacao; escopoTodos?: boolean }>;
 };
 
 export function exigenciasDoFluxo(f: FluxoCampanha): Exigencia[] {
@@ -235,6 +299,12 @@ export function exigenciasDoFluxo(f: FluxoCampanha): Exigencia[] {
     e.push({ motivo: "mudar tag ou segmento", algumDe: [{ modulo: "contatos", operacao: "editar" }, { modulo: "inicio", operacao: "editar" }] });
   if (tipos.has("avisar_equipe"))
     e.push({ motivo: "avisar a equipe", algumDe: [{ modulo: "contatos", operacao: "editar" }, { modulo: "inicio", operacao: "editar", escopoTodos: true }] });
+  // Mandar um arquivo da biblioteca a quem responder: quem salva precisa ver a
+  // biblioteca (a tela de Documentos pede só o módulo para ler e escolher).
+  // A "Condição" só lê o contato: basta Campanhas.
+  // O arquivo no cabeçalho do template (variaveis.midia) vem da mesma biblioteca.
+  const comMidia = Object.values(f.blocos).some((b) => b.tipo === "enviar_template" && !!b.variaveis.midia);
+  if (tipos.has("enviar_arquivo") || comMidia) e.push({ motivo: "enviar arquivo da biblioteca", algumDe: [{ modulo: "documentos" }] });
   return e;
 }
 
@@ -255,8 +325,9 @@ export type ProblemaDoFluxo = { blocoId: string | null; mensagem: string };
  * cada bloco. O que depende do template (variáveis, botões de link) é de
  * problemaNoEnvio, em lib/templates-whatsapp.ts; o que depende do banco (tag,
  * funil, IA, usuário ativo existirem) e a forma bruta da entrada (tipos,
- * tamanhos) o servidor confere à parte. "Enviar texto depois de uma resposta"
- * aqui é só estrutural: a janela de 24h real o motor confere no envio.
+ * tamanhos) o servidor confere à parte. "Enviar texto (ou arquivo) depois de
+ * uma resposta" aqui é só estrutural: a janela de 24h real o motor confere no
+ * envio. A "Condição" segue as duas saídas.
  */
 export function problemasDoFluxo(f: FluxoCampanha, templates: TemplateDoFluxo[]): ProblemaDoFluxo[] {
   const p: ProblemaDoFluxo[] = [];
@@ -282,7 +353,8 @@ export function problemasDoFluxo(f: FluxoCampanha, templates: TemplateDoFluxo[])
       tpl = templates.find((t) => t.nome === b.template_nome && t.idioma === b.template_idioma) ?? null;
     }
     if (b.tipo === "enviar_texto" && !respondeu)
-      p.push({ blocoId: id, mensagem: "Enviar texto só depois de uma resposta do contato (saída de botão, palavra ou outra resposta)." });
+      p.push({ blocoId: id, mensagem: "Enviar texto só depois de uma resposta." });
+    if (b.tipo === "enviar_arquivo" && !respondeu) p.push({ blocoId: id, mensagem: "Enviar arquivo só depois de uma resposta." });
     if (b.tipo === "aguardar_resposta") {
       if (!tpl) p.push({ blocoId: id, mensagem: "Aguardar resposta precisa de um template enviado antes dele." });
       else {
@@ -340,7 +412,52 @@ function problemaDoBloco(b: BlocoCampanha): string | null {
       return b.iaId ? null : "Escolha a IA.";
     case "registrar_conversao":
       return null;
+    case "condicao":
+      return problemaDaRegra(b.regra);
+    case "horario": {
+      // "Escolha ao menos um dia" é também o resumo vazio do bloco na tela. Dia
+      // repetido ou fora de 0 (domingo) a 6 (sábado): a tela não mostra os números.
+      if (!b.dias.length) return "Escolha ao menos um dia.";
+      if (b.dias.some((d) => !Number.isInteger(d) || d < 0 || d > 6) || new Set(b.dias).size !== b.dias.length) return "Escolha os dias do horário.";
+      const das = minutosDoHorario(b.das);
+      const ate = minutosDoHorario(b.ate);
+      if (das === null || ate === null) return "Os horários são no formato HH:MM.";
+      return ate > das ? null : "O fim da janela tem de ser depois do começo.";
+    }
+    case "enviar_arquivo":
+      if (!b.documentoId) return "Escolha o arquivo.";
+      return b.legenda.length > LIMITES_FLUXO.texto ? `A legenda tem até ${LIMITES_FLUXO.texto} caracteres.` : null;
+    case "limitar_passagem":
+      if (!Number.isInteger(b.quantidade) || b.quantidade < 1 || b.quantidade > LIMITES_FLUXO.passagemQuantidadeMaxima)
+        return "Passam de 1 a 10.000 contatos por intervalo.";
+      if (
+        !Number.isInteger(b.janela_segundos) ||
+        b.janela_segundos < LIMITES_FLUXO.passagemJanelaMinima ||
+        b.janela_segundos > LIMITES_FLUXO.passagemJanelaMaxima
+      )
+        return "O intervalo vai de 1 segundo a 30 dias.";
+      return null;
   }
+}
+
+function problemaDaRegra(r: RegraCondicao): string | null {
+  switch (r.tipo) {
+    case "tem_tag":
+      return r.tagId ? null : "Escolha a tag da condição.";
+    case "no_segmento":
+      return r.segmentoId ? null : "Escolha o segmento da condição.";
+    case "na_etapa":
+      return r.funilId && r.etapaId ? null : "Escolha o funil e a etapa da condição.";
+    case "campo":
+      if (!r.chave) return "Escolha o campo do contato.";
+      return r.operador === "preenchido" || r.valor.trim() ? null : "Escreva o valor que o campo deve ter.";
+  }
+}
+
+/** "HH:MM" (00:00 a 23:59) em minutos do dia; null fora do formato. A validação e o motor leem por aqui. */
+export function minutosDoHorario(hhmm: string): number | null {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
 /** Um bloco que fecha um ciclo, ou null. Qualquer ciclo, com ou sem espera (ver o cabeçalho). */
@@ -464,6 +581,10 @@ export type OpcoesDaCampanha = {
   usuarios: OpcaoDaCampanha[];
   ias: OpcaoDaCampanha[];
   instancias: OpcaoDaCampanha[];
+  /** Os arquivos da biblioteca que o "Enviar arquivo" manda: não arquivados, tipo "imagem", "pdf" ou "video". */
+  documentos: Array<{ id: string; nome: string; tipo: string }>;
+  /** Os campos personalizados do contato (campos_personalizados, entidade contato), para a "Condição" por campo. */
+  camposContato: Array<{ chave: string; rotulo: string }>;
   consequencias: ContextoDasConsequencias;
 };
 
@@ -504,10 +625,7 @@ export type DesenhoDaIa = {
 export function blocosQueMudaramDeTipo(antes: FluxoCampanha, depois: FluxoCampanha): ProblemaDoFluxo[] {
   return Object.entries(depois.blocos)
     .filter(([id, b]) => Object.hasOwn(antes.blocos, id) && antes.blocos[id].tipo !== b.tipo)
-    .map(([id, b]) => ({
-      blocoId: id,
-      mensagem: `Este bloco era “${CATALOGO_CAMPANHA[antes.blocos[id].tipo].rotulo}” e virou “${CATALOGO_CAMPANHA[b.tipo].rotulo}”: quem já está nele faria a coisa errada. Apague e crie um bloco novo.`,
-    }));
+    .map(([id]) => ({ blocoId: id, mensagem: "Não dá para trocar o tipo de um bloco em uso. Apague e crie outro." }));
 }
 
 /** O primeiro template do fluxo, pelo início: vai nas colunas template_nome/idioma da campanha (listas e relatórios). */

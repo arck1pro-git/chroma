@@ -4,6 +4,12 @@
 // canvas, as saídas de botão do "Aguardar resposta" acompanhando o template de
 // antes, organizar o desenho, ler o desenho que a IA manda, os problemas que a
 // tela mostra e a revisão que se lê antes de ativar. Sem React e sem rede.
+//
+// Os blocos de 2026-10-28 (Condição, Horário de envio, Enviar arquivo e
+// Permissão de passagem) entram nas mesmas peças: valor de partida, resumo do
+// cartão, altura estimada (a Condição tem uma linha por saída, Sim e Não, como
+// o Aguardar) e a revisão (o arquivo entre as mensagens; horário e passagem
+// entre o que acontece, porque mudam quando as mensagens saem).
 import { duracaoEmTexto } from "@/lib/automacoes/cadencia";
 import {
   CATALOGO_CAMPANHA,
@@ -21,6 +27,7 @@ import {
   type OpcoesDaCampanha,
   type Posicao,
   type ProblemaDoFluxo,
+  type RegraCondicao,
   type TipoBloco,
 } from "@/lib/campanhas-fluxo";
 import { consequenciasDoFluxo, problemasDosEnvios } from "@/lib/campanhas-fluxo-envios";
@@ -33,6 +40,7 @@ import {
   type TemplateWhatsApp,
   type ValoresDoEnvio,
 } from "@/lib/templates-whatsapp";
+import { diasEmTexto, janelaEmTexto } from "./tempo";
 
 export type Opcao = OpcaoDaCampanha;
 
@@ -42,9 +50,14 @@ export type Opcao = OpcaoDaCampanha;
  */
 export type OpcoesFluxo = OpcoesDaCampanha;
 
-/** Os números da campanha no ar, como o GET devolve. A chave de porSaida é `${blocoId}|${saidaId}`. */
+/**
+ * Os números da campanha no ar, como o GET da lista devolve. A chave de
+ * porSaida é `${blocoId}|${saidaId}`. Entregues e lidos (só no Enviar
+ * template) vêm da rota de métricas (MetricasDoBloco,
+ * lib/campanhas-metricas-tipos.ts), que a tela da campanha junta a estes.
+ */
 export type MetricasFluxo = {
-  porBloco: Record<string, { agora: number; passaram: number }>;
+  porBloco: Record<string, { agora: number; passaram: number; entregues?: number | null; lidos?: number | null }>;
   porSaida: Record<string, number>;
 };
 
@@ -97,6 +110,16 @@ export function blocoNovo(tipo: TipoBloco, o: OpcoesFluxo): BlocoCampanha {
       return { tipo, instanciaId: o.instancias.length === 1 ? o.instancias[0].id : "", usuarioIds: [], responsavelDoFunil: null, texto: "", proximo: null };
     case "ligar_ia":
       return { tipo, iaId: o.ias.length === 1 ? o.ias[0].id : "", proximo: null };
+    // Os de 2026-10-28. A condição nasce perguntando por tag, a mais comum; o
+    // horário, em dia útil comercial; a passagem, num ritmo que não assusta.
+    case "condicao":
+      return { tipo, regra: { tipo: "tem_tag", tagId: "" }, sim: null, nao: null };
+    case "horario":
+      return { tipo, dias: [1, 2, 3, 4, 5], das: "09:00", ate: "18:00", proximo: null };
+    case "enviar_arquivo":
+      return { tipo, documentoId: "", legenda: "", proximo: null };
+    case "limitar_passagem":
+      return { tipo, quantidade: 50, janela_segundos: 3600, proximo: null };
   }
 }
 
@@ -210,42 +233,55 @@ export function sincronizarBotoes(f: FluxoCampanha, templates: TemplateWhatsApp[
 
 // ── Organizar ───────────────────────────────────────────────────────────────
 
-// As medidas dos cartões de no-campanha.tsx (medidas no Chrome em 2026-10-28,
-// sem a faixa de números da campanha que já rodou). A entrada e a saída única
-// ficam na altura do título; no Aguardar, cada saída é uma linha de 28px
-// embaixo da cabeça, e "Sem resposta" vem 5px abaixo, depois do tracejado.
-// A estimada é o teto (resumo em duas linhas, balão no máximo do corte): o
-// canvas mede e reorganiza com a altura real logo depois.
-/** A entrada e a saída única do cartão (no-campanha.tsx desenha as alças aqui). */
-export const ALCA_DO_TITULO = 24;
-const ALTURA_DO_INICIO = 74;
-const ALTURA_DO_CARTAO = 72;
+// As medidas dos cartões de no-campanha.tsx, somadas das classes (redesenho de
+// 2026-10-28: 240px de largura, título de 14px e resumo de 12px; sem a faixa
+// de números da campanha que já rodou). A cabeça tem 12px em cima e embaixo,
+// o título 20px de linha, o resumo 16px por linha e o selo "depois de uma
+// resposta" 22px com a folga. A entrada e a saída única ficam na altura do
+// ícone; no Aguardar e na Condição, cada saída é uma linha de 28px embaixo da
+// cabeça (de resumo numa linha só), e "Sem resposta" vem 5px abaixo, depois do
+// tracejado. A estimada é o teto (resumo em duas linhas, balão no máximo do
+// corte): o canvas mede e reorganiza com a altura real logo depois.
+/** A entrada e a saída única do cartão (no-campanha.tsx desenha as alças aqui): o meio do ícone. */
+export const ALCA_DO_TITULO = 28;
+/** Título, segmentos em duas linhas e "até N contatos". */
+const ALTURA_DO_INICIO = 98;
+/** Título e resumo em duas linhas. */
+const ALTURA_DO_CARTAO = 80;
 /** Cabeçalho, 4 linhas de corpo, rodapé e duas fileiras de botões. */
-const ALTURA_DO_BALAO = 162;
-/** O texto livre não tem resumo: só a cabeça curta e o balão de 4 linhas. */
-const ALTURA_DO_TEXTO = 64;
-const CABECA_DO_AGUARDAR = 56;
+const ALTURA_DO_BALAO = 186;
+/** O texto livre: título e selo, e o balão de 4 linhas. */
+const ALTURA_DO_TEXTO = 168;
+/** O arquivo: título, nome e selo, e o balão com a mídia e 4 linhas de legenda. */
+const ALTURA_DO_ARQUIVO = 206;
+/** A borda de cima e a cabeça de resumo numa linha só. */
+const CABECA_EM_LINHAS = 63;
 const LINHA_DE_SAIDA = 28;
 
-/** Do começo de uma camada ao da próxima: o cartão (256) e o vão por onde as curvas passam. */
-export const COLUNA = 352;
+/** Do começo de uma camada ao da próxima: o cartão (240) e o vão por onde as curvas passam. */
+export const COLUNA = 336;
 const VAO = 40;
 /** O que separa o fluxo dos blocos soltos, que vão embaixo. */
 const VAO_DOS_SOLTOS = 120;
 
+/** Cartão com uma linha por saída, cada uma com a própria alça. */
+export const ehEmLinhas = (tipo: TipoBloco) => tipo === "aguardar_resposta" || tipo === "condicao";
+
 /** A altura de um cartão sem medir: o Aguardar cresce com as saídas, o template com o balão. */
 export function alturaEstimada(b: BlocoCampanha): number {
   if (b.tipo === "enviar_template") return ALTURA_DO_CARTAO + ALTURA_DO_BALAO;
-  if (b.tipo === "enviar_texto") return ALTURA_DO_CARTAO + ALTURA_DO_TEXTO;
-  if (b.tipo === "aguardar_resposta") return CABECA_DO_AGUARDAR + saidasDe(b).length * LINHA_DE_SAIDA + 14;
+  if (b.tipo === "enviar_texto") return ALTURA_DO_TEXTO;
+  if (b.tipo === "enviar_arquivo") return ALTURA_DO_ARQUIVO;
+  // Lista: borda e 4px em cima, as linhas, 4px e a borda embaixo; o tracejado do "Sem resposta", 5px.
+  if (ehEmLinhas(b.tipo)) return CABECA_EM_LINHAS + 5 + saidasDe(b).length * LINHA_DE_SAIDA + 5 + (b.tipo === "aguardar_resposta" ? 5 : 0);
   return ALTURA_DO_CARTAO;
 }
 
 /** Onde sai a ligação `i` do cartão, contando do topo. */
 function alturaDaSaida(b: BlocoCampanha, i: number): number {
-  if (b.tipo !== "aguardar_resposta") return ALCA_DO_TITULO;
-  const ultima = i === saidasDe(b).length - 1; // "Sem resposta", depois do tracejado
-  return CABECA_DO_AGUARDAR + 5 + i * LINHA_DE_SAIDA + LINHA_DE_SAIDA / 2 + (ultima ? 5 : 0);
+  if (!ehEmLinhas(b.tipo)) return ALCA_DO_TITULO;
+  const tracejado = b.tipo === "aguardar_resposta" && i === saidasDe(b).length - 1; // "Sem resposta"
+  return CABECA_EM_LINHAS + 5 + i * LINHA_DE_SAIDA + LINHA_DE_SAIDA / 2 + (tracejado ? 5 : 0);
 }
 
 /**
@@ -400,8 +436,12 @@ export function revisaoDoTexto(texto: string): string {
 
 /** A mensagem em partes, como o cartão do canvas desenha o balão do WhatsApp. */
 export type BalaoDaMensagem = {
-  /** O formato da mídia do cabeçalho (IMAGE, VIDEO…), quando não é texto. */
+  /** O formato da mídia (IMAGE, VIDEO…): a do cabeçalho do template, ou o arquivo enviado. */
   midia: string | null;
+  /** No Enviar arquivo, o que vai (Imagem, Documento…); null quando a mídia é o cabeçalho do template. */
+  anexo: string | null;
+  /** O nome do arquivo da biblioteca escolhido para o cabeçalho do template; null sem escolha. */
+  arquivo: string | null;
   cabecalho: string | null;
   corpo: string;
   rodape: string | null;
@@ -411,9 +451,10 @@ export type BalaoDaMensagem = {
 /**
  * O template como sai, em partes: cabeçalho e corpo com as variáveis trocadas
  * pela MESMA regra da revisão (textoParaRevisao, cada parte como o corpo de um
- * template que é só ela), o rodapé e os botões com o tipo, para o ícone.
+ * template que é só ela), o rodapé e os botões com o tipo, para o ícone. Com
+ * mídia no cabeçalho, o nome do arquivo escolhido (variaveis.midia).
  */
-export function balaoDoTemplate(t: ConteudoTemplate, v: ValoresDoEnvio): BalaoDaMensagem {
+export function balaoDoTemplate(t: ConteudoTemplate, v: ValoresDoEnvio, o: OpcoesFluxo): BalaoDaMensagem {
   const trocado = (texto: string, valores: string[]) =>
     textoParaRevisao(
       { cabecalho: null, corpo: texto, rodape: null, botoes: [], exemplosCabecalho: [], exemplosCorpo: [] },
@@ -421,6 +462,8 @@ export function balaoDoTemplate(t: ConteudoTemplate, v: ValoresDoEnvio): BalaoDa
     );
   return {
     midia: t.cabecalho && t.cabecalho.formato !== "TEXT" ? t.cabecalho.formato : null,
+    anexo: null,
+    arquivo: nomeDoArquivo(o, v.midia),
     cabecalho: t.cabecalho?.formato === "TEXT" && t.cabecalho.texto ? trocado(t.cabecalho.texto, v.cabecalho) : null,
     corpo: trocado(t.corpo, v.corpo),
     rodape: t.rodape?.trim() || null,
@@ -428,9 +471,63 @@ export function balaoDoTemplate(t: ConteudoTemplate, v: ValoresDoEnvio): BalaoDa
   };
 }
 
+/**
+ * O tipo do arquivo da campanha (tipoDoArquivoDaCampanha,
+ * lib/campanhas-fluxo-envios.ts: imagem, pdf ou vídeo) no formato da mídia do
+ * balão. Arquivo que sumiu da lista aparece como documento.
+ */
+const MIDIA_DO_DOCUMENTO: Record<string, { formato: string; rotulo: string }> = {
+  imagem: { formato: "IMAGE", rotulo: "Imagem" },
+  video: { formato: "VIDEO", rotulo: "Vídeo" },
+  pdf: { formato: "DOCUMENT", rotulo: "PDF" },
+};
+const ARQUIVO_SEM_TIPO = { formato: "DOCUMENT", rotulo: "Documento" };
+
+/** O arquivo como sai: a mídia e a legenda com as marcas trocadas; null sem arquivo escolhido. */
+export function balaoDoArquivo(b: Extract<BlocoCampanha, { tipo: "enviar_arquivo" }>, o: OpcoesFluxo): BalaoDaMensagem | null {
+  if (!b.documentoId) return null;
+  const doc = o.documentos.find((d) => d.id === b.documentoId);
+  const midia = (doc && MIDIA_DO_DOCUMENTO[doc.tipo]) || ARQUIVO_SEM_TIPO;
+  return { midia: midia.formato, anexo: midia.rotulo, arquivo: null, cabecalho: null, corpo: revisaoDoTexto(b.legenda), rodape: null, botoes: [] };
+}
+
+/** O nome do arquivo da biblioteca; "arquivo removido" se sumiu da lista; null sem escolha. */
+function nomeDoArquivo(o: OpcoesFluxo, id: string | null | undefined): string | null {
+  return id ? (o.documentos.find((d) => d.id === id)?.nome ?? "arquivo removido") : null;
+}
+
 function etapaLegivel(o: OpcoesFluxo, funilId: string, etapaId: string): string | null {
   if (!funilId || !etapaId) return null;
   return `${nomeDe(o.funis, funilId) ?? "funil removido"} › ${nomeDe(o.etapas, etapaId) ?? "etapa removida"}`;
+}
+
+const OPERADORES: Record<Extract<RegraCondicao, { tipo: "campo" }>["operador"], string> = {
+  preenchido: "preenchido",
+  igual: "é igual a",
+  contem: "contém",
+};
+
+/**
+ * A pergunta da Condição numa linha: "Tem a tag “Interessado”", "“Cidade”
+ * contém “Porto”". Sem escolha, a frase é a da pendência (problemaDaRegra,
+ * lib/campanhas-fluxo.ts), e o resumo fica âmbar no lugar de repeti-la.
+ */
+function resumoDaRegra(r: RegraCondicao, o: OpcoesFluxo): string {
+  switch (r.tipo) {
+    case "tem_tag":
+      return r.tagId ? `Tem a tag “${nomeDe(o.tags, r.tagId) ?? "tag removida"}”` : "Escolha a tag da condição";
+    case "no_segmento":
+      return r.segmentoId ? `Está em “${nomeDe(o.segmentos, r.segmentoId) ?? "segmento removido"}”` : "Escolha o segmento da condição";
+    case "na_etapa": {
+      const etapa = etapaLegivel(o, r.funilId, r.etapaId);
+      return etapa ? `Na etapa ${etapa}` : "Escolha o funil e a etapa da condição";
+    }
+    case "campo": {
+      if (!r.chave) return "Escolha o campo do contato";
+      const campo = `“${o.camposContato.find((c) => c.chave === r.chave)?.rotulo ?? r.chave}”`;
+      return r.operador === "preenchido" ? `${campo} preenchido` : `${campo} ${OPERADORES[r.operador]} “${r.valor}”`;
+    }
+  }
 }
 
 function destinatarios(b: Extract<BlocoCampanha, { tipo: "avisar_equipe" }>, o: OpcoesFluxo): string {
@@ -467,6 +564,14 @@ export function resumoDoBloco(b: BlocoCampanha, o: OpcoesFluxo): string {
       return destinatarios(b, o) || "Escolha quem recebe";
     case "ligar_ia":
       return b.iaId ? (nomeDe(o.ias, b.iaId) ?? "IA removida") : "Escolha a IA";
+    case "condicao":
+      return resumoDaRegra(b.regra, o);
+    case "horario":
+      return b.dias.length ? `${diasEmTexto(b.dias)} · ${b.das}–${b.ate}` : "Escolha ao menos um dia";
+    case "enviar_arquivo":
+      return nomeDoArquivo(o, b.documentoId) ?? "Escolha o arquivo";
+    case "limitar_passagem":
+      return `${quantosContatos(b.quantidade)} a cada ${janelaEmTexto(b.janela_segundos)}`;
   }
 }
 
@@ -492,7 +597,7 @@ export function blocosEmOrdem(f: FluxoCampanha): string[] {
 
 // ── Revisão antes de ativar ─────────────────────────────────────────────────
 
-export type MensagemDaRevisao = { blocoId: string; tipo: "enviar_template" | "enviar_texto"; titulo: string; texto: string };
+export type MensagemDaRevisao = { blocoId: string; tipo: "enviar_template" | "enviar_texto" | "enviar_arquivo"; titulo: string; texto: string };
 /** `consequencias`: o que o bloco causa fora dele (cadência da etapa, evento da Meta, outra campanha). */
 export type EfeitoDaRevisao = { blocoId: string; tipo: TipoBloco; texto: string; consequencias: string[] };
 
@@ -521,21 +626,35 @@ export function revisaoDoFluxo(
     switch (b.tipo) {
       case "enviar_template": {
         const t = acharTemplate(templates, b.template_nome, b.template_idioma);
+        // A mídia do cabeçalho não entra no texto da revisão (textoParaRevisao): vai no título.
+        const arquivo = nomeDoArquivo(o, b.variaveis.midia);
         mensagens.push({
           blocoId: id,
           tipo: b.tipo,
-          titulo: `Template ${b.template_nome}`,
+          titulo: arquivo ? `Template ${b.template_nome} · cabeçalho “${arquivo}”` : `Template ${b.template_nome}`,
           texto: t ? textoParaRevisao(t, b.variaveis) : "Template não encontrado nesta conta.",
         });
         break;
       }
       case "enviar_texto":
-        mensagens.push({ blocoId: id, tipo: b.tipo, titulo: "Texto livre (só com a janela de 24 h aberta)", texto: revisaoDoTexto(b.texto) });
+        mensagens.push({ blocoId: id, tipo: b.tipo, titulo: "Texto livre · depois de uma resposta", texto: revisaoDoTexto(b.texto) });
         break;
+      case "enviar_arquivo":
+        mensagens.push({
+          blocoId: id,
+          tipo: b.tipo,
+          titulo: `Arquivo “${resumoDoBloco(b, o)}” · depois de uma resposta`,
+          texto: revisaoDoTexto(b.legenda) || "Sem legenda.",
+        });
+        break;
+      // O horário e a passagem não fazem nada no CRM, mas mudam QUANDO as
+      // mensagens saem: quem ativa precisa ler o ritmo antes.
       case "mudar_tag":
       case "mudar_segmento":
       case "registrar_conversao":
       case "ligar_ia":
+      case "horario":
+      case "limitar_passagem":
         efeito(`${CATALOGO_CAMPANHA[b.tipo].rotulo}: ${resumoDoBloco(b, o)}`);
         break;
       case "criar_oportunidade":
@@ -549,6 +668,7 @@ export function revisaoDoFluxo(
         break;
       case "aguardar_resposta":
       case "esperar":
+      case "condicao":
         break;
     }
   }

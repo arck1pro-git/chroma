@@ -23,41 +23,32 @@
 import { revalidatePath } from "next/cache";
 import { sql } from "@/lib/db";
 import { exigirModulo } from "@/lib/auth/dal";
-import { enviarMidia, instanciaPorNumero } from "@/lib/uazapi";
-import { comCaminho, lerArquivo } from "@/lib/documentos";
 import { soDigitos } from "@/lib/telefone";
 import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 import { canalOficial, fim8, listarCanais } from "@/lib/canais";
-import {
-  enviarMidiaMeta,
-  enviarTemplateMeta,
-  subirMidiaMeta,
-  templatesMeta,
-  type TemplateMeta,
-  type TipoMidiaMeta,
-} from "@/lib/meta";
-import { textoDoTemplate } from "@/lib/whatsapp-oficial";
+import { enviarTemplateMeta, templatesMeta, type TemplateMeta } from "@/lib/meta";
+import { prepararMidiaDoCabecalho, textoDoTemplate, type MidiaDoCabecalhoPronta } from "@/lib/whatsapp-oficial";
 import {
   componentesDoEnvio,
   dadosDoContato,
   lerTemplate,
   linksVariaveisDe,
+  midiaDoCabecalho,
   motivoSemEnvio,
   parametroLimpo,
+  problemaDaMidia,
   problemaDoLinkVariavel,
   variaveisDoTemplate,
   type DadosDoContato,
 } from "@/lib/templates-whatsapp";
 import {
-  canalDeEnvio,
   confirmarEnvio,
   destinoDa,
   ehOficial,
+  enviarDocumentoNaConversa,
   enviarTextoNaConversa,
-  janelaAberta,
   marcarErro,
   motivo,
-  recusaDoDestino,
   telefoneOficial,
 } from "@/lib/conversa-envio";
 import { gravarIaDoContato } from "@/lib/ia/contato-ia";
@@ -98,22 +89,10 @@ export async function enviarMensagem(atendimentoId: string, texto: string): Prom
 
 // ── Documento da biblioteca ─────────────────────────────────────────────────
 
-// O que a Cloud API aceita como imagem é só JPEG e PNG; o resto vai como
-// documento em vez de ser recusado.
-function tipoParaMeta(tipo: string, mime: string): TipoMidiaMeta {
-  if (tipo === "imagem") return /^image\/(jpe?g|png)$/i.test(mime) ? "image" : "document";
-  if (tipo === "video") return /^video\/(mp4|3gpp)$/i.test(mime) ? "video" : "document";
-  if (tipo === "audio") return "audio";
-  return "document";
-}
-
 /**
- * Manda um documento da biblioteca. Mesmo ciclo do texto.
- *
- * O ARQUIVO NÃO É COPIADO para a conversa: a mensagem aponta para a linha em
- * `documentos` (documento_id), e o balão pede o arquivo por /api/midia/<id da
- * mensagem>. Mandar a mesma tabela de preços para 300 contatos guarda um
- * arquivo, não 300.
+ * Manda um documento da biblioteca. Mesmo ciclo do texto, em
+ * lib/conversa-envio.ts (enviarDocumentoNaConversa), que o bloco "Enviar
+ * arquivo" das campanhas também usa.
  */
 export async function enviarDocumento(
   atendimentoId: string,
@@ -121,71 +100,11 @@ export async function enviarDocumento(
   legenda: string,
 ): Promise<Resultado> {
   const { usuario } = await exigirModulo("chat", "criar");
-
-  const doc = ehUuid(documentoId) ? await comCaminho(documentoId) : null;
-  if (!doc) return { erro: "Documento não encontrado na biblioteca." };
-  const texto = legenda.trim().slice(0, 1024);
-
-  const d = await destinoDa(atendimentoId);
-  if (!d) return { erro: "Conversa não encontrada." };
-  // Canal exaustivo: no direct do Instagram o CRM manda só texto, e canal
-  // desconhecido é recusa (nunca "senão é uazapi").
-  const canal = canalDeEnvio(d);
-  if (canal === "instagram") return { erro: "No direct do Instagram o CRM manda só texto." };
-  const recusa = recusaDoDestino(d);
-  if (!canal || recusa) return { erro: recusa ?? "O CRM não envia mensagem pelo canal desta conversa." };
-  if (ehOficial(d) && !janelaAberta(d)) {
-    return { erro: "A janela de 24h está fechada. Envie um template antes do anexo." };
-  }
-  const whatsapp = soDigitos(d.whatsapp ?? "");
-
-  const [msg] = await sql`
-    INSERT INTO mensagens
-      (atendimento_id, origem, autor_id, texto, status, enviada_por,
-       tipo, documento_id, midia_estado, midia_mime, midia_nome, midia_tamanho)
-    VALUES
-      (${atendimentoId}, 'agente', ${usuario.id}, ${texto}, 'pendente', 'crm',
-       ${doc.tipo}, ${doc.id}, 'salva', ${doc.mime}, ${doc.arquivoNome}, ${doc.tamanho})
-    RETURNING id`;
-
-  try {
-    const bytes = await lerArquivo(doc.caminho);
-    let idExterno: string | null;
-    switch (canal) {
-      case "whatsapp_oficial": {
-        const telefoneId = await telefoneOficial(d);
-        const midiaId = await subirMidiaMeta(telefoneId, bytes, doc.mime, doc.arquivoNome);
-        const r = await enviarMidiaMeta(telefoneId, whatsapp, tipoParaMeta(doc.tipo, doc.mime), midiaId, {
-          legenda: texto,
-          arquivoNome: doc.arquivoNome,
-        });
-        idExterno = r.messages?.[0]?.id ?? null;
-        break;
-      }
-      case "whatsapp": {
-        const instancia = await instanciaPorNumero(d.numero_instancia ?? null);
-        // Base64 e não URL: ver `paraEnvio` em lib/documentos.ts.
-        const r = await enviarMidia(
-          whatsapp,
-          bytes.toString("base64"),
-          { tipo: doc.tipo, texto, arquivoNome: doc.arquivoNome, mime: doc.mime },
-          instancia,
-          msg.id,
-        );
-        idExterno = r.messageid;
-        break;
-      }
-    }
-    await confirmarEnvio(msg.id, idExterno);
-    await assumirAoResponder(atendimentoId, usuario.id);
-  } catch (e) {
-    await marcarErro(msg.id, e);
-    revalidatePath("/chat");
-    return { erro: motivo(e), registrada: true };
-  }
-
+  const r = await enviarDocumentoNaConversa({ atendimentoId, documentoId, legenda, autorId: usuario.id, enviadaPor: "crm" });
+  if (!r.erro) await assumirAoResponder(atendimentoId, usuario.id);
+  if (r.erro && !r.registrada) return { erro: r.erro };
   revalidatePath("/chat");
-  return {};
+  return r.erro ? { erro: r.erro, registrada: true } : {};
 }
 
 // ── Templates (API oficial) ─────────────────────────────────────────────────
@@ -207,6 +126,7 @@ function paraTemplateChat(meta: TemplateMeta): TemplateChat {
     variaveisCabecalho: n.cabecalho,
     variaveisCorpo: n.corpo,
     linksVariaveis: linksVariaveisDe(t),
+    midia: midiaDoCabecalho(t),
     bloqueio: motivoSemEnvio(t),
   };
 }
@@ -247,12 +167,18 @@ export async function listarTemplates(
  * .linksVariaveis), o valor que o atendente vê: sem marca {{…}} e pela mesma
  * regra da campanha (problemaDoLinkVariavel). Resposta rápida não leva payload
  * no chat: quem clica cai na conversa como mensagem comum.
+ *
+ * `midia` é o id do documento da biblioteca do cabeçalho de imagem, vídeo ou
+ * documento (TemplateChat.midia), ou null. O servidor confere o documento
+ * (tipo, formato, tamanho) e sobe para a Meta ANTES de gravar a linha, como a
+ * voz da IA: sem o arquivo não há o que mandar. A linha aponta para o
+ * documento (documento_id), e o balão mostra o arquivo.
  */
 export async function enviarTemplate(
   atendimentoId: string,
   nome: string,
   idioma: string,
-  valores: { cabecalho: string[]; corpo: string[]; botoes?: string[] },
+  valores: { cabecalho: string[]; corpo: string[]; botoes?: string[]; midia?: string | null },
 ): Promise<Resultado> {
   const { usuario } = await exigirModulo("chat", "criar");
   const d = await destinoDa(atendimentoId);
@@ -292,7 +218,22 @@ export async function enviarTemplate(
     links.push({ indice: l.indice, valor });
   }
 
-  const componentes = componentesDoEnvio({ cabecalho, corpo }, { links });
+  const daMidia = problemaDaMidia(template.midia, valores.midia);
+  if (daMidia) return { erro: daMidia };
+  let midia: MidiaDoCabecalhoPronta | null = null;
+  if (template.midia) {
+    let telefoneId: string;
+    try {
+      telefoneId = await telefoneOficial(d);
+    } catch (e) {
+      return { erro: motivo(e) };
+    }
+    const preparada = await prepararMidiaDoCabecalho({ telefoneId, para: d.whatsapp, pede: template.midia, documentoId: valores.midia });
+    if ("erro" in preparada) return { erro: preparada.erro };
+    midia = preparada.midia;
+  }
+
+  const componentes = componentesDoEnvio({ cabecalho, corpo }, { links }, midia);
 
   const texto = textoDoTemplate(
     [
@@ -304,8 +245,13 @@ export async function enviarTemplate(
   );
 
   const [msg] = await sql`
-    INSERT INTO mensagens (atendimento_id, origem, autor_id, texto, status, enviada_por)
-    VALUES (${atendimentoId}, 'agente', ${usuario.id}, ${texto}, 'pendente', 'crm')
+    INSERT INTO mensagens
+      (atendimento_id, origem, autor_id, texto, status, enviada_por,
+       tipo, documento_id, midia_estado, midia_mime, midia_nome, midia_tamanho)
+    VALUES
+      (${atendimentoId}, 'agente', ${usuario.id}, ${texto}, 'pendente', 'crm',
+       ${midia?.tipo ?? "texto"}, ${midia?.documentoId ?? null}, ${midia ? "salva" : "ausente"},
+       ${midia?.mime ?? null}, ${midia?.arquivoNome ?? null}, ${midia?.tamanho ?? null})
     RETURNING id`;
 
   try {

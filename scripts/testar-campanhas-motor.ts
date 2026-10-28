@@ -26,14 +26,22 @@
 // quem entrou na pausa e confere a definição; inscrição sem teto (300
 // contatos); id aposentado; IA já escolhida não é trocada; resposta adiantada.
 //
+// Dos blocos de 2026-10-28: a conferência (permissão de Documentos, ids da
+// Condição, campo do contato, arquivo ativo e de tipo certo) e as opções; a
+// Condição (tag, segmento, etapa, campo) com a saída no evento; o Horário de
+// envio (a próxima abertura em Brasília, puro, e a espera no motor); a
+// Permissão de passagem (janela deslizante, ordem de chegada, duas rodadas
+// juntas, vazão por minuto); o Enviar arquivo pelo caminho do chat, com um
+// Storage falso.
+//
 // TRAVA DE AMBIENTE: com WHATSAPP_SO_PARA ativa (o .env do dev), os números de
 // teste não passam — e o teste NÃO a contorna. Nesse caso o envio do template
 // é conferido pela recusa (a execução falha com "bloqueado" e nada chega à
 // Graph) e os avisos pela contagem de tentativas por pessoa. As respostas usam
 // execuções semeadas no estado de quem já recebeu o template.
 //
-// MARCA: contatos com whatsapp 5500900771…, campanhas, tags, segmentos, IAs e
-// usuários com nome "seed-teste-campanha…". Tudo é apagado no finally, só pela
+// MARCA: contatos com whatsapp 5500900771…, campanhas, tags, segmentos, IAs,
+// documentos e usuários com nome "seed-teste-campanha…". Tudo é apagado no finally, só pela
 // marca. Não roda se houver no DEV campanha ativa de verdade com aviso pendente
 // ou execução presa (as rodadas globais mexeriam nelas).
 //
@@ -58,6 +66,8 @@ import {
   retomarCampanha,
   salvarEdicao,
 } from "@/lib/campanhas-whatsapp";
+import { FOLGA_PASSAGEM_S, janelaDaPassagem, proximaAbertura } from "@/lib/campanhas-whatsapp-controle";
+import { lerOpcoesDaCampanha } from "@/lib/campanhas-opcoes";
 import { conferirFluxo, faltasDePermissao, lerDefinicao, lerFluxoDaEntrada } from "@/lib/campanhas-fluxo-entrada";
 import { campanhaFalaAntesDeEsperar, iaResponde } from "@/lib/campanhas-fluxo-envios";
 import { NO_INICIO, VERSAO_FLUXO, type BlocoCampanha, type FluxoCampanha } from "@/lib/campanhas-fluxo";
@@ -92,6 +102,15 @@ const TEMPLATE = {
   ],
 };
 
+/** Template aprovado com cabeçalho de imagem: o arquivo vem de variaveis.midia. */
+const TEMPLATE_FOTO = {
+  ...TEMPLATE,
+  id: "9902",
+  name: "convite_foto",
+  components: [{ type: "HEADER", format: "IMAGE", example: { header_handle: ["https://exemplo.invalid/foto.jpg"] } }, ...TEMPLATE.components],
+};
+
+const STORAGE_FALSO = "armazenamento-falso.invalid";
 const graph: Array<{ metodo: string; caminho: string; corpo: Record<string, unknown> | null }> = [];
 const uazapi: Array<{ corpo: Record<string, unknown> }> = [];
 let hostUazapi = "";
@@ -107,12 +126,16 @@ async function fetchFalso(entrada: RequestInfo | URL, init?: RequestInit): Promi
     const caminho = url.pathname.replace(/^\/v[\d.]+/, "");
     graph.push({ metodo, caminho, corpo });
     if (metodo === "GET" && caminho === `/${WABA}/message_templates`)
-      return Response.json({ data: [TEMPLATE, { ...TEMPLATE, id: "9901", name: "convite_pendente", status: "PENDING" }] });
+      return Response.json({ data: [TEMPLATE, { ...TEMPLATE, id: "9901", name: "convite_pendente", status: "PENDING" }, TEMPLATE_FOTO] });
     if (metodo === "GET" && caminho === `/${WABA}/phone_numbers`)
       return Response.json({ data: [{ id: TELEFONE_ID, display_phone_number: TELEFONE_EXIBICAO, verified_name: "Teste" }] });
     if (metodo === "POST" && caminho === `/${TELEFONE_ID}/messages`) return Response.json({ messages: [{ id: `wamid.TESTE.${++wamids}` }] });
+    // O upload do arquivo do cabeçalho de mídia (prepararMidiaDoCabecalho) e do "Enviar arquivo".
+    if (metodo === "POST" && caminho === `/${TELEFONE_ID}/media`) return Response.json({ id: "midia-falsa" });
     return Response.json({ error: { message: `graph falsa não conhece ${metodo} ${caminho}` } }, { status: 404 });
   }
+  // O Storage falso: o "Enviar arquivo" baixa os bytes do documento antes de subir à Meta.
+  if (url.hostname === STORAGE_FALSO && metodo === "GET") return new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]));
   if (hostUazapi && url.host === hostUazapi) {
     uazapi.push({ corpo: corpo ?? {} });
     return Response.json({ messageid: `uaz-${uazapi.length}` });
@@ -227,6 +250,8 @@ async function limpar() {
   await sql`DELETE FROM oportunidades WHERE contato_id IN (SELECT id FROM contatos WHERE whatsapp LIKE ${PREFIXO + "%"})`;
   await sql`DELETE FROM campanhas_whatsapp WHERE nome LIKE ${MARCA + "%"}`;
   await sql`DELETE FROM contatos WHERE whatsapp LIKE ${PREFIXO + "%"}`;
+  // Depois dos contatos: a mensagem com o arquivo prende o documento (ON DELETE RESTRICT) e sai com a conversa.
+  await sql`DELETE FROM documentos WHERE nome LIKE ${MARCA + "%"}`;
   await sql`DELETE FROM tags WHERE nome LIKE ${MARCA + "%"}`;
   await sql`DELETE FROM segmentos WHERE nome LIKE ${MARCA + "%"}`;
   await sql`DELETE FROM usuarios WHERE nome LIKE ${MARCA + "%"}`;
@@ -1056,12 +1081,390 @@ async function parteRespostaAdiantada(ids: Ids) {
   passo("resposta que chegou enquanto a execução enviava vale na entrada do Aguardar, uma vez só; a conversa de antes da rodada, não");
 }
 
+// ── Blocos de 2026-10-28: Condição, Horário, Permissão de passagem, Enviar arquivo ──
+
+type Docs = { pdf: string; arquivado: string; audio: string; foto: string; webp: string };
+
+async function documentosDeTeste(): Promise<Docs> {
+  const doc = async (nome: string, tipo: string, mime: string, arquivado = false) =>
+    (await sql`INSERT INTO documentos (nome, arquivo_nome, caminho, mime, tamanho, tipo, arquivado)
+               VALUES (${`${MARCA} ${nome}`}, ${nome}, ${`${MARCA}/${nome}`}, ${mime}, 4, ${tipo}, ${arquivado}) RETURNING id`)[0].id as string;
+  return {
+    pdf: await doc("tabela.pdf", "documento", "application/pdf"),
+    arquivado: await doc("velho.pdf", "documento", "application/pdf", true),
+    audio: await doc("audio.mp3", "audio", "audio/mpeg"),
+    foto: await doc("foto.jpg", "imagem", "image/jpeg"),
+    webp: await doc("figura.webp", "imagem", "image/webp"),
+  };
+}
+
+/** O arquivo do cabeçalho de mídia do "Enviar template" (variaveis.midia, 2026-10-28): a forma e a conferência. */
+async function parteMidiaDoCabecalho(docs: Docs) {
+  const comMidia = (midia: unknown, template = "convite_foto") =>
+    fluxo("envio", {
+      envio: {
+        tipo: "enviar_template",
+        template_nome: template,
+        template_idioma: "pt_BR",
+        variaveis: { cabecalho: [], corpo: ["{{primeiro_nome}}"], midia } as never,
+        proximo: null,
+      },
+    });
+  assert.equal(lerFluxoDaEntrada(comMidia(docs.foto)).ok, true, "midia com id de documento");
+  assert.equal(lerFluxoDaEntrada(comMidia(null)).ok, true, "midia nula");
+  assert.equal(lerFluxoDaEntrada(comMidia(undefined)).ok, true, "sem midia, como antes");
+  assert.equal(lerFluxoDaEntrada(comMidia("nao-e-uuid")).ok, false, "midia que não é uuid");
+  const lido = lerFluxoDaEntrada(comMidia(docs.foto));
+  assert.ok(lido.ok && (lido.fluxo.blocos.envio as { variaveis: Record<string, unknown> }).variaveis.midia === docs.foto, "a forma não perde a midia");
+
+  const doCabecalho = async (midia: string) =>
+    (await conferirFluxo({ fluxo: comMidia(midia), wabaId: WABA, usuario: TUDO_COM_DOCUMENTOS }))
+      .map((p) => `${p.blocoId}: ${p.mensagem}`)
+      .filter((m) => /arquivo do cabeçalho|O cabeçalho deste template pede/.test(m));
+  assert.deepEqual(await doCabecalho(docs.foto), [], "imagem no cabeçalho de imagem");
+  assert.deepEqual(await doCabecalho(docs.pdf), ["envio: O cabeçalho deste template pede uma imagem JPG ou PNG de até 5 MB."]);
+  assert.deepEqual(await doCabecalho(docs.arquivado), ["envio: O arquivo do cabeçalho foi arquivado na biblioteca."]);
+  assert.deepEqual(await doCabecalho(FANTASMA), ["envio: O arquivo do cabeçalho não está mais na biblioteca."]);
+  assert.deepEqual(await doCabecalho(docs.webp), ["envio: O cabeçalho deste template pede uma imagem JPG ou PNG de até 5 MB."], "webp não vai no cabeçalho");
+  passo("mídia do cabeçalho: a forma aceita midia (uuid ou null); a conferência quer o arquivo existente, ativo, do tipo, formato e tamanho do cabeçalho");
+}
+
+/** O envio do template de imagem com o arquivo certo: sobe a mídia e manda o cabeçalho com o id dela. */
+async function parteTemplateComImagem(docs: Docs, travaAtiva: boolean) {
+  const f = fluxo("envio", {
+    envio: {
+      tipo: "enviar_template",
+      template_nome: "convite_foto",
+      template_idioma: "pt_BR",
+      variaveis: { cabecalho: [], corpo: ["{{primeiro_nome}}"], midia: docs.foto },
+      proximo: "aguardar",
+    },
+    aguardar: { tipo: "aguardar_resposta", prazo_minutos: 60, botoes: {}, palavras: [], outra: null, sem_resposta: null },
+  });
+  assert.deepEqual(await conferirFluxo({ fluxo: f, wabaId: WABA, usuario: TUDO }), [], "com a imagem certa, passa na conferência");
+  const c = await campanha("template com imagem", f);
+  const id = await inscrever(c, (await contato()).id);
+  const uploads = () => graph.filter((g) => g.metodo === "POST" && g.caminho === `/${TELEFONE_ID}/media`).length;
+  const [antesUpload, antesEnvio] = [uploads(), enviosMeta().length];
+  await processarFila(5, c);
+  const e = await execucao(id);
+  if (travaAtiva) {
+    assert.equal(e.estado, "falhou");
+    assert.match(e.erro ?? "", /bloqueado/);
+    assert.deepEqual([uploads(), enviosMeta().length], [antesUpload, antesEnvio], "a trava recusa antes de subir o arquivo e de enviar");
+    passo("template de imagem: a trava de ambiente recusa antes de subir o arquivo (envio real não exercitado)");
+    return;
+  }
+  assert.equal(e.estado, "aguardando_resposta");
+  assert.equal(uploads() - antesUpload, 1, "o arquivo subiu uma vez");
+  const componentes = (enviosMeta().at(-1)!.corpo?.template as { components: Array<Record<string, unknown>> }).components;
+  assert.deepEqual(componentes[0], { type: "header", parameters: [{ type: "image", image: { id: "midia-falsa" } }] });
+  passo("template de imagem: o arquivo sobe à Meta e o cabeçalho vai com o id da mídia");
+}
+
+const passagem = (quantidade: number, janela_segundos: number, proximo: string | null = "c"): BlocoCampanha => ({
+  tipo: "limitar_passagem",
+  quantidade,
+  janela_segundos,
+  proximo,
+});
+const horario = (dias: number[], das: string, ate: string, proximo: string | null = "c"): BlocoCampanha => ({ tipo: "horario", dias, das, ate, proximo });
+const condicao = (regra: Extract<BlocoCampanha, { tipo: "condicao" }>["regra"], sim: string | null, nao: string | null): BlocoCampanha => ({
+  tipo: "condicao",
+  regra,
+  sim,
+  nao,
+});
+const caminho = async (id: string) =>
+  (await eventos(id)).filter((x) => x.tipo === "bloco").map((x) => `${x.detalhe.bloco}:${x.detalhe.saida ?? "-"}`);
+
+function parteHorarioPuro() {
+  const util = [1, 2, 3, 4, 5];
+  const em = (iso: string, dias: number[], das: string, ate: string) => proximaAbertura(new Date(iso), dias, das, ate)?.toISOString() ?? null;
+  assert.equal(new Date(Date.UTC(2026, 9, 27)).getUTCDay(), 2, "27/10/2026 é terça");
+  // Brasília é UTC−3.
+  assert.equal(em("2026-10-27T13:00:00Z", util, "08:00", "18:00"), null, "terça 10h: dentro");
+  assert.equal(em("2026-10-27T11:00:00Z", util, "08:00", "18:00"), null, "terça 8h em ponto: dentro");
+  assert.equal(em("2026-10-27T10:30:00Z", util, "08:00", "18:00"), "2026-10-27T11:00:00.000Z", "terça 7h30: abre às 8h de hoje");
+  assert.equal(em("2026-10-27T21:00:00Z", util, "08:00", "18:00"), "2026-10-28T11:00:00.000Z", "terça 18h em ponto: fora, abre quarta 8h");
+  assert.equal(em("2026-10-30T22:00:00Z", util, "08:00", "18:00"), "2026-11-02T11:00:00.000Z", "sexta 19h: pula o fim de semana");
+  assert.equal(em("2026-10-31T15:00:00Z", util, "08:00", "18:00"), "2026-11-02T11:00:00.000Z", "sábado: segunda 8h");
+  assert.equal(em("2026-11-01T02:59:00Z", [0], "00:00", "01:00"), "2026-11-01T03:00:00.000Z", "sábado 23h59 → domingo 0h (virada da semana)");
+  assert.equal(em("2026-11-01T15:00:00Z", [0], "08:00", "12:00"), "2026-11-08T11:00:00.000Z", "domingo depois da janela: o domingo seguinte");
+  assert.equal(em("2026-10-28T01:00:00Z", [2], "21:00", "23:00"), null, "terça 22h em Brasília, já quarta em UTC: dentro");
+  assert.throws(() => proximaAbertura(new Date(), [], "08:00", "18:00"), /inválido/);
+  passo("horário (puro): janela em Brasília, próxima abertura, virada do dia e da semana");
+}
+
+function partePassagemPura() {
+  assert.deepEqual(janelaDaPassagem(5, 10), { vagas: 30, segundos: 60 - FOLGA_PASSAGEM_S }, "5 a cada 10 s = até 30 por minuto, na rodada");
+  assert.deepEqual(janelaDaPassagem(1, 20), { vagas: 3, segundos: 60 - FOLGA_PASSAGEM_S });
+  assert.deepEqual(janelaDaPassagem(7, 45), { vagas: 9, segundos: 60 - FOLGA_PASSAGEM_S }, "para baixo: 7 × 60 / 45 = 9,3");
+  assert.deepEqual(janelaDaPassagem(10, 60), { vagas: 10, segundos: 60 - FOLGA_PASSAGEM_S });
+  assert.deepEqual(janelaDaPassagem(100, 86_400), { vagas: 100, segundos: 86_400 - FOLGA_PASSAGEM_S });
+  passo("permissão de passagem (puro): janela abaixo de 60 s vira a mesma taxa por minuto; folga de relógio");
+}
+
+const TUDO_COM_DOCUMENTOS = {
+  modulos: new Map([["inicio", "todos"], ["chat", "todos"], ["contatos", "todos"], ["campanhas", "todos"], ["documentos", "todos"]]),
+  permissoes: Object.fromEntries(["inicio", "chat", "contatos", "campanhas"].map((m) => [m, { criar: true, editar: true, excluir: true }])),
+} as never;
+
+async function parteConferenciaNovos(ids: Ids, docs: Docs) {
+  const comResposta = (blocos: Record<string, BlocoCampanha>, primeiro: string) =>
+    fluxo("envio", {
+      envio: envio("a"),
+      a: { tipo: "aguardar_resposta", prazo_minutos: 60, botoes: {}, palavras: [], outra: primeiro, sem_resposta: null },
+      ...blocos,
+    });
+  const confere = (f: FluxoCampanha, usuario: never) =>
+    conferirFluxo({ fluxo: f, wabaId: WABA, usuario }).then((p) => p.map((x) => `${x.blocoId ?? "-"}: ${x.mensagem}`));
+  const comArquivo = comResposta({ x: { tipo: "enviar_arquivo", documentoId: docs.pdf, legenda: "", proximo: null } }, "x");
+  assert.deepEqual(await confere(comArquivo, TUDO), ["-: Você não tem permissão para enviar arquivo da biblioteca: tire esse bloco ou peça a quem tem."]);
+  assert.deepEqual(await confere(comArquivo, TUDO_COM_DOCUMENTOS), [], "basta ver o módulo Documentos");
+
+  const outroFunil = (await sql`SELECT id FROM etapas WHERE funil_id <> ${ids.funil}::uuid LIMIT 1`)[0]?.id ?? FANTASMA;
+  const [campoReal] = await sql`SELECT chave FROM campos_personalizados WHERE entidade = 'contato' LIMIT 1`;
+  const arquivo = (documentoId: string, proximo: string | null): BlocoCampanha => ({ tipo: "enviar_arquivo", documentoId, legenda: "Oi {{primeiro_nome}}", proximo });
+  const problemas = await confere(
+    comResposta(
+      {
+        c1: condicao({ tipo: "tem_tag", tagId: FANTASMA }, "c2", null),
+        c2: condicao({ tipo: "na_etapa", funilId: ids.funil, etapaId: outroFunil }, "c3", null),
+        c3: condicao({ tipo: "campo", chave: "nao_existe_teste", operador: "preenchido", valor: "" }, "c4", null),
+        c4: condicao({ tipo: "no_segmento", segmentoId: FANTASMA }, "c5", null),
+        c5: campoReal ? condicao({ tipo: "campo", chave: campoReal.chave, operador: "contem", valor: "x" }, "a1", null) : conversao("a1"),
+        a1: arquivo(docs.arquivado, "a2"),
+        a2: arquivo(docs.audio, "a3"),
+        a3: arquivo(FANTASMA, "a4"),
+        a4: arquivo(docs.pdf, "a5"),
+        a5: arquivo(docs.webp, "h"),
+        h: horario([1, 2, 3, 4, 5], "08:00", "18:00", "p"),
+        p: passagem(10, 3600, null),
+      },
+      "c1",
+    ),
+    TUDO_COM_DOCUMENTOS,
+  );
+  assert.deepEqual(problemas, [
+    "c1: A tag da condição não existe mais.",
+    "c2: A etapa não é deste funil.",
+    "c3: Esse campo não é um campo personalizado do contato.",
+    "c4: O segmento da condição não existe mais.",
+    "a1: Esse arquivo foi arquivado na biblioteca.",
+    "a2: Pela campanha vão só imagem, PDF ou vídeo.",
+    "a3: Esse arquivo não está mais na biblioteca.",
+    "a5: Pela campanha vai uma imagem JPG ou PNG de até 5 MB.",
+  ]);
+
+  const opcoes = await lerOpcoesDaCampanha();
+  assert.ok(opcoes.documentos.some((d) => d.id === docs.pdf && d.tipo === "pdf" && d.nome === `${MARCA} tabela.pdf`), "o PDF ativo está nas opções");
+  assert.ok(!opcoes.documentos.some((d) => [docs.arquivado, docs.audio, docs.webp].includes(d.id)), "arquivado, áudio e webp, não");
+  assert.ok(opcoes.documentos.every((d) => Object.keys(d).sort().join() === "id,nome,tipo"), "só id, nome e tipo");
+  assert.ok(opcoes.camposContato.every((c) => Object.keys(c).sort().join() === "chave,rotulo"));
+  if (campoReal) assert.ok(opcoes.camposContato.some((c) => c.chave === campoReal.chave));
+  passo(`conferência dos blocos novos: permissão de Documentos, ids da condição, campo do contato, arquivo ativo e de tipo certo; opções${campoReal ? "" : " (o DEV não tem campo personalizado de contato: só o caso negativo)"}`);
+}
+
+async function parteCondicao(ids: Ids) {
+  const f = fluxo("c1", {
+    c1: condicao({ tipo: "tem_tag", tagId: ids.tagA }, "c2", "n1"),
+    c2: condicao({ tipo: "no_segmento", segmentoId: ids.segmento }, "c3", "n2"),
+    c3: condicao({ tipo: "na_etapa", funilId: ids.funil, etapaId: ids.etapa1 }, "c4", "n3"),
+    c4: condicao({ tipo: "campo", chave: "profissao_teste", operador: "igual", valor: "MEDICO" }, "c5", "n4"),
+    c5: condicao({ tipo: "campo", chave: "profissao_teste", operador: "contem", valor: "édic" }, "c6", "n5"),
+    c6: condicao({ tipo: "campo", chave: "cidade_teste", operador: "preenchido", valor: "" }, "fim", "n6"),
+    fim: tag(ids.tagB, null),
+    n1: conversao(),
+    n2: conversao(),
+    n3: conversao(),
+    n4: conversao(),
+    n5: conversao(),
+    n6: conversao(),
+  });
+  const c = await campanha("condicao", f);
+  type Op = { etapa: string; status: "aberta" | "perdida" };
+  const pessoa = async (o: { tag?: boolean; segmento?: boolean; ops?: Op[]; campos?: Record<string, string> }) => {
+    const p = await contato();
+    if (o.tag) await sql`INSERT INTO contato_tags (contato_id, tag_id) VALUES (${p.id}::uuid, ${ids.tagA}::uuid)`;
+    if (o.segmento) await sql`INSERT INTO contato_segmentos (contato_id, segmento_id) VALUES (${p.id}::uuid, ${ids.segmento}::uuid)`;
+    // Uma aberta por contato e funil (ux_oportunidade_aberta_por_funil); a mais nova vem por último.
+    for (const [i, op] of (o.ops ?? []).entries())
+      await sql`INSERT INTO oportunidades (nome, contato_id, valor, status, funil_id, etapa_id, data_criacao)
+                VALUES (${MARCA}, ${p.id}::uuid, 0, ${op.status}, ${ids.funil}::uuid, ${op.etapa}::uuid, now() - make_interval(hours => ${10 - i}::int))`;
+    if (o.campos) await sql`UPDATE contatos SET campos = ${sql.json(o.campos)} WHERE id = ${p.id}::uuid`;
+    return { ...p, execucao: await inscrever(c, p.id) };
+  };
+  const tudo = { tag: true, segmento: true, ops: [{ etapa: ids.etapa1, status: "aberta" }] as Op[], campos: { profissao_teste: "Médico", cidade_teste: "Itajaí" } };
+  const x = await pessoa(tudo);
+  const semTag = await pessoa({ ...tudo, tag: false });
+  const outraEtapa = await pessoa({ ...tudo, ops: [{ etapa: ids.etapa1, status: "perdida" }, { etapa: ids.etapa2, status: "aberta" }] });
+  const engenheira = await pessoa({ ...tudo, campos: { profissao_teste: "Engenheira", cidade_teste: "Itajaí" } });
+  const cidadeVazia = await pessoa({ ...tudo, campos: { profissao_teste: "medico", cidade_teste: "   " } });
+  await processarFila(20, c);
+  assert.deepEqual(await caminho(x.execucao), ["c1:sim", "c2:sim", "c3:sim", "c4:sim", "c5:sim", "c6:sim", "fim:proximo"]);
+  assert.equal(await temTag(x.id, ids.tagB), true);
+  assert.deepEqual(await caminho(semTag.execucao), ["c1:nao", "n1:proximo"]);
+  assert.deepEqual(await caminho(outraEtapa.execucao), ["c1:sim", "c2:sim", "c3:nao", "n3:proximo"], "vale a oportunidade aberta (a perdida na etapa não conta)");
+  assert.deepEqual(await caminho(engenheira.execucao), ["c1:sim", "c2:sim", "c3:sim", "c4:nao", "n4:proximo"]);
+  assert.deepEqual(await caminho(cidadeVazia.execucao), ["c1:sim", "c2:sim", "c3:sim", "c4:sim", "c5:sim", "c6:nao", "n6:proximo"], "igual e contém sem acento e maiúscula; só espaço não é preenchido");
+  for (const p of [x, semTag, outraEtapa, engenheira, cidadeVazia]) assert.equal((await execucao(p.execucao)).estado, "concluida");
+  const m = (await metricasDasCampanhas([{ id: c, definicao: f }])).get(c)!;
+  assert.equal(m.porSaida["c1|sim"], 4);
+  assert.equal(m.porSaida["c1|nao"], 1);
+  assert.equal(m.porSaida["c3|nao"], 1);
+  assert.deepEqual(m.porBloco.c1, { agora: 0, passaram: 5 });
+  passo("condição: tag, segmento, etapa da oportunidade mais recente e campo (igual, contém, preenchido); evento com a saída sim/não");
+}
+
+async function parteHorario() {
+  const hoje = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[
+    new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", weekday: "short" }).format(new Date())
+  ]!;
+  const outroDia = [(hoje + 3) % 7];
+  // Dentro: todos os dias, o dia inteiro.
+  const aberto = await campanha("horario aberto", fluxo("h", { h: horario([0, 1, 2, 3, 4, 5, 6], "00:00", "23:59"), c: conversao() }));
+  const pa = await inscrever(aberto, (await contato()).id);
+  await processarFila(5, aberto);
+  assert.equal((await execucao(pa)).estado, "concluida");
+  assert.deepEqual(await caminho(pa), ["h:proximo", "c:proximo"], "dentro da janela passa direto");
+
+  // Fora: espera em_andamento até a próxima abertura.
+  const definicao = fluxo("h", { h: horario(outroDia, "08:00", "09:00"), c: conversao() });
+  const fechado = await campanha("horario fechado", definicao);
+  const pf = await inscrever(fechado, (await contato()).id);
+  await processarFila(5, fechado);
+  const esperada = proximaAbertura(new Date(), outroDia, "08:00", "09:00")!;
+  let e = await execucao(pf);
+  assert.equal(e.estado, "em_andamento");
+  assert.equal(e.bloco_atual, "h");
+  assert.equal(new Date(e.prazo_resposta as string).getTime(), esperada.getTime(), "o prazo é a próxima abertura");
+  assert.deepEqual(await caminho(pf), ["h:-"], "chegou e espera, sem saída");
+  // O prazo venceu, mas ainda está fora (uma pausa longa, por exemplo): espera de novo, sem outro evento de chegada.
+  await sql`UPDATE campanha_whatsapp_execucoes SET prazo_resposta = now() - interval '1 second' WHERE id = ${pf}::uuid`;
+  await processarFila(5, fechado);
+  e = await execucao(pf);
+  assert.equal(e.estado, "em_andamento");
+  assert.equal(new Date(e.prazo_resposta as string).getTime(), esperada.getTime());
+  assert.deepEqual(await caminho(pf), ["h:-"]);
+  // A janela abriu: segue.
+  await sql`UPDATE campanhas_whatsapp SET definicao = ${sql.json(fluxo("h", { h: horario([hoje], "00:00", "23:59"), c: conversao() }) as never)} WHERE id = ${fechado}::uuid`;
+  await sql`UPDATE campanha_whatsapp_execucoes SET prazo_resposta = now() - interval '1 second' WHERE id = ${pf}::uuid`;
+  await processarFila(5, fechado);
+  assert.equal((await execucao(pf)).estado, "concluida");
+  assert.deepEqual(await caminho(pf), ["h:-", "h:proximo", "c:proximo"]);
+  passo("horário (motor): dentro passa; fora espera em_andamento até a abertura, confere de novo ao vencer e segue");
+}
+
+async function partePassagem() {
+  const portao = (q: number, j: number) => fluxo("p", { p: passagem(q, j), c: conversao() });
+  const pessoas = async (c: string, n: number) => {
+    const ids: string[] = [];
+    // Uma a uma: a ordem de inscrição é a de chegada ao bloco.
+    for (let i = 0; i < n; i++) ids.push(await inscrever(c, (await contato()).id));
+    return ids;
+  };
+  const estados = async (ids: string[]) => Promise.all(ids.map(async (id) => (await execucao(id)).estado));
+  const passagens = async (c: string) =>
+    ((await sql`SELECT count(*)::int AS n FROM campanha_whatsapp_eventos WHERE campanha_id = ${c}::uuid AND tipo = 'passagem'`)[0].n as number);
+
+  // 2 por hora, 5 chegando.
+  const c = await campanha("passagem", portao(2, 3600));
+  const ex = await pessoas(c, 5);
+  await processarFila(20, c);
+  assert.deepEqual(await estados(ex), ["concluida", "concluida", "em_andamento", "em_andamento", "em_andamento"]);
+  assert.equal(await passagens(c), 2);
+  const [primeira] = await sql`SELECT min(data_criacao) AS t FROM campanha_whatsapp_eventos WHERE campanha_id = ${c}::uuid AND tipo = 'passagem'`;
+  const prazos = (await Promise.all(ex.slice(2).map(execucao))).map((x) => new Date(x.prazo_resposta as string).getTime());
+  assert.equal(new Set(prazos).size, 1, "quem espera tem a mesma hora: a da vaga");
+  assert.equal(prazos[0] - new Date(primeira.t).getTime(), (3600 - FOLGA_PASSAGEM_S) * 1000, "a vaga abre quando a passagem mais antiga sai da janela");
+  for (const id of ex.slice(2)) assert.deepEqual(await caminho(id), ["p:-"]);
+  // A hora passou: as duas passagens saem da janela e os próximos dois passam, na ordem de chegada.
+  await sql`UPDATE campanha_whatsapp_eventos SET data_criacao = data_criacao - interval '2 hours' WHERE campanha_id = ${c}::uuid AND tipo = 'passagem'`;
+  await sql`UPDATE campanha_whatsapp_execucoes SET prazo_resposta = now() - interval '1 second' WHERE campanha_id = ${c}::uuid AND estado = 'em_andamento'`;
+  await processarFila(20, c);
+  assert.deepEqual(await estados(ex), ["concluida", "concluida", "concluida", "concluida", "em_andamento"]);
+  assert.deepEqual(await caminho(ex[2]), ["p:-", "p:proximo", "c:proximo"]);
+  assert.deepEqual(await caminho(ex[4]), ["p:-"], "o último continua esperando, sem outro evento de chegada");
+  const m = (await metricasDasCampanhas([{ id: c, definicao: portao(2, 3600) }])).get(c)!;
+  assert.deepEqual(m.porBloco.p, { agora: 1, passaram: 5 });
+  assert.equal(m.porSaida["p|proximo"], 4);
+
+  // Duas rodadas ao mesmo tempo não soltam além da vaga (a trava da campanha+bloco).
+  const c2 = await campanha("passagem corrida", portao(3, 3600));
+  const ex2 = await pessoas(c2, 6);
+  await Promise.all([processarFila(20, c2), processarFila(20, c2)]);
+  assert.equal((await estados(ex2)).filter((s) => s === "concluida").length, 3);
+  assert.equal(await passagens(c2), 3);
+
+  // Janela abaixo de 60 s: 1 a cada 20 s vale 3 por minuto, numa rodada.
+  const c3 = await campanha("passagem por minuto", portao(1, 20));
+  const ex3 = await pessoas(c3, 5);
+  await processarFila(20, c3);
+  assert.deepEqual(await estados(ex3), ["concluida", "concluida", "concluida", "em_andamento", "em_andamento"]);
+  passo("permissão de passagem: janela deslizante, espera até a vaga, ordem de chegada, trava contra duas rodadas, vazão por minuto");
+}
+
+async function parteArquivo(ids: Ids, docs: Docs) {
+  const definicao = (documentoId: string) =>
+    fluxo("envio", {
+      envio: envio("aguardar"),
+      aguardar: { tipo: "aguardar_resposta", prazo_minutos: 60, botoes: {}, palavras: [], outra: "arq", sem_resposta: null },
+      arq: { tipo: "enviar_arquivo", documentoId, legenda: "Oi {{primeiro_nome}}, segue a tabela.", proximo: "fim" },
+      fim: tag(ids.tagA, null),
+    });
+  const c = await campanha("arquivo", definicao(docs.pdf));
+  const velho = await campanha("arquivo velho", definicao(docs.arquivado));
+  const conversa = async (contatoId: string, ultimaDoContatoHaMin: number) => {
+    const [a] = await sql`INSERT INTO atendimentos (contato_id, status, canal, numero_instancia)
+                          VALUES (${contatoId}::uuid, 'aberto', 'whatsapp_oficial', ${TELEFONE_EXIBICAO}) RETURNING id`;
+    await sql`INSERT INTO mensagens (atendimento_id, origem, texto, status, data_criacao)
+              VALUES (${a.id}::uuid, 'contato', 'oi', 'recebido', now() - make_interval(mins => ${ultimaDoContatoHaMin}::int))`;
+    return a.id as string;
+  };
+  const roda = async (campanhaId: string, p: { id: string; whatsapp: string }) => {
+    const e = await aguardando(campanhaId, p.id, [`wamid.ARQ.${p.id}`]);
+    const r = await registrarResposta(msg({ numero: p.whatsapp, id: `wamid.in.arq.${p.id}`, texto: "quero" }));
+    assert.deepEqual(r, { consumida: true, execucaoId: e, continuar: true, calaIa: true }, "o caminho manda o arquivo: a IA fica calada");
+    await avancarExecucao(e);
+    assert.equal((await execucao(e)).estado, "concluida", "arquivo que não sai não para o fluxo");
+    assert.equal(await temTag(p.id, ids.tagA), true);
+    return (await eventos(e)).find((v) => v.tipo === "bloco" && v.detalhe.bloco === "arq")!.detalhe;
+  };
+  assert.match(String((await roda(c, await contato())).erro), /Sem conversa/);
+
+  const fechada = await contato();
+  const atFechada = await conversa(fechada.id, 25 * 60);
+  assert.match(String((await roda(c, fechada)).erro), /janela de 24h/);
+  const [nada] = await sql`SELECT count(*)::int AS n FROM mensagens WHERE atendimento_id = ${atFechada}::uuid AND origem = 'agente'`;
+  assert.equal(nada.n, 0, "fora da janela nada é gravado na conversa");
+
+  const arquivado = await contato();
+  await conversa(arquivado.id, 1);
+  assert.match(String((await roda(velho, arquivado)).erro), /não está mais disponível/);
+
+  // Janela aberta: pelo caminho do chat (lib/conversa-envio.ts), linha pendente antes, com o documento.
+  const livre = await contato();
+  const at = await conversa(livre.id, 1);
+  const ev = await roda(c, livre);
+  const [m] = await sql`SELECT texto, enviada_por, status, tipo, documento_id FROM mensagens WHERE atendimento_id = ${at}::uuid AND origem = 'agente'`;
+  assert.equal(m.documento_id, docs.pdf);
+  assert.equal(m.tipo, "documento");
+  assert.equal(m.enviada_por, "automacao");
+  assert.equal(m.texto, "Oi seed-teste-campanha, segue a tabela.", "a legenda com o dado do contato");
+  // Fora do Next a lista de números da Meta não carrega: o envio volta com erro, registrado na linha.
+  assert.equal(m.status, ev.ok ? "enviado" : "erro");
+  passo(`enviar arquivo: sem conversa, janela fechada e arquivo arquivado pulam; com a janela aberta sai pelo caminho do chat${ev.ok ? "" : " (recusado fora do Next, registrado)"}`);
+}
+
 // ── Principal ───────────────────────────────────────────────────────────────
 
 async function main() {
   if ((process.env.DATABASE_URL ?? "").includes("ep-noisy-pond")) throw new Error("RECUSADO: DATABASE_URL aponta para PRODUÇÃO");
   // Nenhuma credencial real sai daqui, nem para a rede falsa.
   process.env.META_SYSTEM_USER_TOKEN = "token-de-teste";
+  process.env.SUPABASE_URL = `https://${STORAGE_FALSO}`;
+  process.env.SUPABASE_SECRET_KEY = "chave-de-teste";
   globalThis.fetch = fetchFalso as typeof fetch;
 
   const travaAtiva = (() => {
@@ -1130,6 +1533,16 @@ async function main() {
     await parteIdAposentado(ids);
     await parteIaEscolhida(ids);
     await parteRespostaAdiantada(ids);
+    parteHorarioPuro();
+    partePassagemPura();
+    const docs = await documentosDeTeste();
+    await parteConferenciaNovos(ids, docs);
+    await parteMidiaDoCabecalho(docs);
+    await parteTemplateComImagem(docs, travaAtiva);
+    await parteCondicao(ids);
+    await parteHorario();
+    await partePassagem();
+    await parteArquivo(ids, docs);
     console.log(`\nOK: ${passos} partes do motor conferidas (${graph.length} chamadas à Graph falsa, ${uazapi.length} à uazapi falsa).`);
   } finally {
     await limpar();
@@ -1139,7 +1552,8 @@ async function main() {
            + (SELECT count(*) FROM tags WHERE nome LIKE ${MARCA + "%"})
            + (SELECT count(*) FROM segmentos WHERE nome LIKE ${MARCA + "%"})
            + (SELECT count(*) FROM usuarios WHERE nome LIKE ${MARCA + "%"})
-           + (SELECT count(*) FROM ias WHERE nome LIKE ${MARCA + "%"}) AS n`;
+           + (SELECT count(*) FROM ias WHERE nome LIKE ${MARCA + "%"})
+           + (SELECT count(*) FROM documentos WHERE nome LIKE ${MARCA + "%"}) AS n`;
     console.log(`limpeza: ${n} linha(s) de teste restando`);
     globalThis.fetch = fetchOriginal;
     await sql.end();

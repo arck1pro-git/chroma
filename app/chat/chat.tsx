@@ -392,6 +392,7 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
         <SeletorTemplates
           atendimentoId={aberta.id}
           nomeContato={aberta.contato.nome}
+          documentos={dados.documentos}
           aoFechar={() => setTemplates(false)}
           aoEnviado={() => setTemplates(false)}
         />

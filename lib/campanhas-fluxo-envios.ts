@@ -7,20 +7,30 @@
 // que já divergia da do servidor.
 //
 //   · problemasDosEnvios: cada envio contra os templates da conta (na conta,
-//     aprovado e preenchível), o texto livre só com as marcas da campanha e os
-//     limites do aviso à equipe;
+//     aprovado e preenchível), o texto livre e a legenda do arquivo só com as
+//     marcas da campanha e os limites do aviso à equipe;
 //   · consequenciasDoFluxo: frases curtas do que acontece fora do bloco
-//     (cadência da etapa, evento da Meta, inscrição em outra campanha);
+//     (cadência da etapa, evento da Meta, inscrição em outra campanha). Texto
+//     e arquivo não têm: o que fazem é só a mensagem ao contato;
 //   · campanhaFalaAntesDeEsperar e iaResponde: o filtro da IA calada na
-//     resposta consumida (app/api/meta/whatsapp/webhook/route.ts).
+//     resposta consumida (app/api/meta/whatsapp/webhook/route.ts);
+//   · tipoDoArquivoDaCampanha e problemaDoArquivoDaCampanha: que arquivo da
+//     biblioteca o "Enviar arquivo" manda (tipo, formato e tamanho).
 import {
+  saidasDe,
   type ContextoDasConsequencias,
   type Destino,
   type FluxoCampanha,
   type OpcaoDaCampanha,
   type ProblemaDoFluxo,
 } from "@/lib/campanhas-fluxo";
-import { DADOS_NA_CAMPANHA, problemaNoEnvio, type TemplateWhatsApp } from "@/lib/templates-whatsapp";
+import {
+  ARQUIVO_DO_CABECALHO,
+  DADOS_NA_CAMPANHA,
+  problemaDoArquivoDoCabecalho,
+  problemaNoEnvio,
+  type TemplateWhatsApp,
+} from "@/lib/templates-whatsapp";
 
 /**
  * O aviso à equipe, por mensagem e por chamada: nada de aviso sem teto. Mora
@@ -60,11 +70,14 @@ export function problemasDosEnvios(f: FluxoCampanha, templates: TemplateWhatsApp
           : problemaNoEnvio(t, b.variaveis);
       if (problema) p.push({ blocoId: id, mensagem: problema });
     }
-    if (b.tipo === "enviar_texto") {
-      const sobra = [...b.texto.matchAll(MARCA)].find((m) => !CHAVES_NA_CAMPANHA.has(m[1]));
-      const resto = b.texto.replace(MARCA, "");
+    // O texto livre e a legenda do arquivo saem ao contato pelo mesmo caminho:
+    // só as marcas da campanha (o resto sairia literal).
+    const livre = b.tipo === "enviar_texto" ? { texto: b.texto, onde: "No texto" } : b.tipo === "enviar_arquivo" ? { texto: b.legenda, onde: "Na legenda" } : null;
+    if (livre) {
+      const sobra = [...livre.texto.matchAll(MARCA)].find((m) => !CHAVES_NA_CAMPANHA.has(m[1]));
+      const resto = livre.texto.replace(MARCA, "");
       if (sobra || /\{\{|\}\}/.test(resto))
-        p.push({ blocoId: id, mensagem: `No texto, só as marcas ${DADOS_NA_CAMPANHA.map((d) => `{{${d.chave}}}`).join(", ")}.` });
+        p.push({ blocoId: id, mensagem: `${livre.onde}, só as marcas ${DADOS_NA_CAMPANHA.map((d) => `{{${d.chave}}}`).join(", ")}.` });
     }
     if (b.tipo === "avisar_equipe") {
       if (b.texto.length > LIMITE_AVISO.texto) p.push({ blocoId: id, mensagem: `O aviso tem até ${LIMITE_AVISO.texto} caracteres.` });
@@ -108,26 +121,61 @@ export function consequenciasDoFluxo(f: FluxoCampanha, ctx: ContextoDasConsequen
 }
 
 /**
- * O caminho que a resposta tomou MANDA mensagem ao contato (template ou texto)
- * antes da próxima espera? É o filtro da IA de atendimento na mensagem que a
- * campanha consumiu (decisão da coordenação, 2026-10-28): calada só quando a
- * campanha está falando — senão a pessoa receberia a campanha e a IA ao mesmo
- * tempo. Quando o caminho só faz ações de CRM, avisa a equipe ou termina (e no
- * formato antigo, que depois do Aguardar só tem ações), a mensagem segue para
- * a IA como antes. "Passar para a IA" no caminho entrega à IA de qualquer jeito
- * (o webhook olha o que a rodada ligou). Destino null = fim: não fala.
+ * O caminho que a resposta tomou MANDA mensagem ao contato (template, texto ou
+ * arquivo) antes da próxima espera? É o filtro da IA de atendimento na mensagem
+ * que a campanha consumiu (decisão da coordenação, 2026-10-28): calada só
+ * quando a campanha está falando — senão a pessoa receberia a campanha e a IA
+ * ao mesmo tempo. Quando o caminho só faz ações de CRM, avisa a equipe ou
+ * termina (e no formato antigo, que depois do Aguardar só tem ações), a
+ * mensagem segue para a IA como antes. "Passar para a IA" no caminho entrega à
+ * IA de qualquer jeito (o webhook olha o que a rodada ligou). Destino null =
+ * fim: não fala.
+ *
+ * Os blocos de 2026-10-28: a "Condição" se decide só quando o contato chega
+ * nela, então valem as DUAS saídas (basta uma falar); "Horário de envio" e
+ * "Permissão de passagem" contam como passagem, não como espera — dentro da
+ * janela, ou com vaga, a campanha fala na hora.
  */
 export function campanhaFalaAntesDeEsperar(f: FluxoCampanha, destino: Destino): boolean {
   const vistos = new Set<string>();
-  let id = destino;
-  while (id && Object.hasOwn(f.blocos, id) && !vistos.has(id)) {
+  const fila: Destino[] = [destino];
+  while (fila.length) {
+    const id = fila.pop()!;
+    if (!id || !Object.hasOwn(f.blocos, id) || vistos.has(id)) continue;
     vistos.add(id);
     const b = f.blocos[id];
-    if (b.tipo === "enviar_template" || b.tipo === "enviar_texto") return true;
-    if (b.tipo === "aguardar_resposta" || b.tipo === "esperar") return false;
-    id = b.proximo;
+    if (b.tipo === "enviar_template" || b.tipo === "enviar_texto" || b.tipo === "enviar_arquivo") return true;
+    if (b.tipo === "aguardar_resposta" || b.tipo === "esperar") continue;
+    for (const s of saidasDe(b)) fila.push(s.destino);
   }
   return false;
+}
+
+/**
+ * O tipo do arquivo da biblioteca que o "Enviar arquivo" manda: imagem, PDF ou
+ * vídeo; null para o resto (áudio, planilha…). As opções da tela, a conferência
+ * ao salvar e o motor no envio leem por aqui (documentos.tipo e o mime).
+ */
+export function tipoDoArquivoDaCampanha(d: { tipo: string; mime: string }): "imagem" | "pdf" | "video" | null {
+  if (d.tipo === "imagem") return "imagem";
+  if (d.tipo === "video") return "video";
+  const mime = d.mime.split(";")[0].trim().toLowerCase();
+  return d.tipo === "documento" && mime === "application/pdf" ? "pdf" : null;
+}
+
+/**
+ * O que impede este arquivo (já conferido que existe e não está arquivado) de
+ * sair pelo "Enviar arquivo" (null = vai). Além do tipo, o formato e o tamanho
+ * que a Cloud API aceita — as mesmas regras do cabeçalho de mídia do template
+ * (ARQUIVO_DO_CABECALHO, lib/templates-whatsapp.ts): um webp ou um vídeo acima
+ * de 16 MB passaria na ativação e falharia contato a contato. A tela filtra a
+ * lista por aqui; a conferência e o motor conferem de novo com a linha do banco.
+ */
+export function problemaDoArquivoDaCampanha(d: { tipo: string; mime: string; tamanho: number }): string | null {
+  const tipo = tipoDoArquivoDaCampanha(d);
+  if (!tipo) return "Pela campanha vão só imagem, PDF ou vídeo.";
+  const pede = tipo === "pdf" ? "documento" : tipo;
+  return problemaDoArquivoDoCabecalho(pede, { ...d, arquivado: false }) ? `Pela campanha vai ${ARQUIVO_DO_CABECALHO[pede].pede}.` : null;
 }
 
 /**

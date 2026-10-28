@@ -9,9 +9,13 @@
 // como a barra do CRM: abertas, o construtor ficaria com metade de um tablet
 // deitado. Clicou uma vez, a escolha fica no aparelho (preferencia-local.ts).
 //
-// Montando ou editando uma campanha, a lista fica recolhida sem mexer nessa
-// preferência: o construtor precisa da largura (a 1366px com ela aberta
-// sobrava ~150px de canvas).
+// MODO FOCO: montando ou editando uma campanha, as colunas de Canais e a
+// lista somem, sem mexer nessas preferências, e o construtor fica com a
+// largura do módulo (2026-10-28, pedido dele: "o canvas fica espremido"; antes
+// a lista só recolhia, e a 1366px sobrava ~150px de canvas). Sai-se pelo
+// Cancelar ou pelo Esc do editor. Escolhido no lugar de uma tela cheia por
+// cima do módulo: sem camada nova, o aviso de sair sem salvar e o modal de
+// ativar continuam onde estão.
 //
 // "Montar com IA" (o botão ao lado de "Nova campanha") abre a campanha nova já
 // com o chat do construtor aberto (ia-campanhas.tsx, dentro do editor). Até
@@ -27,7 +31,7 @@
 //
 // As opções dos blocos chegam prontas do servidor numa prop só (page.tsx;
 // OpcoesDaCampanha, lib/campanhas-fluxo.ts), as mesmas que a IA lê.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { OpcoesDaCampanha } from "@/lib/campanhas-fluxo";
 import type { TemplateMeta } from "@/lib/meta";
 import { lerTemplate } from "@/lib/templates-whatsapp";
@@ -66,12 +70,15 @@ export default function PainelCampanhasMeta({
 }) {
   const [aba, setAba] = useState<"ads" | "whatsapp">("ads");
   const canaisRecolhidos = preferenciaCanais.useValor();
+  // O construtor aberto (modo foco, ver o cabeçalho): sem a coluna de Canais.
+  const [foco, setFoco] = useState(false);
   // O status (WABA, números, templates) é só do WhatsApp: pedido quando a aba
   // abre. O Meta Ads já tem as contas, que vêm do servidor (ver page.tsx).
   const { dados: status, erro, carregando, atualizar: carregar } = useConsulta<StatusMeta>(aba === "whatsapp" ? "/api/meta/status" : null);
   return (
     <div className="flex h-screen overflow-hidden bg-conteudo">
       <aside
+        hidden={foco}
         className={`flex h-screen shrink-0 flex-col gap-1 overflow-y-auto border-r border-zinc-200 p-2 transition-[width] dark:border-zinc-800 ${canaisRecolhidos ? "w-[60px]" : "w-[200px]"}`}
       >
         <div className={`mb-1 flex items-center py-1.5 ${canaisRecolhidos ? "justify-center" : "px-2.5"}`}>
@@ -103,7 +110,7 @@ export default function PainelCampanhasMeta({
             </button>
           </div>
         ) : (
-          status && <WhatsApp status={status} opcoes={opcoes} />
+          status && <WhatsApp status={status} opcoes={opcoes} mudarFoco={setFoco} />
         )}
       </main>
     </div>
@@ -158,12 +165,8 @@ function BotaoRecolher({ recolhida, alternar }: { recolhida: boolean; alternar: 
   );
 }
 
-function WhatsApp({ status, opcoes }: { status: StatusMeta; opcoes: OpcoesDaCampanha }) {
-  const listaRecolhida = preferenciaLista.useValor();
-  // Montando ou editando, a lista fica recolhida, sem mexer na preferência
-  // guardada: a 1366px com ela aberta o construtor ficava com ~150px de canvas
-  // (2026-10-28). Abrir à mão vale até sair do editor.
-  const [listaNoEditor, setListaNoEditor] = useState(false);
+function WhatsApp({ status, opcoes, mudarFoco }: { status: StatusMeta; opcoes: OpcoesDaCampanha; mudarFoco: (foco: boolean) => void }) {
+  const recolhida = preferenciaLista.useValor();
   const { dados: lista, erro: erroLista, carregando, atualizar: listar } = useConsulta<{ campanhas: CampanhaWpp[] }>("/api/meta/whatsapp/campanhas");
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [modo, setModo] = useState<"ver" | "nova" | "editar">("ver");
@@ -179,7 +182,12 @@ function WhatsApp({ status, opcoes }: { status: StatusMeta; opcoes: OpcoesDaCamp
   const [aguardando, setAguardando] = useState<{ id: string; mensagem: string } | null>(null);
   const templates = useMemo(() => status.templates.map(lerTemplate), [status.templates]);
   const editando = modo !== "ver";
-  const recolhida = editando ? !listaNoEditor : listaRecolhida;
+  // Quem desenha a coluna de Canais é o pai: ele sabe do modo foco por aqui. E
+  // se esta parte sair da tela no meio da edição, a coluna volta.
+  useEffect(() => {
+    mudarFoco(editando);
+  }, [editando, mudarFoco]);
+  useEffect(() => () => mudarFoco(false), [mudarFoco]);
 
   if (!status.wabas.length || !status.telefones.length)
     return (
@@ -206,7 +214,6 @@ function WhatsApp({ status, opcoes }: { status: StatusMeta; opcoes: OpcoesDaCamp
   };
 
   function irPara(novo: "ver" | "nova" | "editar", comIa = false) {
-    if (novo !== modo) setListaNoEditor(false);
     setModo(novo);
     setIaAberta(comIa);
     setAviso("");
@@ -314,7 +321,10 @@ function WhatsApp({ status, opcoes }: { status: StatusMeta; opcoes: OpcoesDaCamp
 
   return (
     <section className="flex h-screen overflow-hidden">
-      <aside className={`flex h-screen shrink-0 flex-col border-r border-zinc-200 transition-[width] dark:border-zinc-800 ${recolhida ? "w-[60px]" : "w-[240px]"}`}>
+      <aside
+        hidden={editando}
+        className={`flex h-screen shrink-0 flex-col border-r border-zinc-200 transition-[width] dark:border-zinc-800 ${recolhida ? "w-[60px]" : "w-[240px]"}`}
+      >
         <div className={`flex border-b border-zinc-200 p-3 dark:border-zinc-800 ${recolhida ? "flex-col items-center gap-1" : "items-center gap-2"}`}>
           <button
             type="button"
@@ -335,10 +345,7 @@ function WhatsApp({ status, opcoes }: { status: StatusMeta; opcoes: OpcoesDaCamp
           >
             <Sparkles className="size-4" aria-hidden="true" />
           </button>
-          <BotaoRecolher
-            recolhida={recolhida}
-            alternar={() => (editando ? setListaNoEditor(recolhida) : preferenciaLista.definir(!recolhida))}
-          />
+          <BotaoRecolher recolhida={recolhida} alternar={() => preferenciaLista.definir(!recolhida)} />
         </div>
         <nav aria-label="Campanhas de WhatsApp" className="min-h-0 flex-1 overflow-y-auto p-2">
           {!recolhida && <p className="px-2.5 pb-2 pt-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500">Campanhas</p>}

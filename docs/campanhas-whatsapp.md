@@ -11,7 +11,9 @@ ativa: quem entra num deles depois também é inscrito, uma vez só.
 | Regra de cada envio, consequências fora do bloco, filtro da IA calada (puro, a tela usa) | `lib/campanhas-fluxo-envios.ts` |
 | Forma da entrada, leitura do que está gravado, conferência, trava de ids | `lib/campanhas-fluxo-entrada.ts` |
 | Opções dos blocos (tela e IA leem o mesmo) | `lib/campanhas-opcoes.ts` |
-| Motor: inscrição, rodada, respostas, prazos, avisos, pausar/editar/retomar, métricas | `lib/campanhas-whatsapp.ts` |
+| Motor: a porta que as rotas importam, e o cabeçalho que explica o motor | `lib/campanhas-whatsapp.ts` |
+| Motor por assunto (divisão de 2026-10-28): campanha (inscrição, pausar/editar/retomar), rodada, envios, ações, controle (condição, horário, passagem), respostas, avisos, totais, base | `lib/campanhas-whatsapp-*.ts` |
+| Envio pela conversa (texto livre e arquivo da biblioteca, o mesmo do chat) | `lib/conversa-envio.ts` |
 | Agendador no n8n | `lib/campanhas-workflow.ts` |
 | Rotas | `app/api/meta/whatsapp/campanhas/**`, `/processar`, `/webhook` |
 | IA do construtor | `lib/ia/campanhas-construtor.ts`, `lib/ia/campanhas-construtor-formato.ts` |
@@ -21,7 +23,9 @@ ativa: quem entra num deles depois também é inscrito, uma vez só.
 
 Blocos: Enviar template, Aguardar resposta, Enviar texto (só depois de uma
 resposta: a janela de 24 horas), Esperar, Tag, Segmento, Criar oportunidade,
-Mover oportunidade, Registrar conversão, Avisar a equipe e Passar para a IA.
+Mover oportunidade, Registrar conversão, Avisar a equipe e Passar para a IA. Desde
+2026-10-28 também Enviar arquivo, Horário de envio, Condição e Permissão de
+passagem (ver "Os blocos de controle e o arquivo").
 Sem laço: nenhum caminho volta a um bloco anterior; "reenviar até responder" se
 monta em sequência. Até 60 blocos, e até 25 imediatos seguidos por rodada.
 
@@ -32,13 +36,70 @@ Estados de cada execução (`campanha_whatsapp_execucoes.estado`):
 | `na_fila` | inscrita, ainda sem rodar |
 | `enviando` | reservada por uma rodada (15 min; presa além disso vira `falhou`, sem reenvio) |
 | `aguardando_resposta` | parada num Aguardar até responder ou vencer o prazo |
-| `em_andamento` | `bloco_atual` roda quando `prazo_resposta` chegar: depois de uma resposta, parada num Esperar ou estacionada por pausa |
+| `em_andamento` | `bloco_atual` roda quando `prazo_resposta` chegar: depois de uma resposta, parada num Esperar, num Horário de envio fora da janela, numa Permissão de passagem cheia, ou estacionada por pausa |
 | `concluida`, `falhou` | finais (`respondeu` e `expirou` são do formato antigo) |
 
 Cada bloco deixa um evento `bloco` com frase fixa, nunca o texto que o contato
 escreveu. É pelo evento que o motor sabe se um envio já foi tentado e se um
 Esperar já começou: por isso um id que já rodou não muda de tipo nem volta
 depois de apagado (ver "Pausar, editar e retomar").
+
+## Os blocos de controle e o arquivo (desde 2026-10-28)
+
+Pedido dele ("crie mais blocos"). Nenhuma tabela nova: cada um usa o estado, o
+prazo e os eventos que o motor já tinha (`lib/campanhas-whatsapp-controle.ts` e
+`-envios.ts`).
+
+| Bloco | O que faz | Estado e eventos |
+|---|---|---|
+| Condição | pergunta sobre o contato na hora em que ele chega: tem a tag, está no segmento, a oportunidade aberta mais recente dele no funil está na etapa, ou um campo personalizado do contato (`contatos.campos`) está preenchido, é igual ou contém o valor (sem acento e sem maiúscula). Duas saídas, `sim` e `nao` | imediato; evento `bloco` com `saida` `sim` ou `nao` (as métricas contam cada caminho) |
+| Horário de envio | só deixa passar nos dias (0 = domingo … 6 = sábado) e entre `das` e `ate` (HH:MM, fuso de Brasília). Fora, espera a próxima abertura, inclusive na virada da semana | dentro: `bloco` com `saida`; fora: `bloco` sem saída na chegada, `em_andamento` com `prazo_resposta` = a abertura. Ao vencer confere de novo: uma pausa longa não solta ninguém de madrugada |
+| Permissão de passagem | deixa passar `quantidade` contatos a cada `janela_segundos` (1 s a 30 dias), por campanha e bloco. Quem excede espera a vez, na ordem de chegada | com vaga: evento `passagem` {bloco} e `bloco` com `saida`; cheia: `bloco` sem saída na chegada, `em_andamento` com `prazo_resposta` = quando a vaga abre |
+| Enviar arquivo | imagem JPG ou PNG até 5 MB, vídeo MP4 ou 3GPP até 16 MB ou PDF até 100 MB, da biblioteca de Documentos (as regras da Cloud API, as mesmas do cabeçalho de mídia: `problemaDoArquivoDaCampanha`), com legenda opcional (as marcas do contato valem). Só com a janela de 24 h aberta, como o texto livre | `enviando` antes e `bloco` depois (com o `wamid`); não saiu, fica registrado e o contato segue |
+
+**A vazão da Permissão de passagem.** A janela é deslizante: conta as passagens
+(eventos `passagem`) dos últimos segundos da janela, sob `pg_advisory_xact_lock`
+da campanha+bloco, para duas rodadas (ou a rodada e o webhook) não soltarem a
+mesma vaga. O motor roda a cada minuto e anda as execuções em rajada, então:
+
+- **Janela abaixo de 60 s vale pela mesma taxa por minuto:** `quantidade × 60 /
+  janela` vagas (para baixo) a cada 60 s. "5 a cada 10 s" deixa passar até 30
+  por minuto, numa rodada. Contar 10 s de verdade soltaria só 5 por minuto.
+- **Folga de 15 s:** a vaga fica ocupada pela janela menos 15 s
+  (`FOLGA_PASSAGEM_S`). As rodadas não caem exatamente a 60 s uma da outra e as
+  passagens de uma rodada se espalham pelos segundos dela; sem a folga, a janela
+  de um minuto ainda estaria cheia quando a rodada seguinte chega, e a vazão
+  cairia até pela metade. Em janela de uma hora ou um dia a folga não se nota; na
+  de um minuto, quem passa fora da rodada (pela resposta, no webhook) pode somar
+  até a quantidade a cada 45 s.
+- **O teto da rodada continua:** até 100 execuções e 45 s por chamada do
+  `/processar`, por campanha. Pedir mais que isso por minuto não acelera.
+- **Ordem de chegada:** cheia, a vaga abre quando sai da janela a passagem que
+  estoura a conta (com a janela cheia, a mais antiga), e quem já espera naquele
+  bloco passa a ter essa mesma hora. O empate sai pela ordem de inscrição, que é
+  a de chegada quando a permissão vem logo no início do fluxo.
+
+**O arquivo sai pelo mesmo caminho do chat.** O anexo da biblioteca do `/chat`
+mudou para `lib/conversa-envio.ts` (`enviarDocumentoNaConversa`), e a campanha
+chama a mesma função: linha `pendente` na conversa com o `documento_id` (o
+arquivo não é copiado), o arquivo sobe à Meta por id e a resposta casa a linha.
+O motor confere de novo, no envio, que o arquivo não foi arquivado.
+
+**Validação** (`problemasDoFluxo`, `conferirFluxo`): dias não vazios, únicos e de
+0 a 6; HH:MM com o fim depois do começo; quantidade inteira de 1 a 10 mil e
+intervalo de 1 s a 30 dias; a regra da condição completa e com ids que existem
+(tag, segmento, funil e etapa do mesmo funil, chave de `campos_personalizados`
+do contato); o arquivo existente, não arquivado e imagem, PDF ou vídeo, e só
+depois de uma resposta. Quem salva ou ativa um fluxo com Enviar arquivo precisa
+ver o módulo Documentos; a Condição não pede nada além de Campanhas.
+
+**A IA de atendimento calada** segue as duas saídas da Condição (basta uma
+falar), conta o Enviar arquivo como mensagem e trata Horário e Permissão como
+passagem, não como espera.
+
+**Opções** (`lerOpcoesDaCampanha`): `documentos` (id, nome e tipo `imagem`,
+`pdf` ou `video`, só os não arquivados e no formato e tamanho que a campanha
+manda) e `camposContato` (chave e rótulo).
 
 ## Criar, ativar e a inscrição
 
@@ -180,6 +241,12 @@ em cada disparo (o template pode mudar na Meta).
 - **Faltou o dado:** o contato não recebe; a execução fica `falhou` com o motivo.
 - **E-mail e WhatsApp do contato** só vão pelo chat. A exceção é o WhatsApp no
   link de vídeo do CRM, num botão de link com variável.
+- **Cabeçalho de imagem, vídeo ou documento** (desde 2026-10-28): o arquivo vem
+  da biblioteca, em `variaveis.midia` (id de `documentos`). Ao salvar e ativar,
+  `conferirFluxo` confere que ele existe e serve ao cabeçalho que o template pede
+  (`problemaDoArquivoDoCabecalho`: não arquivado, tipo, formato e tamanho). A IA
+  do construtor vê em `listar_alvos_campanha` o `midia` de cada template e lê e
+  devolve o mesmo id.
 
 ## Definição gravada como texto (até 2026-10-27)
 
@@ -221,6 +288,53 @@ clicar em Salvar ou Ativar, que conferem tudo de novo.
   blocos de texto livre, aviso, IA e mover oportunidade. O `listar_campanhas`
   dela devolve nome e segmentos embrulhados e os blocos no formato da IA, nunca
   a definição crua.
+
+## Métricas e gasto (desde 2026-10-28)
+
+`GET /api/meta/whatsapp/campanhas/[id]/metricas` (mesma tranca da listagem) devolve
+`MetricasCampanha` (`lib/campanhas-metricas-tipos.ts`), montado em
+`lib/campanhas-metricas.ts`. A tela pede ao abrir a campanha e no botão de atualizar,
+sem polling.
+
+- **Funil:** entraram, enviados, entregues e lidos, responderam, conversões, falhas e
+  descadastros. Entregues e lidos casam o `wamid` do evento `bloco` do envio de
+  template com `mensagens.id_externo`, pelo status que o webhook grava. Texto livre
+  e arquivo ficam fora.
+- **Por bloco:** agora e passaram; nos blocos Enviar template, também entregues e lidos.
+- **Falhas por motivo:** o `erro` das execuções que falharam, agrupado. Substitui a
+  lista que lia `campanhas_whatsapp.falhas`, coluna que nada escreve.
+- **Gasto** (`lib/whatsapp-custo.ts`): é o custo real que a Meta informa.
+  - Faz `GET /<WABA>/template_analytics` com COST e DELIVERED, em lotes de até 10
+    ids de template, de `ativada_em` até amanhã, no máximo 90 dias. O id do template
+    sai de `message_templates`.
+  - O custo por entrega de cada template (gasto ÷ entregas da Meta no período)
+    multiplica as entregas desta campanha.
+  - Saem também o custo por resposta e por conversão, na moeda da conta.
+  - Fica em cache de 1 h; falha não entra no cache.
+  - Só leitura. As estatísticas de template precisam estar confirmadas na WABA, no
+    WhatsApp Manager. Sem isso, a situação é `sem_estatisticas`. Conta que divide a
+    linha de crédito de um parceiro não recebe custo e fica em `sem_custo`. O CRM nunca
+    liga as estatísticas sozinho: é escrita irreversível na Meta.
+- **Imprecisões conhecidas:**
+  - a entrega de um bloco apagado conta no funil, mas não no gasto;
+  - se um bloco trocou de template numa edição, as entregas antigas entram no
+    template novo.
+
+## A tela do construtor (refeita em 2026-10-28)
+
+Pedido dele: "muito texto, sem condições".
+
+- **Modo foco:** criando ou editando, somem as colunas de Canais e a lista; o Esc fecha
+  o painel e depois sai, perguntando se há mudança não salva.
+- **Paleta compacta e recolhível:** grupos Mensagem, Espera, Controle, CRM e Equipe; o
+  nome completo e a descrição ficam no `title`.
+- **Painel do bloco:** flutua sobre o canvas, sem encolhê-lo.
+- **Cartões de 240 px**, com título text-sm. A pendência é um ponto âmbar, com a frase
+  no `title`; a lista inteira só abre pela pílula de pendências.
+- **Regras** num "?" com `title`. A janela de 24 h está só no selo "depois de uma
+  resposta" do Enviar texto e do Enviar arquivo.
+- **Métricas** na campanha aberta: a faixa do funil e do gasto, e entregues e lidos nos
+  cartões de template.
 
 ## Entrada da Meta
 

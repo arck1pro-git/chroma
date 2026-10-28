@@ -190,6 +190,14 @@ consulta quando a pessoa não tem o módulo.
 Sem isso, tirar Automações do Admin não teria efeito nenhum: ele dispararia
 cadência pelo dashboard.
 
+## Campanha com arquivo da biblioteca pede Documentos
+
+Desde 2026-10-28, duas coisas numa campanha de WhatsApp mandam arquivo da biblioteca:
+o bloco Enviar arquivo e o cabeçalho de imagem, vídeo ou PDF de um template. As duas
+exigem o módulo `documentos` de quem salva e de quem ativa (`exigenciasDoFluxo`, em
+`lib/campanhas-fluxo.ts`). Quem não tem o módulo também não recebe a lista de
+documentos nas opções da campanha.
+
 ## Assistente de reuniões: Agenda liga, cada dado pede o seu módulo
 
 A extensão de reuniões (`extensao-reunioes/`, 2026-10-28) chama
