@@ -15,8 +15,13 @@
 // não pedia), variáveis numeradas e em sequência, texto que não começa nem
 // termina com variável, até 10 botões com no máximo 2 links e 1 telefone,
 // respostas rápidas agrupadas separadas dos botões de ação.
-// O editor CRIA só cabeçalho de texto: imagem, vídeo e documento exigem subir a
-// mídia na Meta antes (upload retomável), o que ele não faz.
+//
+// CABEÇALHO DE MÍDIA NA CRIAÇÃO (2026-10-28, pedido dele: "criar eles com uma
+// imagem dentro ou vídeo"): o editor cria cabeçalho de imagem, vídeo ou PDF
+// com um arquivo de EXEMPLO da biblioteca, que a Meta usa só na análise. O
+// servidor sobe o arquivo pelo upload retomável (lib/meta.ts,
+// subirExemploDeTemplate) e manda o handle em example.header_handle. O exemplo
+// não chega a ninguém: no envio, cada disparo escolhe o seu arquivo (abaixo).
 //
 // CABEÇALHO DE MÍDIA NO ENVIO (2026-10-28, pedido dele: "templates aprovados
 // com vídeo e fotos"): o template já aprovado com imagem, vídeo ou PDF no
@@ -213,6 +218,25 @@ export function problemaDoArquivoDoCabecalho(
   return null;
 }
 
+// O upload retomável da Meta, que gera o exemplo da criação, aceita menos
+// formatos que o envio: o vídeo de exemplo é só MP4 (3GPP vai no envio, não aqui).
+const MIMES_DO_EXEMPLO = ["image/jpeg", "image/png", "video/mp4", "application/pdf"];
+
+/**
+ * O que impede este documento da biblioteca de ser o EXEMPLO do cabeçalho na
+ * criação do template (null = serve): as regras do envio e o formato do upload.
+ */
+export function problemaDoExemploDoCabecalho(
+  pede: MidiaDoCabecalho,
+  d: { tipo: string; mime: string; tamanho: number; arquivado?: boolean },
+): string | null {
+  const problema = problemaDoArquivoDoCabecalho(pede, d);
+  if (problema) return problema;
+  if (!MIMES_DO_EXEMPLO.includes(d.mime.split(";")[0].trim().toLowerCase()))
+    return "O vídeo de exemplo do cabeçalho precisa ser MP4.";
+  return null;
+}
+
 /**
  * O que impede o valor de `midia` (o id do documento) neste envio. `pede` é
  * midiaDoCabecalho do template. Arquivo num template sem cabeçalho de mídia
@@ -233,10 +257,18 @@ export function problemaDaMidia(pede: MidiaDoCabecalho | null, valor: unknown): 
  */
 export type BotaoRascunho = { tipo: TipoBotao; texto: string; destino: string; exemplo?: string };
 
+/** O cabeçalho que o editor cria: texto, ou mídia com um arquivo de exemplo. */
+export type FormatoDoCabecalho = "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
+export const FORMATOS_DO_CABECALHO: FormatoDoCabecalho[] = ["TEXT", "IMAGE", "VIDEO", "DOCUMENT"];
+
 export type Rascunho = {
   nome: string;
   categoria: Categoria;
+  /** O texto do cabeçalho; só vale no formato TEXT. */
   cabecalho: string;
+  formatoCabecalho: FormatoDoCabecalho;
+  /** O id do documento da biblioteca usado de exemplo; só vale no cabeçalho de mídia. */
+  midiaCabecalho: string;
   corpo: string;
   rodape: string;
   exemplosCabecalho: string[];
@@ -251,12 +283,19 @@ export const RASCUNHO_VAZIO: Rascunho = {
   nome: "",
   categoria: "MARKETING",
   cabecalho: "",
+  formatoCabecalho: "TEXT",
+  midiaCabecalho: "",
   corpo: "",
   rodape: "",
   exemplosCabecalho: [],
   exemplosCorpo: [],
   botoes: [],
 };
+
+/** Que arquivo o cabeçalho do rascunho pede de exemplo; null no de texto. */
+export function midiaDoRascunho(r: Rascunho): MidiaDoCabecalho | null {
+  return MIDIA_DO_FORMATO[r.formatoCabecalho] ?? null;
+}
 
 /** Os números das variáveis {{n}} do texto, sem repetição, na ordem em que aparecem. */
 export function variaveisDo(texto: string): number[] {
@@ -317,8 +356,12 @@ export function problemasDo(r: Rascunho): Problema[] {
   else if (!/^[a-z0-9_]+$/.test(nome) || nome.length > LIMITE.nome)
     p.push({ campo: "nome", mensagem: "Use só letras minúsculas, números e _ no nome." });
 
-  const cabecalho = r.cabecalho.trim();
+  // Cabeçalho de mídia não tem texto: o que importa é o arquivo de exemplo.
+  const midia = midiaDoRascunho(r);
+  const cabecalho = midia ? "" : r.cabecalho.trim();
   const varsCabecalho = variaveisDo(cabecalho);
+  if (midia && !ehUuid(r.midiaCabecalho.trim()))
+    p.push({ campo: "cabecalho", mensagem: `Escolha ${ARQUIVO_DO_CABECALHO[midia].escolha} de exemplo do cabeçalho.` });
   if (cabecalho.length > LIMITE.cabecalho)
     p.push({ campo: "cabecalho", mensagem: `O cabeçalho tem até ${LIMITE.cabecalho} caracteres.` });
   if (temVariavelForaDoPadrao(cabecalho)) p.push({ campo: "cabecalho", mensagem: MENSAGEM_PADRAO_VARIAVEL });
@@ -492,11 +535,18 @@ export function avisosDo(r: Rascunho): string[] {
   return /\}\}\s*\{\{/.test(r.corpo) ? ["Duas variáveis coladas, sem texto entre elas, costumam ser rejeitadas."] : [];
 }
 
-/** O rascunho no formato de `components` da Graph API. Só chamar sem problemas. */
-export function componentesDoRascunho(r: Rascunho): Array<Record<string, unknown>> {
+/**
+ * O rascunho no formato de `components` da Graph API. Só chamar sem problemas.
+ * `exemplo` é o handle do arquivo de exemplo já subido na Meta, que o cabeçalho
+ * de mídia exige (subirExemploDeTemplate, em lib/meta.ts).
+ */
+export function componentesDoRascunho(r: Rascunho, exemplo?: string): Array<Record<string, unknown>> {
   const componentes: Array<Record<string, unknown>> = [];
   const cabecalho = r.cabecalho.trim();
-  if (cabecalho) {
+  if (midiaDoRascunho(r)) {
+    if (!exemplo) throw new Error("cabeçalho de mídia sem o exemplo subido na Meta");
+    componentes.push({ type: "HEADER", format: r.formatoCabecalho, example: { header_handle: [exemplo] } });
+  } else if (cabecalho) {
     componentes.push({
       type: "HEADER",
       format: "TEXT",
@@ -871,13 +921,6 @@ export function textoParaRevisao(t: ConteudoTemplate, v: ValoresDoEnvio): string
 const TIPOS_BOTAO: string[] = ["QUICK_REPLY", "URL", "PHONE_NUMBER"] satisfies TipoBotao[];
 const ehTipoBotao = (tipo: string): tipo is TipoBotao => TIPOS_BOTAO.includes(tipo);
 
-const MIDIA_DO_CABECALHO: Record<string, string> = {
-  IMAGE: "o cabeçalho de imagem",
-  VIDEO: "o cabeçalho de vídeo",
-  DOCUMENT: "o cabeçalho de documento",
-  LOCATION: "o cabeçalho de localização",
-};
-
 const proximaVersao = (nome: string) => {
   const m = /_v(\d+)$/.exec(nome);
   return m ? `${nome.slice(0, m.index)}_v${Number(m[1]) + 1}` : `${nome}_v2`;
@@ -887,8 +930,10 @@ const proximaVersao = (nome: string) => {
  * Um template existente como ponto de partida para um novo — o caminho para
  * corrigir um rejeitado —, com o próximo nome livre (`_v2`, `_v3`…) e os botões
  * já agrupados. `deFora` diz o que a cópia não leva, para o editor avisar em vez
- * de perder calado: mídia do cabeçalho, botões de tipo que este editor não cria
- * e a categoria Autenticação.
+ * de perder calado: cabeçalho de localização, botões de tipo que este editor não
+ * cria e a categoria Autenticação. Cabeçalho de imagem, vídeo ou PDF vem no
+ * mesmo formato, sem o arquivo: a leitura da Meta não devolve o exemplo, e o
+ * editor pede um da biblioteca.
  */
 export function rascunhoDe(t: TemplateWhatsApp, nomesUsados: Set<string>): { rascunho: Rascunho; deFora: string[] } {
   let nome = proximaVersao(t.nome);
@@ -896,7 +941,9 @@ export function rascunhoDe(t: TemplateWhatsApp, nomesUsados: Set<string>): { ras
 
   const deFora: string[] = [];
   const formato = t.cabecalho?.formato;
-  if (formato && formato !== "TEXT") deFora.push(MIDIA_DO_CABECALHO[formato] ?? "o cabeçalho de mídia");
+  const formatoCabecalho = FORMATOS_DO_CABECALHO.find((f) => f === formato) ?? "TEXT";
+  if (formato && formato !== formatoCabecalho)
+    deFora.push(formato === "LOCATION" ? "o cabeçalho de localização" : "o cabeçalho de mídia");
   const semSuporte = t.botoes.filter((b) => !ehTipoBotao(b.tipo)).length;
   if (semSuporte) deFora.push(semSuporte === 1 ? "1 botão de um tipo que este editor não cria" : `${semSuporte} botões de tipos que este editor não cria`);
   if (t.categoria === "AUTHENTICATION") deFora.push("a categoria Autenticação (a cópia sai como Marketing)");
@@ -906,6 +953,8 @@ export function rascunhoDe(t: TemplateWhatsApp, nomesUsados: Set<string>): { ras
       nome,
       categoria: t.categoria === "UTILITY" ? "UTILITY" : "MARKETING",
       cabecalho: formato === "TEXT" ? (t.cabecalho?.texto ?? "") : "",
+      formatoCabecalho,
+      midiaCabecalho: "",
       corpo: t.corpo,
       rodape: t.rodape ?? "",
       exemplosCabecalho: t.exemplosCabecalho,

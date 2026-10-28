@@ -10,6 +10,7 @@
 // situação e o começo do texto. ↑ e ↓ andam pela lista sem o mouse.
 import { useMemo, useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
+import type { Documento } from "@/lib/documentos";
 import {
   IDIOMA_PADRAO,
   RASCUNHO_VAZIO,
@@ -54,7 +55,8 @@ export default function PainelTemplates({
   templates,
   erro,
   podeCriar,
-}: DadosTemplates & { podeCriar: boolean }) {
+  documentos,
+}: DadosTemplates & { podeCriar: boolean; documentos: Documento[] | null }) {
   const router = useRouter();
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todos");
@@ -278,6 +280,7 @@ export default function PainelTemplates({
           contaId={contaId}
           contaNome={conta?.nome ?? null}
           nomesUsados={nomesUsados}
+          documentos={documentos}
           aoFechar={() => setEditor(null)}
           aoCriar={aoCriar}
         />

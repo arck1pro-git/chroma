@@ -13,13 +13,19 @@
 //
 // Fechar com texto escrito pede confirmação no próprio rodapé (Esc, véu ou
 // Cancelar): um clique fora do modal não pode jogar fora um template inteiro.
+//
+// O cabeçalho pode ser de imagem, vídeo ou PDF (2026-10-28), com um arquivo de
+// exemplo da biblioteca (./cabecalho-midia.tsx). Trocar de formato guarda o
+// texto digitado: voltar para Texto o traz de volta.
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import type { Documento } from "@/lib/documentos";
 import {
   avisosDo,
   baseDoLink,
   emGrupos,
   LIMITE,
   linksVariaveisDe,
+  midiaDoRascunho,
   nomeDeTemplate,
   problemaDoLinkVariavel,
   problemasDo,
@@ -62,6 +68,7 @@ import {
   OpcaoLinkVariavel,
   Situacao,
 } from "./campos-editor";
+import { ArquivoDeExemplo, FormatosDoCabecalho } from "./cabecalho-midia";
 import { PreviaWhatsApp } from "./previa";
 
 const CATEGORIAS: Array<{ valor: Categoria; rotulo: string; descricao: string; Icone: TipoIcone }> = [
@@ -84,6 +91,7 @@ export default function Editor({
   contaId,
   contaNome,
   nomesUsados,
+  documentos,
   aoFechar,
   aoCriar,
 }: {
@@ -95,6 +103,8 @@ export default function Editor({
   contaId: string;
   contaNome: string | null;
   nomesUsados: Set<string>;
+  /** A biblioteca, para o exemplo do cabeçalho de mídia; null = fora do acesso. */
+  documentos: Documento[] | null;
   aoFechar: () => void;
   aoCriar: (id: string | null) => void;
 }) {
@@ -131,10 +141,15 @@ export default function Editor({
     valor.trim() ? problemas.find((p) => p.campo === campo)?.mensagem : undefined;
 
   const varsCorpo = variaveisDo(r.corpo).sort((a, b) => a - b);
-  const temVarCabecalho = variaveisDo(r.cabecalho).length > 0;
+  const midia = midiaDoRascunho(r);
+  const temVarCabecalho = !midia && variaveisDo(r.cabecalho).length > 0;
 
   const conteudo: ConteudoTemplate = {
-    cabecalho: r.cabecalho.trim() ? { formato: "TEXT", texto: r.cabecalho } : null,
+    cabecalho: midia
+      ? { formato: r.formatoCabecalho, texto: null }
+      : r.cabecalho.trim()
+        ? { formato: "TEXT", texto: r.cabecalho }
+        : null,
     corpo: r.corpo,
     rodape: r.rodape.trim() || null,
     botoes: r.botoes.map((b) => ({ tipo: b.tipo, texto: b.texto, destino: b.destino })),
@@ -382,9 +397,10 @@ export default function Editor({
               <Bloco
                 titulo="Cabeçalho"
                 opcional
-                htmlFor={`${tituloId}-cabecalho`}
-                contador={<Contador atual={r.cabecalho.length} maximo={LIMITE.cabecalho} />}
+                htmlFor={midia ? undefined : `${tituloId}-cabecalho`}
+                contador={midia ? undefined : <Contador atual={r.cabecalho.length} maximo={LIMITE.cabecalho} />}
                 acao={
+                  !midia &&
                   !temVarCabecalho && (
                     <Ferramenta
                       Icone={Braces}
@@ -393,17 +409,36 @@ export default function Editor({
                     />
                   )
                 }
-                erro={problemaDe("cabecalho", r.cabecalho)}
+                erro={midia ? undefined : problemaDe("cabecalho", r.cabecalho)}
+                dica={
+                  midia
+                    ? "O arquivo é só um exemplo para a análise da Meta. No envio, pelo chat ou por campanha, cada disparo escolhe o seu."
+                    : undefined
+                }
               >
-                <input
-                  id={`${tituloId}-cabecalho`}
-                  ref={cabecalhoRef}
-                  value={r.cabecalho}
-                  onChange={(e) => mudar({ cabecalho: e.target.value })}
-                  maxLength={LIMITE.cabecalho}
-                  placeholder="Uma linha em negrito no topo"
-                  className={`${CAMPO} w-full`}
+                <FormatosDoCabecalho
+                  formato={r.formatoCabecalho}
+                  documentos={documentos}
+                  aoMudar={(formatoCabecalho) => mudar({ formatoCabecalho, midiaCabecalho: "" })}
                 />
+                {midia ? (
+                  <ArquivoDeExemplo
+                    pede={midia}
+                    escolhido={r.midiaCabecalho}
+                    documentos={documentos}
+                    aoEscolher={(midiaCabecalho) => mudar({ midiaCabecalho })}
+                  />
+                ) : (
+                  <input
+                    id={`${tituloId}-cabecalho`}
+                    ref={cabecalhoRef}
+                    value={r.cabecalho}
+                    onChange={(e) => mudar({ cabecalho: e.target.value })}
+                    maxLength={LIMITE.cabecalho}
+                    placeholder="Uma linha em negrito no topo"
+                    className={`${CAMPO} w-full`}
+                  />
+                )}
               </Bloco>
 
               <Bloco titulo="Mensagem" htmlFor={`${tituloId}-corpo`} erro={problemaDe("corpo", r.corpo)}>
@@ -565,7 +600,11 @@ export default function Editor({
             </div>
 
             <aside className="hidden min-h-0 overflow-y-auto overscroll-contain border-l border-zinc-100 bg-zinc-50/60 px-5 py-5 md:block tela-baixa:py-4 dark:border-zinc-900 dark:bg-zinc-900/30">
-              <PreviaWhatsApp conteudo={conteudo} exemplosBotoes={r.botoes.map((b) => b.exemplo ?? "")} />
+              <PreviaWhatsApp
+                conteudo={conteudo}
+                exemplosBotoes={r.botoes.map((b) => b.exemplo ?? "")}
+                imagem={midia === "imagem" && r.midiaCabecalho ? `/api/documentos/${r.midiaCabecalho}` : null}
+              />
               {avisos.length > 0 && (
                 <ul className="mt-4 flex flex-col gap-2" aria-label="Avisos">
                   {avisos.map((a) => (

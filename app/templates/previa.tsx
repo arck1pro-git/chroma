@@ -38,7 +38,8 @@ const ICONE_BOTAO: Record<string, TipoIcone> = {
 };
 
 // A mídia do cabeçalho só existe no disparo (cada envio manda a sua): a prévia
-// mostra o lugar dela, não um arquivo.
+// mostra o lugar dela, não um arquivo. A exceção é o editor, que mostra a
+// imagem de exemplo escolhida (`imagem`).
 const MIDIA: Record<string, { Icone: TipoIcone; rotulo: string }> = {
   IMAGE: { Icone: ImagemIcone, rotulo: "Imagem enviada no disparo" },
   VIDEO: { Icone: Video, rotulo: "Vídeo enviado no disparo" },
@@ -110,12 +111,17 @@ function TextoFormatado({ texto, v }: { texto: string; v: Variaveis }) {
 export function PreviaWhatsApp({
   conteudo,
   exemplosBotoes = [],
+  imagem = null,
 }: {
   conteudo: ConteudoTemplate;
   /** O exemplo do final de cada link com variável, pela posição do botão. */
   exemplosBotoes?: string[];
+  /** O endereço da imagem de exemplo do cabeçalho, no editor. */
+  imagem?: string | null;
 }) {
   const [comExemplos, setComExemplos] = useState(true);
+  // A imagem que não abriu (arquivo fora do Storage, rota fora do ar) volta ao lugar dela.
+  const [imagemQuebrada, setImagemQuebrada] = useState<string | null>(null);
   const { cabecalho, corpo, rodape, botoes } = conteudo;
   const links = new Map(linksVariaveisDe(conteudo).map((l) => [l.indice, l.url]));
   const temVariaveis = /\{\{\d+\}\}/.test(`${cabecalho?.texto ?? ""} ${corpo}`) || links.size > 0;
@@ -157,11 +163,23 @@ export function PreviaWhatsApp({
       <div className="rounded-2xl bg-zinc-100 bg-[radial-gradient(circle,var(--color-zinc-300)_1px,transparent_1.5px)] bg-size-[18px_18px] px-5 py-6 ring-1 ring-zinc-200/70 dark:bg-zinc-900 dark:bg-[radial-gradient(circle,var(--color-zinc-800)_1px,transparent_1.5px)] dark:ring-zinc-800">
         <div className="w-full max-w-[20rem] pl-2">
           <div className="relative rounded-lg rounded-tl-none bg-white p-1 text-zinc-900 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] before:absolute before:-left-2 before:top-0 before:size-0 before:border-l-8 before:border-t-8 before:border-l-transparent before:border-t-white dark:bg-zinc-800 dark:text-zinc-100 dark:before:border-t-zinc-800">
-            {midia && (
-              <div className="flex aspect-[1.91/1] flex-col items-center justify-center gap-1.5 rounded-md bg-zinc-100 text-zinc-400 dark:bg-zinc-700/60 dark:text-zinc-500">
-                <midia.Icone className="size-6" aria-hidden="true" />
-                <span className="text-[11px]">{midia.rotulo}</span>
-              </div>
+            {midia && imagem && imagem !== imagemQuebrada && cabecalho?.formato === "IMAGE" ? (
+              // <img> e não next/image: a rota da biblioteca exige sessão e o
+              // tamanho não é conhecido no build (o mesmo do chat).
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={imagem}
+                alt="Imagem de exemplo do cabeçalho"
+                onError={() => setImagemQuebrada(imagem)}
+                className="block aspect-[1.91/1] w-full rounded-md bg-zinc-100 object-cover dark:bg-zinc-700/60"
+              />
+            ) : (
+              midia && (
+                <div className="flex aspect-[1.91/1] flex-col items-center justify-center gap-1.5 rounded-md bg-zinc-100 text-zinc-400 dark:bg-zinc-700/60 dark:text-zinc-500">
+                  <midia.Icone className="size-6" aria-hidden="true" />
+                  <span className="text-[11px]">{midia.rotulo}</span>
+                </div>
+              )
             )}
             <div className="px-2 pb-1 pt-1.5">
               {cabecalho?.formato === "TEXT" && cabecalho.texto && (

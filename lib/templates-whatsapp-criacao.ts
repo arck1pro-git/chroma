@@ -10,8 +10,11 @@
 // O `exemplo` do botão de link com variável (2026-10-28): o zod descartava o
 // campo, componentesDoRascunho mandava o link de exemplo vazio e a Meta recusava
 // todo template com link variável.
+//
+// O cabeçalho de mídia (2026-10-28) chega como formato e o id do documento da
+// biblioteca usado de exemplo; a rota lê o arquivo e sobe para a Meta.
 import { z } from "zod";
-import { LIMITE } from "@/lib/templates-whatsapp";
+import { FORMATOS_DO_CABECALHO, LIMITE } from "@/lib/templates-whatsapp";
 
 const texto = (max: number) => z.string().max(max).default("");
 
@@ -20,6 +23,8 @@ export const entradaDaCriacao = z.object({
   nome: texto(600),
   categoria: z.enum(["MARKETING", "UTILITY"]),
   cabecalho: texto(200),
+  formatoCabecalho: z.enum(FORMATOS_DO_CABECALHO).default("TEXT"),
+  midiaCabecalho: texto(64),
   corpo: texto(2000),
   rodape: texto(200),
   exemplosCabecalho: z.array(texto(LIMITE.exemplo)).max(1).default([]),

@@ -308,6 +308,42 @@ export async function criarTemplateMeta(wabaId: string, entrada: {
   });
 }
 
+/**
+ * O arquivo de EXEMPLO do cabeçalho de imagem, vídeo ou PDF, para criar o
+ * template (2026-10-28). A Meta analisa o template com ele e devolve o handle
+ * que vai em example.header_handle. É o upload retomável, que pertence ao APP
+ * do token (GET /app), não ao número: o arquivo não vai para contato nenhum.
+ * Numa parte só: o maior exemplo que o editor aceita (vídeo de 16 MB) cabe
+ * numa chamada. A segunda chamada leva "OAuth", como pede a documentação.
+ */
+export async function subirExemploDeTemplate(bytes: Uint8Array, mime: string, arquivoNome: string): Promise<string> {
+  const { valor: app } = await lembrar("app", VALIDADE_CADASTRO, () => requisicao<{ id: string }>("app", { params: { fields: "id" } }));
+  const sessao = await requisicao<{ id?: string }>(`${app.id}/uploads`, {
+    method: "POST",
+    params: { file_name: arquivoNome, file_length: String(bytes.length), file_type: mime },
+  });
+  // O id da sessão já traz a assinatura ("upload:…?sig=…") e vira o caminho como veio.
+  if (!sessao.id?.startsWith("upload:")) throw new ErroMeta("A Meta não abriu o envio do arquivo de exemplo.");
+  const resposta = await fetch(`${GRAPH}/${sessao.id}`, {
+    method: "POST",
+    headers: { Authorization: `OAuth ${token()}`, file_offset: "0" },
+    body: new Uint8Array(bytes),
+    cache: "no-store",
+    signal: AbortSignal.timeout(120_000),
+  });
+  const json = (await resposta.json().catch(() => ({}))) as {
+    h?: string;
+    error?: { message?: string; code?: number; error_user_msg?: string };
+  };
+  if (!resposta.ok || json.error || !json.h) {
+    throw new ErroMeta(
+      json.error?.error_user_msg || json.error?.message || `O envio do arquivo de exemplo respondeu ${resposta.status}.`,
+      json.error?.code,
+    );
+  }
+  return json.h;
+}
+
 export async function enviarTemplateMeta(telefoneId: string, entrada: {
   to: string; name: string; language: string;
   components?: Array<Record<string, unknown>>;

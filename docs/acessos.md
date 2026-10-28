@@ -198,6 +198,12 @@ exigem o módulo `documentos` de quem salva e de quem ativa (`exigenciasDoFluxo`
 `lib/campanhas-fluxo.ts`). Quem não tem o módulo também não recebe a lista de
 documentos nas opções da campanha.
 
+A mesma regra vale para criar template com cabeçalho de imagem, vídeo ou PDF (desde
+2026-10-28). O arquivo de exemplo que vai para a análise da Meta é um documento da
+biblioteca, e `POST /api/meta/templates` exige `documentos` além de `templates` (criar).
+Sem o módulo, a tela de Templates não recebe a biblioteca e o editor apaga esses
+formatos.
+
 ## Assistente de reuniões: Agenda liga, cada dado pede o seu módulo
 
 A extensão de reuniões (`extensao-reunioes/`, 2026-10-28) chama

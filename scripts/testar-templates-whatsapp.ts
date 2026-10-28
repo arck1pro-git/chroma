@@ -18,10 +18,12 @@ import {
   lerTemplate,
   linksVariaveisDe,
   midiaDoCabecalho,
+  midiaDoRascunho,
   motivoSemEnvio,
   nomeDeTemplate,
   problemaDaMidia,
   problemaDoArquivoDoCabecalho,
+  problemaDoExemploDoCabecalho,
   problemaDoLinkVariavel,
   problemaNoEnvio,
   problemasDo,
@@ -42,6 +44,8 @@ const base: Rascunho = {
   nome: "convite_lancamento",
   categoria: "MARKETING",
   cabecalho: "",
+  formatoCabecalho: "TEXT",
+  midiaCabecalho: "",
   corpo: "Olá {{1}}, separamos uma condição para você até {{2}}.",
   rodape: "",
   exemplosCabecalho: [],
@@ -478,11 +482,55 @@ caso("duplicar: próximo nome livre, botões agrupados e o que ficou de fora", (
   const { rascunho, deFora } = rascunhoDe(completo, new Set(["x_v2"]));
   assert.equal(rascunho.nome, "x_v3");
   assert.equal(rascunho.cabecalho, "");
+  // A imagem vem no formato, sem o arquivo: o editor pede um da biblioteca.
+  assert.equal(rascunho.formatoCabecalho, "IMAGE");
+  assert.equal(rascunho.midiaCabecalho, "");
+  assert.match(primeiro(rascunho), /Escolha a imagem de exemplo/);
   assert.deepEqual(rascunho.botoes.map((b) => b.tipo), ["QUICK_REPLY", "URL"]);
-  assert.deepEqual(deFora, ["o cabeçalho de imagem", "1 botão de um tipo que este editor não cria"]);
+  assert.deepEqual(deFora, ["1 botão de um tipo que este editor não cria"]);
   assert.deepEqual(rascunhoDe(lerTemplate(meta({ category: "AUTHENTICATION" })), new Set()).deFora, [
     "a categoria Autenticação (a cópia sai como Marketing)",
   ]);
+  const local = rascunhoDe(lerTemplate(meta({ components: [{ type: "HEADER", format: "LOCATION" }, { type: "BODY", text: "Oi" }] })), new Set());
+  assert.equal(local.rascunho.formatoCabecalho, "TEXT");
+  assert.deepEqual(local.deFora, ["o cabeçalho de localização"]);
+});
+
+caso("criação com mídia: pede o arquivo de exemplo e manda o handle no cabeçalho", () => {
+  const comImagem = r({ formatoCabecalho: "IMAGE", cabecalho: "texto que ficou de antes {{3}}" });
+  assert.equal(primeiro(comImagem), "Escolha a imagem de exemplo do cabeçalho.", "o texto antigo não conta");
+  assert.equal(primeiro(r({ formatoCabecalho: "VIDEO", midiaCabecalho: "nao-e-id" })), "Escolha o vídeo de exemplo do cabeçalho.");
+  const pronto = { ...comImagem, midiaCabecalho: DOC };
+  assert.deepEqual(problemasDo(pronto), []);
+  assert.deepEqual(componentesDoRascunho(pronto, "4::aGFuZGxl")[0], {
+    type: "HEADER",
+    format: "IMAGE",
+    example: { header_handle: ["4::aGFuZGxl"] },
+  });
+  assert.throws(() => componentesDoRascunho(pronto), /exemplo/, "sem o handle não monta");
+  assert.equal(midiaDoRascunho(r({ formatoCabecalho: "DOCUMENT" })), "documento");
+  assert.equal(midiaDoRascunho(base), null);
+  // O texto só volta a valer no formato TEXT.
+  assert.equal(componentesDoRascunho(r({ cabecalho: "Oi", formatoCabecalho: "TEXT" }))[0].format, "TEXT");
+});
+
+caso("criação com mídia: o exemplo segue o envio, e o vídeo é só MP4", () => {
+  const ex = (pede: "imagem" | "video" | "documento", tipo: string, mime: string, tamanho = 1000) =>
+    problemaDoExemploDoCabecalho(pede, { tipo, mime, tamanho });
+  assert.equal(ex("imagem", "imagem", "image/jpeg"), null);
+  assert.equal(ex("video", "video", "video/mp4"), null);
+  assert.equal(ex("documento", "documento", "application/pdf"), null);
+  assert.equal(ex("video", "video", "video/3gpp"), "O vídeo de exemplo do cabeçalho precisa ser MP4.");
+  assert.match(ex("imagem", "imagem", "image/webp") ?? "", /JPG ou PNG/);
+  assert.match(ex("video", "video", "video/mp4", 17 * 1024 * 1024) ?? "", /16 MB/);
+});
+
+caso("criação com mídia: a entrada da rota guarda o formato e o id do arquivo", () => {
+  const lido = entradaDaCriacao.parse({ waba: "123", nome: "x", categoria: "MARKETING", corpo: "Oi", formatoCabecalho: "VIDEO", midiaCabecalho: DOC });
+  assert.equal(lido.formatoCabecalho, "VIDEO");
+  assert.equal(lido.midiaCabecalho, DOC);
+  assert.equal(entradaDaCriacao.parse({ waba: "123", nome: "x", categoria: "MARKETING", corpo: "Oi" }).formatoCabecalho, "TEXT");
+  assert.equal(entradaDaCriacao.safeParse({ waba: "123", nome: "x", categoria: "MARKETING", formatoCabecalho: "LOCATION" }).success, false);
 });
 
 caso("botão que pede parâmetro que o CRM não manda (copiar código) barra o envio", () =>
