@@ -1440,6 +1440,8 @@ export default function Inicio({
           euId={euId}
           camposContato={dados.camposContato}
           ias={dados.ias}
+          todasTags={dados.tags}
+          todosSegmentos={dados.segmentos}
           aoAbrirOportunidade={abrirOportunidade}
           aoFechar={() => setGavetaAberta(false)}
         />
@@ -1476,6 +1478,8 @@ export default function Inicio({
           camposContato={dados.camposContato}
           camposOportunidade={dados.camposOportunidade}
           ias={dados.ias}
+          todasTags={dados.tags}
+          todosSegmentos={dados.segmentos}
           aoAbrirOportunidade={abrirOportunidade}
           aoFechar={() => setOpAbertaId(null)}
         />

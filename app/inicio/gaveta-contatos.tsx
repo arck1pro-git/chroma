@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { CampoPersonalizado, Contato, Etapa, Funil, Usuario } from "@/lib/entidades";
+import type { CampoPersonalizado, Contato, Etapa, Funil, Segmento, Tag, Usuario } from "@/lib/entidades";
 import type { Ia } from "@/lib/ia/catalogo";
 import type { ContatoEncontrado, DadosDoContato } from "@/lib/contatos-busca";
 import { MIN_DIGITOS, MIN_LETRAS, prepararTermo } from "@/lib/contatos-termo";
@@ -127,6 +127,8 @@ export default function GavetaContatos({
   euId,
   camposContato,
   ias,
+  todasTags,
+  todosSegmentos,
   aoAbrirOportunidade,
   aoFechar,
 }: {
@@ -141,6 +143,9 @@ export default function GavetaContatos({
   euId: string;
   camposContato: CampoPersonalizado[];
   ias: Ia[];
+  /** As tags e os segmentos que existem, para pôr e tirar do contato aberto. */
+  todasTags: Tag[];
+  todosSegmentos: Segmento[];
   aoAbrirOportunidade: (id: string) => void;
   aoFechar: () => void;
 }) {
@@ -398,7 +403,7 @@ export default function GavetaContatos({
         ) : aberto && fichaAtual ? (
           <>
             {/* Local e "no CRM há" já estão no cabeçalho. */}
-            <CamposContato contato={aberto} segmentos={fichaAtual.segmentos} tags={fichaAtual.tags} semLocal />
+            <CamposContato contato={aberto} segmentos={fichaAtual.segmentos} tags={fichaAtual.tags} semLocal edicao={{ todasTags, todosSegmentos }} />
             <IaDoContato
               // Remonta por contato: o valor otimista é do contato aberto.
               key={aberto.id}

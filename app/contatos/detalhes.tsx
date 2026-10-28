@@ -33,11 +33,13 @@ import {
   Vazio,
 } from "../components/gaveta";
 import { haQuanto, Selo, type Tom } from "./pecas";
+import TagsDoContato from "./tags-contato";
 
 // Partes da ficha do contato que as duas gavetas da tela inicial mostram — a
 // de contatos e a aba Cliente da ficha da oportunidade —, montadas com o kit
 // de app/components/gaveta.tsx. Tudo aqui é leitura, menos anotar, que mora em
-// AnotacoesContato, junto da lista de anotações.
+// AnotacoesContato, junto da lista de anotações, e as tags e os segmentos
+// quando quem chama passa `edicao` (desde 2026-10-28, ./tags-contato.tsx).
 
 /**
  * Os dados de cadastro, só os preenchidos: "@ —" e "📍 —" eram três linhas de
@@ -50,12 +52,15 @@ export function CamposContato({
   tags = [],
   semTelefone = false,
   semLocal = false,
+  edicao,
 }: {
   contato: Contato;
   segmentos?: Segmento[];
   tags?: Tag[];
   semTelefone?: boolean;
   semLocal?: boolean;
+  /** Com as tags e os segmentos que existem, os chips ganham × e "+". */
+  edicao?: { todasTags: Tag[]; todosSegmentos: Segmento[] };
 }) {
   const telefone = telefoneLegivel(contato.whatsapp);
   const lugar = localizacao(contato, true);
@@ -91,12 +96,25 @@ export function CamposContato({
             </span>
           </Propriedade>
         )}
-        {(segmentos.length > 0 || tags.length > 0) && (
+        {edicao ? (
           <Propriedade rotulo="Tags">
-            <span className="py-0.5">
-              <Chips segmentos={segmentos} tags={tags} />
-            </span>
+            <TagsDoContato
+              className="min-w-0 py-0.5"
+              contatoId={contato.id}
+              tags={tags}
+              segmentos={segmentos}
+              todasTags={edicao.todasTags}
+              todosSegmentos={edicao.todosSegmentos}
+            />
           </Propriedade>
+        ) : (
+          (segmentos.length > 0 || tags.length > 0) && (
+            <Propriedade rotulo="Tags">
+              <span className="py-0.5">
+                <Chips segmentos={segmentos} tags={tags} />
+              </span>
+            </Propriedade>
+          )
         )}
       </Propriedades>
     </Secao>

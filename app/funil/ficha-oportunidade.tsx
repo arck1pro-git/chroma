@@ -163,6 +163,8 @@ export default function FichaOportunidade({
   camposContato,
   camposOportunidade,
   ias,
+  todasTags,
+  todosSegmentos,
   aoAbrirOportunidade,
   aoFechar,
 }: {
@@ -183,6 +185,9 @@ export default function FichaOportunidade({
   camposContato: CampoPersonalizado[];
   camposOportunidade: CampoPersonalizado[];
   ias: Ia[];
+  /** As tags e os segmentos que existem: a aba Cliente põe e tira do contato. */
+  todasTags: Tag[];
+  todosSegmentos: Segmento[];
   aoAbrirOportunidade?: (id: string) => void;
   aoFechar: () => void;
 }) {
@@ -533,7 +538,7 @@ export default function FichaOportunidade({
         {aba === "cliente" && contato && (
           <>
             {/* Nome e número já estão no cabeçalho: aqui só o resto. */}
-            <CamposContato contato={contato} segmentos={segmentos} tags={tags} semTelefone />
+            <CamposContato contato={contato} segmentos={segmentos} tags={tags} semTelefone edicao={{ todasTags, todosSegmentos }} />
             <IaDoContato
               // Remonta por contato: o valor otimista é do contato aberto.
               key={contato.id}
