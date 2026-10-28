@@ -702,7 +702,7 @@ function Coluna({
   pediu,
 }: {
   robo: Robo;
-  /** O contato pediu atendimento humano e espera resposta (a pill do card). */
+  /** O contato foi para o atendimento humano e espera resposta (a pill do card). */
   pediu: (contato: Contato | undefined) => boolean;
   coluna: ColunaSubetapa;
   indice: number;
@@ -919,7 +919,7 @@ export default function PainelSubetapas({
   contatoPorId: Map<string, Contato>;
   usuarioPorId: Map<string, Usuario>;
   tagsDoContato: Map<string, Tag[]>;
-  /** Contatos que pediram atendimento humano e esperam resposta (a pill do card). */
+  /** Contatos que foram para o atendimento humano e esperam resposta (a pill do card). */
   pediramAtendimento: Set<string>;
   aoFechar: () => void;
   // ?ia= da URL quando o link da sidebar apontou para a conversa DESTA cadência.

@@ -71,6 +71,7 @@ import { avisarPorDemanda } from "@/lib/ia/aviso-demanda";
 import { NOME_PROVISORIO } from "@/lib/instagram";
 import { conexaoGoogle } from "@/lib/google-oauth";
 import { linkDaConversa } from "@/lib/link-do-crm";
+import { ETAPA_ATENDIMENTO_HUMANO, PASSOU_PELA_IA } from "@/lib/atendimento-humano";
 import {
   horariosLivres,
   horariosPorDia,
@@ -465,7 +466,7 @@ async function passarParaHumano(
   const aviso = await avisarResponsavel(atendimentoId, s, valor);
   await sql`
     INSERT INTO historico (contato_id, descricao)
-    VALUES (${s.contato_id}, ${`IA passou o atendimento para a equipe: ${motivo} (${aviso})`.slice(0, 1000)})`;
+    VALUES (${s.contato_id}, ${`${PASSOU_PELA_IA} ${motivo} (${aviso})`.slice(0, 1000)})`;
 }
 
 /**
@@ -492,16 +493,19 @@ async function moverPelaIa(s: Situacao, mover: Movimento) {
  *   · o lead pediu atendimento humano → "solicitou contato"
  *   · a IA marcou a reunião          → "reunião agendada"
  * (Funis reformulados em 2026-10-19: "em contato" virou "em atendimento" e
- * "tentando contato" virou "solicitou contato", nessa ordem no quadro.)
+ * "tentando contato" virou "solicitou contato".)
  * Só para a frente pela ordem das etapas (card que já passou não volta), com
  * duas voltas permitidas:
  *   · "sem contato" → "em atendimento": é exatamente o lead que voltou a falar;
- *   · "em atendimento" → "solicitou contato": o lead pediu uma pessoa no meio
- *     da conversa (pedido dele, 2026-10-23). No quadro, "solicitou contato" vem
- *     ANTES de "em atendimento", e como o lead que responde já anda para "em
- *     atendimento", a coluna só recebia quem pedia gente na primeira resposta:
- *     ficava vazia. Etapas depois de "em atendimento" (reunião agendada, No
- *     Show, realizada) não voltam: ali a equipe já está com o lead.
+ *   · qualquer etapa antes de "reunião agendada" → atendimento humano: o lead
+ *     pediu uma pessoa (pedidos dele, 2026-10-23 e 2026-10-28: "se a IA ver
+ *     que o lead quer atendimento humano, enviar para atendimento humano"). Se
+ *     "solicitou contato" vem antes de "em atendimento" no quadro, só para a
+ *     frente a coluna receberia apenas quem pede gente na primeira resposta. Da
+ *     reunião agendada em diante (No Show, realizada) não volta: ali a equipe
+ *     já está com o lead. Funil sem "reunião agendada": volta só de "em
+ *     atendimento", como antes. O nome da etapa (solicitou contato ou
+ *     atendimento humano) está em lib/atendimento-humano.ts.
  *
  * `manterIa`: a IA atende pela etapa (iaQueAtende), e "em atendimento" não tem
  * IA — sair da etapa dela a calaria no meio da conversa. Então ela fica ligada
@@ -509,7 +513,7 @@ async function moverPelaIa(s: Situacao, mover: Movimento) {
  */
 // "em contato" ainda casa: é o nome antigo, que o banco do dev continua usando.
 const ETAPA_EM_CONTATO = /^(em atendimento|em contato)$/i;
-const ETAPA_SOLICITOU = /^solicitou contato$/i;
+const ETAPA_SOLICITOU = ETAPA_ATENDIMENTO_HUMANO;
 const ETAPA_REUNIAO = /^reuni[aã]o agendada$/i;
 
 async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: string, manterIa: boolean): Promise<void> {
@@ -519,10 +523,15 @@ async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: st
       SELECT id, nome, ordem FROM etapas WHERE funil_id = ${s.op_funil_id} ORDER BY ordem`) as unknown as Array<{ id: string; nome: string; ordem: number }>;
     const destino = etapas.find((e) => alvo.test(e.nome.trim()));
     const atual = etapas.find((e) => e.id === s.op_etapa_id);
+    if (!destino && alvo === ETAPA_SOLICITOU) {
+      console.info(`[ia atendente] ${s.op_id} pediu atendimento humano, mas o funil não tem a etapa (${ETAPA_SOLICITOU})`);
+    }
     if (!destino || !atual || destino.id === atual.id) return;
+    const reuniao = etapas.find((e) => ETAPA_REUNIAO.test(e.nome.trim()));
     const volta =
       (alvo === ETAPA_EM_CONTATO && /^sem contato$/i.test(atual.nome.trim())) ||
-      (alvo === ETAPA_SOLICITOU && ETAPA_EM_CONTATO.test(atual.nome.trim()));
+      (alvo === ETAPA_SOLICITOU &&
+        (reuniao ? atual.ordem < reuniao.ordem : ETAPA_EM_CONTATO.test(atual.nome.trim())));
     if (destino.ordem <= atual.ordem && !volta) return;
     if (manterIa) {
       await sql`UPDATE contatos SET ia = true, ia_id = ${iaId} WHERE id = ${s.contato_id} AND ia IS NULL`;

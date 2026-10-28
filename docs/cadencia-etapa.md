@@ -39,7 +39,9 @@ escrever (à mão ou por prompt) → Salvar → [Rodando | Pausada] → Disparar
 - **Salvar** grava a versão (`fluxo_versoes`) **e leva ao n8n**: cria ou
   atualiza o workflow lá, com o webhook e os blocos prontos. Não há botão
   "Publicar" separado — a cadência **é** a automação do motor, não uma lista que
-  vira automação depois.
+  vira automação depois. Quem já está no meio segue o workflow de quando entrou,
+  com uma exceção: a etapa do bloco "Atualizar oportunidade" vale a da versão
+  salva agora (2026-10-28, `lib/automacoes/mover-pela-cadencia.ts`).
 - **O interruptor** liga e desliga esse workflow (`activate`/`deactivate`).
   Cadência nova nasce **pausada**; salvar de novo não liga sozinha o que estava
   parado, nem para o que estava rodando.

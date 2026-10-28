@@ -11,6 +11,7 @@
 // total, para o botão.
 import "server-only";
 import { sql } from "@/lib/db";
+import { ENVIADO_PELA_CADENCIA, PASSOU_PELA_IA } from "@/lib/atendimento-humano";
 import { totalDeContatos } from "@/lib/contatos-busca";
 import { tomDaEtapa } from "@/lib/cores-funil";
 import type { Ia } from "@/lib/ia/catalogo";
@@ -59,7 +60,7 @@ export type DadosFunil = {
   camposOportunidade: CampoPersonalizado[];
   // As IAs de atendimento (migration-ias.sql), na ordem em que foram criadas.
   ias: Ia[];
-  /** Contatos que pediram atendimento humano e ainda esperam (a pill do card). */
+  /** Contatos que foram para o atendimento humano e ainda esperam (a pill do card). */
   pediramAtendimento: string[];
 };
 
@@ -187,15 +188,17 @@ export async function carregarFunil(
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
       FROM ias ORDER BY data_criacao`,
     totalDeContatos(),
-    // QUEM PEDIU ATENDIMENTO e ainda espera — a pill "Pediu atendimento" no
-    // card (pedido dele, 2026-10-16). Pediu = a IA passou o lead para a equipe
-    // (a linha que lib/ia/atendente.ts grava, passarParaHumano); ainda espera =
-    // ninguém da equipe escreveu para ele depois disso, nem pelo chat do CRM
-    // ('crm') nem pelo celular ('aparelho'). Respondeu, a pill some.
+    // QUEM FOI PARA O ATENDIMENTO HUMANO e ainda espera — a pill vermelha
+    // "Atendimento humano" no card (pedidos dele, 2026-10-16 e 2026-10-28).
+    // Foi = a IA passou o lead para a equipe (passarParaHumano) ou a cadência
+    // pôs o card no atendimento humano (lib/automacoes/mover-pela-cadencia.ts);
+    // as duas linhas estão em lib/atendimento-humano.ts. Ainda espera = ninguém
+    // da equipe escreveu para ele depois disso, nem pelo chat do CRM ('crm')
+    // nem pelo celular ('aparelho'). Respondeu, a pill some.
     sql`
       SELECT h.contato_id
         FROM historico h
-       WHERE h.descricao LIKE 'IA passou o atendimento para a equipe:%'
+       WHERE (h.descricao LIKE ${`${PASSOU_PELA_IA}%`} OR h.descricao LIKE ${`${ENVIADO_PELA_CADENCIA}%`})
          AND h.contato_id IN ${doQuadro()}
        GROUP BY h.contato_id
       HAVING NOT EXISTS (

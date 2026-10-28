@@ -23,6 +23,7 @@
 // mostra "Sistema" quando o autor é nulo. Com o login, quem tem o id da sessão
 // passa para cá — registrarAnotacaoApagada já faz isso.
 import { listaUuid, sql } from "@/lib/db";
+import { ENVIADO_PELA_CADENCIA } from "@/lib/atendimento-humano";
 
 /** Roda o registro sem deixar o erro subir para quem chamou. */
 async function aSalvo(o_que: string, gravar: () => Promise<unknown>) {
@@ -121,6 +122,21 @@ export async function moverEtapaRegistrandoLote(
     WHERE a.etapa_id IS DISTINCT FROM ${etapaId}::uuid
     RETURNING oportunidade_id`;
   return registradas.map((r) => r.oportunidade_id as string);
+}
+
+/**
+ * "Enviado para atendimento humano pela cadência X": a cadência pôs o card no
+ * atendimento humano. É a linha que acende a pill do card (lib/funil.ts), como
+ * a da IA quando passa o lead para a equipe. Ver lib/atendimento-humano.ts.
+ */
+export async function registrarEnvioAoAtendimentoHumano(oportunidadeId: string, fluxo: string) {
+  await aSalvo("envio ao atendimento humano", () =>
+    sql`
+      INSERT INTO historico (contato_id, oportunidade_id, descricao)
+      SELECT o.contato_id, o.id, ${`${ENVIADO_PELA_CADENCIA} "${fluxo}"`.slice(0, 1000)}
+      FROM oportunidades o
+      WHERE o.id = ${oportunidadeId} AND o.contato_id IS NOT NULL`,
+  );
 }
 
 // ── Fluxo ───────────────────────────────────────────────────────────────────

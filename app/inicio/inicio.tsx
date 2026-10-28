@@ -328,7 +328,7 @@ function ColunaResumo({
   // as IAs para o seletor da etapa, e o atalho para a gaveta delas
   ias: Ia[];
   aoGerenciarIas: () => void;
-  /** Contatos que pediram atendimento humano e esperam resposta (a pill do card). */
+  /** Contatos que foram para o atendimento humano e esperam resposta (a pill do card). */
   pediramAtendimento: Set<string>;
 }) {
   const total = oportunidades.reduce((soma, o) => soma + o.valor, 0);
@@ -693,7 +693,7 @@ export default function Inicio({
     tagsDoContato,
   } = dados;
 
-  // Quem pediu atendimento humano e espera resposta: a pill do card.
+  // Quem foi para o atendimento humano e espera resposta: a pill do card.
   const pediramAtendimento = useMemo(() => new Set(dados.pediramAtendimento), [dados.pediramAtendimento]);
 
   // ── Seleção em lote ───────────────────────────────────────────────────────

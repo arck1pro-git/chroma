@@ -133,7 +133,10 @@ que aquela execução inscreveu. Dois motivos, os dois descobertos ligando isso:
    é reexecutar um bloco que já existe.
 
 De quebra, republicar a cadência não muda o que quem já está dentro dela vai
-receber.
+receber. A exceção é a etapa do bloco "Atualizar oportunidade" (2026-10-28):
+`/api/automacoes/mover` lê o destino do nó na versão publicada AGORA, então
+trocar a etapa e salvar vale também para quem já está no meio
+(`lib/automacoes/mover-pela-cadencia.ts`).
 
 É também aqui que entram o rate limit (§2.2) e a allowlist do `requisicao_http`
 (§2.3).

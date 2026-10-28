@@ -181,7 +181,9 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   `testar-campanhas-fluxo.ts` e `testar-campanhas-tela.ts` (pelo runner, sem `.env`: o contrato das campanhas em
   blocos e as operações do construtor, com as pendências iguais às do servidor), `testar-campanhas-motor.ts`
   e `testar-campanhas-construtor.ts` (pelo runner, contra o DEV com Graph e uazapi falsas: o motor das campanhas e a
-  IA do construtor, sem chamar a Anthropic) e `scripts/testar-hooks.mjs`
+  IA do construtor, sem chamar a Anthropic), `testar-atendimento-humano.ts` (pelo runner, contra o DEV com um funil de
+  teste apagado no fim: o fim da cadência, a IA que passa o lead para a equipe e a pill "Atendimento humano") e
+  `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
   falam com serviço e conta de verdade e só rodam a pedido.
 - **Script novo de verificação:** chama as funções reais pelo runner acima, contra o banco DEV: cria o cenário com

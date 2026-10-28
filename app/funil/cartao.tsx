@@ -24,7 +24,7 @@ export default function CartaoOportunidade({
   arrastando?: boolean;
   /** A IA atende este lead: a classe de cor do robô (a do funil). null = não atende. Ver ./ia.ts. */
   ia?: string | null;
-  /** O lead pediu atendimento humano e ninguém da equipe respondeu ainda (lib/funil.ts). */
+  /** O lead foi para o atendimento humano e ninguém da equipe respondeu ainda (lib/funil.ts). */
   pediuAtendimento?: boolean;
 }) {
   // tela-baixa: (app/globals.css) — no tablet deitado o cartão perde respiro,
@@ -56,15 +56,16 @@ export default function CartaoOportunidade({
       </h3>
 
       {/* Logo abaixo do nome: é o que a equipe precisa ver primeiro descendo a
-          coluna. Some quando alguém da equipe responde o lead. */}
+          coluna. Acende quando a IA passa o lead para a equipe ou a cadência o
+          põe no atendimento humano, e some quando alguém da equipe responde. */}
       {pediuAtendimento && (
         <p className="mt-1.5">
           <span
             className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/30"
-            title="A IA passou este lead para a equipe e ninguém respondeu ainda"
+            title="Lead no atendimento humano: ninguém da equipe respondeu ainda"
           >
             <Hand className="size-3" aria-hidden="true" />
-            Pediu atendimento
+            Atendimento humano
           </span>
         </p>
       )}

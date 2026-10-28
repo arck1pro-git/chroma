@@ -18,7 +18,12 @@ export async function POST(req: NextRequest) {
     return Response.json({ erro: "corpo inválido" }, { status: 400 });
   }
 
-  const r = await moverPelaCadencia(String(corpo.execucao_id ?? ""), String(corpo.etapa_id ?? ""));
+  // no_id: o bloco no fluxo. Com ele, o destino é o da versão publicada agora.
+  const r = await moverPelaCadencia(
+    String(corpo.execucao_id ?? ""),
+    String(corpo.etapa_id ?? ""),
+    String(corpo.no_id ?? "").slice(0, 100),
+  );
   if ("erro" in r) return Response.json({ erro: r.erro }, { status: r.status });
   // Pulado não é falha: o motor segue para o fim, e a resposta diz por quê.
   return Response.json({ ok: true, ...r });
