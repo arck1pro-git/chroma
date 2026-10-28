@@ -1141,7 +1141,9 @@ async function parteTemplateComImagem(docs: Docs, travaAtiva: boolean) {
     },
     aguardar: { tipo: "aguardar_resposta", prazo_minutos: 60, botoes: {}, palavras: [], outra: null, sem_resposta: null },
   });
-  assert.deepEqual(await conferirFluxo({ fluxo: f, wabaId: WABA, usuario: TUDO }), [], "com a imagem certa, passa na conferência");
+  assert.deepEqual(await conferirFluxo({ fluxo: f, wabaId: WABA, usuario: TUDO_COM_DOCUMENTOS }), [], "com a imagem certa, passa na conferência");
+  // O arquivo do cabeçalho vem da biblioteca: sem o módulo Documentos, não salva.
+  assert.ok((await conferirFluxo({ fluxo: f, wabaId: WABA, usuario: TUDO })).length > 0, "sem Documentos, o cabeçalho com arquivo é recusado");
   const c = await campanha("template com imagem", f);
   const id = await inscrever(c, (await contato()).id);
   const uploads = () => graph.filter((g) => g.metodo === "POST" && g.caminho === `/${TELEFONE_ID}/media`).length;
