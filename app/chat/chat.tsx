@@ -329,7 +329,6 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
                     aoOportunidade={() => setOportunidade(true)}
                     aoDetalhes={() => setDetalhes((v) => !v)}
                     aoFixar={() => iniciar(() => fixarConversa(aberta.id, !aberta.resumo.fixada_em))}
-                    aoAgendadas={() => setAgendadas(true)}
                     ias={dados.ias}
                     aoDefinirIa={(v, iaId) =>
                       aberta.contato ? definirIaDoContatoNoChat(aberta.contato.id, v, iaId) : Promise.resolve({ erro: "Conversa de grupo não tem IA." })
@@ -349,6 +348,11 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
                     aoEnviarDocumento={enviarDoc}
                     aoReabrir={() => iniciar(() => reabrirAtendimento(aberta.id))}
                     aoTemplates={() => setTemplates(true)}
+                    agendadas={
+                      aberta.grupo
+                        ? { pendentes: aberta.agendadas.filter((a) => a.estado === "agendada").length, aoAbrir: () => setAgendadas(true) }
+                        : undefined
+                    }
                   />
                   {/* Grupo não tem ficha de contato: o painel é só da conversa de contato. */}
                   {detalhes && aberta.contato && (

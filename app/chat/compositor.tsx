@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { Documento } from "@/lib/documentos";
 import {
+  CalendarClock,
   FileText,
   LayoutTemplate,
   Loader2,
@@ -55,6 +56,7 @@ export function Compositor({
   aoEnviarDocumento,
   aoReabrir,
   aoTemplates,
+  agendadas,
 }: {
   conversa: ConversaResumo;
   documentos: Documento[];
@@ -66,6 +68,8 @@ export function Compositor({
   aoEnviarDocumento: (documentoId: string, legenda: string) => Promise<{ erro?: string; registrada?: boolean }>;
   aoReabrir: () => void;
   aoTemplates: () => void;
+  /** Só no grupo (2026-10-29): o botão das mensagens agendadas, ao lado do clipe, com quantas vão sair. */
+  agendadas?: { pendentes: number; aoAbrir: () => void };
 }) {
   const [texto, setTexto] = useState("");
   const [anexo, setAnexo] = useState<Documento | null>(null);
@@ -269,6 +273,23 @@ export function Compositor({
               className="flex size-10 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
             >
               <Paperclip className="size-[18px]" />
+            </button>
+          )}
+          {agendadas && (
+            <button
+              type="button"
+              onClick={agendadas.aoAbrir}
+              disabled={demo}
+              aria-label="Mensagens agendadas"
+              title="Agendar mensagem neste grupo"
+              className="relative flex size-10 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+            >
+              <CalendarClock className="size-[18px]" />
+              {agendadas.pendentes > 0 && (
+                <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-500 px-1 text-[9.5px] font-semibold tabular-nums text-white">
+                  {agendadas.pendentes}
+                </span>
+              )}
             </button>
           )}
           <textarea
