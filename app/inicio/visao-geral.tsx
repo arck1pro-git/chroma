@@ -10,7 +10,8 @@
 //
 // PERÍODO E TOTAIS (2026-10-29, mesmo dia: "selecionar por 30 dias, por semana
 // e personalizado; mostrar no canto o total do funil agendado e de leads e ao
-// lado esses valores para o período"): 30 dias e Semana saem da carga da tela;
+// lado esses valores para o período"): 30 dias, Últimos 7 dias e Esta semana
+// (desde a segunda-feira) saem da carga da tela;
 // Personalizado busca o intervalo no servidor (./acoes-grafico.ts). No canto, o
 // total do funil desde sempre e, ao lado, o mesmo no período escolhido.
 // Trocar de funil volta para 30 dias (quem usa remonta pela key do funil).
@@ -47,12 +48,23 @@ const graficoRecolhido = criarPreferencia(
   () => window.matchMedia(TELA_BAIXA).matches,
 );
 
-type Periodo = "30" | "7" | "personalizado";
+// "Esta semana" (2026-10-29, pedido dele) começa sempre na segunda-feira e vai
+// até hoje; "Últimos 7 dias" é a janela que anda. Os dois saem dos 30 dias da
+// carga: a segunda desta semana está no máximo 6 dias atrás.
+type Periodo = "30" | "7" | "semana" | "personalizado";
 const PERIODOS: Array<{ valor: Periodo; rotulo: string }> = [
   { valor: "30", rotulo: "30 dias" },
-  { valor: "7", rotulo: "Semana" },
+  { valor: "7", rotulo: "Últimos 7 dias" },
+  { valor: "semana", rotulo: "Esta semana" },
   { valor: "personalizado", rotulo: "Personalizado" },
 ];
+
+/** A segunda-feira da semana do dia 'YYYY-MM-DD' (o último dia da carga é hoje, em Brasília). */
+function segundaDa(dia: string): string {
+  const d = new Date(`${dia}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
 
 const agendadas = (d: DiaDoFunil) => d.reunioesIa + d.reunioesEquipe;
 const soma = (dias: DiaDoFunil[], valor: (d: DiaDoFunil) => number) => dias.reduce((s, d) => s + valor(d), 0);
@@ -121,12 +133,21 @@ export default function VisaoGeral({ grafico, tom, funilId }: { grafico: Grafico
   const [erro, setErro] = useState<string | null>(null);
   const [buscando, iniciar] = useTransition();
 
+  const segunda = grafico.dias.length ? segundaDa(grafico.dias.at(-1)!.dia) : "";
   const dias =
-    periodo === "7" ? grafico.dias.slice(-7) : periodo === "personalizado" && personalizados ? personalizados : grafico.dias;
+    periodo === "7"
+      ? grafico.dias.slice(-7)
+      : periodo === "semana"
+        ? grafico.dias.filter((d) => d.dia >= segunda)
+        : periodo === "personalizado" && personalizados
+          ? personalizados
+          : grafico.dias;
   const resumo =
-    periodo === "personalizado" && personalizados && dias.length
-      ? `${curta(dias[0].dia)} a ${curta(dias.at(-1)!.dia)}`
-      : `últimos ${dias.length} dias`;
+    periodo === "semana"
+      ? `esta semana, desde segunda ${curta(segunda)}`
+      : periodo === "personalizado" && personalizados && dias.length
+        ? `${curta(dias[0].dia)} a ${curta(dias.at(-1)!.dia)}`
+        : `últimos ${dias.length} dias`;
   const noPeriodo = {
     leads: dias.reduce((s, d) => s + d.leads, 0),
     agendadas: soma(dias, agendadas),
