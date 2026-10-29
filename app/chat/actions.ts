@@ -393,6 +393,18 @@ export async function reabrirAtendimento(id: string): Promise<void> {
 }
 
 /**
+ * Fixar ou soltar a conversa no topo da lista (2026-10-29, com os grupos do
+ * WhatsApp). Vale para toda a equipe (decisão dele): é uma coluna da conversa,
+ * não uma preferência de quem clicou.
+ */
+export async function fixarConversa(id: string, fixar: boolean): Promise<void> {
+  await exigirModulo("chat", "editar");
+  if (!ehUuid(id)) return;
+  await sql`UPDATE atendimentos SET fixada_em = CASE WHEN ${fixar} THEN now() END WHERE id = ${id}`;
+  revalidatePath("/chat");
+}
+
+/**
  * O interruptor de IA do contato, direto da conversa. `null` volta a seguir a
  * etapa; `true` pede qual IA (`iaId`). Mesma gravação da gaveta do dashboard
  * (lib/ia/contato-ia.ts).

@@ -22,10 +22,13 @@ import {
   Loader2,
   MapPin,
   PanelRightOpen,
+  Pin,
+  PinOff,
   RotateCcw,
   Smartphone,
   Sparkles,
   TriangleAlert,
+  Users,
   Wallet,
 } from "@/app/components/icones";
 import type { CanalChat, ConversaAberta, MensagemChat } from "./tipos";
@@ -66,10 +69,13 @@ export function CabecalhoConversa({
   aoReabrir,
   aoOportunidade,
   aoDetalhes,
+  aoFixar,
   ias,
   aoDefinirIa,
   aoEscolherIa,
 }: {
+  /** Fixar ou soltar a conversa no topo da lista (para toda a equipe). */
+  aoFixar: () => void;
   ias: IaResumo[];
   aoDefinirIa: (valor: boolean | null, iaId: string | null) => Promise<{ erro?: string }>;
   aoEscolherIa: () => void;
@@ -88,11 +94,14 @@ export function CabecalhoConversa({
   aoOportunidade: () => void;
   aoDetalhes: () => void;
 }) {
-  const { resumo, contato } = aberta;
+  const { resumo, contato, grupo } = aberta;
   const papel = PAPEL[tipoDaConversa(resumo)];
   const dono = resumo.responsavel_id ? usuarios.find((u) => u.id === resumo.responsavel_id) : null;
   const semDono = resumo.status !== "encerrado" && !resumo.responsavel_id;
-  const nome = /^[\d\s+()-]+$/.test(contato.nome) ? formatarTelefone(contato.nome) : contato.nome;
+  // Grupo do WhatsApp (2026-10-29): sem contato, o nome é o do grupo.
+  const nomeBase = contato?.nome ?? resumo.contato_nome;
+  const nome = /^[\d\s+()-]+$/.test(nomeBase) ? formatarTelefone(nomeBase) : nomeBase;
+  const fixada = Boolean(resumo.fixada_em);
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-2 sm:gap-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950">
@@ -105,13 +114,27 @@ export function CabecalhoConversa({
         <ArrowLeft className="size-4" />
       </button>
 
-      <button type="button" onClick={aoDetalhes} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 text-left">
-        <Avatar nome={contato.nome} src={fotoDoContato(contato.id, resumo.numero_instancia, demo, contato.whatsapp)} tamanho={38} />
+      <button
+        type="button"
+        onClick={contato ? aoDetalhes : undefined}
+        className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg py-1 text-left ${contato ? "" : "cursor-default"}`}
+      >
+        <Avatar
+          nome={nomeBase}
+          src={contato ? fotoDoContato(contato.id, resumo.numero_instancia, demo, contato.whatsapp) : (grupo?.foto ?? null)}
+          tamanho={38}
+        />
         <span className="min-w-0">
           <span className="block truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-50">{nome}</span>
           <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
+            {grupo && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-px text-[10.5px] font-medium text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30">
+                <Users className="size-2.5 shrink-0" />
+                Grupo
+              </span>
+            )}
             {/* Contato que veio do Instagram costuma não ter WhatsApp: sem número, só o canal. */}
-            {contato.whatsapp && (
+            {contato?.whatsapp && (
               <>
                 <span className="hidden truncate tabular-nums sm:inline">{formatarTelefone(contato.whatsapp)}</span>
                 <span className="hidden sm:inline" aria-hidden="true">·</span>
@@ -147,13 +170,16 @@ export function CabecalhoConversa({
 
         {/* O interruptor de IA do CONTATO, onde se responde: ligar aqui é o
             mesmo que ligar na gaveta do dashboard (contatos.ia). */}
-        <InterruptorIaCompacto
-          estado={aberta.ia}
-          ias={ias}
-          aoDefinir={aoDefinirIa}
-          aoEscolher={aoEscolherIa}
-          desabilitado={demo || !podeEditar}
-        />
+        {/* A IA atende contato, nunca grupo: no grupo o interruptor some. */}
+        {contato && (
+          <InterruptorIaCompacto
+            estado={aberta.ia}
+            ias={ias}
+            aoDefinir={aoDefinirIa}
+            aoEscolher={aoEscolherIa}
+            desabilitado={demo || !podeEditar}
+          />
+        )}
         {semDono && (
           <button type="button" onClick={aoAssumir} disabled={demo || !podeEditar} className={botaoPrimario}>
             <Hand className="size-3.5" />
@@ -174,17 +200,35 @@ export function CabecalhoConversa({
         )}
         <button
           type="button"
-          onClick={aoOportunidade}
-          disabled={demo || !podeCriar}
+          onClick={aoFixar}
+          disabled={demo || !podeEditar}
+          aria-pressed={fixada}
+          title={fixada ? "Soltar do topo da lista" : "Fixar no topo da lista (para toda a equipe)"}
+          aria-label={fixada ? "Soltar conversa" : "Fixar conversa"}
+          className={`shrink-0 rounded-lg p-2 transition disabled:opacity-40 ${
+            fixada
+              ? "bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/20"
+              : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+          }`}
+        >
+          {fixada ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+        </button>
+        {contato && (
+          <button
+            type="button"
+            onClick={aoOportunidade}
+            disabled={demo || !podeCriar}
           title="Criar oportunidade para este contato"
           aria-label="Criar oportunidade"
           className="hidden shrink-0 rounded-lg p-2 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 sm:inline-flex dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
         >
           <Wallet className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={aoDetalhes}
+          </button>
+        )}
+        {contato && (
+          <button
+            type="button"
+            onClick={aoDetalhes}
           aria-pressed={detalhesAbertos}
           title="Dados do contato"
           aria-label="Dados do contato"
@@ -195,7 +239,8 @@ export function CabecalhoConversa({
           }`}
         >
           <PanelRightOpen className="size-4" />
-        </button>
+          </button>
+        )}
       </div>
     </header>
   );
@@ -207,8 +252,9 @@ export function CabecalhoConversa({
 // um bloco: só a primeira leva o nome e o canto "puxado".
 const MESMO_BLOCO_MS = 5 * 60_000;
 
+// Num grupo, cada participante é uma voz (remetente_nome): o nome dele abre o bloco.
 function voz(m: MensagemChat) {
-  return m.origem === "contato" ? "contato" : `${m.enviada_por ?? "crm"}:${m.autor_id ?? ""}`;
+  return m.origem === "contato" ? `contato:${m.remetente_nome ?? ""}` : `${m.enviada_por ?? "crm"}:${m.autor_id ?? ""}`;
 }
 
 export function Mensagens({
@@ -356,6 +402,9 @@ function Balao({
 
   return (
     <div className={`flex flex-col ${nosso ? "items-end" : "items-start"} ${inicioDeBloco ? "mt-3" : "mt-0.5"}`}>
+      {!nosso && inicioDeBloco && m.remetente_nome && (
+        <span className="mb-1 truncate px-1 text-[10.5px] font-medium text-emerald-700 dark:text-emerald-300">{m.remetente_nome}</span>
+      )}
       {nosso && inicioDeBloco && (automacao || celular || autor) && (
         <span
           className={`mb-1 inline-flex items-center gap-1 px-1 text-[10.5px] font-medium ${

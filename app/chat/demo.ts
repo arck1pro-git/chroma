@@ -68,6 +68,8 @@ export function carregarChatDemo({
     return {
       id: a.id,
       contato_id: a.contato_id,
+      grupo_id: null,
+      fixada_em: null,
       contato_nome: contato?.nome ?? "?",
       contato_whatsapp: contato?.whatsapp ?? null,
       responsavel_id: dono(a.responsavel_id),
@@ -118,7 +120,7 @@ export function carregarChatDemo({
         };
         mensagens.push(recebida);
         resumos.push({
-          id: atendimentoId, contato_id: contatoId, contato_nome: nome, contato_whatsapp: null,
+          id: atendimentoId, contato_id: contatoId, grupo_id: null, fixada_em: null, contato_nome: nome, contato_whatsapp: null,
           responsavel_id: pessoa === 0 ? usuarioId : null, status: pessoa === 0 ? "aberto" : "na_fila",
           canal: "instagram", numero_instancia: contaId, data_criacao: quandoDemo(90), nao_lidas: 1,
           ultima: { texto: recebida.texto, tipo: recebida.tipo, origem: recebida.origem, status: recebida.status, enviada_por: null, data: recebida.data_criacao },
@@ -197,7 +199,8 @@ export function carregarChatDemo({
         id: resumoAberto.id,
         resumo: resumoAberto,
         ia: { valor: null, iaId: null, etapas: null, iaDaEtapa: null },
-        contato: contatoPorId.get(resumoAberto.contato_id) as unknown as Contato,
+        contato: contatoPorId.get(resumoAberto.contato_id ?? "") as unknown as Contato,
+        grupo: null,
         mensagens: mensagens.filter((m) => m.atendimento_id === resumoAberto.id),
         oportunidades: dadosMock.oportunidades
           .filter((o) => o.contato_id === resumoAberto.contato_id)

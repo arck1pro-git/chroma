@@ -44,14 +44,22 @@ export type UltimaMensagem = {
   status: Mensagem["status"];
   enviada_por: EnviadaPor;
   data: string;
+  /** Num grupo: quem mandou (mensagens.remetente_nome). */
+  remetente?: string | null;
 };
 
-/** Uma linha da lista de conversas. */
+/**
+ * Uma linha da lista de conversas. Conversa de GRUPO do WhatsApp (2026-10-29):
+ * contato_id null, grupo_id preenchido e contato_nome com o nome do grupo.
+ */
 export type ConversaResumo = {
   id: string;
-  contato_id: string;
+  contato_id: string | null;
+  grupo_id: string | null;
   contato_nome: string;
   contato_whatsapp: string | null;
+  /** Fixada no topo da lista, para toda a equipe (null = não está). */
+  fixada_em: string | null;
   responsavel_id: string | null;
   status: Atendimento["status"];
   canal: Atendimento["canal"];
@@ -71,10 +79,15 @@ export type MensagemChat = Mensagem & {
   enviada_por: EnviadaPor;
 };
 
+/** O grupo do WhatsApp de uma conversa de grupo. */
+export type GrupoChat = { id: string; nome: string; jid: string; foto: string | null };
+
 export type ConversaAberta = {
   id: string;
   resumo: ConversaResumo;
-  contato: Contato;
+  /** null na conversa de grupo: o que é do contato (ficha, oportunidades, IA) não se aplica. */
+  contato: Contato | null;
+  grupo: GrupoChat | null;
   mensagens: MensagemChat[];
   oportunidades: Oportunidade[];
   /** Quem atende o contato: o ajuste dele (contatos.ia/ia_id) e o que a etapa diria. */

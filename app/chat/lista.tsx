@@ -12,7 +12,7 @@
 // Comentários entram logo abaixo dele (`abas`), e "Nova conversa" fica
 // desligada: no Instagram a conversa só começa quando a pessoa escreve.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Bot, ChevronDown, Inbox, Search, Sparkles, SquarePen, X } from "@/app/components/icones";
+import { Bot, ChevronDown, Inbox, Pin, Search, Sparkles, SquarePen, Users, X } from "@/app/components/icones";
 import type { CanalChat, ConversaResumo } from "./tipos";
 import { ListaCanais } from "./canais";
 import {
@@ -327,6 +327,8 @@ export function ListaConversas({
             const naoLida = c.nao_lidas > 0;
             const u = c.ultima;
             const doCanal = canalDaConversa(canais, c);
+            // Grupo do WhatsApp (2026-10-29): destacado em verde, com quem falou na prévia.
+            const grupo = Boolean(c.grupo_id);
             return (
               <li key={c.id}>
                 <button
@@ -334,13 +336,24 @@ export function ListaConversas({
                   onClick={() => aoAbrir(c.id)}
                   aria-current={sel ? "true" : undefined}
                   className={`relative flex w-full items-center gap-3 px-3 py-2.5 text-left transition ${
-                    sel ? "bg-zinc-100 dark:bg-zinc-900" : "hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                    sel
+                      ? "bg-zinc-100 dark:bg-zinc-900"
+                      : grupo
+                        ? "bg-emerald-50/50 hover:bg-emerald-50 dark:bg-emerald-500/[0.04] dark:hover:bg-emerald-500/10"
+                        : "hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
                   }`}
                 >
                   {sel && <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-zinc-900 dark:bg-zinc-100" aria-hidden="true" />}
-                  <Avatar nome={c.contato_nome} src={fotoDoContato(c.contato_id, c.numero_instancia, demo, c.contato_whatsapp)} tamanho={44}>
-                    {mostrarCanal && <SeloCanal tipo={tipoDaConversa(c)} />}
-                  </Avatar>
+                  {grupo || !c.contato_id ? (
+                    <span className="relative flex size-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-500/30">
+                      <Users className="size-5" aria-hidden="true" />
+                      {mostrarCanal && <SeloCanal tipo={tipoDaConversa(c)} />}
+                    </span>
+                  ) : (
+                    <Avatar nome={c.contato_nome} src={fotoDoContato(c.contato_id, c.numero_instancia, demo, c.contato_whatsapp)} tamanho={44}>
+                      {mostrarCanal && <SeloCanal tipo={tipoDaConversa(c)} />}
+                    </Avatar>
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-2">
                       <span
@@ -350,6 +363,13 @@ export function ListaConversas({
                       >
                         {/^[\d\s+()-]+$/.test(c.contato_nome) ? formatarTelefone(c.contato_nome) : c.contato_nome}
                       </span>
+                      {grupo && (
+                        <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-px text-[10px] font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                          Grupo
+                        </span>
+                      )}
+                      <span className="flex-1" aria-hidden="true" />
+                      {c.fixada_em && <Pin className="size-3 shrink-0 text-amber-500" aria-label="Fixada" />}
                       <span
                         suppressHydrationWarning
                         className={`shrink-0 text-[11px] tabular-nums ${
@@ -375,7 +395,7 @@ export function ListaConversas({
                           naoLida ? "text-zinc-700 dark:text-zinc-200" : "text-zinc-500 dark:text-zinc-400"
                         }`}
                       >
-                        {u ? previa(u.tipo, u.texto) : "Sem mensagens ainda"}
+                        {u ? `${grupo && u.remetente ? `${u.remetente}: ` : ""}${previa(u.tipo, u.texto)}` : "Sem mensagens ainda"}
                       </span>
                       {c.status === "na_fila" && (
                         <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">

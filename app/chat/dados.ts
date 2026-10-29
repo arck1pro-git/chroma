@@ -52,18 +52,23 @@ type LinhaConversa = Omit<ConversaResumo, "ultima"> & {
   u_status: string | null;
   u_enviada_por: string | null;
   u_data: string | null;
+  u_remetente: string | null;
 };
 
 // `filtro` é um fragmento SQL: canal (últimos 8 dígitos do número) ou uma
 // conversa específica pelo id.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function consultarConversas(filtro: any, limite: number): Promise<ConversaResumo[]> {
+  // Grupo do WhatsApp (2026-10-29): LEFT JOIN nos dois, e o nome do grupo no
+  // lugar do do contato (sem nome ainda, o fim do id). Fixadas vêm primeiro.
   const linhas = (await sql`
-    SELECT a.id, a.contato_id, a.responsavel_id, a.status, a.canal, a.numero_instancia,
+    SELECT a.id, a.contato_id, a.grupo_id, a.responsavel_id, a.status, a.canal, a.numero_instancia,
            to_char(a.data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao,
-           c.nome AS contato_nome, c.whatsapp AS contato_whatsapp,
+           to_char(a.fixada_em AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS fixada_em,
+           coalesce(c.nome, nullif(g.nome, ''), 'Grupo …' || right(split_part(g.jid, '@', 1), 4)) AS contato_nome,
+           c.whatsapp AS contato_whatsapp,
            u.texto AS u_texto, u.tipo AS u_tipo, u.origem AS u_origem, u.status AS u_status,
-           u.enviada_por AS u_enviada_por,
+           u.enviada_por AS u_enviada_por, u.remetente_nome AS u_remetente,
            to_char(u.data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS u_data,
            -- não lidas é derivado: mensagens do contato mais novas que lido_em.
            (SELECT count(*)::int FROM mensagens m
@@ -75,19 +80,20 @@ async function consultarConversas(filtro: any, limite: number): Promise<Conversa
                     + interval '24 hours') AT TIME ZONE 'UTC',
                    'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS janela_ate
     FROM atendimentos a
-    JOIN contatos c ON c.id = a.contato_id
+    LEFT JOIN contatos c ON c.id = a.contato_id
+    LEFT JOIN grupos_whatsapp g ON g.id = a.grupo_id
     LEFT JOIN LATERAL (
-      SELECT texto, tipo, origem, status, enviada_por, data_criacao
+      SELECT texto, tipo, origem, status, enviada_por, data_criacao, remetente_nome
       FROM mensagens m
       WHERE m.atendimento_id = a.id
       ORDER BY m.data_criacao DESC
       LIMIT 1
     ) u ON true
     WHERE ${filtro}
-    ORDER BY coalesce(u.data_criacao, a.data_atualizacao, a.data_criacao) DESC
+    ORDER BY (a.fixada_em IS NOT NULL) DESC, coalesce(u.data_criacao, a.data_atualizacao, a.data_criacao) DESC
     LIMIT ${limite}`) as unknown as LinhaConversa[];
 
-  return linhas.map(({ u_texto, u_tipo, u_origem, u_status, u_enviada_por, u_data, ...a }) => ({
+  return linhas.map(({ u_texto, u_tipo, u_origem, u_status, u_enviada_por, u_data, u_remetente, ...a }) => ({
     ...a,
     ultima: u_data
       ? {
@@ -97,14 +103,40 @@ async function consultarConversas(filtro: any, limite: number): Promise<Conversa
           status: (u_status ?? "recebido") as MensagemChat["status"],
           enviada_por: (u_enviada_por ?? null) as MensagemChat["enviada_por"],
           data: u_data,
+          remetente: u_remetente,
         }
       : null,
   }));
 }
 
+const colunasDaMensagem = () => sql`
+  id, atendimento_id, origem, autor_id, texto, status, erro, enviada_por, id_externo, remetente_nome,
+  tipo, midia_estado, midia_mime, midia_nome, midia_tamanho::float8 AS midia_tamanho,
+  midia_duracao, midia_erro, documento_id,
+  to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao`;
+
+/** A conversa de grupo aberta: o grupo e as mensagens; nada do que é de contato. */
+async function carregarGrupoAberto(id: string, resumo: ConversaResumo, grupoId: string): Promise<ConversaAberta> {
+  const [[g], mensagens] = await Promise.all([
+    sql`SELECT id, nome, jid, foto_url FROM grupos_whatsapp WHERE id = ${grupoId}`,
+    sql`SELECT ${colunasDaMensagem()} FROM mensagens WHERE atendimento_id = ${id} ORDER BY data_criacao DESC LIMIT ${LIMITE_MENSAGENS}`,
+  ]);
+  return {
+    id,
+    resumo,
+    contato: null,
+    grupo: g ? { id: g.id as string, nome: resumo.contato_nome, jid: g.jid as string, foto: (g.foto_url as string | null) ?? null } : null,
+    ia: { valor: null, iaId: null, etapas: null, iaDaEtapa: null },
+    mensagens: (mensagens as unknown as MensagemChat[]).reverse(),
+    oportunidades: [],
+    outras: [],
+  };
+}
+
 async function carregarAberta(id: string): Promise<ConversaAberta | null> {
   const [resumo] = await consultarConversas(sql`a.id = ${id}`, 1);
   if (!resumo) return null;
+  if (resumo.grupo_id) return carregarGrupoAberto(id, resumo, resumo.grupo_id);
 
   const [contatos, mensagens, oportunidades, outras] = await Promise.all([
     sql`
@@ -121,15 +153,7 @@ async function carregarAberta(id: string): Promise<ConversaAberta | null> {
                WHERE o.contato_id = contatos.id AND o.status = 'aberta'
                ORDER BY o.data_criacao DESC LIMIT 1) AS ia_da_etapa
       FROM contatos WHERE id = ${resumo.contato_id}`,
-    sql`
-      SELECT id, atendimento_id, origem, autor_id, texto, status, erro, enviada_por, id_externo,
-             tipo, midia_estado, midia_mime, midia_nome, midia_tamanho::float8 AS midia_tamanho,
-             midia_duracao, midia_erro, documento_id,
-             to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
-      FROM mensagens
-      WHERE atendimento_id = ${id}
-      ORDER BY data_criacao DESC
-      LIMIT ${LIMITE_MENSAGENS}`,
+    sql`SELECT ${colunasDaMensagem()} FROM mensagens WHERE atendimento_id = ${id} ORDER BY data_criacao DESC LIMIT ${LIMITE_MENSAGENS}`,
     sql`
       SELECT id, nome, contato_id, valor::float8 AS valor, responsavel_id, status, funil_id, etapa_id
       FROM oportunidades
@@ -144,6 +168,7 @@ async function carregarAberta(id: string): Promise<ConversaAberta | null> {
     id,
     resumo,
     contato: contatos[0] as unknown as Contato,
+    grupo: null,
     ia: {
       valor: (contatos[0]?.ia_valor as boolean | null) ?? null,
       iaId: (contatos[0]?.ia_ia_id as string | null) ?? null,

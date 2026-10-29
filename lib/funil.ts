@@ -263,7 +263,8 @@ export async function carregarFunil(
     oportunidadesDoContato: agrupar(oportunidadesT),
     historicoDoContato: agrupar(historico as unknown as Historico[]),
     anotacoesDoContato: agrupar(anotacoes as unknown as Anotacao[]),
-    atendimentosDoContato: agrupar(atendimentos as unknown as Atendimento[]),
+    // Lidas por contato_id (acima): nenhuma é conversa de grupo.
+    atendimentosDoContato: agrupar(atendimentos as unknown as (Atendimento & { contato_id: string })[]),
     camposContato: defs.filter((d) => d.entidade === "contato"),
     camposOportunidade: defs.filter((d) => d.entidade === "oportunidade"),
     ias: ias as unknown as Ia[],

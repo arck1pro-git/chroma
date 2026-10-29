@@ -29,6 +29,7 @@ import {
   encerrarAtendimento,
   enviarDocumento,
   enviarMensagem,
+  fixarConversa,
   marcarLido,
   reabrirAtendimento,
 } from "./actions";
@@ -324,8 +325,11 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
                     aoReabrir={() => iniciar(() => reabrirAtendimento(aberta.id))}
                     aoOportunidade={() => setOportunidade(true)}
                     aoDetalhes={() => setDetalhes((v) => !v)}
+                    aoFixar={() => iniciar(() => fixarConversa(aberta.id, !aberta.resumo.fixada_em))}
                     ias={dados.ias}
-                    aoDefinirIa={(v, iaId) => definirIaDoContatoNoChat(aberta.contato.id, v, iaId)}
+                    aoDefinirIa={(v, iaId) =>
+                      aberta.contato ? definirIaDoContatoNoChat(aberta.contato.id, v, iaId) : Promise.resolve({ erro: "Conversa de grupo não tem IA." })
+                    }
                     // Ligar sem IA na etapa pede a escolha: o painel do contato tem o seletor.
                     aoEscolherIa={() => setDetalhes(true)}
                   />
@@ -342,11 +346,12 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
                     aoReabrir={() => iniciar(() => reabrirAtendimento(aberta.id))}
                     aoTemplates={() => setTemplates(true)}
                   />
-                  {detalhes && (
+                  {/* Grupo não tem ficha de contato: o painel é só da conversa de contato. */}
+                  {detalhes && aberta.contato && (
                     <PainelDetalhes
                       podeCriar={permissoes.criar}
                       podeEditar={permissoes.editar}
-                      aberta={aberta}
+                      aberta={{ ...aberta, contato: aberta.contato }}
                       canais={canais}
                       funis={dados.funis}
                       etapas={dados.etapas}
@@ -360,7 +365,7 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
                       }}
                       aoNovaOportunidade={() => setOportunidade(true)}
                       ias={dados.ias}
-                      aoDefinirIa={(v, iaId) => definirIaDoContatoNoChat(aberta.contato.id, v, iaId)}
+                      aoDefinirIa={(v, iaId) => (aberta.contato ? definirIaDoContatoNoChat(aberta.contato.id, v, iaId) : Promise.resolve({}))}
                     />
                   )}
                 </>
@@ -391,14 +396,14 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
       {templates && aberta && (
         <SeletorTemplates
           atendimentoId={aberta.id}
-          nomeContato={aberta.contato.nome}
+          nomeContato={aberta.contato?.nome ?? aberta.resumo.contato_nome}
           documentos={dados.documentos}
           aoFechar={() => setTemplates(false)}
           aoEnviado={() => setTemplates(false)}
         />
       )}
 
-      {oportunidade && aberta && (
+      {oportunidade && aberta?.contato && (
         <NovaOportunidade
           contato={aberta.contato}
           funis={dados.funis}

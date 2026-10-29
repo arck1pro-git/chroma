@@ -87,7 +87,7 @@ export async function abrirConversaDaCadencia(dados: {
   const [at] = await sql`
     INSERT INTO atendimentos (contato_id, status, canal, numero_instancia)
     VALUES (${contatoId}, 'na_fila', 'whatsapp', ${numero})
-    ON CONFLICT (contato_id, numero_instancia) DO UPDATE
+    ON CONFLICT (contato_id, numero_instancia) WHERE contato_id IS NOT NULL DO UPDATE
       SET status = CASE WHEN atendimentos.status = 'encerrado' THEN 'na_fila' ELSE atendimentos.status END,
           data_atualizacao = now()
     RETURNING id`;

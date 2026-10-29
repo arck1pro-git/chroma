@@ -87,7 +87,9 @@ templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, c
 | Extensão de reuniões | `/api/reunioes/assistente/*` (lead da sala, busca, trecho de áudio, análise, resumo, salvar na ficha) | sessão + Origin exato da extensão + módulo Agenda, em `lib/reunioes-extensao.ts`; o lead segue Dashboard/Contatos e o Chat |
 
 Mensagem que chega pelo WhatsApp é gravada e, depois da resposta (`after`), `lib/ia/atendente.ts` decide se a IA
-responde. Envio de mensagem, da equipe ou da IA, passa por `lib/conversa-envio.ts`: grava pendente, envia pela
+responde. Mensagem de grupo do WhatsApp Web (`@g.us`) vira conversa do grupo (`lib/grupos-whatsapp.ts`, tabela
+`grupos_whatsapp`, `atendimentos.grupo_id` com `contato_id` NULL) e nunca passa pela IA; só o chat a lista (LEFT JOIN),
+e o que lê conversa com `JOIN contatos` não vê grupo. Conversa fixada (`atendimentos.fixada_em`) vale para a equipe. Envio de mensagem, da equipe ou da IA, passa por `lib/conversa-envio.ts`: grava pendente, envia pela
 uazapi, pela Meta ou pelo Instagram (escolha por canal, sem "senão é uazapi"), casa o retorno. Instagram: DM vira
 conversa comum (canal 'instagram'); comentários ficam em `instagram_comentarios`; todo envio ao Instagram sai pelo
 ponto único de `lib/instagram.ts`; a IA de comentário (`lib/ia/comentarios.ts`) só escolhe frase pública fixa. Automação: a tela desenha o fluxo, `lib/automacoes/compilador` gera o
@@ -264,7 +266,7 @@ O fluxo completo, com delegação aos subagentes e revisão, está nas skills `/
 `lib/ia/atendente.ts`, `lib/automacoes/compilador/`, `lib/automacoes/motores/n8n/adaptador.ts`,
 `app/api/uazapi/webhook/route.ts`, `app/api/meta/whatsapp/webhook/route.ts`, `app/api/mcp/[segredo]/route.ts`,
 `app/api/meta/instagram/webhook/route.ts`, `lib/instagram.ts` (ponto único de envio e trava de dev),
-`lib/instagram-webhook.ts`, `lib/ia/comentarios.ts`, `lib/campanhas-whatsapp*.ts` (o motor que dispara para o segmento
+`lib/instagram-webhook.ts`, `lib/ia/comentarios.ts`, `lib/grupos-whatsapp.ts` (conversa de grupo, sem contato), `lib/campanhas-whatsapp*.ts` (o motor que dispara para o segmento
 inteiro, dividido por assunto; sobretudo `-rodada`, `-envios` e `-controle`), `lib/campanhas-fluxo-entrada.ts`,
 `lib/aviso-equipe-whatsapp.ts`, `lib/ia/campanhas-construtor.ts`, `lib/whatsapp-custo.ts` (lê o gasto na Graph),
 `lib/reunioes-extensao.ts` (Origin e freio da extensão de reuniões), `lib/reunioes-lead.ts`, `lib/ia/reuniao.ts`,

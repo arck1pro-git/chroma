@@ -58,18 +58,33 @@ export type Destino = {
   ultima_entrada: Date | null;
 };
 
-/** Para onde vai a mensagem desta conversa: canal, nosso número e o do contato. */
+/**
+ * Para onde vai a mensagem desta conversa: canal, nosso número e o do contato.
+ * Na conversa de GRUPO (2026-10-29), `whatsapp` é o jid do grupo ("…@g.us"),
+ * que a uazapi aceita como destino; nome é o do grupo, sem e-mail nem cidade.
+ */
 export async function destinoDa(atendimentoId: string): Promise<Destino | null> {
   if (!ehUuid(atendimentoId)) return null;
   const [d] = await sql`
-    SELECT a.id, a.canal, a.numero_instancia, c.whatsapp, c.campos->>'instagram_id' AS instagram_id,
-           c.nome, c.email, c.cidade,
+    SELECT a.id, a.canal, a.numero_instancia, coalesce(c.whatsapp, g.jid) AS whatsapp,
+           c.campos->>'instagram_id' AS instagram_id,
+           coalesce(c.nome, g.nome) AS nome, c.email, c.cidade,
            (SELECT max(m.data_criacao) FROM mensagens m
              WHERE m.atendimento_id = a.id AND m.origem = 'contato') AS ultima_entrada
     FROM atendimentos a
-    JOIN contatos c ON c.id = a.contato_id
+    LEFT JOIN contatos c ON c.id = a.contato_id
+    LEFT JOIN grupos_whatsapp g ON g.id = a.grupo_id
     WHERE a.id = ${atendimentoId}`;
   return (d as unknown as Destino) ?? null;
+}
+
+/**
+ * O destinatário como a uazapi quer: o grupo vai com o jid inteiro ("…@g.us");
+ * o contato, só com os dígitos. Sem isto o soDigitos do grupo viraria um
+ * "telefone" que não existe.
+ */
+export function numeroDoDestino(d: Destino): string {
+  return /@g\.us$/i.test(d.whatsapp ?? "") ? (d.whatsapp as string) : soDigitos(d.whatsapp ?? "");
 }
 
 /** Os canais pelos quais o CRM manda. Qualquer outro valor de atendimentos.canal é recusa. */
@@ -230,7 +245,7 @@ async function textoPeloCanal(
   switch (canal) {
     case "whatsapp_oficial": {
       await pausa();
-      const r = await enviarTextoMeta(await telefoneOficial(d), soDigitos(d.whatsapp ?? ""), corpo);
+      const r = await enviarTextoMeta(await telefoneOficial(d), numeroDoDestino(d), corpo);
       return r.messages?.[0]?.id ?? null;
     }
     case "instagram": {
@@ -243,7 +258,7 @@ async function textoPeloCanal(
       // Pelo número que RECEBEU a conversa: pela instância errada a resposta
       // chega de um número que o cliente não conhece.
       const instancia = await instanciaPorNumero(d.numero_instancia ?? null);
-      return (await enviarTexto(soDigitos(d.whatsapp ?? ""), corpo, instancia, mensagemId, digitandoMs)).messageid;
+      return (await enviarTexto(numeroDoDestino(d), corpo, instancia, mensagemId, digitandoMs)).messageid;
     }
   }
 }
@@ -291,7 +306,7 @@ export async function enviarDocumentoNaConversa(e: {
   if (ehOficial(d) && !janelaAberta(d)) {
     return { erro: "A janela de 24h está fechada. Envie um template antes do anexo." };
   }
-  const whatsapp = soDigitos(d.whatsapp ?? "");
+  const whatsapp = numeroDoDestino(d);
 
   const [msg] = await sql`
     INSERT INTO mensagens
@@ -365,7 +380,7 @@ export async function enviarAudioNaConversa(e: {
   if (canal === "instagram") return { erro: "O direct do Instagram não recebe áudio pelo CRM." };
   const recusa = recusaDoDestino(d) ?? foraDaJanela(d);
   if (!canal || recusa) return { erro: recusa ?? "O CRM não envia mensagem pelo canal desta conversa." };
-  const whatsapp = soDigitos(d.whatsapp ?? "");
+  const whatsapp = numeroDoDestino(d);
 
   const mensagemId = randomUUID();
   let arquivo: { bytes: Uint8Array; mime: string };

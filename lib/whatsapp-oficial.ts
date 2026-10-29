@@ -257,7 +257,7 @@ async function registrarRecebida(
   const [at] = await sql`
     INSERT INTO atendimentos (contato_id, status, canal, numero_instancia)
     VALUES (${contatoId}, 'na_fila', 'whatsapp_oficial', ${numeroCanal})
-    ON CONFLICT (contato_id, numero_instancia) DO UPDATE
+    ON CONFLICT (contato_id, numero_instancia) WHERE contato_id IS NOT NULL DO UPDATE
       SET status = CASE
             WHEN atendimentos.status = 'encerrado'
               OR (atendimentos.status = 'aberto' AND atendimentos.responsavel_id IS NULL)
@@ -409,7 +409,7 @@ export async function registrarEnvioOficial(e: {
     const [at] = await sql`
       INSERT INTO atendimentos (contato_id, status, canal, numero_instancia)
       VALUES (${e.contatoId}, 'aberto', 'whatsapp_oficial', ${numeroCanal})
-      ON CONFLICT (contato_id, numero_instancia) DO UPDATE
+      ON CONFLICT (contato_id, numero_instancia) WHERE contato_id IS NOT NULL DO UPDATE
         SET data_atualizacao = now()
       RETURNING id`;
     await sql`

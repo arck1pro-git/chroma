@@ -8,7 +8,7 @@
 // conversa correndo antes de prometer algo.
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import type { Etapa, Funil } from "@/lib/entidades";
+import type { Contato, Etapa, Funil } from "@/lib/entidades";
 import { brl, localizacao } from "@/lib/formato";
 import { Check, Copy, Mail, MapPin, Phone, Plus, Wallet, X } from "@/app/components/icones";
 import { InterruptorIaContato } from "../components/interruptor-ia-contato";
@@ -32,7 +32,8 @@ export function PainelDetalhes({
 }: {
   ias: IaResumo[];
   aoDefinirIa: (valor: boolean | null, iaId: string | null) => Promise<{ erro?: string }>;
-  aberta: ConversaAberta;
+  /** Só conversa de contato: a de grupo não abre este painel. */
+  aberta: ConversaAberta & { contato: Contato };
   canais: CanalChat[];
   funis: Funil[];
   etapas: Etapa[];

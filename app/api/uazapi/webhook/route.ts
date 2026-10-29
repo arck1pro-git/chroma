@@ -20,6 +20,11 @@
 // confirmamos capturando um evento real. Por isso todo evento é logado cru e a
 // rota SEMPRE responde 200 — se o formato divergir, a gente vê no log e ajusta
 // sem a uazapi ficar reenviando em loop.
+//
+// GRUPOS (2026-10-29): mensagem de grupo (chatid "…@g.us") vira conversa do
+// GRUPO, não de um contato (lib/grupos-whatsapp.ts): tabela grupos_whatsapp,
+// atendimentos.grupo_id, e quem falou em mensagens.remetente_nome. Grupo não
+// passa pela IA nem pela palavra que liga a IA. Antes era descartado.
 import { NextRequest, after } from "next/server";
 import { sql } from "@/lib/db";
 import { soDigitos, chaveTelefone } from "@/lib/telefone";
@@ -28,6 +33,7 @@ import { ORIGEM_RASTREIO } from "@/lib/uazapi";
 import { alternarIaPelaPalavra, responderComIa } from "@/lib/ia/atendente";
 import { segredoConfere } from "@/lib/segredo";
 import { ehUuid } from "@/lib/validacao";
+import { completarGrupo, conversaDoGrupo, ehJidDeGrupo, nomeValido, remetenteDoGrupo } from "@/lib/grupos-whatsapp";
 
 // ── Extração tolerante ──────────────────────────────────────────────────────
 // Aceita o evento solto ou dentro de { message } / { data }.
@@ -156,86 +162,23 @@ export async function POST(req: NextRequest) {
     // A conversa é sempre o chatid: na recebida ele é o contato, na enviada é o
     // destinatário. Usar `sender` no fromMe daria o NOSSO próprio número.
     const chatid: string = ev?.chatid ?? ev?.sender ?? "";
-    // Grupo (@g.us) não vira atendimento: o "contato" seria o grupo inteiro.
-    if (/@g\.us$/i.test(chatid)) return Response.json({ ok: true });
-
     const idExterno: string | undefined = ev?.messageid ?? ev?.id;
-    const numero = soDigitos(chatid);
-    if (!numero) return Response.json({ ok: true });
-    // No fromMe, senderName é o NOSSO nome — não serve pra nomear o contato.
-    const nomePush: string = fromMe
-      ? (ev?.chatName ?? numero)
-      : (ev?.senderName ?? ev?.pushName ?? numero);
 
-    // Casa pelo fim do número (últimos 8 dígitos) pra tolerar o nono dígito.
-    const fim8 = chaveTelefone(numero).slice(-8);
-
-    const [contatoExistente] = await sql`
-      SELECT id FROM contatos
-      WHERE regexp_replace(whatsapp, '\\D', '', 'g') LIKE ${"%" + fim8}
-      LIMIT 1`;
-
-    let contatoId: string;
-    if (contatoExistente) {
-      contatoId = contatoExistente.id;
-    } else {
-      // Contato novo, nascido do WhatsApp. Nome = pushName; número cru.
-      const [novoContato] = await sql`
-        INSERT INTO contatos (nome, whatsapp)
-        VALUES (${nomePush}, ${numero})
-        RETURNING id`;
-      contatoId = novoContato.id;
-    }
-
-    // Atendimento aberto/na fila do MESMO PAR (contato, instância), ou cria um
-    // novo na fila. Não basta casar por contato: se esse contato também falar
-    // com outro número nosso, é outra conversa. `IS NOT DISTINCT FROM` em vez de
-    // `=` porque numero_instancia pode ser NULL dos dois lados (evento sem o
-    // parâmetro), e NULL = NULL nunca é true em SQL — perderia o casamento.
-    //
-    // Vale também pro fromMe: conversa iniciada pelo celular tem que aparecer
-    // no Chroma, e 'na_fila' é o único status sem dono que a tela lista (um
-    // 'aberto' com responsavel_id NULL não cai em nenhuma das três abas).
-    // ADOÇÃO: conversa daquele contato que ficou SEM número (a tela do chat
-    // criava assim) recebe o número agora, em vez de virar uma segunda linha ao
-    // lado da do par. Só adota quando a do par ainda não existe — senão a
-    // atualização bateria na trava `ux_atendimento_contato_numero`.
-    if (numeroInstancia) {
-      await sql`
-        UPDATE atendimentos a
-           SET numero_instancia = ${numeroInstancia}, data_atualizacao = now()
-         WHERE a.contato_id = ${contatoId}
-           AND a.numero_instancia IS NULL
-           AND NOT EXISTS (
-             SELECT 1 FROM atendimentos b
-              WHERE b.contato_id = ${contatoId}
-                AND b.numero_instancia = ${numeroInstancia})`;
-    }
-
-    // UMA CONVERSA POR PAR DE NÚMEROS, e a trava é do banco
-    // (migration-atendimento-unico.sql). Aqui o upsert faz as três coisas de
-    // uma vez: acha a que existe, reabre a que estava encerrada e cria quando
-    // não há nenhuma.
-    //
-    // Era SELECT e depois INSERT, e isso tinha dois furos. O primeiro: conversa
-    // encerrada não era encontrada (o WHERE pedia `status <> 'encerrado'`), e a
-    // pessoa voltando ganhava uma linha nova — o histórico dela partido em
-    // pedaços. O segundo é corrida: dois eventos no mesmo instante passavam os
-    // dois pelo SELECT vazio e inseriam dois.
-    //
-    // `DO UPDATE` e não `DO NOTHING` porque o RETURNING precisa da linha: com
-    // NOTHING, o conflito devolve zero linhas e o código ficaria sem id.
-    const [at] = await sql`
-      INSERT INTO atendimentos (contato_id, status, canal, numero_instancia)
-      VALUES (${contatoId}, 'na_fila', 'whatsapp', ${numeroInstancia})
-      ON CONFLICT (contato_id, numero_instancia) DO UPDATE
-        SET status = CASE
-              WHEN atendimentos.status = 'encerrado' THEN 'na_fila'
-              ELSE atendimentos.status
-            END,
-            data_atualizacao = now()
-      RETURNING id`;
-    const atendimentoId: string = at.id;
+    // GRUPO (@g.us, desde 2026-10-29; antes era descartado): a conversa é do
+    // grupo (lib/grupos-whatsapp.ts), não de um contato, e quem falou vai em
+    // remetente_nome. O nome do grupo vem em chat.name; sem ele, a uazapi é
+    // consultada depois da resposta.
+    const grupo = ehJidDeGrupo(chatid)
+      ? await conversaDoGrupo({
+          jid: chatid,
+          nome: nomeValido(payload?.chat?.name ?? payload?.chat?.wa_name, chatid),
+          foto: typeof payload?.chat?.image === "string" && payload.chat.image ? payload.chat.image : null,
+          numeroInstancia,
+        })
+      : null;
+    const atendimentoId = grupo ? grupo.atendimentoId : await conversaDoContato(ev, chatid, fromMe, numeroInstancia);
+    if (!atendimentoId) return Response.json({ ok: true });
+    const remetente = grupo ? remetenteDoGrupo(ev) : null;
 
     // ON CONFLICT: o mesmo evento pode chegar duas vezes (retentativa da uazapi,
     // reenvio do n8n) e a linha já pode existir se foi o Chroma que enviou. O
@@ -262,7 +205,7 @@ export async function POST(req: NextRequest) {
       INSERT INTO mensagens (
         atendimento_id, origem, enviada_por, texto, status, id_externo,
         tipo, midia_url_origem, midia_mime, midia_nome,
-        midia_tamanho, midia_duracao, midia_estado)
+        midia_tamanho, midia_duracao, midia_estado, remetente_nome)
       VALUES (
         ${atendimentoId},
         ${fromMe ? "agente" : "contato"},
@@ -280,7 +223,8 @@ export async function POST(req: NextRequest) {
         ${midia?.nome ?? null},
         ${midia?.tamanho ?? null},
         ${midia?.duracao ?? null},
-        ${estadoMidia})
+        ${estadoMidia},
+        ${remetente})
       ON CONFLICT (id_externo) WHERE id_externo IS NOT NULL DO NOTHING
       RETURNING id`;
 
@@ -301,9 +245,15 @@ export async function POST(req: NextRequest) {
       //   3. Do celular, a mensagem pode ser a palavra de uma IA: liga ou
       //      desliga a IA do contato. Só aqui, dentro de "inseriu agora": o
       //      mesmo evento reenviado alternaria de volta.
+      // Em GRUPO, nem IA nem palavra: a IA atende contato. Só o nome do grupo,
+      // quando o evento não trouxe.
       const mensagemId = inseridas[0].id as string;
       after(async () => {
         if (estadoMidia === "pendente") await baixarPendentes();
+        if (grupo) {
+          if (grupo.semNome) await completarGrupo(grupo.grupoId, chatid, numeroInstancia);
+          return;
+        }
         if (!fromMe) await responderComIa(atendimentoId, mensagemId);
         else if (texto) await alternarIaPelaPalavra(atendimentoId, texto);
       });
@@ -316,3 +266,88 @@ export async function POST(req: NextRequest) {
     return Response.json({ ok: true });
   }
 }
+
+// ── A conversa do CONTATO ─────────────────────────────────────────────────────
+// O caminho de sempre (antes de 2026-10-29 era o corpo do POST): casa o contato
+// pelo fim do número, cria quando não existe e acha ou cria a conversa do par
+// (contato, número nosso). null = o chatid não tem número.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function conversaDoContato(ev: any, chatid: string, fromMe: boolean, numeroInstancia: string | null): Promise<string | null> {
+  const numero = soDigitos(chatid);
+  if (!numero) return null;
+  // No fromMe, senderName é o NOSSO nome — não serve pra nomear o contato.
+  const nomePush: string = fromMe
+    ? (ev?.chatName ?? numero)
+    : (ev?.senderName ?? ev?.pushName ?? numero);
+
+  // Casa pelo fim do número (últimos 8 dígitos) pra tolerar o nono dígito.
+  const fim8 = chaveTelefone(numero).slice(-8);
+
+  const [contatoExistente] = await sql`
+    SELECT id FROM contatos
+    WHERE regexp_replace(whatsapp, '\\D', '', 'g') LIKE ${"%" + fim8}
+    LIMIT 1`;
+
+  let contatoId: string;
+  if (contatoExistente) {
+    contatoId = contatoExistente.id;
+  } else {
+    // Contato novo, nascido do WhatsApp. Nome = pushName; número cru.
+    const [novoContato] = await sql`
+      INSERT INTO contatos (nome, whatsapp)
+      VALUES (${nomePush}, ${numero})
+      RETURNING id`;
+    contatoId = novoContato.id;
+  }
+
+  // Atendimento aberto/na fila do MESMO PAR (contato, instância), ou cria um
+  // novo na fila. Não basta casar por contato: se esse contato também falar
+  // com outro número nosso, é outra conversa. `IS NOT DISTINCT FROM` em vez de
+  // `=` porque numero_instancia pode ser NULL dos dois lados (evento sem o
+  // parâmetro), e NULL = NULL nunca é true em SQL — perderia o casamento.
+  //
+  // Vale também pro fromMe: conversa iniciada pelo celular tem que aparecer
+  // no Chroma, e 'na_fila' é o único status sem dono que a tela lista (um
+  // 'aberto' com responsavel_id NULL não cai em nenhuma das três abas).
+  // ADOÇÃO: conversa daquele contato que ficou SEM número (a tela do chat
+  // criava assim) recebe o número agora, em vez de virar uma segunda linha ao
+  // lado da do par. Só adota quando a do par ainda não existe — senão a
+  // atualização bateria na trava `ux_atendimento_contato_numero`.
+  if (numeroInstancia) {
+    await sql`
+      UPDATE atendimentos a
+         SET numero_instancia = ${numeroInstancia}, data_atualizacao = now()
+       WHERE a.contato_id = ${contatoId}
+         AND a.numero_instancia IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM atendimentos b
+            WHERE b.contato_id = ${contatoId}
+              AND b.numero_instancia = ${numeroInstancia})`;
+  }
+
+  // UMA CONVERSA POR PAR DE NÚMEROS, e a trava é do banco
+  // (migration-atendimento-unico.sql). Aqui o upsert faz as três coisas de
+  // uma vez: acha a que existe, reabre a que estava encerrada e cria quando
+  // não há nenhuma.
+  //
+  // Era SELECT e depois INSERT, e isso tinha dois furos. O primeiro: conversa
+  // encerrada não era encontrada (o WHERE pedia `status <> 'encerrado'`), e a
+  // pessoa voltando ganhava uma linha nova — o histórico dela partido em
+  // pedaços. O segundo é corrida: dois eventos no mesmo instante passavam os
+  // dois pelo SELECT vazio e inseriam dois.
+  //
+  // `DO UPDATE` e não `DO NOTHING` porque o RETURNING precisa da linha: com
+  // NOTHING, o conflito devolve zero linhas e o código ficaria sem id.
+  const [at] = await sql`
+    INSERT INTO atendimentos (contato_id, status, canal, numero_instancia)
+    VALUES (${contatoId}, 'na_fila', 'whatsapp', ${numeroInstancia})
+    ON CONFLICT (contato_id, numero_instancia) WHERE contato_id IS NOT NULL DO UPDATE
+      SET status = CASE
+            WHEN atendimentos.status = 'encerrado' THEN 'na_fila'
+            ELSE atendimentos.status
+          END,
+          data_atualizacao = now()
+    RETURNING id`;
+  return at.id as string;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */

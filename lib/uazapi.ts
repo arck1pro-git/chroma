@@ -318,3 +318,29 @@ export async function enviarMidia(
   }
   return data as RetornoEnvio;
 }
+
+// ── Grupo ───────────────────────────────────────────────────────────────────
+//
+// O nome e a foto de um grupo em que a instância está (doc do uazapiGO,
+// 2026-10-29): POST {BASE}/group/info   header token   body { groupjid }
+// → o grupo, com `Name` e `image_url` (schema Group do OpenAPI). O webhook
+// traz o nome em chat.name na maioria das vezes; isto cobre quando não traz.
+
+/** Nome e foto do grupo `jid` ("…@g.us"), lidos pela instância `numero`. */
+export async function infoDoGrupo(numero: string, jid: string): Promise<{ nome: string; foto: string | null }> {
+  const instancia = await instanciaExataPorNumero(numero);
+  if (!instancia) throw new Error(`nenhuma instância cadastrada com o número ${numero}`);
+  const res = await fetch(`${instancia.baseUrl}/group/info`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", token: instancia.token },
+    body: JSON.stringify({ groupjid: jid }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error ?? `uazapi respondeu ${res.status} ao ler o grupo`);
+  const g = data?.group ?? data;
+  const nome = String(g?.Name ?? g?.name ?? g?.Subject ?? g?.subject ?? "").trim();
+  const foto = typeof g?.image_url === "string" && g.image_url ? g.image_url : null;
+  return { nome, foto };
+}

@@ -74,7 +74,7 @@ export async function conversaDoInstagram(contatoId: string, contaId: string, qu
       ? await sql`
           INSERT INTO atendimentos (contato_id, status, canal, numero_instancia)
           VALUES (${contatoId}, 'na_fila', 'instagram', ${contaId})
-          ON CONFLICT (contato_id, numero_instancia) DO UPDATE
+          ON CONFLICT (contato_id, numero_instancia) WHERE contato_id IS NOT NULL DO UPDATE
             SET status = CASE
                   WHEN atendimentos.status = 'encerrado'
                     OR (atendimentos.status = 'aberto' AND atendimentos.responsavel_id IS NULL)
@@ -87,7 +87,7 @@ export async function conversaDoInstagram(contatoId: string, contaId: string, qu
       : await sql`
           INSERT INTO atendimentos (contato_id, status, canal, numero_instancia)
           VALUES (${contatoId}, 'aberto', 'instagram', ${contaId})
-          ON CONFLICT (contato_id, numero_instancia) DO UPDATE
+          ON CONFLICT (contato_id, numero_instancia) WHERE contato_id IS NOT NULL DO UPDATE
             SET data_atualizacao = now()
           RETURNING id`;
   return at.id as string;

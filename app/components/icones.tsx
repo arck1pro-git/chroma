@@ -161,6 +161,8 @@ import {
   faTableColumns,
   faTag,
   faThumbsDown,
+  faThumbtack,
+  faThumbtackSlash,
   faToggleOff,
   faToggleOn,
   faTrashCan,
@@ -336,6 +338,8 @@ export const Pencil = icone(faPen, "Pencil");
 export const PencilLine = icone(faPenToSquare, "PencilLine");
 export const Phone = icone(faPhone, "Phone");
 export const PhoneCall = icone(faPhoneVolume, "PhoneCall");
+export const Pin = icone(faThumbtack, "Pin");
+export const PinOff = icone(faThumbtackSlash, "PinOff");
 export const Play = icone(faPlay, "Play");
 export const PlugZap = icone(faPlug, "PlugZap");
 export const Plus = icone(faPlus, "Plus");

@@ -136,7 +136,8 @@ export type Usuario = { id: string; nome: string; iniciais: string };
 // Espelham as tabelas atendimentos e mensagens do schema.sql.
 export type Atendimento = {
   id: string;
-  contato_id: string;
+  // null só na conversa de grupo do WhatsApp (grupo_id no banco, 2026-10-29).
+  contato_id: string | null;
   responsavel_id: string | null; // null = na fila, sem dono
   status: "aberto" | "na_fila" | "encerrado";
   // whatsapp = conexão não-oficial (uazapi/WhatsApp Web); whatsapp_oficial =
@@ -188,6 +189,9 @@ export type Mensagem = {
   status: StatusMensagem;
   id_externo: string | null;
   data_criacao: string;
+  // Num grupo do WhatsApp (2026-10-29): quem mandou. null fora de grupo e no
+  // que saiu do nosso número.
+  remetente_nome?: string | null;
 
   // ── Anexo ────────────────────────────────────────────────────────────────
   // O caminho no disco NÃO vem para o cliente de propósito: a tela pede o

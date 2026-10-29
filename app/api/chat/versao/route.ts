@@ -10,7 +10,7 @@
 // O que entra na assinatura:
 //   · atendimentos: data_atualizacao mais recente (toca a cada mensagem nova,
 //     nos dois webhooks e nos envios), e as contagens por status (assumir,
-//     encerrar e reabrir não tocam data_atualizacao);
+//     encerrar e reabrir não tocam data_atualizacao), e as fixadas;
 //   · a conversa aberta: status e mídia das últimas mensagens — é assim que o
 //     "entregue/lido" e o anexo que terminou de baixar aparecem sem F5;
 //   · os comentários do Instagram (2026-10-26): o último registro e os não
@@ -32,7 +32,10 @@ export async function GET(req: NextRequest) {
              || ':' || count(*)
              || ':' || count(*) FILTER (WHERE status = 'na_fila')
              || ':' || count(*) FILTER (WHERE status = 'encerrado')
-             || ':' || coalesce(to_char(max(lido_em), 'YYYYMMDDHH24MISSUS'), '') AS v
+             || ':' || coalesce(to_char(max(lido_em), 'YYYYMMDDHH24MISSUS'), '')
+             -- Fixar e soltar (2026-10-29) não tocam data_atualizacao: entram aqui.
+             || ':' || count(*) FILTER (WHERE fixada_em IS NOT NULL)
+             || ':' || coalesce(to_char(max(fixada_em), 'YYYYMMDDHH24MISSUS'), '') AS v
     FROM atendimentos`;
 
   let conversa = "";
