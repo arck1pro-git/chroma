@@ -1251,7 +1251,7 @@ export default function Inicio({
                   funilId={funil.id}
                   grafico={
                     grafico[funil.id] ?? {
-                      dias: (Object.values(grafico)[0]?.dias ?? []).map((d) => ({ ...d, leads: 0, reunioesIa: 0, reunioesEquipe: 0 })),
+                      dias: (Object.values(grafico)[0]?.dias ?? []).map((d) => ({ ...d, leads: 0, atendimentos: 0, reunioesIa: 0, reunioesEquipe: 0 })),
                       totais: { leads: 0, agendadas: 0 },
                     }
                   }

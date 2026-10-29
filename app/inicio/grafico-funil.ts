@@ -14,6 +14,13 @@
 // "lead no funil" do quadro: o card que nasceu ali (captação, webhook, ficha,
 // importação com a data original).
 //
+// ATENDIMENTO GERADO (2026-10-29, "a taxa de resposta/atendimento gerado") =
+// dos leads que entraram naquele dia, os que RESPONDERAM: o contato tem mensagem
+// dele (origem 'contato') a partir de um dia antes do card. O dia de folga pega
+// quem escreveu primeiro e virou card em seguida (conversa que abre a
+// oportunidade). É uma coorte: o lead de segunda que responde na quarta conta na
+// segunda, e a taxa é responderam ÷ entraram.
+//
 // REUNIÃO = linha de agenda_reunioes, pelo dia em que foi MARCADA, não pelo dia
 // em que acontece: é o resultado do trabalho daquele dia. Sem autor = a IA
 // marcou; com autor = alguém da equipe marcou pela ficha. Reunião marcada direto
@@ -36,6 +43,8 @@ export type DiaDoFunil = {
   dia: string;
   /** Oportunidades criadas no funil no dia. */
   leads: number;
+  /** Desses leads, os que responderam (atendimento gerado). */
+  atendimentos: number;
   /** Reuniões que a IA marcou no dia. */
   reunioesIa: number;
   /** Reuniões que alguém da equipe marcou no dia. */
@@ -82,7 +91,11 @@ async function consultarDias(e: { de: string; ate: string; funilId: string | nul
       SELECT generate_series(${e.de}::date, ${e.ate}::date, interval '1 day')::date AS dia
     ),
     leads AS (
-      SELECT (o.data_criacao AT TIME ZONE 'America/Sao_Paulo')::date AS dia, o.funil_id, count(*)::int AS n
+      SELECT (o.data_criacao AT TIME ZONE 'America/Sao_Paulo')::date AS dia, o.funil_id, count(*)::int AS n,
+             count(*) FILTER (WHERE EXISTS (
+               SELECT 1 FROM atendimentos a JOIN mensagens m ON m.atendimento_id = a.id
+                WHERE a.contato_id = o.contato_id AND m.origem = 'contato'
+                  AND m.data_criacao >= o.data_criacao - interval '1 day'))::int AS responderam
         FROM oportunidades o
        WHERE o.data_criacao >= (${e.de}::date)::timestamp AT TIME ZONE 'America/Sao_Paulo'
          AND o.data_criacao < (${e.ate}::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo'
@@ -100,6 +113,7 @@ async function consultarDias(e: { de: string; ate: string; funilId: string | nul
     SELECT f.id AS funil_id,
            to_char(d.dia, 'YYYY-MM-DD') AS dia,
            coalesce(leads.n, 0) AS leads,
+           coalesce(leads.responderam, 0) AS atendimentos,
            coalesce(reunioes.ia, 0) AS reunioes_ia,
            coalesce(reunioes.equipe, 0) AS reunioes_equipe
       FROM funis f
@@ -115,6 +129,7 @@ async function consultarDias(e: { de: string; ate: string; funilId: string | nul
     dias.push({
       dia: l.dia as string,
       leads: Number(l.leads),
+      atendimentos: Number(l.atendimentos),
       reunioesIa: Number(l.reunioes_ia),
       reunioesEquipe: Number(l.reunioes_equipe),
     });

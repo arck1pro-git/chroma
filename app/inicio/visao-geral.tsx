@@ -1,10 +1,12 @@
 "use client";
 
 // A faixa de cima do dashboard: o funil por dia, no gráfico de linha com sombra
-// do app. Desde 2026-10-29 (pedido dele: "leads que entrou no funil x reuniões
-// IA x reuniões humanas") são três linhas: os leads que entraram, as reuniões
-// que a IA marcou e as que a equipe marcou (./grafico-funil.ts). As notas dão a
-// taxa de reunião sobre os leads do período.
+// do app (./grafico-funil.ts). Três linhas desde 2026-10-29 (pedido dele: "quantos
+// leads entraram, a taxa de resposta/atendimento gerado e uma linha que une
+// reunião IA e humana"): os leads que entraram, quantos deles responderam
+// (atendimento gerado, com a taxa de resposta na legenda) e as reuniões
+// agendadas, IA e equipe somadas. Passando o mouse, o tooltip do dia diz quantas
+// reuniões foram pela IA e quantas pela equipe.
 //
 // PERÍODO E TOTAIS (2026-10-29, mesmo dia: "selecionar por 30 dias, por semana
 // e personalizado; mostrar no canto o total do funil agendado e de leads e ao
@@ -20,9 +22,10 @@
 // mostra.
 //
 // As cores são as do FUNIL aberto (funis.cor), nas duas pontas da rampa dele:
-// leads na clara, que é onde o lead entra; reunião da IA na escura, perto do
-// fechamento — a mesma leitura das colunas. A reunião da equipe vai no cinza
-// neutro (--serie-neutra). Os valores por tom e modo estão no globals.css (.viz).
+// leads na clara, que é onde o lead entra; reunião na escura, perto do
+// fechamento — a mesma leitura das colunas. O atendimento gerado, no meio do
+// caminho, vai no cinza neutro (--serie-neutra). Os valores por tom e modo
+// estão no globals.css (.viz).
 //
 // Sem overflow-hidden no cartão: o gráfico é baixo e o tooltip passa da borda
 // de baixo.
@@ -33,7 +36,7 @@
 // nunca escolheu numa tela baixa (tablet deitado, notebook de 768) já abre
 // minimizado: ali o gráfico custava um cartão inteiro por coluna.
 import { useState, useTransition } from "react";
-import { Bot, ChevronDown, ChevronUp, Loader2, UserPlus, Users } from "@/app/components/icones";
+import { CalendarCheck2, ChevronDown, ChevronUp, Loader2, MessageCircle, UserPlus } from "@/app/components/icones";
 import { LinhasPorDia, type SerieLinha } from "../components/grafico-linhas";
 import { criarPreferencia, TELA_BAIXA } from "../components/preferencia-local";
 import type { DiaDoFunil, GraficoDoFunil } from "./grafico-funil";
@@ -51,19 +54,47 @@ const PERIODOS: Array<{ valor: Periodo; rotulo: string }> = [
   { valor: "personalizado", rotulo: "Personalizado" },
 ];
 
-// A taxa de reunião sobre os leads que entraram no período, na nota da linha.
-function taxa(dias: DiaDoFunil[], reunioes: (d: DiaDoFunil) => number): string | null {
-  const leads = dias.reduce((s, d) => s + d.leads, 0);
-  const n = dias.reduce((s, d) => s + reunioes(d), 0);
-  return n > 0 && leads > 0 ? `(${Math.round((n / leads) * 100)}% dos leads)` : null;
+const agendadas = (d: DiaDoFunil) => d.reunioesIa + d.reunioesEquipe;
+const soma = (dias: DiaDoFunil[], valor: (d: DiaDoFunil) => number) => dias.reduce((s, d) => s + valor(d), 0);
+
+// A taxa sobre os leads que entraram no período, na nota da linha.
+function taxa(dias: DiaDoFunil[], valor: (d: DiaDoFunil) => number, sufixo: string): string | null {
+  const leads = soma(dias, (d) => d.leads);
+  const n = soma(dias, valor);
+  return n > 0 && leads > 0 ? `(${Math.round((n / leads) * 100)}% ${sufixo})` : null;
 }
 
-// Ícones: entrada de gente (UserPlus), a IA (Bot) e a equipe (Users).
+// Ícones: entrada de gente (UserPlus), conversa (MessageCircle) e agenda (CalendarCheck2).
 const SERIES: SerieLinha<DiaDoFunil>[] = [
   { nome: "Leads no funil", cor: "var(--serie-tom-claro)", Icone: UserPlus, valor: (d) => d.leads },
-  { nome: "Reuniões pela IA", cor: "var(--serie-tom-escuro)", Icone: Bot, valor: (d) => d.reunioesIa, nota: (dias) => taxa(dias, (d) => d.reunioesIa) },
-  { nome: "Reuniões pela equipe", cor: "var(--serie-neutra)", Icone: Users, valor: (d) => d.reunioesEquipe, nota: (dias) => taxa(dias, (d) => d.reunioesEquipe) },
+  {
+    nome: "Atendimentos gerados",
+    cor: "var(--serie-neutra)",
+    Icone: MessageCircle,
+    valor: (d) => d.atendimentos,
+    nota: (dias) => taxa(dias, (d) => d.atendimentos, "de resposta"),
+  },
+  {
+    nome: "Reuniões agendadas",
+    cor: "var(--serie-tom-escuro)",
+    Icone: CalendarCheck2,
+    valor: agendadas,
+    nota: (dias) => {
+      const ia = soma(dias, (d) => d.reunioesIa);
+      const equipe = soma(dias, (d) => d.reunioesEquipe);
+      return ia + equipe > 0 ? `(${ia} pela IA · ${equipe} pela equipe)` : null;
+    },
+  },
 ];
+
+/** A linha extra do tooltip do dia: de quem são as reuniões e a resposta dos leads. */
+function notaDoDia(d: DiaDoFunil): string | null {
+  const partes = [
+    agendadas(d) > 0 ? `Reuniões: ${d.reunioesIa} pela IA · ${d.reunioesEquipe} pela equipe` : null,
+    d.leads > 0 ? `Resposta: ${d.atendimentos} de ${d.leads} (${Math.round((d.atendimentos / d.leads) * 100)}%)` : null,
+  ].filter(Boolean);
+  return partes.length ? partes.join(" · ") : null;
+}
 
 const numero = (n: number) => n.toLocaleString("pt-BR");
 const curta = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
@@ -98,7 +129,7 @@ export default function VisaoGeral({ grafico, tom, funilId }: { grafico: Grafico
       : `últimos ${dias.length} dias`;
   const noPeriodo = {
     leads: dias.reduce((s, d) => s + d.leads, 0),
-    agendadas: dias.reduce((s, d) => s + d.reunioesIa + d.reunioesEquipe, 0),
+    agendadas: soma(dias, agendadas),
   };
 
   function buscar(de: string, ate: string) {
@@ -194,12 +225,13 @@ export default function VisaoGeral({ grafico, tom, funilId }: { grafico: Grafico
           recolhido={recolhido}
           dados={dias}
           series={SERIES}
+          notaNoDia={notaDoDia}
           tom={tom}
           altura="h-20"
           totais
           resumo={resumo}
           vazio={`Nenhum lead nem reunião neste funil (${resumo})`}
-          titulo={`Leads que entraram, reuniões marcadas pela IA e pela equipe neste funil, por dia (${resumo})`}
+          titulo={`Leads que entraram, atendimentos gerados e reuniões agendadas neste funil, por dia (${resumo})`}
         />
       </div>
     </section>
