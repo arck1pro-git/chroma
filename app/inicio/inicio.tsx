@@ -1247,9 +1247,12 @@ export default function Inicio({
                     abaixo, subiram para a barra do topo. Funil criado depois
                     da carga ainda não tem linha: vai zerado, com os mesmos dias. */}
                 <VisaoGeral
+                  key={funil.id}
+                  funilId={funil.id}
                   grafico={
                     grafico[funil.id] ?? {
                       dias: (Object.values(grafico)[0]?.dias ?? []).map((d) => ({ ...d, leads: 0, reunioesIa: 0, reunioesEquipe: 0 })),
+                      totais: { leads: 0, agendadas: 0 },
                     }
                   }
                   tom={corValida(funil?.cor)}
