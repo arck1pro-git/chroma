@@ -15,6 +15,7 @@ import {
   ArrowDown,
   ArrowLeft,
   Bot,
+  CalendarClock,
   CircleCheck,
   Download,
   FileText,
@@ -70,12 +71,15 @@ export function CabecalhoConversa({
   aoOportunidade,
   aoDetalhes,
   aoFixar,
+  aoAgendadas,
   ias,
   aoDefinirIa,
   aoEscolherIa,
 }: {
   /** Fixar ou soltar a conversa no topo da lista (para toda a equipe). */
   aoFixar: () => void;
+  /** Só no grupo: abre as mensagens agendadas. */
+  aoAgendadas: () => void;
   ias: IaResumo[];
   aoDefinirIa: (valor: boolean | null, iaId: string | null) => Promise<{ erro?: string }>;
   aoEscolherIa: () => void;
@@ -102,6 +106,7 @@ export function CabecalhoConversa({
   const nomeBase = contato?.nome ?? resumo.contato_nome;
   const nome = /^[\d\s+()-]+$/.test(nomeBase) ? formatarTelefone(nomeBase) : nomeBase;
   const fixada = Boolean(resumo.fixada_em);
+  const pendentes = aberta.agendadas.filter((a) => a.estado === "agendada").length;
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-zinc-200 bg-white px-2 sm:gap-3 sm:px-4 dark:border-zinc-800 dark:bg-zinc-950">
@@ -196,6 +201,22 @@ export function CabecalhoConversa({
           <button type="button" onClick={aoReabrir} disabled={demo || !podeEditar} className={botaoSecundario}>
             <RotateCcw className="size-3.5" />
             <span className="hidden sm:inline">Reabrir</span>
+          </button>
+        )}
+        {grupo && (
+          <button
+            type="button"
+            onClick={aoAgendadas}
+            title="Mensagens agendadas neste grupo"
+            aria-label="Mensagens agendadas"
+            className="relative shrink-0 rounded-lg p-2 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+          >
+            <CalendarClock className="size-4" />
+            {pendentes > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-500 px-1 text-[9.5px] font-semibold tabular-nums text-white">
+                {pendentes}
+              </span>
+            )}
           </button>
         )}
         <button

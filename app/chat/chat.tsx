@@ -41,6 +41,7 @@ import { SeletorTemplates } from "./modelos";
 import { NovaConversa } from "./nova-conversa";
 import { PainelDetalhes } from "./detalhes";
 import { NovaOportunidade } from "./nova-oportunidade";
+import { MensagensAgendadas } from "./agendadas";
 import { ComentariosInstagram } from "./comentarios";
 import { AbasInstagram, canalDaConversa } from "./ui";
 
@@ -72,6 +73,8 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
   const [novaConversa, setNovaConversa] = useState(false);
   const [templates, setTemplates] = useState(false);
   const [oportunidade, setOportunidade] = useState(false);
+  // Só no grupo: o modal das mensagens agendadas.
+  const [agendadas, setAgendadas] = useState(false);
 
   // ── Navegação ─────────────────────────────────────────────────────────────
 
@@ -326,6 +329,7 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
                     aoOportunidade={() => setOportunidade(true)}
                     aoDetalhes={() => setDetalhes((v) => !v)}
                     aoFixar={() => iniciar(() => fixarConversa(aberta.id, !aberta.resumo.fixada_em))}
+                    aoAgendadas={() => setAgendadas(true)}
                     ias={dados.ias}
                     aoDefinirIa={(v, iaId) =>
                       aberta.contato ? definirIaDoContatoNoChat(aberta.contato.id, v, iaId) : Promise.resolve({ erro: "Conversa de grupo não tem IA." })
@@ -400,6 +404,19 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
           documentos={dados.documentos}
           aoFechar={() => setTemplates(false)}
           aoEnviado={() => setTemplates(false)}
+        />
+      )}
+
+      {agendadas && aberta?.grupo && (
+        <MensagensAgendadas
+          key={aberta.id}
+          atendimentoId={aberta.id}
+          grupoNome={aberta.grupo.nome}
+          agendadas={aberta.agendadas}
+          documentos={dados.documentos}
+          podeAgendar={permissoes.criar}
+          demo={demo}
+          aoFechar={() => setAgendadas(false)}
         />
       )}
 

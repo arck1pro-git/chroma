@@ -201,6 +201,7 @@ export function carregarChatDemo({
         ia: { valor: null, iaId: null, etapas: null, iaDaEtapa: null },
         contato: contatoPorId.get(resumoAberto.contato_id ?? "") as unknown as Contato,
         grupo: null,
+        agendadas: [],
         mensagens: mensagens.filter((m) => m.atendimento_id === resumoAberto.id),
         oportunidades: dadosMock.oportunidades
           .filter((o) => o.contato_id === resumoAberto.contato_id)

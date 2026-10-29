@@ -82,6 +82,8 @@ const SERVICO_EXATAS = new Set([
   "/api/meta/instagram/varrer",
   // Os posts agendados das redes (lib/social/posts.ts), a cada minuto.
   "/api/social/publicar",
+  // As mensagens agendadas nos grupos do WhatsApp (lib/mensagens-agendadas.ts), a cada minuto.
+  "/api/chat/agendadas/enviar",
 ]);
 
 function dispensaSessao(caminho: string): boolean {

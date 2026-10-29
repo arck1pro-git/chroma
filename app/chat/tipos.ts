@@ -5,6 +5,7 @@ import type { Documento } from "@/lib/documentos";
 import type { EstadoIaContato, IaResumo } from "@/lib/ia/catalogo";
 import type { ComentariosDaConta } from "@/lib/instagram-tipos";
 import type { MidiaDoCabecalho } from "@/lib/templates-whatsapp";
+import type { MensagemAgendada } from "@/lib/mensagens-agendadas";
 
 /** "instagram" = uma conta profissional do Instagram (DMs e comentários), desde 2026-10-26. */
 export type TipoCanal = "web" | "api" | "instagram";
@@ -88,6 +89,8 @@ export type ConversaAberta = {
   /** null na conversa de grupo: o que é do contato (ficha, oportunidades, IA) não se aplica. */
   contato: Contato | null;
   grupo: GrupoChat | null;
+  /** Só no grupo: as mensagens agendadas (lib/mensagens-agendadas.ts). */
+  agendadas: MensagemAgendada[];
   mensagens: MensagemChat[];
   oportunidades: Oportunidade[];
   /** Quem atende o contato: o ajuste dele (contatos.ia/ia_id) e o que a etapa diria. */

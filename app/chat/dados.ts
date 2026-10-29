@@ -22,6 +22,7 @@ import { canaisInstagram, fim8, listarCanais } from "@/lib/canais";
 import { tomDaEtapa } from "@/lib/cores-funil";
 import type { Contato, Etapa, Funil, Oportunidade, Usuario } from "@/lib/entidades";
 import { ehUuid } from "@/lib/validacao";
+import { agendadasDaConversa } from "@/lib/mensagens-agendadas";
 import { paginaDeComentarios } from "@/lib/instagram-leitura";
 import { podeOperar } from "@/lib/auth/permissoes";
 import { usuarioAtual } from "@/lib/auth/dal";
@@ -117,14 +118,16 @@ const colunasDaMensagem = () => sql`
 
 /** A conversa de grupo aberta: o grupo e as mensagens; nada do que é de contato. */
 async function carregarGrupoAberto(id: string, resumo: ConversaResumo, grupoId: string): Promise<ConversaAberta> {
-  const [[g], mensagens] = await Promise.all([
+  const [[g], mensagens, agendadas] = await Promise.all([
     sql`SELECT id, nome, jid, foto_url FROM grupos_whatsapp WHERE id = ${grupoId}`,
     sql`SELECT ${colunasDaMensagem()} FROM mensagens WHERE atendimento_id = ${id} ORDER BY data_criacao DESC LIMIT ${LIMITE_MENSAGENS}`,
+    agendadasDaConversa(id),
   ]);
   return {
     id,
     resumo,
     contato: null,
+    agendadas,
     grupo: g ? { id: g.id as string, nome: resumo.contato_nome, jid: g.jid as string, foto: (g.foto_url as string | null) ?? null } : null,
     ia: { valor: null, iaId: null, etapas: null, iaDaEtapa: null },
     mensagens: (mensagens as unknown as MensagemChat[]).reverse(),
@@ -169,6 +172,7 @@ async function carregarAberta(id: string): Promise<ConversaAberta | null> {
     resumo,
     contato: contatos[0] as unknown as Contato,
     grupo: null,
+    agendadas: [],
     ia: {
       valor: (contatos[0]?.ia_valor as boolean | null) ?? null,
       iaId: (contatos[0]?.ia_ia_id as string | null) ?? null,

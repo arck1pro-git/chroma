@@ -81,7 +81,7 @@ templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, c
 | Webhooks de mensagem | `/api/uazapi/webhook` (repassado pelo n8n), `/api/meta/whatsapp/webhook`, `/api/meta/instagram/webhook` (DM e comentários) | segredo na URL (uazapi); assinatura `X-Hub-Signature-256` (Meta) |
 | Leads da Meta | `/api/meta/leads/webhook` | assinatura `X-Hub-Signature-256` |
 | Formulários de sites | `/api/webhooks/[slug]` | slug do webhook |
-| Serviço (n8n) | `/api/automacoes/enviar` e `/mover`, `/api/ia/retomar`, `/api/meta/leads/varrer`, `/api/social/publicar`, `/api/midia/fila`, `/api/meta/whatsapp/processar`, `/api/blogs/rss/gerar` e `/pauta` | `Authorization: Bearer CRM_SERVICE_TOKEN`, via `autorizado()` |
+| Serviço (n8n) | `/api/automacoes/enviar` e `/mover`, `/api/ia/retomar`, `/api/meta/leads/varrer`, `/api/social/publicar`, `/api/chat/agendadas/enviar`, `/api/midia/fila`, `/api/meta/whatsapp/processar`, `/api/blogs/rss/gerar` e `/pauta` | `Authorization: Bearer CRM_SERVICE_TOKEN`, via `autorizado()` |
 | Públicas | `/api/publico/[chave]` (blog), `/v/[slug]` e `/api/v/*` (vídeos), `/api/mcp/[segredo]` (Claude) | chave, slug sorteado ou segredo na URL |
 | IA de interface | `/api/ia`, `/api/ia/automacoes`, `/api/ia/campanhas`, `/api/ia/webhooks` | sessão; alcance limitado nas ferramentas |
 | Extensão de reuniões | `/api/reunioes/assistente/*` (lead da sala, busca, trecho de áudio, análise, resumo, salvar na ficha) | sessão + Origin exato da extensão + módulo Agenda, em `lib/reunioes-extensao.ts`; o lead segue Dashboard/Contatos e o Chat |
