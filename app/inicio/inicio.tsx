@@ -59,7 +59,7 @@ import { SeletorMenu } from "../components/filtros-ui";
 import PainelFiltros from "../funil/painel-filtros";
 import DashboardMetaAds from "./dashboard-meta-ads";
 import VisaoGeral from "./visao-geral";
-import type { IaDoFunil } from "./atendimentos-ia";
+import type { GraficoDoFunil } from "./grafico-funil";
 import { filtroCampanhasVazio, passaNoFiltroCampanhas, type FiltroCampanhas } from "./filtro-campanhas";
 import BarraRolagem from "./barra-rolagem";
 import {
@@ -651,7 +651,7 @@ export default function Inicio({
   conversaInicial,
   cadenciaInicial,
   fluxosParaInscricao,
-  graficoIa,
+  grafico,
   euId,
   podeEditarTodasOportunidades,
 }: {
@@ -672,10 +672,10 @@ export default function Inicio({
   // em "Inscrever na automação". Vem do servidor porque a lista muda quando
   // alguém publica um fluxo, e a raiz já é force-dynamic.
   fluxosParaInscricao: FluxoDisponivel[];
-  // Atendimentos e reuniões da IA por dia, POR FUNIL (./atendimentos-ia.ts),
-  // já no escopo de quem está vendo. Todos os funis vêm de uma vez: trocar de
+  // Leads e reuniões (IA e equipe) por dia, POR FUNIL (./grafico-funil.ts), já
+  // no escopo de quem está vendo. Todos os funis vêm de uma vez: trocar de
   // funil não busca de novo.
-  graficoIa: Record<string, IaDoFunil>;
+  grafico: Record<string, GraficoDoFunil>;
   // Quem está logado, da sessão (page.tsx): só as anotações dele ganham o
   // botão de apagar. Quem garante é a ação, que confere o autor no servidor.
   euId: string;
@@ -1241,16 +1241,15 @@ export default function Inicio({
                 className="flex min-h-0 flex-1 flex-col"
                 aria-label={`Quadro · ${funil.nome}`}
               >
-                {/* A IA neste funil nos últimos 30 dias, nas cores dele.
+                {/* Leads e reuniões neste funil nos últimos 30 dias, nas cores dele.
                     Minimizável — em tela baixa já abre minimizada (ver
                     ./visao-geral.tsx). Campanhas e filtros, que vinham logo
                     abaixo, subiram para a barra do topo. Funil criado depois
                     da carga ainda não tem linha: vai zerado, com os mesmos dias. */}
                 <VisaoGeral
-                  ia={
-                    graficoIa[funil.id] ?? {
-                      leads: 0,
-                      dias: (Object.values(graficoIa)[0]?.dias ?? []).map((d) => ({ ...d, atendimentos: 0, reunioes: 0 })),
+                  grafico={
+                    grafico[funil.id] ?? {
+                      dias: (Object.values(grafico)[0]?.dias ?? []).map((d) => ({ ...d, leads: 0, reunioesIa: 0, reunioesEquipe: 0 })),
                     }
                   }
                   tom={corValida(funil?.cor)}

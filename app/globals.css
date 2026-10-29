@@ -200,6 +200,11 @@ body {
 .viz {
   --serie-ok: #2a78d6;
   --serie-erro: #d03b3b;
+  /* A terceira linha do gráfico do funil (reuniões da equipe, 2026-10-29), ao
+     lado das duas pontas do tom dele: cinza neutro, 7,7:1 no branco (zinc-600)
+     e 13:1 no zinc-950 (zinc-300), longe em ΔE de todo tom com croma. Só no
+     funil cinza as três linhas ficam próximas; ali o ícone de cada uma separa. */
+  --serie-neutra: #52525b;
   /* A moldura do gráfico (app/components/grafico-linhas.tsx): grade e eixo
      recessivos, um degrau fora da superfície; o cursor um pouco mais forte
      para a linha vertical do dia sob o mouse aparecer sobre a grade. */
@@ -211,6 +216,7 @@ body {
   .viz {
     @variant dark {
       --serie-ok: #3987e5;
+      --serie-neutra: #d4d4d8;
       --viz-grade: #27272a;
       --viz-eixo: #71717a;
       --viz-cursor: #52525b;

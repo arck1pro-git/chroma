@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Inicio from "./inicio/inicio";
 import { carregarFunil } from "@/lib/funil";
 import { CADENCIAS_VAZIAS, carregarCadencias } from "./inicio/cadencias";
-import { carregarAtendimentosIa } from "./inicio/atendimentos-ia";
+import { carregarGraficoDoFunil } from "./inicio/grafico-funil";
 import { comCadenciaDeDemonstracao, FLUXO_DEMO } from "./inicio/demo-cadencia";
 import { fluxosParaInscricao } from "@/lib/automacoes/repositorio";
 import { exigirModulo } from "@/lib/auth/dal";
@@ -64,14 +64,14 @@ export default async function Home({
     typeof v === "string" ? v : null;
   // Em paralelo: as cadências não dependem do funil, e encadear as duas
   // somaria o tempo das duas na primeira pintura.
-  const [dados, cadenciasDoBanco, fluxos, graficoIa] = await Promise.all([
+  const [dados, cadenciasDoBanco, fluxos, grafico] = await Promise.all([
     carregarFunil(soMinhas),
     podeAutomacoes ? carregarCadencias() : CADENCIAS_VAZIAS,
     // As automações que a seleção do kanban pode disparar. Consulta pequena e
     // independente das outras duas — entra no mesmo Promise.all.
     podeAutomacoes ? fluxosParaInscricao() : [],
-    // O gráfico de atendimentos de IA e reuniões, com o mesmo escopo do quadro.
-    carregarAtendimentosIa(soMinhas),
+    // O gráfico de leads e reuniões (IA e equipe), com o mesmo escopo do quadro.
+    carregarGraficoDoFunil(soMinhas),
   ]);
 
   const demonstracao = um(demo) === "cadencia" && process.env.NODE_ENV !== "production";
@@ -85,7 +85,7 @@ export default async function Home({
       conversaInicial={um(ia)}
       cadenciaInicial={demonstracao ? FLUXO_DEMO : um(cadencia)}
       fluxosParaInscricao={fluxos}
-      graficoIa={graficoIa}
+      grafico={grafico}
       euId={usuario.id}
       podeEditarTodasOportunidades={escopo === "todos" && podeOperar(usuario, "inicio", "editar")}
     />
