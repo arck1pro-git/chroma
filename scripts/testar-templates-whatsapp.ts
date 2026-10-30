@@ -30,6 +30,7 @@ import {
   rascunhoDe,
   semEnvioPeloCrm,
   telefoneDoBotao,
+  textoFixoDoExemplo,
   textoParaRevisao,
   valoresIniciais,
   valoresParaContato,
@@ -250,6 +251,26 @@ caso("campanha: começa com o primeiro nome na {{1}} e confere cada variável", 
   assert.match(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{apelido}}", "x"] }) ?? "", /não é dado do contato/);
   assert.equal(problemaNoEnvio(doisCampos, { cabecalho: ["{{nome}}"], corpo: ["{{primeiro_nome}}", "pela manhã"] }), null);
   assert.match(problemaNoEnvio(comCabecalho("LOCATION"), { cabecalho: [], corpo: ["Ana"] }) ?? "", /cabeçalho de mídia/);
+});
+caso("campanha: o texto escrito no template já vem como texto fixo; nome de pessoa não", () => {
+  const live = lerTemplate(meta({ components: [
+    { type: "HEADER", format: "TEXT", text: "Aviso {{1}}" },
+    { type: "BODY", text: "Confirmação do evento: {{1}}. {{2}} mais informações.", example: { body_text: [[
+      "live sexta, 31/10, às 19h",
+      "caso surja alguma   duvida envie aqui e enviaremos",
+    ]] } },
+  ] }));
+  const inicio = valoresIniciais(live);
+  assert.deepEqual(inicio.corpo, ["live sexta, 31/10, às 19h", "caso surja alguma duvida envie aqui e enviaremos"]);
+  assert.deepEqual(inicio.cabecalho, [""]);
+  const comNomes = lerTemplate(meta({ components: [
+    { type: "HEADER", format: "TEXT", text: "Oi {{1}}", example: { header_text: ["Ana"] } },
+    { type: "BODY", text: "Olá {{1}}, sua consultora é {{2}} em {{3}}.", example: { body_text: [["Maria", "Fernanda da Silva", "amanhã"]] } },
+  ] }));
+  assert.deepEqual(valoresIniciais(comNomes), { cabecalho: [""], corpo: ["{{primeiro_nome}}", "", "amanhã"] });
+  for (const nome of ["Maria", "João", "Ana Paula Souza", "João da Silva", "Maria e José"]) assert.equal(textoFixoDoExemplo(nome), "", nome);
+  for (const texto of ["Confirmação do evento", "amanhã", "31/10", "MARIA"]) assert.equal(textoFixoDoExemplo(texto), texto, texto);
+  assert.equal(textoFixoDoExemplo(undefined), "");
 });
 caso("campanha: marca com erro de digitação não sai literal", () => {
   for (const errada of ["{{Primeiro_nome}}", "{{ primeiro_nome }}", "{{primeiro nome}}", "{{1}}", "Olá }}"])

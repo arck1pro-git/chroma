@@ -470,7 +470,7 @@ export default function Editor({
               {(temVarCabecalho || varsCorpo.length > 0) && (
                 <Bloco
                   titulo="Exemplos das variáveis"
-                  dica="Só para a análise da Meta: use dados de exemplo, nunca de um cliente de verdade. No envio, pelo chat ou por campanha, cada variável pode levar um dado do contato (primeiro nome, e-mail, cidade…)."
+                  dica="A Meta analisa com estes textos, e a campanha já começa com eles como texto fixo — menos nome de pessoa (“Maria”), que fica para o dado do contato. Nunca dado de um cliente de verdade."
                 >
                   <div className="grid gap-2 sm:grid-cols-2">
                     {temVarCabecalho && (

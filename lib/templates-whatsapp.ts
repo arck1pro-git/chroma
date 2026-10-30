@@ -807,16 +807,33 @@ export function ajustarValores(v: ValoresDoEnvio, n: { cabecalho: number; corpo:
 }
 
 /**
- * Valores iniciais de um template: a {{1}} do corpo começa como o primeiro
- * nome, o link de vídeo do CRM como o WhatsApp do contato, o resto em branco.
+ * O texto fixo que o exemplo da criação sugere para uma variável: o exemplo
+ * limpo, ou vazio sem exemplo ou com exemplo com cara de nome de pessoa
+ * ("Maria", "João da Silva"). Nome de exemplo não vai igual para o segmento
+ * inteiro: ali a variável é o nome do contato.
+ */
+export function textoFixoDoExemplo(exemplo: string | undefined): string {
+  const limpo = parametroLimpo(exemplo ?? "");
+  return /^\p{Lu}\p{Ll}+(?: (?:d[aeo]s?|e|\p{Lu}\p{Ll}+)){0,3}$/u.test(limpo) ? "" : limpo;
+}
+
+/**
+ * Valores iniciais de um template: cada {{n}} começa com o texto escrito como
+ * exemplo na criação do template (pedido dele, 2026-10-30: o texto definido no
+ * template vem fixo na campanha). Sem exemplo, ou com nome de pessoa nele, fica
+ * como antes: a {{1}} do corpo é o primeiro nome, o resto em branco. O link de
+ * vídeo do CRM começa como o WhatsApp do contato.
  */
 export function valoresIniciais(t: ConteudoTemplate): ValoresDoEnvio {
   const n = variaveisDoTemplate(t);
   const links = linksVariaveisDe(t);
   const doVideo = (i: number) => links.some((l) => l.indice === i && ehLinkDeVideoDoCrm(l.url));
   return {
-    cabecalho: Array.from({ length: n.cabecalho }, () => ""),
-    corpo: Array.from({ length: n.corpo }, (_, i) => (i === 0 ? marcaDoContato("primeiro_nome") : "")),
+    cabecalho: Array.from({ length: n.cabecalho }, (_, i) => textoFixoDoExemplo(t.exemplosCabecalho[i])),
+    corpo: Array.from(
+      { length: n.corpo },
+      (_, i) => textoFixoDoExemplo(t.exemplosCorpo[i]) || (i === 0 ? marcaDoContato("primeiro_nome") : ""),
+    ),
     ...(n.links.length ? { botoes: naPosicaoDosLinks(n.links, (i) => (doVideo(i) ? marcaDoContato("numero") : "")) } : {}),
   };
 }

@@ -8,6 +8,9 @@
 // a lista de pendências mostra e o servidor repete. As regras que importam vão
 // num "?" ao lado do rótulo (2026-10-28), sem parágrafo embaixo.
 //
+// O texto fixo começa com o que foi escrito na variável ao criar o template
+// (2026-10-30, valoresIniciais e textoFixoDoExemplo).
+//
 // CABEÇALHO COM MÍDIA (2026-10-28, pedido dele: "templates aprovados com vídeo
 // e fotos"): template com imagem, vídeo ou documento no cabeçalho
 // (midiaDoCabecalho) pede o arquivo da biblioteca de Documentos, do mesmo
@@ -23,6 +26,7 @@ import {
   linksVariaveisDe,
   marcaDoContato,
   midiaDoCabecalho,
+  textoFixoDoExemplo,
   textoParaRevisao,
   valoresIniciais,
   variaveisDoTemplate,
@@ -96,8 +100,20 @@ export default function EditorTemplate({
   }
 
   const linhas = [
-    ...Array.from({ length: n.cabecalho }, (_, i) => ({ lista: "cabecalho" as const, i, rotulo: `Cabeçalho {{${i + 1}}}`, maximo: LIMITE.cabecalho })),
-    ...Array.from({ length: n.corpo }, (_, i) => ({ lista: "corpo" as const, i, rotulo: `{{${i + 1}}}`, maximo: LIMITE.valorFixo })),
+    ...Array.from({ length: n.cabecalho }, (_, i) => ({
+      lista: "cabecalho" as const,
+      i,
+      rotulo: `Cabeçalho {{${i + 1}}}`,
+      maximo: LIMITE.cabecalho,
+      exemplo: textoFixoDoExemplo(t?.exemplosCabecalho[i]),
+    })),
+    ...Array.from({ length: n.corpo }, (_, i) => ({
+      lista: "corpo" as const,
+      i,
+      rotulo: `{{${i + 1}}}`,
+      maximo: LIMITE.valorFixo,
+      exemplo: textoFixoDoExemplo(t?.exemplosCorpo[i]),
+    })),
   ];
 
   return (
@@ -153,6 +169,7 @@ export default function EditorTemplate({
                 rotulo={l.rotulo}
                 valor={bloco.variaveis[l.lista][l.i] ?? ""}
                 maximo={l.maximo}
+                exemplo={l.exemplo}
                 mudar={(v) => alterar(l.lista, l.i, v)}
               />
             ))}
@@ -206,9 +223,22 @@ export default function EditorTemplate({
 
 /**
  * Uma variável: um dado do contato (só os que podem ir em campanha — e-mail e
- * WhatsApp ficam no chat, onde alguém confere antes) ou um texto fixo.
+ * WhatsApp ficam no chat, onde alguém confere antes) ou um texto fixo, que
+ * começa com o texto escrito no template (textoFixoDoExemplo).
  */
-function ValorDaVariavel({ rotulo, valor, maximo, mudar }: { rotulo: string; valor: string; maximo: number; mudar: (v: string) => void }) {
+function ValorDaVariavel({
+  rotulo,
+  valor,
+  maximo,
+  exemplo,
+  mudar,
+}: {
+  rotulo: string;
+  valor: string;
+  maximo: number;
+  exemplo: string;
+  mudar: (v: string) => void;
+}) {
   const dado = dadoDoValor(valor);
   const escolhido = DADOS_NA_CAMPANHA.some((d) => d.chave === dado) ? dado : null;
   return (
@@ -218,7 +248,7 @@ function ValorDaVariavel({ rotulo, valor, maximo, mudar }: { rotulo: string; val
         aria-label={`O que vai em ${rotulo}`}
         className={`${campoAds} mt-1`}
         value={escolhido ?? "texto"}
-        onChange={(e) => mudar(e.target.value === "texto" ? "" : marcaDoContato(e.target.value as ChaveDoContato))}
+        onChange={(e) => mudar(e.target.value === "texto" ? exemplo : marcaDoContato(e.target.value as ChaveDoContato))}
       >
         {DADOS_NA_CAMPANHA.map((d) => (
           <option key={d.chave} value={d.chave}>
