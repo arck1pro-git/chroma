@@ -26,25 +26,6 @@
     </div>
   </header>
 
-  <!-- A sugestão nova, por cima de tudo: some sozinha, no ✕ ou no Esc -->
-  <div id="sugestao" class="pop" role="status" aria-live="polite" hidden>
-    <div class="pop-cabeca">
-      <span class="pop-rotulo">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/></svg>
-        Sugestão
-      </span>
-      <span id="pop-objecao" class="pop-chip" hidden></span>
-      <button id="pop-fechar" class="pop-fechar" aria-label="Fechar a sugestão" title="Fechar (Esc)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
-      </button>
-    </div>
-    <p id="pop-frase" class="pop-frase" hidden></p>
-    <p id="pop-principal" class="pop-principal"></p>
-    <ul id="pop-mais" class="pop-mais"></ul>
-    <p id="pop-proximo" class="pop-proximo" hidden></p>
-    <span class="pop-tempo" aria-hidden="true"><span id="pop-barra"></span></span>
-  </div>
-
   <section id="desconectado" class="cartao alerta" hidden>
     <p id="desconectado-motivo"></p>
     <div class="linha">
@@ -99,32 +80,39 @@
     <button id="continuar" class="botao">A reunião continua</button>
   </section>
 
-  <section id="conducao" class="cartao destaque" hidden>
-    <div class="cabeca">
+  <!-- Os cards de sugestão, o mais novo em cima. A transcrição não aparece. -->
+  <section id="sugestoes" class="sugestoes" hidden>
+    <div class="sugestoes-cabeca">
       <h2>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/></svg>
-        Condução
+        Sugestões
       </h2>
+      <span id="analise-quando" class="suave pequeno"></span>
       <button id="sugerir" class="botao leve pequeno">Analisar agora</button>
     </div>
-    <div id="objecao" class="objecao" hidden>
-      <p class="rotulo">Objeção · <span id="objecao-tipo"></span></p>
-      <p id="objecao-frase" class="citacao"></p>
-      <p id="objecao-portras" class="suave pequeno"></p>
+    <div id="ouvindo" class="ouvindo" hidden>
+      <span class="onda" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <p>Ouvindo a conversa. Os cards aparecem aqui quando houver o que sugerir.</p>
     </div>
-    <ul id="sugestoes" class="sugestoes"></ul>
-    <p id="proximo" class="proximo" hidden></p>
-    <p id="analise-quando" class="suave pequeno"></p>
+    <ol id="cards" class="cards" aria-live="polite"></ol>
   </section>
 
-  <section id="transcricao" class="cartao" hidden>
-    <div class="cabeca">
-      <h2>Transcrição</h2>
-      <span id="ao-vivo" class="pilula vivo" hidden>ao vivo</span>
-    </div>
-    <ol id="falas" class="falas"></ol>
-    <p id="ouvindo" class="vazio" hidden>Ouvindo… cada frase aparece aqui logo depois de dita.</p>
-  </section>
+  <template id="modelo-card">
+    <li class="pop">
+      <div class="pop-cabeca">
+        <span class="pop-rotulo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/></svg>
+          Sugestão
+        </span>
+        <span class="pop-chip" hidden></span>
+        <span class="pop-hora"></span>
+      </div>
+      <p class="pop-frase" hidden></p>
+      <p class="pop-principal"></p>
+      <ul class="pop-mais"></ul>
+      <p class="pop-proximo" hidden></p>
+    </li>
+  </template>
 
   <!-- No fim -->
   <section id="gravacao" class="cartao" hidden>

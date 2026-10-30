@@ -20,7 +20,7 @@ import type { AddressInfo } from "node:net";
 import { sql } from "../lib/db";
 import { ID_EXTENSAO, pedidoDaExtensao } from "../lib/reunioes-extensao";
 import { acessoAFicha, buscarLeadsDaReuniao, escopoDoLead, fichaDoLead, fichaVisivel, leadDaSala, salvarResumoNaFicha } from "../lib/reunioes-lead";
-import { analisarReuniao, FalhaCopiloto, lerFalas, limparTranscricao, resumirReuniao } from "../lib/ia/reuniao";
+import { analisarReuniao, FalhaCopiloto, lerAnterior, lerFalas, limparTranscricao, resumirReuniao } from "../lib/ia/reuniao";
 import type { UsuarioLogado } from "../lib/auth/dal";
 
 const MARCA = "seed-reuniao-assistente";
@@ -49,6 +49,14 @@ async function parte1() {
   conferir(lerFalas(Array.from({ length: 201 }, () => ({ fala: "lead", texto: "x".repeat(1000) })), "resumo") === null, "resumo acima de 200 mil caracteres é recusado");
   conferir(lerFalas([], "resumo")?.length === 0, "lista vazia é válida (a rota diz que não há o que resumir)");
   conferir(limparTranscricao("Legendas pela comunidade Amara.org") === null, "frase que o Whisper inventa no silêncio some");
+  // 2026-10-30: com o corte na pausa, trecho só com ruído virava uma fila de "Obrigado." na reunião.
+  conferir(
+    ["Obrigado.", "Obrigada!", "Muito obrigado.", "Obrigado. Obrigado. Obrigado.", "Tchau.", "Valeu."].every((t) => limparTranscricao(t) === null),
+    "o \"Obrigado.\" e o \"Tchau.\" sozinhos (e repetidos) somem",
+  );
+  conferir(limparTranscricao("Obrigado pela explicação, ficou claro.") === "Obrigado pela explicação, ficou claro.", "obrigado dentro de uma frase de verdade fica");
+  conferir(lerAnterior(undefined) === null && lerAnterior({ objecao: "preço", conducao: ["a"] })?.objecao === "preço", "sugestão anterior ausente ou válida passa");
+  conferir(lerAnterior({ objecao: "x", conducao: "não é lista" }) === undefined && lerAnterior({ objecao: null, conducao: Array(5).fill("a") }) === undefined, "sugestão anterior com forma errada é recusada");
   conferir(limparTranscricao("  Quanto rende por mês?  ") === "Quanto rende por mês?", "fala de verdade fica");
   conferir(escopoDoLead(usuario("u", [["agenda", "todos"]])) === null, "só Agenda não vê lead");
   conferir(escopoDoLead(usuario("u", [["contatos", "todos"], ["inicio", "proprio"]])) === "proprio", "o escopo do Dashboard vem antes do de Contatos");
@@ -179,6 +187,10 @@ async function parte4(ficha: Awaited<ReturnType<typeof fichaDoLead>>) {
     const p = pedido;
     // O perfil saiu em 2026-10-30: o painel não o mostrava, e escrevê-lo atrasava cada análise.
     conferir(!("perfil" in (p.output_config?.format?.schema?.properties ?? {})) && !("perfil" in analise), "a análise não pede nem devolve o perfil do lead");
+    conferir(analise.novidade === true && String(p.messages?.[0]?.content).includes("SUGESTÃO JÁ MOSTRADA AO VENDEDOR: nenhuma ainda"), "sem sugestão na tela, a análise é novidade");
+    resposta = mensagem(JSON.stringify({ novidade: false, objecao: null, conducao: [], proximoPasso: "" }));
+    const repetida = await analisarReuniao(ficha, falas, { objecao: "risco", conducao: ["Pergunte o que mais preocupa"] });
+    conferir(repetida.novidade === false && String(pedido.messages?.[0]?.content).includes("<<<dado_do_cliente>>>Pergunte o que mais preocupa"), "a sugestão já mostrada vai marcada como dado, e sem novidade não há card");
     conferir(p.fallbacks === "default" && String(cabecalhos["anthropic-beta"]).includes("server-side-fallback-2026-07-01"), "pedido com o fallback padrão da API");
     conferir(p.output_config?.format?.type === "json_schema" && p.output_config?.effort === "low", "saída em JSON schema, esforço baixo");
     conferir(p.system?.[1]?.cache_control?.type === "ephemeral", "a ficha vai no system com cache");

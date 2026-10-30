@@ -10,15 +10,21 @@
 //     (/api/reunioes/assistente/trecho). Desde 2026-10-30 (pedido dele de menos
 //     latência) o corte é na PAUSA da fala: depois de TRECHO_MIN_MS, a primeira
 //     pausa de PAUSA_MS fecha o trecho, e TRECHO_MAX_MS fecha de qualquer jeito.
-//     A frase aparece ~1 s depois de dita, em vez de esperar o fim de um bloco
-//     fixo de 15 s, e o corte não cai no meio da palavra. Trecho em silêncio não
-//     sai: economiza a chamada e evita as frases que o Whisper inventa no silêncio.
+//     A frase chega ao copiloto ~1 s depois de dita, em vez de esperar o fim de
+//     um bloco fixo de 15 s, e o corte não cai no meio da palavra. Trecho com
+//     menos de VOZ_MINIMA_MS de voz não sai: economiza a chamada e evita as
+//     frases que o Whisper inventa no ruído (a fila de "Obrigado." de 2026-10-30).
+//   · A transcrição não aparece no painel (pedido dele em 2026-10-30: "só cards
+//     de sugestão"): ela alimenta o copiloto e o resumo do fim.
 //   · Depois de uma fala NOVA do lead, pede a análise ao copiloto
 //     (/api/reunioes/assistente/analise), no máximo a cada ANALISE_MS: a fala que
 //     cai dentro da espera fica agendada para o fim dela. "Analisar agora" pula a
 //     espera. Recusa de freio (429) ou erro do CRM dobra a espera, até 5 min: a
 //     Groq e a Anthropic são as mesmas do atendimento de WhatsApp. Os tetos das
 //     rotas (lib/reunioes-extensao.ts) acompanham estes tempos.
+//   · Cada análise leva a sugestão do último card, e só a que traz novidade vira
+//     card novo (estado "sugestoes", a mais nova primeiro). "Analisar agora" vai
+//     sem a anterior: quem pediu ganha um card.
 //   · SILENCIO_MAXIMO sem som da reunião (no Meet e no Zoom, sair da chamada não
 //     muda a URL, e o microfone seguiria gravando a sala): o painel pergunta se
 //     a reunião continua; sem resposta em PRAZO_RESPOSTA, para. Para também com
@@ -45,8 +51,12 @@ const PRAZO_RESPOSTA_MS = 2 * 60_000;
 const ESPERA_FINAL_MS = 20_000;
 // Volume médio (RMS) abaixo disto é silêncio ou ruído de fundo.
 const SILENCIO = 0.008;
+// Trecho com menos voz que isto (um clique, uma tosse) não vai transcrever.
+const VOZ_MINIMA_MS = 400;
 // Na análise vão as falas mais recentes (o CRM aceita até 80).
 const FALAS_NA_ANALISE = 80;
+// Os cards guardados no estado (o painel mostra os mais novos).
+const SUGESTOES_GUARDADAS = 20;
 
 let r = null; // a reunião em andamento (ou a última, já encerrada)
 
@@ -112,8 +122,7 @@ async function iniciar({ streamId, sala, crm, leadId }) {
     // A reunião anexada no painel antes de gravar (2026-10-30); sem ela, identificar() procura.
     leadId: typeof leadId === "string" && leadId ? leadId : null,
     ultimaAnalise: 0, esperaAnalise: ANALISE_MS, novasDoLead: 0, analisando: false, agendada: null,
-    // Trechos de cada fonte esperando o texto: o painel mostra os "…" no lado de quem falou.
-    transcrevendo: { lead: 0, voce: 0 },
+    sugestoes: [],
     encerrada: false, cortes: [], pendentes: new Set(), url: null,
     ultimoSomDaAba: Date.now(), perguntouEm: null,
     limite: setTimeout(pedirParada, DURACAO_MAXIMA_MS),
@@ -154,8 +163,8 @@ function continuar() {
 }
 
 /**
- * Corta `fluxo` em trechos e manda transcrever os que não são silêncio: fecha na
- * primeira pausa depois de TRECHO_MIN_MS de trecho com fala, ou em TRECHO_MAX_MS.
+ * Corta `fluxo` em trechos e manda transcrever os que têm voz: fecha na primeira
+ * pausa depois de TRECHO_MIN_MS de trecho com fala, ou em TRECHO_MAX_MS.
  * `parar()` devolve uma promessa que resolve quando o último trecho foi entregue.
  */
 function cortar(fluxo, fonte, fala) {
@@ -166,11 +175,12 @@ function cortar(fluxo, fonte, fala) {
   let atual = null;
 
   const novo = () => {
-    // ultimaVoz: a última medida acima do silêncio (0 = ninguém falou ainda neste trecho).
-    const trecho = { nivel: 0, ultimaVoz: 0, partes: [], em: Date.now(), gravador: new MediaRecorder(fluxo, { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 32_000 }) };
+    // voz: quanto do trecho ficou acima do silêncio; ultimaVoz: a última medida
+    // acima dele (0 = ninguém falou ainda neste trecho).
+    const trecho = { voz: 0, ultimaVoz: 0, partes: [], em: Date.now(), gravador: new MediaRecorder(fluxo, { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 32_000 }) };
     trecho.entregue = new Promise((pronto) => {
       trecho.gravador.onstop = () => {
-        if (trecho.nivel >= SILENCIO) {
+        if (trecho.voz >= VOZ_MINIMA_MS) {
           if (fala === "lead") r.ultimoSomDaAba = Date.now();
           transcrever(new Blob(trecho.partes, { type: "audio/webm" }), fala, trecho.em);
         }
@@ -197,7 +207,7 @@ function cortar(fluxo, fonte, fala) {
     const nivel = Math.sqrt(soma / amostra.length);
     const agora = Date.now();
     if (nivel >= SILENCIO) {
-      atual.nivel = Math.max(atual.nivel, nivel);
+      atual.voz += MEDIDA_MS;
       atual.ultimaVoz = agora;
     }
     const idade = agora - atual.em;
@@ -215,34 +225,28 @@ function cortar(fluxo, fonte, fala) {
   };
 }
 
-const fontesTranscrevendo = () => Object.keys(r.transcrevendo).filter((f) => r.transcrevendo[f] > 0);
-
 function transcrever(audio, fala, em) {
   const corpo = new FormData();
   corpo.append("audio", audio, "trecho.webm");
-  r.transcrevendo[fala]++;
-  emitir({ transcrevendo: fontesTranscrevendo() });
   const tarefa = chamar("/api/reunioes/assistente/trecho", { method: "POST", body: corpo })
     .then(({ texto }) => {
-      if (!texto) return {};
+      if (!texto) return;
       r.falas.push({ fala, texto, em });
       // Os trechos voltam fora de ordem (cada um é uma chamada): vale a hora em que começou.
       r.falas.sort((a, b) => a.em - b.em);
-      return { falas: r.falas };
-    })
-    .catch((e) => ({ erro: e.message }))
-    .then((parcial) => {
-      // A fala e o fim dos "…" chegam ao painel juntos, numa escrita só.
-      r.transcrevendo[fala]--;
-      emitir({ ...parcial, transcrevendo: fontesTranscrevendo() });
-      if (parcial.falas && fala === "lead" && !r.encerrada) {
+      emitir({ falas: r.falas });
+      if (fala === "lead" && !r.encerrada) {
         r.novasDoLead++;
         analisar(false);
       }
     })
+    .catch((e) => emitir({ erro: e.message }))
     .finally(() => r.pendentes.delete(tarefa));
   r.pendentes.add(tarefa);
 }
+
+// A forma que a rota de análise aceita para a sugestão do último card (lerAnterior, em lib/ia/reuniao.ts).
+const comoAnterior = (s) => (s ? { objecao: s.objecao?.tipo ?? null, conducao: s.conducao } : null);
 
 async function analisar(agora) {
   if (!r || r.encerrada || !r.falas.length || r.analisando) return;
@@ -268,9 +272,15 @@ async function analisar(agora) {
   emitir({ analisando: true });
   try {
     const falas = r.falas.slice(-FALAS_NA_ANALISE).map(({ fala, texto }) => ({ fala, texto }));
-    const { analise } = await chamar("/api/reunioes/assistente/analise", json({ contato_id: r.leadId, falas }));
+    const anterior = agora ? null : comoAnterior(r.sugestoes[0]);
+    const { analise } = await chamar("/api/reunioes/assistente/analise", json({ contato_id: r.leadId, falas, anterior }));
     r.esperaAnalise = ANALISE_MS;
-    emitir({ analise, analiseEm: Date.now(), erro: null });
+    const parcial = { analiseEm: Date.now(), erro: null };
+    if (analise.novidade && (analise.conducao.length || analise.objecao)) {
+      r.sugestoes = [{ ...analise, em: Date.now() }, ...r.sugestoes].slice(0, SUGESTOES_GUARDADAS);
+      parcial.sugestoes = r.sugestoes;
+    }
+    emitir(parcial);
   } catch (e) {
     if (e.status === 429 || e.status >= 500) r.esperaAnalise = Math.min(r.esperaAnalise * 2, ESPERA_MAXIMA_MS);
     emitir({ erro: e.message });

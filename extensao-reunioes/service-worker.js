@@ -39,8 +39,7 @@ const VAZIA = {
   lead: null,
   candidatos: null, // as reuniões de hoje; null = o CRM ainda não respondeu
   falas: [],
-  transcrevendo: [], // de que lado ("lead", "voce") há trecho esperando o texto: o painel mostra "…"
-  analise: null,
+  sugestoes: [], // os cards do copiloto, o mais novo primeiro (o painel não mostra a transcrição)
   analiseEm: null,
   analisando: false,
   silencioDesde: null, // a reunião ficou sem som: o painel pergunta se ela segue
@@ -52,7 +51,7 @@ const VAZIA = {
 
 // O que o gravador e o painel podem pôr no estado. O resto (status, sessão,
 // arquivo, aba) só este arquivo grava.
-const CHAVES_DO_ESTADO = ["lead", "candidatos", "falas", "transcrevendo", "analise", "analiseEm", "analisando", "silencioDesde", "erro", "aviso"];
+const CHAVES_DO_ESTADO = ["lead", "candidatos", "falas", "sugestoes", "analiseEm", "analisando", "silencioDesde", "erro", "aviso"];
 const soChavesPermitidas = (parcial) =>
   Object.fromEntries(Object.entries(parcial ?? {}).filter(([k]) => CHAVES_DO_ESTADO.includes(k)));
 
@@ -218,7 +217,7 @@ async function parar() {
   const r = await chrome.runtime.sendMessage({ alvo: "gravador", tipo: "parar" }).catch(() => null);
   await badge(atual.abaId, "");
   if (!r?.ok) await fecharGravador();
-  await mudar({ status: "encerrada", fim: Date.now(), analisando: false, transcrevendo: [], silencioDesde: null, arquivo: r?.ok ? r.url ?? null : null });
+  await mudar({ status: "encerrada", fim: Date.now(), analisando: false, silencioDesde: null, arquivo: r?.ok ? r.url ?? null : null });
 }
 
 function nomeDoArquivo(r) {

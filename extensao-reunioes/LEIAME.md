@@ -1,7 +1,8 @@
 # AmaanOffice · Reuniões (extensão do Chrome)
 
-Grava a reunião do Google Meet ou do Zoom pelo navegador e transcreve o que é dito.
-Mostra quem é o lead e, quando ele levanta uma objeção, sugere como conduzir a conversa.
+Grava a reunião do Google Meet ou do Zoom pelo navegador e acompanha o que é dito.
+Mostra quem é o lead e, conforme a conversa anda, cria cards com o que fazer: a objeção que apareceu, o que dizer e o
+próximo passo. A transcrição fica por trás, para o copiloto e o resumo, e não aparece no painel.
 No fim, gera um resumo que o vendedor revisa e salva como anotação na ficha do lead.
 
 ## Instalar
@@ -30,14 +31,13 @@ O ID não é senha: a chave está no repositório. Ele barra pedidos de páginas
    guardada como a hora do aviso. Com o painel aberto por outra aba, o Gravar grava a reunião aberta na janela.
    O ícone mostra **REC** enquanto grava. Se o painel disser **Falta um clique**, clique no ícone da extensão
    com a aba da reunião aberta: o Chrome só libera o áudio da aba por esse clique, e a gravação começa na hora.
-5. **Transcrição:** o que é dito aparece em balões, o lead à esquerda e você à direita, logo depois de cada frase.
-   O áudio é cortado na pausa da fala, e os três pontos (**…**) mostram o trecho sendo transcrito.
-6. **Sugestão:** quando o lead fala, o copiloto analisa a conversa no máximo a cada 20 segundos. Se a análise traz
-   algo novo a fazer, ela aparece num card preto com brilho azul por cima do painel, com a objeção, o que dizer e o
-   próximo passo. O card some sozinho em 25 segundos (o mouse em cima segura), no ✕ ou no <kbd>Esc</kbd>, e a mesma
-   sugestão continua no cartão **Condução**. **Analisar agora** força a análise e reabre o card.
-7. **Parar** encerra a gravação. Depois, escolha **Baixar**, que salva em `Downloads/AmaanOffice`, ou **Descartar**.
-8. **Gerar resumo** traz um rascunho. Revise, corrija e clique em **Salvar na ficha do lead**: ele vira uma anotação no contato.
+5. **Sugestões:** enquanto ninguém sugere nada, o painel mostra **Ouvindo a conversa**. Quando o lead fala, o
+   copiloto analisa a conversa no máximo a cada 20 segundos e compara com o último card. Se a conversa andou e há
+   algo novo a fazer, entra um card preto com brilho azul no topo, com a objeção, o que dizer e o próximo passo.
+   Os cards anteriores ficam embaixo, menores e apagados, como histórico (os 8 mais novos). A mesma ideia em outras
+   palavras não vira card. **Analisar agora** força a análise e sempre cria um card.
+6. **Parar** encerra a gravação. Depois, escolha **Baixar**, que salva em `Downloads/AmaanOffice`, ou **Descartar**.
+7. **Gerar resumo** traz um rascunho. Revise, corrija e clique em **Salvar na ficha do lead**: ele vira uma anotação no contato.
 
 A gravação para sozinha:
 - quando a aba da reunião fecha ou vai para outro endereço;
@@ -49,11 +49,13 @@ Uma fala do lead durante a espera de 20 segundos entre análises fica agendada p
 **Parar** espera as últimas transcrições, para o fim da reunião entrar no resumo.
 
 Ao compartilhar a tela, compartilhe **só a aba** da reunião. Com a janela ou a tela inteira, o lead vê o painel,
-com a objeção e as sugestões. Por isso o card de sugestão fica no painel, e não na página do Meet.
+com a objeção e as sugestões. Por isso os cards ficam no painel, e não na página do Meet.
 
 ## O que sai do computador
 
-- **Áudio:** vai ao CRM em trechos de 4 a 12 s, cortados na pausa da fala, só para transcrever. Trecho em silêncio não sai. A transcrição é feita pela Groq, e o áudio não fica guardado no servidor.
+- **Áudio:** vai ao CRM em trechos de 4 a 12 s, cortados na pausa da fala, só para transcrever. Trecho com menos de
+  0,4 s de voz (silêncio, clique, tosse) não sai: é nele que o Whisper inventava "Obrigado.". A transcrição é feita
+  pela Groq, e o áudio não fica guardado no servidor.
 - **Texto:** a transcrição vai ao copiloto (Anthropic) com a ficha do lead. É isso que gera as sugestões e o resumo.
 - **Arquivo da reunião:** fica só neste computador e só se você clicar em Baixar.
 - **Na ficha:** só o resumo que você salvar.
@@ -61,7 +63,7 @@ com a objeção e as sugestões. Por isso o card de sugestão fica no painel, e 
 ## Limitações
 
 - O Zoom de desktop não é capturado: o Chrome só grava o que toca numa aba dele.
-- Use fone de ouvido. Sem fone, o microfone capta a voz do lead e ela aparece duas vezes na transcrição.
+- Use fone de ouvido. Sem fone, o microfone capta a voz do lead e ela entra duas vezes na transcrição que o copiloto lê.
 - O assistente exige o módulo **Agenda**. Ver e escolher o lead exige **Dashboard** ou **Contatos**.
   A conversa do WhatsApp do lead só entra na análise para quem tem o **Chat**.
 - O painel fala com o CRM de **Produção**. Para desenvolver contra o **Local** (`localhost:3000`), rode no console do
@@ -75,6 +77,6 @@ com a objeção e as sugestões. Por isso o card de sugestão fica no painel, e 
   - os comandos aceitos;
   - a parada automática.
 - O áudio de verdade só se confere no Chrome, numa sala entre duas contas internas, com o CRM **Local**.
-  É preciso ver que o painel fica "Pronta", o REC aparece na aba, Parar e Condução aparecem, as frases chegam logo
-  depois de ditas, o card de sugestão aparece quando o lead levanta uma objeção, o arquivo baixado toca e a anotação
-  é salva num contato de teste.
+  É preciso ver que o painel fica "Pronta", o REC aparece na aba, Parar e **Ouvindo a conversa** aparecem, um card
+  entra quando o lead levanta uma objeção (e não repete a mesma ideia a cada 20 s), o arquivo baixado toca e a
+  anotação é salva num contato de teste.

@@ -22,6 +22,11 @@
 //     lead" saiu do JSON, porque o painel nunca o mostrava e cada análise
 //     gastava tempo escrevendo-o; a condução pede 2 ou 3 frases, que cabem no
 //     card de sugestão da extensão.
+//   · Só sugestão nova vira card (ainda em 2026-10-30, quando o painel deixou de
+//     mostrar a transcrição e passou a empilhar cards): a extensão manda a
+//     sugestão já mostrada, e o modelo responde "novidade": false quando a
+//     conversa não andou o bastante para mudar o que fazer. Sem isso, cada
+//     análise de 20 s viraria um card com a mesma ideia em outras palavras.
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
@@ -55,9 +60,25 @@ export function lerFalas(bruto: unknown, para: "analise" | "resumo"): Fala[] | n
   return total > TETO_CARACTERES_RESUMO ? null : r.data;
 }
 
+const ANTERIOR = z
+  .object({ objecao: z.string().trim().max(80).nullable(), conducao: z.array(z.string().trim().max(400)).max(4) })
+  .nullable();
+/** A sugestão que o vendedor já tem na tela: a próxima só vira card se trouxer algo novo. */
+export type SugestaoAnterior = z.infer<typeof ANTERIOR>;
+
+/** A sugestão anterior que veio da extensão; ausente vale null, forma errada devolve undefined. */
+export function lerAnterior(bruto: unknown): SugestaoAnterior | undefined {
+  const r = ANTERIOR.safeParse(bruto ?? null);
+  return r.success ? r.data : undefined;
+}
+
 // O Whisper "ouve" frases prontas no silêncio, as legendas de vídeo com que foi
-// treinado. Em português as campeãs são estas.
-const ALUCINACAO = /^(legendas? (pela comunidade|por) .*|obrigad[oa] por assistir.*|inscreva-se.*|tchau[,!. ]*tchau.*|\.+|…+)$/i;
+// treinado. Em português as campeãs são estas. Desde 2026-10-30 entram também o
+// "Obrigado." e o "Tchau." sozinhos (e repetidos): com o corte na pausa da fala,
+// trecho com só um ruído virava uma fila de "Obrigado." na reunião. Um
+// "obrigado" de verdade, solto, não faz falta ao copiloto nem ao resumo.
+const ALUCINACAO =
+  /^(legendas? (pela comunidade|por) .*|.*amara\.org.*|obrigad[oa] por assistir.*|inscreva-se.*|((muito )?obrigad[oa]( a todos)?[,.!… ]*)+|(tchau[,.!… ]*)+|(valeu[,.!… ]*)+|\.+|…+)$/i;
 
 /** O texto do trecho, sem as frases que o Whisper inventa no silêncio; null se não sobrou nada. */
 export function limparTranscricao(texto: string | null): string | null {
@@ -72,6 +93,8 @@ export function limparTranscricao(texto: string | null): string | null {
 // uma citação comprida do lead não pode derrubar a condução daquela objeção.
 const curto = (teto: number) => z.string().transform((s) => s.trim().slice(0, teto));
 const ANALISE = z.object({
+  // Sem o campo (resposta de antes desta regra), vale como novidade.
+  novidade: z.boolean().default(true),
   objecao: z.object({ tipo: curto(80), frase: curto(400), porTras: curto(300) }).nullable(),
   conducao: z.array(curto(400)).transform((l) => l.slice(0, 4)),
   proximoPasso: curto(400),
@@ -81,8 +104,12 @@ export type AnaliseReuniao = z.infer<typeof ANALISE>;
 const SCHEMA_ANALISE = {
   type: "object",
   additionalProperties: false,
-  required: ["objecao", "conducao", "proximoPasso"],
+  required: ["novidade", "objecao", "conducao", "proximoPasso"],
   properties: {
+    novidade: {
+      type: "boolean",
+      description: "true se a conversa andou e há algo novo a fazer em relação à sugestão já mostrada (ou se nenhuma foi mostrada); false se a sugestão já mostrada ainda vale.",
+    },
     objecao: {
       anyOf: [
         { type: "null" },
@@ -119,6 +146,7 @@ COMO RESPONDER
 - Só o JSON pedido. Frases curtas, que o vendedor lê de relance enquanto fala.
 - "objecao": só se o LEAD levantou uma objeção nas falas mais recentes e ela ainda não foi bem respondida. Senão, null.
 - "conducao": 2 ou 3 sugestões concretas, na voz do vendedor ("Pergunte...", "Diga que..."), a mais importante primeiro. Com objeção, primeiro acolha e entenda o receio, depois responda com o que o conhecimento do produto permite. Sem objeção, ajude a avançar a reunião.
+- "novidade": cada sugestão vira um card na tela do vendedor. Compare com a SUGESTÃO JÁ MOSTRADA: se a conversa não andou o bastante para mudar o que fazer (a mesma ideia em outras palavras não conta), responda novidade false, com "objecao" null, "conducao" vazia e "proximoPasso" vazio.
 
 ${REGRAS_FIXAS}
 
@@ -219,12 +247,18 @@ async function chamar(sistema: string, ficha: string, pedido: string, schema: Re
 }
 
 /** Lê a reunião até aqui e devolve objeção e condução. */
-export async function analisarReuniao(ficha: FichaLead | null, falas: Fala[]): Promise<AnaliseReuniao> {
-  if (!falas.length) return { objecao: null, conducao: [], proximoPasso: "" };
+export async function analisarReuniao(ficha: FichaLead | null, falas: Fala[], anterior: SugestaoAnterior = null): Promise<AnaliseReuniao> {
+  if (!falas.length) return { novidade: false, objecao: null, conducao: [], proximoPasso: "" };
+  // A sugestão anterior volta da extensão: é texto do modelo, mas passou pelo
+  // navegador, então vai marcada como dado como a transcrição.
+  const jaMostrada = anterior
+    ? [anterior.objecao ? `Objeção: ${comoDado(anterior.objecao)}` : "", ...anterior.conducao.map((c) => `- ${comoDado(c)}`)].filter(Boolean).join("\n")
+    : "";
   const texto = await chamar(
     SISTEMA_ANALISE,
     fichaParaModelo(ficha, await conhecimentoDaIa(ficha?.iaId ?? null)),
-    `TRANSCRIÇÃO DOS ÚLTIMOS MINUTOS (mais antiga primeiro; a última fala é a mais recente):\n${transcricaoParaModelo(falas)}`,
+    `TRANSCRIÇÃO DOS ÚLTIMOS MINUTOS (mais antiga primeiro; a última fala é a mais recente):\n${transcricaoParaModelo(falas)}\n\n` +
+      (jaMostrada ? `SUGESTÃO JÁ MOSTRADA AO VENDEDOR:\n${jaMostrada}` : "SUGESTÃO JÁ MOSTRADA AO VENDEDOR: nenhuma ainda."),
     SCHEMA_ANALISE,
     4000,
   );
