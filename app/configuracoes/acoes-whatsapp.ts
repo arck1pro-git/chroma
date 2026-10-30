@@ -18,6 +18,7 @@ import { sql } from "@/lib/db";
 import { enderecoDoCrm } from "@/lib/endereco";
 import { urlExternaSegura } from "@/lib/rede-externa";
 import { comoResultado, ehDuplicado, Recusa, type ResultadoAcao } from "@/lib/resultado-acao";
+import { buscarInstanciasRemotas, remotaDa } from "@/lib/uazapi-estado";
 import { ehUuid } from "@/lib/validacao";
 
 // ── Instâncias uazapi ────────────────────────────────────────────────────────
@@ -247,7 +248,7 @@ async function chamarUazapi(
     if (res.status >= 500) console.warn("[uazapi] instância respondeu", res.status, caminho, erro?.error);
     throw new Recusa(
       res.status === 401 || res.status === 403
-        ? "Token inválido para essa instância"
+        ? "A uazapi não reconhece o token desta instância: ela pode ter sido apagada ou recriada no servidor. Remova-a do CRM e crie de novo."
         : erro?.error ?? `A uazapi respondeu ${res.status} — confira URL e token`,
     );
   }
@@ -392,7 +393,11 @@ export async function renomearInstancia(id: string, nome: string): Promise<Resul
  *
  * Instância que já não existe no servidor (apagada por fora, ou removida numa
  * tentativa anterior que falhou depois) NÃO trava a remoção: o 404 é tratado
- * como "já está como eu queria" e a linha sai do mesmo jeito.
+ * como "já está como eu queria" e a linha sai do mesmo jeito. Só que a uazapi
+ * responde 401, e não 404, ao token de uma instância apagada (visto em
+ * 2026-10-30: a "marketing (teste)" do DEV sumiu do servidor e ficou presa no
+ * CRM). Por isso o 401 confere a lista do servidor (sumiuDoServidor) antes de
+ * recusar.
  */
 export async function removerInstancia(id: string): Promise<ResultadoAcao> {
   await exigirModulo("configuracoes", "excluir");
@@ -407,7 +412,8 @@ export async function removerInstancia(id: string): Promise<ResultadoAcao> {
     }).catch(() => null);
 
     if (!res) throw new Recusa("Não consegui alcançar a uazapi para apagar a instância");
-    if (!res.ok && res.status !== 404) {
+    const jaApagada = (res.status === 401 || res.status === 403) && (await sumiuDoServidor(id));
+    if (!res.ok && res.status !== 404 && !jaApagada) {
       const erro = (await res.json().catch(() => null)) as { error?: string } | null;
       throw new Recusa(
         res.status === 401 || res.status === 403
@@ -419,6 +425,19 @@ export async function removerInstancia(id: string): Promise<ResultadoAcao> {
     await sql`DELETE FROM instancias_uazapi WHERE id = ${id}`;
     revalidarInstancias();
   });
+}
+
+/**
+ * A instância não está mais na lista do servidor (/instance/all, só leitura):
+ * nem pelo id da uazapi nem pelo número. Sem lista, ou linha sem id e sem
+ * número, não dá para afirmar, e a resposta é não.
+ */
+async function sumiuDoServidor(id: string): Promise<boolean> {
+  const [linha] = await sql`SELECT numero, instancia_uazapi_id FROM instancias_uazapi WHERE id = ${id}`;
+  if (!linha || (!linha.instancia_uazapi_id && !linha.numero)) return false;
+  const remotas = await buscarInstanciasRemotas().catch(() => null);
+  if (!remotas?.length) return false;
+  return !remotaDa(remotas, { instancia_uazapi_id: linha.instancia_uazapi_id as string | null, numero: linha.numero as string | null });
 }
 
 /**
