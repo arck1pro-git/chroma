@@ -246,7 +246,7 @@ h2 svg { width: 14px; height: 14px; color: var(--suave); }
 /* Os anteriores: só o principal, apagados, para a pilha contar a conversa sem pesar. */
 .pop:not(.atual) { gap: 6px; padding: 10px 12px; opacity: 0.62; }
 .pop:not(.atual):hover { opacity: 1; }
-.pop:not(.atual) .pop-frase, .pop:not(.atual) .pop-mais, .pop:not(.atual) .pop-proximo { display: none; }
+.pop:not(.atual) .pop-etapa, .pop:not(.atual) .pop-frase, .pop:not(.atual) .pop-mais, .pop:not(.atual) .pop-proximo { display: none; }
 .pop:not(.atual) .pop-principal { font-size: 13px; font-weight: 500; }
 @keyframes pop-entrar { from { opacity: 0; transform: translateY(-10px) scale(0.97); } }
 @keyframes brilhar {
@@ -266,6 +266,7 @@ h2 svg { width: 14px; height: 14px; color: var(--suave); }
   font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pop-hora { margin-left: auto; flex-shrink: 0; color: #71717a; font-size: 11px; font-variant-numeric: tabular-nums; }
+.pop-etapa { color: #93c5fd; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
 .pop-frase { color: #a1a1aa; font-size: 12px; font-style: italic; }
 .pop-principal { font-size: 15px; line-height: 1.4; font-weight: 600; letter-spacing: -0.005em; }
 .pop-mais { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; color: #d4d4d8; }

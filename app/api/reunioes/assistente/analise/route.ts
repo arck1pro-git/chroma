@@ -1,13 +1,14 @@
 import { NextRequest } from "next/server";
-import { analisarReuniao, FalhaCopiloto, lerAnterior, lerFalas } from "@/lib/ia/reuniao";
+import { analisarReuniao, FalhaCopiloto, lerAnterior, lerEtapa, lerFalas } from "@/lib/ia/reuniao";
 import { lerCorpoJson, pedidoDaExtensao, responder } from "@/lib/reunioes-extensao";
 import { fichaVisivel } from "@/lib/reunioes-lead";
 
 // O copiloto da reunião (lib/ia/reuniao.ts): a extensão manda as falas mais
-// recentes (e a sugestão que já está na tela) e recebe a objeção, a condução e
-// se há novidade. Sem lead, a análise roda só com a transcrição. Com lead, a
-// ficha é lida no servidor pelo id, com o que o acesso da pessoa deixa ver
-// (lib/reunioes-lead.ts).
+// recentes (com a sugestão que já está na tela e a etapa do roteiro da análise
+// anterior) e recebe a etapa, a objeção, a condução e se há novidade. Etapa
+// fora do roteiro vale como nenhuma. Sem lead, a análise roda só com a
+// transcrição. Com lead, a ficha é lida no servidor pelo id, com o que o acesso
+// da pessoa deixa ver (lib/reunioes-lead.ts).
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    return responder({ analise: await analisarReuniao(ficha, falas, anterior) });
+    return responder({ analise: await analisarReuniao(ficha, falas, anterior, lerEtapa(corpo.etapa)) });
   } catch (e) {
     if (e instanceof FalhaCopiloto) return responder({ erro: e.message }, 502);
     throw e;

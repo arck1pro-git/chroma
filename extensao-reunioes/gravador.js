@@ -21,10 +21,15 @@
 //     cai dentro da espera fica agendada para o fim dela. "Analisar agora" pula a
 //     espera. Recusa de freio (429) ou erro do CRM dobra a espera, até 5 min: a
 //     Groq e a Anthropic são as mesmas do atendimento de WhatsApp. Os tetos das
-//     rotas (lib/reunioes-extensao.ts) acompanham estes tempos.
+//     rotas (lib/reunioes-extensao.ts) acompanham estes tempos. A espera era de
+//     20 s e caiu para 6 s ainda em 2026-10-30 ("busque formas de diminuir esse
+//     tempo"): era ela que segurava a objeção nova até 20 s, e a análise sem
+//     novidade custa pouco (~1,4 s, poucas palavras de saída).
 //   · Cada análise leva a sugestão do último card, e só a que traz novidade vira
 //     card novo (estado "sugestoes", a mais nova primeiro). "Analisar agora" vai
-//     sem a anterior: quem pediu ganha um card.
+//     sem a anterior: quem pediu ganha um card. Toda análise leva também a etapa
+//     do roteiro da reunião em que a anterior parou (lib/ia/reuniao-roteiro.ts):
+//     o copiloto só lê as últimas falas e, sem ela, recomeçaria o roteiro.
 //   · SILENCIO_MAXIMO sem som da reunião (no Meet e no Zoom, sair da chamada não
 //     muda a URL, e o microfone seguiria gravando a sala): o painel pergunta se
 //     a reunião continua; sem resposta em PRAZO_RESPOSTA, para. Para também com
@@ -37,12 +42,12 @@
 // e o painel), nunca ao content script da página da reunião.
 import { CRMS } from "./comum.js";
 
-const TRECHO_MIN_MS = 4_000;
+const TRECHO_MIN_MS = 3_000;
 const TRECHO_MAX_MS = 12_000;
-const PAUSA_MS = 700;
+const PAUSA_MS = 600;
 // De quanto em quanto tempo o volume é medido (fala ou pausa).
 const MEDIDA_MS = 100;
-const ANALISE_MS = 20_000;
+const ANALISE_MS = 6_000;
 const ESPERA_MAXIMA_MS = 5 * 60_000;
 const DURACAO_MAXIMA_MS = 3 * 60 * 60_000;
 const SILENCIO_MAXIMO_MS = 15 * 60_000;
@@ -122,7 +127,8 @@ async function iniciar({ streamId, sala, crm, leadId }) {
     // A reunião anexada no painel antes de gravar (2026-10-30); sem ela, identificar() procura.
     leadId: typeof leadId === "string" && leadId ? leadId : null,
     ultimaAnalise: 0, esperaAnalise: ANALISE_MS, novasDoLead: 0, analisando: false, agendada: null,
-    sugestoes: [],
+    // A etapa do roteiro na última análise que soube dizer: volta na próxima, para o roteiro seguir dali.
+    sugestoes: [], etapa: null,
     encerrada: false, cortes: [], pendentes: new Set(), url: null,
     ultimoSomDaAba: Date.now(), perguntouEm: null,
     limite: setTimeout(pedirParada, DURACAO_MAXIMA_MS),
@@ -273,8 +279,9 @@ async function analisar(agora) {
   try {
     const falas = r.falas.slice(-FALAS_NA_ANALISE).map(({ fala, texto }) => ({ fala, texto }));
     const anterior = agora ? null : comoAnterior(r.sugestoes[0]);
-    const { analise } = await chamar("/api/reunioes/assistente/analise", json({ contato_id: r.leadId, falas, anterior }));
+    const { analise } = await chamar("/api/reunioes/assistente/analise", json({ contato_id: r.leadId, falas, anterior, etapa: r.etapa }));
     r.esperaAnalise = ANALISE_MS;
+    if (analise.etapa?.titulo) r.etapa = analise.etapa.titulo;
     const parcial = { analiseEm: Date.now(), erro: null };
     if (analise.novidade && (analise.conducao.length || analise.objecao)) {
       r.sugestoes = [{ ...analise, em: Date.now() }, ...r.sugestoes].slice(0, SUGESTOES_GUARDADAS);

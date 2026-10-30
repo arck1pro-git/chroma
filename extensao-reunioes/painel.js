@@ -18,6 +18,7 @@
 //     a transcrição, apenas crie cards de sugestão com base no andamento da
 //     conversa"): preto, letra branca e brilho azul no mais novo, ver
 //     desenharSugestoes. A transcrição segue por trás, para o copiloto e o resumo.
+//     Desde o roteiro da reunião (ainda em 2026-10-30), o card diz a etapa.
 import { CRMS, descobrirCrm, enderecoDoCrm } from "./comum.js";
 
 const $ = (id) => document.getElementById(id);
@@ -195,6 +196,9 @@ function card(s, nova) {
   if (nova) li.classList.add("nova");
   const campo = (classe) => li.querySelector(`.${classe}`);
   campo("pop-hora").textContent = hora(s.em);
+  // A etapa do roteiro da reunião em que a conversa estava (lib/ia/reuniao-roteiro.ts).
+  campo("pop-etapa").textContent = s.etapa ? `Etapa ${s.etapa.numero} · ${s.etapa.titulo}` : "";
+  campo("pop-etapa").hidden = !s.etapa;
   campo("pop-chip").textContent = s.objecao?.tipo ? `Objeção · ${s.objecao.tipo}` : "";
   campo("pop-chip").hidden = !s.objecao?.tipo;
   campo("pop-frase").textContent = s.objecao?.frase ? `“${s.objecao.frase}”` : "";
