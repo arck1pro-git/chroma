@@ -24,6 +24,7 @@
 import "server-only";
 import { listaUuid, sql } from "@/lib/db";
 import { enviarTexto, instanciasPorId, type Instancia } from "@/lib/uazapi";
+import { instanciaQueEnvia } from "@/lib/uazapi-reserva";
 import { soDigitos } from "@/lib/telefone";
 import { linkDaConversa } from "@/lib/link-do-crm";
 import { nomeParaAviso } from "@/lib/ia/aviso-demanda";
@@ -69,8 +70,11 @@ export async function instanciasParaAviso(): Promise<Array<{ id: string; nome: s
  * de ambiente, uazapi fora do ar): quem chama decide o que registrar.
  */
 export async function enviarAvisoPelaInstancia(instancia: Instancia, whatsapp: string, texto: string): Promise<void> {
+  // Com a instância vermelha e a secundária dela verde, o aviso sai pela
+  // secundária (lib/uazapi-reserva.ts, 2026-10-30).
+  const { instancia: saida } = await instanciaQueEnvia(instancia);
   // enviarTexto confere a trava de ambiente (conferirDestino) antes de ir à rede.
-  await enviarTexto(soDigitos(whatsapp), texto, instancia, RASTREIO_AVISO);
+  await enviarTexto(soDigitos(whatsapp), texto, saida, RASTREIO_AVISO);
 }
 
 /** Uma linha do aviso da campanha: o que aconteceu e com quem. */

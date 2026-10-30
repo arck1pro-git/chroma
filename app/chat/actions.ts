@@ -50,13 +50,18 @@ import {
   marcarErro,
   motivo,
   telefoneOficial,
+  type Movida,
 } from "@/lib/conversa-envio";
 import { gravarIaDoContato } from "@/lib/ia/contato-ia";
 import { ehUuid } from "@/lib/validacao";
 import type { TemplateChat } from "./tipos";
 
-/** `registrada`: a mensagem chegou a ser gravada (e está na conversa com o erro). */
-export type Resultado = { erro?: string; registrada?: boolean };
+/**
+ * `registrada`: a mensagem chegou a ser gravada (e está na conversa com o erro).
+ * `movida`: a principal caiu e a mensagem saiu pela secundária, gravada na
+ * conversa dela (lib/conversa-envio.ts); a tela abre essa conversa.
+ */
+export type Resultado = { erro?: string; registrada?: boolean; movida?: Movida };
 
 /**
  * Responder é assumir: a conversa da fila (ou a que uma automação começou,
@@ -81,10 +86,10 @@ export async function enviarMensagem(atendimentoId: string, texto: string): Prom
   // (migration-cadencia-controles.sql). O ciclo pendente → envio → retorno é o
   // mesmo da IA, e mora em lib/conversa-envio.ts.
   const r = await enviarTextoNaConversa({ atendimentoId, texto, autorId: usuario.id, enviadaPor: "crm" });
-  if (!r.erro) await assumirAoResponder(atendimentoId, usuario.id);
+  if (!r.erro) await assumirAoResponder(r.movida?.atendimentoId ?? atendimentoId, usuario.id);
   if (r.erro && !r.registrada) return { erro: r.erro };
   revalidatePath("/chat");
-  return r.erro ? { erro: r.erro, registrada: true } : {};
+  return r.erro ? { erro: r.erro, registrada: true, movida: r.movida } : { movida: r.movida };
 }
 
 // ── Documento da biblioteca ─────────────────────────────────────────────────
@@ -101,10 +106,10 @@ export async function enviarDocumento(
 ): Promise<Resultado> {
   const { usuario } = await exigirModulo("chat", "criar");
   const r = await enviarDocumentoNaConversa({ atendimentoId, documentoId, legenda, autorId: usuario.id, enviadaPor: "crm" });
-  if (!r.erro) await assumirAoResponder(atendimentoId, usuario.id);
+  if (!r.erro) await assumirAoResponder(r.movida?.atendimentoId ?? atendimentoId, usuario.id);
   if (r.erro && !r.registrada) return { erro: r.erro };
   revalidatePath("/chat");
-  return r.erro ? { erro: r.erro, registrada: true } : {};
+  return r.erro ? { erro: r.erro, registrada: true, movida: r.movida } : { movida: r.movida };
 }
 
 // ── Templates (API oficial) ─────────────────────────────────────────────────

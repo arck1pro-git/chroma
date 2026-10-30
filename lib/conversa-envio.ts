@@ -19,10 +19,17 @@
 //
 // Erros voltam como valor ({ erro, registrada }), não como exceção: quem chama
 // decide se mostra na tela (chat) ou só registra (IA).
+//
+// A PRINCIPAL CAIU (2026-10-30, ver saidaDaConversa): no WhatsApp Web, com o
+// número da conversa vermelho e a secundária dele verde, a mensagem sai pela
+// secundária e fica na conversa da secundária com o lead (decisão dele). O
+// resultado diz para onde ela foi (`movida`).
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
-import { enviarMidia, enviarTexto, instanciaPorNumero } from "@/lib/uazapi";
+import { enviarMidia, enviarTexto, instanciaPorNumero, type Instancia } from "@/lib/uazapi";
+import { instanciaQueEnvia } from "@/lib/uazapi-reserva";
+import { abrirConversaDoContato } from "@/lib/automacoes/conversa-da-cadencia";
 import { enviarMidiaMeta, enviarTextoMeta, subirMidiaMeta, type TipoMidiaMeta } from "@/lib/meta";
 import { canalOficial } from "@/lib/canais";
 import { comCaminho, lerArquivo } from "@/lib/documentos";
@@ -38,6 +45,16 @@ export type ResultadoEnvio = {
   /** A mensagem chegou a ser gravada (e está na conversa, com o erro). */
   registrada?: boolean;
   mensagemId?: string;
+  /** A principal caiu e a secundária assumiu: a conversa onde a mensagem ficou. */
+  movida?: Movida;
+};
+
+export type Movida = {
+  atendimentoId: string;
+  /** Os dígitos do número da secundária: a chave do canal no /chat. */
+  canal: string;
+  principal: string;
+  secundaria: string;
 };
 
 const JANELA_MS = 24 * 60 * 60 * 1000;
@@ -47,6 +64,8 @@ export const motivo = (e: unknown) => (e instanceof Error ? e.message : String(e
 export type Destino = {
   id: string;
   canal: string;
+  /** null na conversa de grupo. */
+  contato_id: string | null;
   numero_instancia: string | null;
   whatsapp: string | null;
   /** IGSID do contato (contatos.campos.instagram_id): o destinatário no canal instagram. */
@@ -66,7 +85,7 @@ export type Destino = {
 export async function destinoDa(atendimentoId: string): Promise<Destino | null> {
   if (!ehUuid(atendimentoId)) return null;
   const [d] = await sql`
-    SELECT a.id, a.canal, a.numero_instancia, coalesce(c.whatsapp, g.jid) AS whatsapp,
+    SELECT a.id, a.canal, a.contato_id, a.numero_instancia, coalesce(c.whatsapp, g.jid) AS whatsapp,
            c.campos->>'instagram_id' AS instagram_id,
            coalesce(c.nome, g.nome) AS nome, c.email, c.cidade,
            (SELECT max(m.data_criacao) FROM mensagens m
@@ -181,6 +200,49 @@ export async function confirmarEnvio(mensagemId: string, idExterno: string | nul
      WHERE id = ${mensagemId}`;
 }
 
+/** Onde a mensagem fica e por qual instância do WhatsApp Web ela sai. */
+type Saida = {
+  atendimentoId: string;
+  d: Destino;
+  /** null fora do WhatsApp Web, ou quando a instância só se resolve no envio (e o erro fica na linha). */
+  instancia: Instancia | null;
+  movida?: Movida;
+};
+
+/**
+ * Normalmente a própria conversa, pelo número dela. Com esse número vermelho e
+ * a secundária dele verde (lib/uazapi-reserva.ts), a mensagem sai pela
+ * secundária e fica na conversa da secundária com o lead: a resposta dele cai
+ * nela, e o fio segue inteiro lá. A conversa nova herda o dono da antiga, para
+ * não voltar à fila. Grupo não troca: a secundária não está no grupo.
+ */
+async function saidaDaConversa(atendimentoId: string, d: Destino): Promise<Saida> {
+  const fica: Saida = { atendimentoId, d, instancia: null };
+  if (canalDeEnvio(d) !== "whatsapp") return fica;
+  // Sem casar o número, instanciaPorNumero pode recusar: o erro aparece no
+  // envio, com a linha já gravada, como sempre foi.
+  const pedida = await instanciaPorNumero(d.numero_instancia ?? null).catch(() => null);
+  if (!pedida) return fica;
+  if (!d.contato_id) return { ...fica, instancia: pedida };
+  const { instancia, principal } = await instanciaQueEnvia(pedida);
+  if (!principal || !instancia.numero) return { ...fica, instancia: pedida };
+
+  const numero = soDigitos(instancia.numero);
+  const outraId = await abrirConversaDoContato(d.contato_id, numero);
+  const outra = outraId ? await destinoDa(outraId) : null;
+  if (!outraId || !outra) return { ...fica, instancia: pedida };
+  await sql`
+    UPDATE atendimentos
+       SET responsavel_id = (SELECT responsavel_id FROM atendimentos WHERE id = ${atendimentoId})
+     WHERE id = ${outraId} AND responsavel_id IS NULL`;
+  return {
+    atendimentoId: outraId,
+    d: outra,
+    instancia,
+    movida: { atendimentoId: outraId, canal: numero, principal: principal.nome, secundaria: instancia.nome },
+  };
+}
+
 /**
  * Manda um texto nesta conversa, pelo canal dela. Não mexe em dono nem status
  * da conversa — isso é de quem chama (responder pelo chat assume; a IA não).
@@ -214,27 +276,28 @@ export async function enviarTextoNaConversa(e: {
   const fechada = foraDaJanela(d);
   if (fechada) return { erro: fechada };
 
+  const s = await saidaDaConversa(e.atendimentoId, d);
   const [msg] = await sql`
     INSERT INTO mensagens (atendimento_id, origem, autor_id, texto, status, enviada_por)
-    VALUES (${e.atendimentoId}, 'agente', ${e.autorId}, ${corpo}, 'pendente', ${e.enviadaPor})
+    VALUES (${s.atendimentoId}, 'agente', ${e.autorId}, ${corpo}, 'pendente', ${e.enviadaPor})
     RETURNING id`;
   const mensagemId = msg.id as string;
 
   try {
-    const idExterno = await textoPeloCanal(canal, d, corpo, mensagemId, e.digitandoMs);
+    const idExterno = await textoPeloCanal(canal, s, corpo, mensagemId, e.digitandoMs);
     await confirmarEnvio(mensagemId, idExterno);
-    await sql`UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${e.atendimentoId}`;
-    return { mensagemId };
+    await sql`UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${s.atendimentoId}`;
+    return { mensagemId, movida: s.movida };
   } catch (erro) {
     await marcarErro(mensagemId, erro);
-    return { erro: motivo(erro), registrada: true, mensagemId };
+    return { erro: motivo(erro), registrada: true, mensagemId, movida: s.movida };
   }
 }
 
 /** O texto pelo canal da conversa. Devolve o id da mensagem no serviço. */
 async function textoPeloCanal(
   canal: CanalDeEnvio,
-  d: Destino,
+  { d, instancia: escolhida }: Saida,
   corpo: string,
   mensagemId: string,
   digitandoMs?: number,
@@ -255,9 +318,10 @@ async function textoPeloCanal(
       return (await enviarDirect(perfil, d.instagram_id, corpo)).id;
     }
     case "whatsapp": {
-      // Pelo número que RECEBEU a conversa: pela instância errada a resposta
-      // chega de um número que o cliente não conhece.
-      const instancia = await instanciaPorNumero(d.numero_instancia ?? null);
+      // Pelo número que RECEBEU a conversa (ou a secundária que assumiu, com a
+      // conversa já trocada em saidaDaConversa): pela instância errada a
+      // resposta chega de um número que o cliente não conhece.
+      const instancia = escolhida ?? (await instanciaPorNumero(d.numero_instancia ?? null));
       return (await enviarTexto(numeroDoDestino(d), corpo, instancia, mensagemId, digitandoMs)).messageid;
     }
   }
@@ -307,13 +371,14 @@ export async function enviarDocumentoNaConversa(e: {
     return { erro: "A janela de 24h está fechada. Envie um template antes do anexo." };
   }
   const whatsapp = numeroDoDestino(d);
+  const s = await saidaDaConversa(e.atendimentoId, d);
 
   const [msg] = await sql`
     INSERT INTO mensagens
       (atendimento_id, origem, autor_id, texto, status, enviada_por,
        tipo, documento_id, midia_estado, midia_mime, midia_nome, midia_tamanho)
     VALUES
-      (${e.atendimentoId}, 'agente', ${e.autorId}, ${texto}, 'pendente', ${e.enviadaPor},
+      (${s.atendimentoId}, 'agente', ${e.autorId}, ${texto}, 'pendente', ${e.enviadaPor},
        ${doc.tipo}, ${doc.id}, 'salva', ${doc.mime}, ${doc.arquivoNome}, ${doc.tamanho})
     RETURNING id`;
   const mensagemId = msg.id as string;
@@ -333,7 +398,7 @@ export async function enviarDocumentoNaConversa(e: {
         break;
       }
       case "whatsapp": {
-        const instancia = await instanciaPorNumero(d.numero_instancia ?? null);
+        const instancia = s.instancia ?? (await instanciaPorNumero(d.numero_instancia ?? null));
         // Base64 e não URL: ver `paraEnvio` em lib/documentos.ts.
         const r = await enviarMidia(
           whatsapp,
@@ -347,11 +412,11 @@ export async function enviarDocumentoNaConversa(e: {
       }
     }
     await confirmarEnvio(mensagemId, idExterno);
-    await sql`UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${e.atendimentoId}`;
-    return { mensagemId };
+    await sql`UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${s.atendimentoId}`;
+    return { mensagemId, movida: s.movida };
   } catch (erro) {
     await marcarErro(mensagemId, erro);
-    return { erro: motivo(erro), registrada: true, mensagemId };
+    return { erro: motivo(erro), registrada: true, mensagemId, movida: s.movida };
   }
 }
 
@@ -395,12 +460,13 @@ export async function enviarAudioNaConversa(e: {
     return { erro: motivo(erro) };
   }
 
+  const s = await saidaDaConversa(e.atendimentoId, d);
   await sql`
     INSERT INTO mensagens
       (id, atendimento_id, origem, autor_id, texto, status, enviada_por,
        tipo, midia_caminho, midia_mime, midia_tamanho, midia_estado)
     VALUES
-      (${mensagemId}, ${e.atendimentoId}, 'agente', NULL, ${corpo}, 'pendente', ${e.enviadaPor},
+      (${mensagemId}, ${s.atendimentoId}, 'agente', NULL, ${corpo}, 'pendente', ${e.enviadaPor},
        'audio', ${caminho}, ${arquivo.mime}, ${arquivo.bytes.byteLength}, 'salva')`;
 
   try {
@@ -416,7 +482,7 @@ export async function enviarAudioNaConversa(e: {
         break;
       }
       case "whatsapp": {
-        const instancia = await instanciaPorNumero(d.numero_instancia ?? null);
+        const instancia = s.instancia ?? (await instanciaPorNumero(d.numero_instancia ?? null));
         const r = await enviarMidia(
           whatsapp,
           Buffer.from(arquivo.bytes).toString("base64"),
@@ -429,10 +495,10 @@ export async function enviarAudioNaConversa(e: {
       }
     }
     await confirmarEnvio(mensagemId, idExterno);
-    await sql`UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${e.atendimentoId}`;
-    return { mensagemId };
+    await sql`UPDATE atendimentos SET data_atualizacao = now() WHERE id = ${s.atendimentoId}`;
+    return { mensagemId, movida: s.movida };
   } catch (erro) {
     await marcarErro(mensagemId, erro);
-    return { erro: motivo(erro), registrada: true, mensagemId };
+    return { erro: motivo(erro), registrada: true, mensagemId, movida: s.movida };
   }
 }

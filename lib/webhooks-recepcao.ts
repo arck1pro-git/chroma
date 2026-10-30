@@ -30,6 +30,7 @@ import { inscreverNaCadenciaDaEtapa } from "@/lib/automacoes/repositorio";
 import { eventoAoEntrarNaEtapa } from "@/lib/meta-eventos";
 import { carimbarCampanhaDoLead } from "@/lib/campanha-do-lead";
 import { enviarTexto, instanciaExataPorNumero, instanciasPorId } from "@/lib/uazapi";
+import { instanciaQueEnvia } from "@/lib/uazapi-reserva";
 import { linkDaConversa, linkDaOportunidade } from "@/lib/link-do-crm";
 import { segredoConfere } from "@/lib/segredo";
 
@@ -639,7 +640,9 @@ async function avisarQueVoltou(webhookId: string, oportunidadeId: string): Promi
       : `*Oportunidade:* ${linkDaOportunidade(oportunidadeId)}`,
   ].join("\n");
   try {
-    await enviarTexto(soDigitos(l.responsavel_whatsapp as string), texto, instancia, "aviso-lead-voltou");
+    // Com a instância vermelha e a secundária verde, o aviso sai pela secundária (lib/uazapi-reserva.ts).
+    const { instancia: saida } = await instanciaQueEnvia(instancia);
+    await enviarTexto(soDigitos(l.responsavel_whatsapp as string), texto, saida, "aviso-lead-voltou");
     return `${l.responsavel} avisado no WhatsApp`;
   } catch (e) {
     return `${l.responsavel} não avisado: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`;

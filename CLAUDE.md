@@ -90,7 +90,10 @@ Mensagem que chega pelo WhatsApp é gravada e, depois da resposta (`after`), `li
 responde. Mensagem de grupo do WhatsApp Web (`@g.us`) vira conversa do grupo (`lib/grupos-whatsapp.ts`, tabela
 `grupos_whatsapp`, `atendimentos.grupo_id` com `contato_id` NULL) e nunca passa pela IA; só o chat a lista (LEFT JOIN),
 e o que lê conversa com `JOIN contatos` não vê grupo. Conversa fixada (`atendimentos.fixada_em`) vale para a equipe. Envio de mensagem, da equipe ou da IA, passa por `lib/conversa-envio.ts`: grava pendente, envia pela
-uazapi, pela Meta ou pelo Instagram (escolha por canal, sem "senão é uazapi"), casa o retorno. Instagram: DM vira
+uazapi, pela Meta ou pelo Instagram (escolha por canal, sem "senão é uazapi"), casa o retorno. Número secundário: no
+WhatsApp Web, com a instância vermelha e a secundária dela verde (`instancias_uazapi.secundaria_de`), o envio sai pela
+secundária e a mensagem fica na conversa dela com o lead; quem decide é `lib/uazapi-reserva.ts`, a cada envio, também
+para cadências, automações e avisos, e a IA lê as conversas do par. Instagram: DM vira
 conversa comum (canal 'instagram'); comentários ficam em `instagram_comentarios`; todo envio ao Instagram sai pelo
 ponto único de `lib/instagram.ts`; a IA de comentário (`lib/ia/comentarios.ts`) só escolhe frase pública fixa. Automação: a tela desenha o fluxo, `lib/automacoes/compilador` gera o
 workflow, `lib/automacoes/motores/n8n/adaptador.ts` publica no n8n, e o n8n chama as rotas de serviço. Campanha de
@@ -191,6 +194,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   o DEV com cenário marcado e a Anthropic falsa num servidor local: a porta, o lead e o copiloto da extensão de reuniões),
   `testar-documentos-envio.ts` (pelo runner, contra o DEV e o Storage do `.env`, com marca apagada no fim: o envio direto
   da biblioteca de Documentos pela URL assinada e as recusas do registro),
+  `testar-instancia-secundaria.ts` (pelo runner, contra o DEV com a uazapi falsa num servidor local e marca apagada no
+  fim: quando a secundária assume, onde a mensagem fica, a volta à principal e as travas do banco),
   `scripts/testar-extensao-reunioes.mjs` (direto com `node`: o service worker da extensão com um `chrome` falso; o áudio
   de verdade só no Chrome, ver `extensao-reunioes/LEIAME.md`) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
@@ -263,6 +268,7 @@ O fluxo completo, com delegação aos subagentes e revisão, está nas skills `/
 `proxy.ts`, `lib/auth/dal.ts`, `lib/auth/sessao.ts`, `lib/auth/modulos.ts`, `lib/auth/escopo-oportunidades.ts`,
 `lib/db.ts`, `lib/ia/db.ts`, `next.config.ts`, `lib/automacoes/servico.ts`, `lib/segredo.ts`,
 `lib/destino-permitido.ts`, `lib/rede-externa.ts`, `lib/ia/sanitizar.ts`, `lib/conversa-envio.ts`,
+`lib/uazapi-reserva.ts` (por qual número o WhatsApp Web envia quando a principal cai),
 `lib/ia/atendente.ts`, `lib/automacoes/compilador/`, `lib/automacoes/motores/n8n/adaptador.ts`,
 `app/api/uazapi/webhook/route.ts`, `app/api/meta/whatsapp/webhook/route.ts`, `app/api/mcp/[segredo]/route.ts`,
 `app/api/meta/instagram/webhook/route.ts`, `lib/instagram.ts` (ponto único de envio e trava de dev),

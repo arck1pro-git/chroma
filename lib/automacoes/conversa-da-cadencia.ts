@@ -63,8 +63,16 @@ export async function abrirConversaDaCadencia(dados: {
     contatoId = (c?.id as string | null) ?? null;
   }
   if (!contatoId) return null;
+  return abrirConversaDoContato(contatoId, dados.numeroInstancia);
+}
 
-  const numero = dados.numeroInstancia || null;
+/**
+ * Abre (ou reabre) a conversa do contato com aquele número nosso e devolve o
+ * id. A cadência e a troca para a secundária (lib/conversa-envio.ts, quando a
+ * principal cai) passam por aqui, do mesmo jeito que o webhook.
+ */
+export async function abrirConversaDoContato(contatoId: string, numeroInstancia: string | null): Promise<string | null> {
+  const numero = numeroInstancia || null;
 
   // Conversa daquele contato que ficou SEM número (a tela do chat criava assim)
   // é adotada pelo par, em vez de virar uma segunda linha ao lado — a mesma

@@ -32,6 +32,7 @@ import {
   fixarConversa,
   marcarLido,
   reabrirAtendimento,
+  type Resultado,
 } from "./actions";
 import { TrilhoCanais } from "./canais";
 import { ListaConversas, type Filtro } from "./lista";
@@ -209,6 +210,15 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
     }
   }
 
+  // A principal caiu e a mensagem saiu pela secundária (2026-10-30): ela ficou
+  // na conversa da secundária com o lead, e a tela vai para lá com o aviso.
+  const [avisoTroca, setAvisoTroca] = useState<string | null>(null);
+  function seguirConversaMovida(m: Resultado["movida"]) {
+    if (!m) return;
+    setAvisoTroca(`${m.principal} está desconectado: a mensagem saiu por ${m.secundaria}, e a conversa continua por lá.`);
+    irPara(m.canal, m.atendimentoId);
+  }
+
   async function enviar(texto: string) {
     if (!aberta) return { erro: "Nenhuma conversa aberta." };
     const corpo = texto.trim();
@@ -238,7 +248,8 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
       // Recusada ANTES de gravar (janela fechada, sem número): o balão some e o
       // compositor devolve o rascunho. Recusada depois, a linha real com o erro
       // toma o lugar dele pela reconciliação.
-      if (r.erro && !r.registrada) setOtimistas((a) => a.filter((o) => o.id !== otimista.id));
+      if ((r.erro && !r.registrada) || r.movida) setOtimistas((a) => a.filter((o) => o.id !== otimista.id));
+      seguirConversaMovida(r.movida);
       return r;
     } catch {
       setOtimistas((a) => a.filter((o) => o.id !== otimista.id));
@@ -249,7 +260,9 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
 
   async function enviarDoc(documentoId: string, legenda: string) {
     if (!aberta) return { erro: "Nenhuma conversa aberta." };
-    return enviarDocumento(aberta.id, documentoId, legenda);
+    const r = await enviarDocumento(aberta.id, documentoId, legenda);
+    seguirConversaMovida(r.movida);
+    return r;
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -311,6 +324,17 @@ export default function Chat({ dados, usuarioId, permissoes }: { dados: DadosCha
             />
 
             <section className={`relative min-w-0 flex-1 flex-col lg:flex ${listaOculta ? "flex" : "hidden"}`}>
+              {avisoTroca && (
+                <div
+                  role="status"
+                  className="absolute inset-x-3 top-16 z-30 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-100"
+                >
+                  <span className="flex-1">{avisoTroca}</span>
+                  <button type="button" onClick={() => setAvisoTroca(null)} className="shrink-0 font-semibold opacity-70 hover:opacity-100">
+                    Ok
+                  </button>
+                </div>
+              )}
               {aberta && !carregandoConversa ? (
                 <>
                   <CabecalhoConversa

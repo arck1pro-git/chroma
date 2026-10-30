@@ -145,6 +145,50 @@ export async function vincularUsuarioInstancia(
   });
 }
 
+// ── O número secundário (pedido dele em 2026-10-30) ─────────────────────────
+// A secundária cobre UMA principal (instancias_uazapi.secundaria_de): quando a
+// principal fica vermelha, os envios saem pela secundária (lib/uazapi-reserva.ts).
+// Sem encadear: a principal escolhida não pode ser secundária de ninguém, e
+// quem já tem secundária não vira secundária de outra. Cada principal tem no
+// máximo uma secundária; o índice único responde a corrida entre duas telas.
+
+/** A principal escolhida, conferida; "" vira null ("Principal": não cobre ninguém). */
+async function principalOuNula(principalId: string, instanciaId: string | null): Promise<string | null> {
+  const id = principalId.trim();
+  if (!id) return null;
+  if (!ehUuid(id)) throw new Recusa("Escolha a instância principal que esta cobre");
+  if (id === instanciaId) throw new Recusa("Uma instância não é secundária de si mesma");
+  const [p] = await sql`SELECT nome, secundaria_de FROM instancias_uazapi WHERE id = ${id}`;
+  if (!p) throw new Recusa("Essa instância principal não existe mais");
+  if (p.secundaria_de) throw new Recusa(`${p.nome} já é secundária de outra instância. Escolha uma principal.`);
+  const [outra] = await sql`
+    SELECT nome FROM instancias_uazapi
+     WHERE secundaria_de = ${id} AND id IS DISTINCT FROM ${instanciaId}::uuid
+     LIMIT 1`;
+  if (outra) throw new Recusa(`${p.nome} já tem a secundária ${outra.nome}. Tire a de lá antes.`);
+  if (instanciaId) {
+    const [minha] = await sql`SELECT nome FROM instancias_uazapi WHERE secundaria_de = ${instanciaId} LIMIT 1`;
+    if (minha) throw new Recusa(`Esta instância é a principal de ${minha.nome}. Tire a secundária dela antes.`);
+  }
+  return id;
+}
+
+/** Troca o papel da instância: secundária de `principalId`, ou principal com "". */
+export async function definirSecundaria(instanciaId: string, principalId: string): Promise<ResultadoAcao> {
+  await exigirModulo("configuracoes", "editar");
+  if (!ehUuid(instanciaId)) return { ok: false, erro: "Instância inválida" };
+  return comoResultado(
+    async () => {
+      const principal = await principalOuNula(principalId, instanciaId);
+      const [linha] = await sql`
+        UPDATE instancias_uazapi SET secundaria_de = ${principal} WHERE id = ${instanciaId} RETURNING id`;
+      if (!linha) throw new Recusa("Essa instância não existe mais");
+      revalidarInstancias();
+    },
+    { duplicado: "Essa principal já tem uma secundária. Tire a de lá antes." },
+  );
+}
+
 /** Estados da uazapi. `hibernated` = sessão pausada, credencial preservada. */
 export type EstadoConexao = "disconnected" | "connecting" | "connected" | "hibernated";
 
@@ -519,13 +563,19 @@ async function gravarWebhook(baseUrl: string, token: string, url: string) {
 export async function criarInstanciaNaUazapi(
   nome: string,
   usuarioId: string,
+  /** A principal que a nova cobre (número secundário); "" = principal, com quem envia por ela. */
+  secundariaDe = "",
 ): Promise<ResultadoAcao<{ id: string; aviso: string | null }>> {
   await exigirModulo("configuracoes", "criar");
   const n = nome.trim();
   if (!n) return { ok: false, erro: "Dê um nome à instância" };
 
   return comoResultado(async () => {
-    await usuarioDaInstancia(usuarioId);
+    // A secundária não tem gente enviando por ela: ela só cobre a principal, e
+    // vincular alguém aqui faria a cadência "pelo responsável" sair sempre por
+    // ela. Conferido antes de criar na uazapi.
+    const principal = await principalOuNula(secundariaDe, null);
+    if (!principal) await usuarioDaInstancia(usuarioId);
 
     const { base } = servidorUazapi();
     const data = (await chamarAdminUazapi("/instance/init", { name: n })) as {
@@ -542,13 +592,15 @@ export async function criarInstanciaNaUazapi(
     let id: string;
     try {
       id = await sql.begin(async (tx: typeof sql) => {
-        const [usuario] = await tx`SELECT id FROM usuarios WHERE id = ${usuarioId} FOR UPDATE`;
-        if (!usuario) throw new Recusa("Esse usuário não existe mais no sistema");
+        if (!principal) {
+          const [usuario] = await tx`SELECT id FROM usuarios WHERE id = ${usuarioId} FOR UPDATE`;
+          if (!usuario) throw new Recusa("Esse usuário não existe mais no sistema");
+        }
         const [linha] = await tx`
-          INSERT INTO instancias_uazapi (nome, base_url, token, numero, instancia_uazapi_id)
-          VALUES (${n}, ${base}, ${token}, ${null}, ${instanciaId})
+          INSERT INTO instancias_uazapi (nome, base_url, token, numero, instancia_uazapi_id, secundaria_de)
+          VALUES (${n}, ${base}, ${token}, ${null}, ${instanciaId}, ${principal})
           RETURNING id`;
-        await tx`UPDATE usuarios SET instancia_id = ${linha.id} WHERE id = ${usuarioId}`;
+        if (!principal) await tx`UPDATE usuarios SET instancia_id = ${linha.id} WHERE id = ${usuarioId}`;
         return linha.id as string;
       });
     } catch (e) {

@@ -26,6 +26,13 @@
 // cartão (ícone tingido + selo); quem envia por ela aparece como gente, com
 // avatar, numa faixa própria; e o painel de conexão põe o QR ao lado dos
 // passos de como escaneá-lo, em vez de um bloco de texto embaixo.
+//
+// O NÚMERO SECUNDÁRIO (2026-10-30): ao criar, e depois no cartão, a instância
+// é "Principal" ou "Secundária de" uma principal. A secundária assume os envios
+// quando a principal fica vermelha (lib/uazapi-reserva.ts) e não tem gente
+// vinculada: quem envia é quem envia pela principal. As regras (sem encadear,
+// uma secundária por principal) são conferidas em ../acoes-whatsapp.ts; a tela
+// só oferece o que passa nelas.
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import type { ResultadoAcao } from "@/lib/resultado-acao";
 import {
@@ -47,6 +54,7 @@ import type { InstanciaUazapi, UsuarioConfig } from "../dados";
 import {
   consultarConexao,
   criarInstanciaNaUazapi,
+  definirSecundaria,
   desconectarDoWhatsApp,
   gerarQrCode,
   removerInstancia,
@@ -110,6 +118,19 @@ const ESTADOS: Record<EstadoConexao, { rotulo: string; selo: string; icone: stri
   },
 };
 
+/**
+ * As principais que `instanciaId` pode cobrir: nenhuma secundária, e sem outra
+ * secundária já cobrindo (a atual dela continua na lista). null = instância nova.
+ */
+function principaisPossiveis(instancias: InstanciaUazapi[], instanciaId: string | null) {
+  return instancias.filter(
+    (p) =>
+      p.id !== instanciaId &&
+      !p.secundaria_de &&
+      !instancias.some((o) => o.secundaria_de === p.id && o.id !== instanciaId),
+  );
+}
+
 export function SecaoWhatsApp({ instancias, usuarios }: { instancias: InstanciaUazapi[]; usuarios: UsuarioConfig[] }) {
   // O estado de TODAS as instâncias numa chamada só (/instance/all com o admin
   // token). É o que permite pintar o estado de cada cartão assim que a tela
@@ -172,6 +193,7 @@ export function SecaoWhatsApp({ instancias, usuarios }: { instancias: InstanciaU
 
       {criando && (
         <NovaInstancia
+          instancias={instancias}
           usuarios={usuarios}
           aoFechar={instancias.length > 0 ? () => setCriando(false) : undefined}
           aoCriar={(id, aviso) => {
@@ -190,6 +212,7 @@ export function SecaoWhatsApp({ instancias, usuarios }: { instancias: InstanciaU
             <InstanciaCard
               key={i.id}
               instancia={i}
+              instancias={instancias}
               usuarios={usuarios}
               estado={status[i.id] ?? null}
               aoMudarConexao={recarregarStatus}
@@ -221,26 +244,33 @@ export function SecaoWhatsApp({ instancias, usuarios }: { instancias: InstanciaU
 // pedido ("quero mais um número no CRM"), e separá-los em dois cliques deixava
 // a instância recém-criada parada na lista, sem WhatsApp nenhum.
 function NovaInstancia({
+  instancias,
   usuarios,
   aoCriar,
   aoFechar,
 }: {
+  instancias: InstanciaUazapi[];
   usuarios: UsuarioConfig[];
   aoCriar: (id: string, aviso: string | null) => void;
   aoFechar?: () => void;
 }) {
   const [nome, setNome] = useState("");
   const [usuarioId, setUsuarioId] = useState("");
+  // "" = Principal; um id = secundária daquela principal.
+  const [secundariaDe, setSecundariaDe] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [criando, iniciar] = useTransition();
+  const principais = principaisPossiveis(instancias, null);
+  const principal = instancias.find((i) => i.id === secundariaDe);
+  const pronto = Boolean(nome.trim()) && (Boolean(secundariaDe) || Boolean(usuarioId));
 
   function criar() {
     const n = nome.trim();
-    if (!n || !usuarioId || criando) return;
+    if (!pronto || criando) return;
     setErro(null);
     iniciar(async () => {
       try {
-        const r = await criarInstanciaNaUazapi(n, usuarioId);
+        const r = await criarInstanciaNaUazapi(n, secundariaDe ? "" : usuarioId, secundariaDe);
         if (!r.ok) {
           setErro(r.erro);
           return;
@@ -248,6 +278,7 @@ function NovaInstancia({
         const { id, aviso } = r;
         setNome("");
         setUsuarioId("");
+        setSecundariaDe("");
         // Abre o cartão da instância nova já pedindo o QR Code — é o passo
         // seguinte inevitável, e quem acabou de clicar não deveria ter que
         // procurá-lo na lista.
@@ -287,27 +318,50 @@ function NovaInstancia({
           />
         </label>
         <label className="flex min-w-0 flex-col gap-1.5">
-          <span className={rotuloCampo}>Quem envia por ela</span>
+          <span className={rotuloCampo}>Papel</span>
           <select
-            value={usuarioId}
-            onChange={(e) => setUsuarioId(e.target.value)}
+            value={secundariaDe}
+            onChange={(e) => setSecundariaDe(e.target.value)}
             disabled={criando}
             className={campoTexto}
           >
-            <option value="">Escolha o usuário responsável…</option>
-            {usuarios.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.nome}
+            <option value="">Principal</option>
+            {principais.map((p) => (
+              <option key={p.id} value={p.id}>
+                Secundária de {p.nome}
               </option>
             ))}
           </select>
         </label>
-        {usuarios.length === 0 && (
+        {principal ? (
+          <p className={`${textoAjuda} self-end sm:col-span-2`}>
+            Quando {principal.nome} ficar vermelha (desconectada), esta assume os envios: chat, IA, cadências, automações e
+            avisos. Quando {principal.nome} voltar, os envios voltam para ela. Ninguém é vinculado à secundária.
+          </p>
+        ) : (
+          <label className="flex min-w-0 flex-col gap-1.5">
+            <span className={rotuloCampo}>Quem envia por ela</span>
+            <select
+              value={usuarioId}
+              onChange={(e) => setUsuarioId(e.target.value)}
+              disabled={criando}
+              className={campoTexto}
+            >
+              <option value="">Escolha o usuário responsável…</option>
+              {usuarios.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {!principal && usuarios.length === 0 && (
           <p className="text-[12px] text-amber-700 sm:col-span-2 dark:text-amber-400">
             Cadastre um usuário em Configurações · Usuários para vincular este WhatsApp.
           </p>
         )}
-        {substitui && (
+        {!principal && substitui && (
           <p className="text-[12px] text-amber-700 sm:col-span-2 dark:text-amber-400">
             Este usuário já envia por outro número. Ao criar, ele passa a enviar por esta instância.
           </p>
@@ -335,7 +389,7 @@ function NovaInstancia({
         <button
           type="button"
           onClick={criar}
-          disabled={!nome.trim() || !usuarioId || criando}
+          disabled={!pronto || criando}
           className={botao}
         >
           {criando ? (
@@ -358,6 +412,7 @@ function NovaInstancia({
 // ── Uma instância ───────────────────────────────────────────────────────────
 function InstanciaCard({
   instancia,
+  instancias,
   usuarios,
   /** Estado vindo de /instance/all. `null` = ainda não sei. */
   estado,
@@ -366,6 +421,7 @@ function InstanciaCard({
   recemCriada = false,
 }: {
   instancia: InstanciaUazapi;
+  instancias: InstanciaUazapi[];
   usuarios: UsuarioConfig[];
   estado: EstadoConexao | null;
   aoMudarConexao: () => void;
@@ -424,6 +480,18 @@ function InstanciaCard({
     });
   }
 
+  function mudarPapel(principalId: string) {
+    setErro(null);
+    iniciar(async () => {
+      try {
+        const r = await definirSecundaria(instancia.id, principalId);
+        if (!r.ok) setErro(r.erro);
+      } catch (e) {
+        setErro(e instanceof Error ? e.message : "Falha ao mudar o papel da instância");
+      }
+    });
+  }
+
   function vincular(usuarioId: string) {
     if (!usuarioId) return;
     setErro(null);
@@ -444,6 +512,8 @@ function InstanciaCard({
   const visual = estadoAtual ? (ESTADOS[estadoAtual] ?? ESTADOS.disconnected) : null;
   const vinculados = usuarios.filter((u) => u.instancia_id === instancia.id);
   const outros = usuarios.filter((u) => u.instancia_id !== instancia.id);
+  const principal = instancias.find((i) => i.id === instancia.secundaria_de);
+  const reserva = instancias.find((i) => i.secundaria_de === instancia.id);
   let host = instancia.base_url;
   try {
     host = new URL(instancia.base_url).host;
@@ -556,7 +626,41 @@ function InstanciaCard({
           </div>
         )}
 
-        {/* Quem envia por este número — como gente, não como uma frase. */}
+        {/* O papel: principal (com ou sem reserva) ou secundária de uma principal. */}
+        <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 px-5 py-3 dark:border-zinc-800/80">
+          <span className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400">Papel</span>
+          {reserva ? (
+            <span className="text-[12px] text-zinc-700 dark:text-zinc-300">
+              Principal · se ficar vermelha, <strong className="font-semibold">{reserva.nome}</strong> assume os envios
+            </span>
+          ) : (
+            <>
+              <select
+                value={instancia.secundaria_de ?? ""}
+                disabled={salvando}
+                onChange={(e) => mudarPapel(e.target.value)}
+                aria-label={`Papel de ${instancia.nome}`}
+                className="h-8 rounded-lg border border-zinc-200 bg-white px-2.5 text-[12px] font-medium text-zinc-700 outline-none transition hover:border-zinc-300 focus-visible:ring-4 focus-visible:ring-zinc-900/5 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300"
+              >
+                <option value="">Principal</option>
+                {principaisPossiveis(instancias, instancia.id).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    Secundária de {p.nome}
+                  </option>
+                ))}
+              </select>
+              {principal && (
+                <span className="text-[12px] text-zinc-500 dark:text-zinc-400">
+                  Assume os envios quando {principal.nome} ficar vermelha.
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Quem envia por este número — como gente, não como uma frase. A
+            secundária não tem gente vinculada: só aparece se sobrou alguém. */}
+        {(!principal || vinculados.length > 0) && (
         <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 bg-zinc-50/50 px-5 py-3 dark:border-zinc-800/80 dark:bg-zinc-900/20">
           <span className="text-[12px] font-medium text-zinc-500 dark:text-zinc-400">Envia por aqui</span>
           {vinculados.length === 0 ? (
@@ -572,7 +676,7 @@ function InstanciaCard({
               </span>
             ))
           )}
-          {outros.length > 0 && (
+          {outros.length > 0 && !principal && (
             <label className="relative ml-auto">
               <span className="sr-only">Vincular usuário a este WhatsApp</span>
               <Plus
@@ -596,6 +700,7 @@ function InstanciaCard({
             </label>
           )}
         </div>
+        )}
 
         {aberto && (
           <PainelConexao

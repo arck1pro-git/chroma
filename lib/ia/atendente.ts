@@ -57,9 +57,10 @@
 // própria IA: ela não inventa preço, condição ou disponibilidade ausentes.
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
-import { sql } from "@/lib/db";
+import { listaUuid, sql } from "@/lib/db";
 import { enviarAudioNaConversa, enviarTextoNaConversa, type ResultadoEnvio } from "@/lib/conversa-envio";
 import { instanciaExataPorNumero } from "@/lib/uazapi";
+import { conversasDoPar } from "@/lib/uazapi-reserva";
 import { enviarAvisoPelaInstancia } from "@/lib/aviso-equipe-whatsapp";
 import { soDigitos } from "@/lib/telefone";
 import { moverOportunidadeDeEtapa } from "@/lib/mover-etapa";
@@ -1276,12 +1277,16 @@ async function gerarResposta(
   iaId: string,
   aindaVale: () => Promise<boolean>,
 ): Promise<Saida> {
+  // O histórico vem das conversas do lead nos dois números do par (2026-10-30):
+  // quando a principal cai, a conversa segue na da secundária, e a IA precisa
+  // do que veio antes da queda. Número sem secundária lê só esta conversa.
+  const conversas = await conversasDoPar(atendimentoId);
   const [historico, oportunidades, ias, etapasDoFunil, origens, rotulosDeCampo] = await Promise.all([
     sql`
       SELECT m.origem, m.enviada_por, u.nome AS autor, m.texto, m.tipo, m.midia_nome, m.data_criacao
       FROM mensagens m
       LEFT JOIN usuarios u ON u.id = m.autor_id
-      WHERE m.atendimento_id = ${atendimentoId} AND m.status <> 'erro'
+      WHERE m.atendimento_id = ANY(string_to_array(${listaUuid(conversas)}, ',')::uuid[]) AND m.status <> 'erro'
       ORDER BY m.data_criacao DESC
       LIMIT ${HISTORICO}`,
     sql`

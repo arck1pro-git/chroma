@@ -21,6 +21,8 @@ export type InstanciaUazapi = {
   numero: string | null;
   token_mascarado: string;
   data_criacao: string;
+  /** A principal que esta instância cobre quando cai (migration-instancia-secundaria.sql); null = principal. */
+  secundaria_de: string | null;
 };
 
 // `chave` é como o valor é gravado no jsonb de contatos/oportunidades; `rotulo`
@@ -175,7 +177,7 @@ export async function carregarCampos(): Promise<CampoPersonalizado[]> {
 
 export async function carregarInstancias(): Promise<InstanciaUazapi[]> {
   const instancias = await sql`
-    SELECT id, nome, base_url, numero,
+    SELECT id, nome, base_url, numero, secundaria_de,
            '••••' || right(token, 4) AS token_mascarado,
            to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao
     FROM instancias_uazapi ORDER BY data_criacao`;

@@ -32,9 +32,10 @@ import { soDigitos } from "@/lib/telefone";
 import { fotoDoTelefoneMeta, telefonesMeta, wabasMeta } from "@/lib/meta";
 import { PERFIS } from "@/lib/social/perfis";
 import { fotoDaConta } from "@/lib/instagram";
+import { buscarInstanciasRemotas, estadoDa, remotaDa, type EstadoCanal } from "@/lib/uazapi-estado";
 
 export type TipoCanal = "web" | "api" | "instagram";
-export type EstadoCanal = "conectado" | "conectando" | "desconectado" | "desconhecido";
+export type { EstadoCanal };
 
 export type CanalServidor = {
   chave: string;
@@ -56,47 +57,14 @@ export const fim8 = (numero: string | null | undefined) => soDigitos(numero ?? "
 
 // ── WhatsApp Web (uazapi) ───────────────────────────────────────────────────
 
-type Remota = { id: string; status: string; owner: string; foto: string | null; perfil: string | null };
-
 /**
- * Estado e foto de todas as instâncias numa chamada só. Cache de 60s: a tela
- * do chat recarrega a cada conversa aberta, e perguntar à uazapi a cada clique
- * é custo sem ganho — o estado de um número não muda de segundo em segundo.
- *
- * O que entra no cache é SÓ o que a tela mostra: /instance/all devolve o token
- * de cada instância, e segredo não vai para cache de dado.
+ * Estado e foto de todas as instâncias numa chamada só (lib/uazapi-estado.ts).
+ * Cache de 60s: a tela do chat recarrega a cada conversa aberta, e perguntar à
+ * uazapi a cada clique é custo sem ganho — o estado de um número não muda de
+ * segundo em segundo. O que entra no cache é SÓ o que a tela mostra: o token de
+ * cada instância fica de fora já lá.
  */
-const remotasUazapi = unstable_cache(
-  async (): Promise<Remota[]> => {
-    const base = (process.env.UAZAPI_BASE_URL ?? "").trim().replace(/\/+$/, "");
-    const admin = (process.env.UAZAPI_ADMIN_TOKEN ?? "").trim();
-    if (!base || !admin) return [];
-    const r = await fetch(`${base}/instance/all`, {
-      headers: { admintoken: admin },
-      cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!r.ok) throw new Error(`uazapi respondeu ${r.status}`);
-    const dados = (await r.json()) as Array<Record<string, unknown>>;
-    if (!Array.isArray(dados)) throw new Error("resposta inesperada da uazapi");
-    return dados.map((d) => ({
-      id: String(d.id ?? ""),
-      status: String(d.status ?? ""),
-      owner: String(d.owner ?? ""),
-      foto: typeof d.profilePicUrl === "string" && d.profilePicUrl.trim() ? d.profilePicUrl.trim() : null,
-      perfil: typeof d.profileName === "string" && d.profileName.trim() ? d.profileName.trim() : null,
-    }));
-  },
-  ["chat-uazapi-remotas-v1"],
-  { revalidate: 60 },
-);
-
-const ESTADO_UAZAPI: Record<string, EstadoCanal> = {
-  connected: "conectado",
-  connecting: "conectando",
-  hibernated: "conectando",
-  disconnected: "desconectado",
-};
+const remotasUazapi = unstable_cache(buscarInstanciasRemotas, ["chat-uazapi-remotas-v1"], { revalidate: 60 });
 
 async function canaisWeb(): Promise<CanalServidor[]> {
   const linhas = await sql`
@@ -111,11 +79,8 @@ async function canaisWeb(): Promise<CanalServidor[]> {
 
   return linhas.map((l) => {
     const numero = soDigitos(l.numero as string);
-    const remota = remotas?.find(
-      (r) =>
-        (l.instancia_uazapi_id && r.id === l.instancia_uazapi_id) ||
-        (r.owner && fim8(r.owner) === fim8(numero)),
-    );
+    const linha = { instancia_uazapi_id: l.instancia_uazapi_id as string | null, numero };
+    const remota = remotas ? remotaDa(remotas, linha) : undefined;
     return {
       chave: numero,
       tipo: "web" as const,
@@ -123,7 +88,7 @@ async function canaisWeb(): Promise<CanalServidor[]> {
       perfil: remota?.perfil ?? null,
       numero,
       foto: remota?.foto ?? null,
-      estado: remotas === null ? "desconhecido" : (ESTADO_UAZAPI[remota?.status ?? ""] ?? "desconectado"),
+      estado: estadoDa(remotas, linha),
     };
   });
 }

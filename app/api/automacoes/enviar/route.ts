@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { autorizado, naoAutorizado } from "@/lib/automacoes/servico";
 import { enviarMidia, enviarTexto, instanciaExataPorNumero, type Instancia } from "@/lib/uazapi";
+import { instanciaQueEnvia } from "@/lib/uazapi-reserva";
 import { paraEnvio } from "@/lib/documentos";
 import { sql } from "@/lib/db";
 import { soDigitos } from "@/lib/telefone";
@@ -210,6 +211,12 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  // A PRINCIPAL CAIU (vermelha) e a secundária dela está verde (2026-10-30):
+  // a mensagem sai pela secundária e fica na conversa dela com o lead, porque
+  // a conversa abaixo é aberta pelo número de quem envia. O workflow publicado
+  // não muda: ele manda o número de origem, e a troca é decidida aqui, a cada
+  // envio (lib/uazapi-reserva.ts). A principal verde de novo volta a enviar.
+  instancia = (await instanciaQueEnvia(instancia)).instancia;
 
   // A MENSAGEM É GRAVADA AQUI, pelo CRM, ANTES de sair (2026-10-15). Quem
   // gravava era um nó Postgres do workflow, que recebia o texto numa lista
