@@ -85,6 +85,7 @@ templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, c
 | Públicas | `/api/publico/[chave]` (blog), `/v/[slug]` e `/api/v/*` (vídeos), `/api/mcp/[segredo]` (Claude) | chave, slug sorteado ou segredo na URL |
 | IA de interface | `/api/ia`, `/api/ia/automacoes`, `/api/ia/campanhas`, `/api/ia/webhooks` | sessão; alcance limitado nas ferramentas |
 | Extensão de reuniões | `/api/reunioes/assistente/*` (lead da sala, busca, trecho de áudio, análise, resumo, salvar na ficha) | sessão + Origin exato da extensão + módulo Agenda, em `lib/reunioes-extensao.ts`; o lead segue Dashboard/Contatos e o Chat |
+| Instalar a extensão | `/api/extensao-reunioes` (o .zip da pasta `extensao-reunioes/`, só os arquivos da extensão; aberto pelo menu da conta na barra lateral) | sessão + módulo Agenda |
 
 Mensagem que chega pelo WhatsApp é gravada e, depois da resposta (`after`), `lib/ia/atendente.ts` decide se a IA
 responde. Mensagem de grupo do WhatsApp Web (`@g.us`) vira conversa do grupo (`lib/grupos-whatsapp.ts`, tabela

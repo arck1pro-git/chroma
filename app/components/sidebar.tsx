@@ -27,7 +27,8 @@
 //
 // · A CONTA é um botão só: avatar na tinta do nome (a mesma de Demandas e da
 //   gaveta), nome e departamento. Tema e Sair moram no menu dele — eram três
-//   controles soltos numa linha.
+//   controles soltos numa linha. Desde 2026-10-30 o menu também instala a
+//   extensão de reuniões (./modal-extensao-reunioes.tsx), para quem tem a Agenda.
 //
 // · RECOLHIDA (60px), cada módulo e Configurações mostram o nome numa etiqueta
 //   ao lado, no hover e no foco do teclado: o `title` do navegador demorava e não
@@ -68,12 +69,14 @@ import {
   PanelLeftClose,
   Paperclip,
   Plus,
+  Puzzle,
   Settings,
   UsersRound,
   Webhook,
   Workflow,
   type TipoIcone,
 } from "./icones";
+import ModalExtensaoReunioes from "./modal-extensao-reunioes";
 import ModalNovoBlog, { type BlogCriado } from "./modal-novo-blog";
 import { criarPreferencia } from "./preferencia-local";
 import SeloWhatsApp from "./selo-whatsapp";
@@ -447,7 +450,8 @@ export default function Sidebar({
           </Link>
         )}
 
-        <MenuDaConta usuario={usuario} recolhida={recolhida} />
+        {/* A extensão de reuniões exige a Agenda (lib/reunioes-extensao.ts): só aparece para quem a tem. */}
+        <MenuDaConta usuario={usuario} recolhida={recolhida} temExtensao={modulos.some((m) => m.chave === "agenda")} />
       </div>
 
       {recolhida && dica && (
@@ -481,8 +485,9 @@ const ITEM_DO_MENU =
  * também chega no tablet), no Esc (devolvendo o foco ao botão, senão ele cai no
  * <body> junto com o painel que sumiu) e quando o Tab sai dele.
  */
-function MenuDaConta({ usuario, recolhida }: { usuario: UsuarioDaBarra; recolhida: boolean }) {
+function MenuDaConta({ usuario, recolhida, temExtensao }: { usuario: UsuarioDaBarra; recolhida: boolean; temExtensao: boolean }) {
   const [aberto, setAberto] = useState(false);
+  const [extensao, setExtensao] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const botaoRef = useRef<HTMLButtonElement>(null);
   const idPainel = useId();
@@ -562,6 +567,19 @@ function MenuDaConta({ usuario, recolhida }: { usuario: UsuarioDaBarra; recolhid
             </p>
           </div>
           <div className="mx-1 mb-1 h-px bg-zinc-100 dark:bg-zinc-800" aria-hidden="true" />
+          {temExtensao && (
+            <button
+              type="button"
+              onClick={() => {
+                setAberto(false);
+                setExtensao(true);
+              }}
+              className={ITEM_DO_MENU}
+            >
+              <Puzzle className="size-4 shrink-0" aria-hidden="true" />
+              Extensão de reuniões
+            </button>
+          )}
           <ItemDoTema className={ITEM_DO_MENU} />
           {/* <form> e não onClick: sair apaga o cookie, e o cookie só some numa
               resposta do servidor. */}
@@ -573,6 +591,9 @@ function MenuDaConta({ usuario, recolhida }: { usuario: UsuarioDaBarra; recolhid
           </form>
         </div>
       )}
+
+      {/* Por portal, como o modal de blog: preso na barra (sticky, z-30), ficaria abaixo dos véus das telas. */}
+      {extensao && createPortal(<ModalExtensaoReunioes aoFechar={() => setExtensao(false)} />, document.body)}
     </div>
   );
 }

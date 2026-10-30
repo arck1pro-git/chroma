@@ -137,6 +137,7 @@ import {
   faPlay,
   faPlug,
   faPlus,
+  faPuzzlePiece,
   faQrcode,
   faRectangleList,
   faRepeat,
@@ -343,6 +344,7 @@ export const PinOff = icone(faThumbtackSlash, "PinOff");
 export const Play = icone(faPlay, "Play");
 export const PlugZap = icone(faPlug, "PlugZap");
 export const Plus = icone(faPlus, "Plus");
+export const Puzzle = icone(faPuzzlePiece, "Puzzle");
 export const QrCode = icone(faQrcode, "QrCode");
 export const RefreshCw = icone(faArrowsRotate, "RefreshCw");
 export const Repeat = icone(faRepeat, "Repeat");

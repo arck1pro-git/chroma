@@ -28,6 +28,22 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["postgres"],
   // Sem "X-Powered-By: Next.js": não anuncia a versão do framework.
   poweredByHeader: false,
+  // A rota que entrega o .zip da extensão de reuniões lê a pasta dela em
+  // runtime: os arquivos da extensão entram no pacote da função (o mesmo filtro
+  // da rota). Como ela lista a pasta, o rastreio levaria a pasta inteira; o que
+  // não é extensão fica de fora (já houve uma planilha de leads ali, no
+  // computador de quem desenvolve). A rota, de todo jeito, só serve os
+  // arquivos da extensão.
+  outputFileTracingIncludes: {
+    "/api/extensao-reunioes": [
+      "./extensao-reunioes/*.{js,html,css}",
+      "./extensao-reunioes/manifest.json",
+      "./extensao-reunioes/LEIAME.md",
+    ],
+  },
+  outputFileTracingExcludes: {
+    "/api/extensao-reunioes": ["./extensao-reunioes/*.{csv,tsv,xls,xlsx,pdf,txt,zip,webm,mp3,mp4,wav,png,jpg,jpeg,pem}"],
+  },
   async headers() {
     return [{ source: "/:path*", headers: CABECALHOS_DE_SEGURANCA }];
   },
