@@ -13,7 +13,10 @@ export function montarWorkflowCampanha({ campanhaId, nome, crmBaseUrl, credencia
     name: `[Chroma] Campanha · ${nome.slice(0, 80)} · ${campanhaId.slice(0, 8)}`,
     nodes: [
       { id:"agenda", name:agenda, type:"n8n-nodes-base.scheduleTrigger", typeVersion:1.2, position:[0,0], parameters:{ rule:{ interval:[{ field:"minutes", minutesInterval:1 }] } } },
-      { id:"executar", name:executar, type:"n8n-nodes-base.httpRequest", typeVersion:4.2, position:[260,0], parameters:{ url:`${crmBaseUrl}/api/meta/whatsapp/processar`, method:"POST", sendBody:true, contentType:"raw", rawContentType:"application/json", body:JSON.stringify({campanhaId}), options:{} }, credentials:{ httpHeaderAuth:{ id:credencialId, name:"Chroma · CRM (token de serviço)" } } },
+      // Sem authentication/genericAuthType o nó ignora a credencial anexada e
+      // chama sem o token: o /processar respondia 401 a cada minuto, e a
+      // campanha só andava os 5 da ativação ou da retomada (2026-10-30).
+      { id:"executar", name:executar, type:"n8n-nodes-base.httpRequest", typeVersion:4.2, position:[260,0], parameters:{ url:`${crmBaseUrl}/api/meta/whatsapp/processar`, method:"POST", authentication:"genericCredentialType", genericAuthType:"httpHeaderAuth", sendBody:true, contentType:"raw", rawContentType:"application/json", body:JSON.stringify({campanhaId}), options:{} }, credentials:{ httpHeaderAuth:{ id:credencialId, name:"Chroma · CRM (token de serviço)" } } },
     ],
     connections:{ [agenda]:{ main:[[{node:executar,type:"main",index:0}]] } },
     settings:{ executionOrder:"v1" },
