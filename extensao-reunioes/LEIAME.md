@@ -11,8 +11,8 @@ No fim, gera um resumo que o vendedor revisa e salva como anotação na ficha do
 3. Fixe o ícone da extensão na barra.
 4. Entre no AmaanOffice neste mesmo navegador, por `amaanoffice.amaan.com.br` ou por `chromacrm.vercel.app`.
    A extensão usa a sessão do CRM e não tem senha própria. Ela procura o login nos dois endereços, e o topo do painel
-   mostra em qual está conectada. Sem login, aparecem **Abrir o CRM** e **Tentar de novo**.
-5. No painel da extensão, clique em **Liberar microfone** uma vez.
+   mostra em qual está conectada. Sem login, aparecem **Entrar no AmaanOffice** e **Tentar de novo**.
+5. No painel da extensão, clique em **Liberar o microfone** uma vez.
 
 O ID da extensão é fixo (`eohffkhganngbodiakbkccchdjndkjpf`), definido pela chave do `manifest.json`.
 O CRM só aceita pedidos que venham desse ID (`lib/reunioes-extensao.ts`). Trocar a chave exige trocar o ID lá.
@@ -22,16 +22,17 @@ O ID não é senha: a chave está no repositório. Ele barra pedidos de páginas
 
 1. Abra a reunião no Meet ou no Zoom do navegador (`app.zoom.us/wc/...` ou outro `*.zoom.us/wc/...`).
 2. Clique no ícone da extensão ou use <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>. O painel lateral abre.
-3. Avise os participantes que a reunião será gravada e transcrita. Marque a confirmação e clique em **Começar a gravar**.
+3. **Reunião:** o painel traz do CRM as reuniões marcadas para hoje, com a hora, o nome do lead e o selo **agora** ou
+   **em 20 min**. Quando o link do Meet casa com uma reunião do CRM, ela já vem anexada. Senão, clique na reunião e em
+   **Anexar**: só então a gravação passa a usar a ficha desse lead. **Trocar** volta a mostrar a lista, e o botão de
+   atualizar busca de novo. Não há busca livre: a gravação se anexa a uma reunião marcada.
+4. Avise os participantes que a reunião será gravada e transcrita. Ligue **Avisei os participantes** e clique em **Gravar**.
    O ícone mostra **REC** enquanto grava. Se o painel disser **Falta um clique**, clique no ícone da extensão de novo,
    com a aba da reunião aberta: o Chrome só libera o áudio da aba por esse clique, e a gravação começa na hora.
-4. O painel procura o lead pela reunião marcada no CRM. Quando não acha, lista as reuniões de hoje e uma busca de lead.
-   Clicar numa reunião (ou num lead da busca) pede confirmação. Só depois de **Anexar** a gravação passa a usar a
-   ficha desse lead. **Trocar** volta a mostrar a lista.
-5. Quando o lead fala, o copiloto atualiza a **Condução** no máximo uma vez por minuto.
-   **Analisar agora** força a atualização.
-6. **Parar** encerra a gravação. Depois, escolha **Baixar gravação**, que salva em `Downloads/AmaanOffice`, ou **Descartar**.
-7. **Gerar resumo** traz um rascunho. Revise, corrija e clique em **Salvar na ficha**: ele vira uma anotação no contato.
+5. **Transcrição:** o que é dito aparece em balões, o lead à esquerda e você à direita, alguns segundos depois da fala.
+   Quando o lead fala, o copiloto atualiza a **Condução** no máximo uma vez por minuto. **Analisar agora** força a atualização.
+6. **Parar** encerra a gravação. Depois, escolha **Baixar**, que salva em `Downloads/AmaanOffice`, ou **Descartar**.
+7. **Gerar resumo** traz um rascunho. Revise, corrija e clique em **Salvar na ficha do lead**: ele vira uma anotação no contato.
 
 A gravação para sozinha:
 - quando a aba da reunião fecha ou vai para outro endereço;
@@ -58,8 +59,9 @@ com a objeção e as sugestões.
 - Use fone de ouvido. Sem fone, o microfone capta a voz do lead e ela aparece duas vezes na transcrição.
 - O assistente exige o módulo **Agenda**. Ver e escolher o lead exige **Dashboard** ou **Contatos**.
   A conversa do WhatsApp do lead só entra na análise para quem tem o **Chat**.
-- O painel escolhe entre o CRM de **Produção** e o **Local** (`localhost:3000`, o servidor de desenvolvimento).
-  A escolha volta para Produção quando o navegador fecha.
+- O painel fala com o CRM de **Produção**. Para desenvolver contra o **Local** (`localhost:3000`), rode no console do
+  painel `chrome.storage.session.set({ crm: "local" })` e reabra o painel. A escolha volta para Produção quando o
+  navegador fecha.
 
 ## Verificar
 

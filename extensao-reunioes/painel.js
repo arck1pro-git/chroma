@@ -1,16 +1,32 @@
 // O painel lateral: mostra o estado da reunião (chrome.storage.session, que só o
 // service worker grava) e manda os comandos. Tudo o que vem do CRM e da
 // transcrição entra como textContent, nunca como HTML: é texto dito pelo lead.
+//
+// REVISTO EM 2026-10-30 (pedido dele: "simples e intuitivo, só com reunião para
+// anexar, puxando direto do CRM em prod as reuniões disponíveis com nome do
+// lead, componentes personalizados e a transcrição do que está sendo dito"):
+//   · a lista das reuniões de hoje vem do CRM assim que o painel abre e a cada
+//     aba de reunião nova (POST /inicio com a sala); o link do Meet que casa já
+//     anexa sozinho. Clicar numa reunião pede "Anexar"; anexada, vira o cartão
+//     do lead com "Trocar". A busca livre saiu.
+//   · o seletor Produção/Local saiu da tela: o painel fala com o CRM de
+//     produção (o "local" segue em storage.session, para quem desenvolve).
+//   · durante a reunião, a transcrição em balões (lead à esquerda, você à
+//     direita), com a condução compacta em cima quando há objeção.
 import { CRMS, descobrirCrm, enderecoDoCrm } from "./comum.js";
 
 const $ = (id) => document.getElementById(id);
 let atual = { status: "parada" };
-let trocandoLead = false;
-// A reunião (ou o lead da busca) clicada, esperando o "Anexar": o clique
-// sozinho não troca o lead da gravação.
+let trocando = false;
+let conectado = false;
+// A reunião clicada, esperando o "Anexar": o clique sozinho não troca o lead da gravação.
 let pendente = null;
-// Os pedidos do painel em andamento ("gerar", "salvar"): o botão não religa no meio.
+// A confirmação "avisei os participantes", só desta tela: volta a desligada depois de gravar.
+let consentimento = false;
+// Os pedidos do painel em andamento ("gerar", "salvar", "reunioes"): o botão não religa no meio.
 const emAndamento = new Set();
+// De que sala a lista já foi buscada: busca de novo só quando a aba de reunião muda.
+let listaDaSala = null;
 // O que o CRM aceita no resumo (lib/ia/reuniao.ts): o painel manda o fim da
 // reunião que cabe, em vez de a rota recusar tudo.
 const RESUMO_MAXIMO = { falas: 3000, caracteres: 190_000 };
@@ -18,7 +34,7 @@ const RESUMO_MAXIMO = { falas: 3000, caracteres: 190_000 };
 const mostrar = (id, sim) => {
   $(id).hidden = !sim;
 };
-const texto = (tag, conteudo, classe) => Object.assign(document.createElement(tag), { textContent: conteudo, className: classe ?? "" });
+const elemento = (tag, conteudo, classe) => Object.assign(document.createElement(tag), { textContent: conteudo ?? "", className: classe ?? "" });
 
 /** Manda um comando ao service worker; o erro volta para o estado, que o painel mostra. */
 async function comando(tipo, extra = {}) {
@@ -27,7 +43,7 @@ async function comando(tipo, extra = {}) {
   return r;
 }
 
-/** Chama o CRM a partir do painel (busca, resumo, salvar). */
+/** Chama o CRM a partir do painel (reuniões, resumo, salvar). */
 async function crm(caminho, corpo) {
   const res = await fetch(`${await enderecoDoCrm()}${caminho}`, {
     method: "POST",
@@ -41,135 +57,115 @@ async function crm(caminho, corpo) {
   return dado;
 }
 
-function preencherLista(id, itens) {
-  $(id).replaceChildren(...(itens ?? []).map((t) => texto("li", t)));
-}
-
-const chaveDa = (lead) => `${lead.contatoId}|${lead.detalhe ?? ""}`;
-
-function opcao(lead) {
-  const b = texto("button", lead.nome, "opcao");
-  if (lead.detalhe) b.append(texto("small", lead.detalhe));
-  b.dataset.chave = chaveDa(lead);
-  b.addEventListener("click", () => {
-    pendente = lead;
-    desenhar(atual);
-  });
-  return b;
-}
-
-/** A confirmação do anexo e a marca na opção clicada (na lista e na busca). */
-function desenharAnexo() {
-  mostrar("anexar", Boolean(pendente));
-  $("anexar-texto").textContent = pendente
-    ? `Anexar a gravação a ${pendente.nome}${pendente.detalhe ? ` (${pendente.detalhe})` : ""}?`
-    : "";
-  for (const b of $("escolha").querySelectorAll(".opcao")) {
-    b.classList.toggle("escolhida", Boolean(pendente) && b.dataset.chave === chaveDa(pendente));
-  }
-}
-
 function duracao(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const p = (n) => String(n).padStart(2, "0");
   return `${p(Math.floor(s / 3600))}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}`;
 }
 
-function desenharStatus(r) {
-  const status = $("status");
-  status.className = `status${r.status === "gravando" ? " gravando" : ""}`;
-  status.textContent = {
-    gravando: `Gravando ${duracao(Date.now() - (r.inicio ?? Date.now()))}`,
-    comecando: "Começando…",
-    pronta: "Pronta para gravar",
-    encerrada: "Encerrada",
-  }[r.status] ?? "Parada";
+const iniciais = (nome) =>
+  String(nome ?? "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0].toUpperCase())
+    .join("") || "?";
+
+// ── As reuniões de hoje ─────────────────────────────────────────────────────
+
+/** A hora da reunião e o selo de quando ela é, pelo horário de quem vê. */
+function quandoDa(r) {
+  if (!r.inicio) return { hora: (r.detalhe ?? "").match(/\d{2}:\d{2}/)?.[0] ?? "—", selo: null };
+  const d = new Date(r.inicio);
+  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const minutos = Math.round((d.getTime() - Date.now()) / 60_000);
+  if (Math.abs(minutos) <= 15) return { hora, selo: { texto: "agora", classe: "agora" } };
+  if (minutos > 0) return { hora, selo: { texto: minutos < 60 ? `em ${minutos} min` : `em ${Math.round(minutos / 60)} h`, classe: "neutra" } };
+  return { hora, selo: { texto: "já passou", classe: "neutra" } };
 }
 
-function desenhar(r) {
-  atual = r;
-  const gravando = r.status === "gravando";
-  const emReuniao = gravando || r.status === "comecando" || r.status === "encerrada";
+function cartaoDaReuniao(r) {
+  const escolhida = pendente && pendente.contatoId === r.contatoId && pendente.inicio === r.inicio;
+  const { hora, selo } = quandoDa(r);
+  const cartao = elemento("div", "", `reuniao${escolhida ? " escolhida" : ""}`);
+  cartao.setAttribute("role", "button");
+  cartao.tabIndex = 0;
+  const linha = elemento("div", "", "reuniao-linha");
+  const textos = elemento("div", "", "reuniao-texto");
+  // Só o nome: o "reunião às 10:00" do CRM repetiria a hora da caixa ao lado.
+  textos.append(elemento("span", r.nome, "nome"));
+  linha.append(elemento("span", hora, "hora"), textos);
+  if (selo) linha.append(elemento("span", selo.texto, `pilula ${selo.classe}`));
+  cartao.append(linha);
 
-  desenharStatus(r);
-  mostrar("parar", gravando);
-  mostrar("lembrete", gravando);
-  mostrar("ocioso", r.status === "parada");
-  // Esperando o clique no ícone (o Chrome recusou o Começar): o aviso diz o que fazer.
-  mostrar("pronta", r.status === "pronta" && !r.esperandoClique);
-  $("comecar").disabled = !$("consentimento").checked;
-
-  $("erro").textContent = r.erro ?? "";
-  mostrar("erro", Boolean(r.erro));
-  $("aviso").textContent = r.aviso ?? "";
-  mostrar("aviso", Boolean(r.aviso));
-
-  // Condução: a objeção vem primeiro, é o que o vendedor precisa ver de relance.
-  const a = r.analise;
-  mostrar("conducao", gravando || (r.status === "encerrada" && Boolean(a)));
-  mostrar("objecao", Boolean(a?.objecao));
-  $("objecao-tipo").textContent = a?.objecao?.tipo ?? "";
-  $("objecao-frase").textContent = a?.objecao?.frase ? `“${a.objecao.frase}”` : "";
-  $("objecao-portras").textContent = a?.objecao?.porTras ? `Por trás: ${a.objecao.porTras}` : "";
-  preencherLista("sugestoes", a?.conducao);
-  $("proximo").textContent = a?.proximoPasso ? `Próximo passo: ${a.proximoPasso}` : "";
-  mostrar("proximo", Boolean(a?.proximoPasso));
-  $("analise-quando").textContent = r.analisando
-    ? "Analisando…"
-    : r.analiseEm
-      ? `Atualizado às ${new Date(r.analiseEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
-      : gravando ? "As sugestões aparecem quando o lead falar." : "";
-  $("sugerir").disabled = !gravando || r.analisando || !r.falas?.length;
-
-  // Lead: o que o CRM achou, ou a escolha.
-  mostrar("lead", emReuniao && Boolean(r.lead) && !trocandoLead);
-  $("lead-nome").textContent = r.lead?.nome ?? "Lead";
-  preencherLista("lead-resumo", r.lead?.resumo);
-  preencherLista("perfil", a?.perfil);
-  mostrar("escolha", emReuniao && (!r.lead || trocandoLead));
-  $("candidatos").replaceChildren(...(r.candidatos ?? []).map(opcao));
-  mostrar("sem-reunioes", Array.isArray(r.candidatos) && !r.candidatos.length);
-  desenharAnexo();
-
-  // A reunião ficou sem som: o gravador para em 2 min se ninguém confirmar.
-  mostrar("silencio", gravando && Boolean(r.silencioDesde));
-
-  // O fim: a gravação (baixar ou descartar) e o resumo (gerar, revisar, salvar).
-  // Botão com pedido em andamento fica desligado até a resposta.
-  const encerrada = r.status === "encerrada";
-  mostrar("gravacao", encerrada && Boolean(r.arquivo));
-  $("baixar").disabled = Boolean(r.downloadId);
-  mostrar("resumo", encerrada && Boolean(r.falas?.length));
-  $("gerar-resumo").disabled = emAndamento.has("gerar") || !r.falas?.length;
-  $("salvar-resumo").disabled = emAndamento.has("salvar") || !r.lead || !$("resumo-texto").value.trim();
-  if (encerrada && !r.lead && !$("resumo-status").textContent) {
-    $("resumo-status").textContent = "Escolha o lead acima para salvar o resumo na ficha dele.";
+  if (escolhida) {
+    const confirmar = elemento("div", "", "confirmar");
+    confirmar.append(elemento("p", `Anexar a gravação à reunião de ${r.nome}? A condução e o resumo usam a ficha deste lead.`));
+    const anexar = elemento("button", "Anexar", "botao pequeno");
+    const cancelar = elemento("button", "Cancelar", "botao leve pequeno");
+    anexar.addEventListener("click", (e) => {
+      e.stopPropagation();
+      anexarLead(r);
+    });
+    cancelar.addEventListener("click", (e) => {
+      e.stopPropagation();
+      pendente = null;
+      desenhar(atual);
+    });
+    confirmar.append(anexar, cancelar);
+    cartao.append(confirmar);
+  } else {
+    const escolher = () => {
+      pendente = r;
+      desenhar(atual);
+    };
+    cartao.addEventListener("click", escolher);
+    cartao.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        escolher();
+      }
+    });
   }
-  mostrar("nova", encerrada && !r.arquivo);
-
-  mostrar("transcricao", emReuniao && Boolean(r.falas?.length));
-  const ol = $("falas");
-  const estavaNoFim = ol.scrollTop + ol.clientHeight >= ol.scrollHeight - 8;
-  ol.replaceChildren(
-    ...(r.falas ?? []).slice(-200).map((f) => {
-      const li = document.createElement("li");
-      li.className = f.fala;
-      li.append(texto("b", f.fala === "lead" ? "Lead: " : "Você: "), f.texto);
-      return li;
-    }),
-  );
-  if (estavaNoFim) ol.scrollTop = ol.scrollHeight;
+  return cartao;
 }
 
-async function escolher(lead) {
-  trocandoLead = false;
+/**
+ * Busca no CRM as reuniões de hoje (e qual é a desta sala, quando o link do Meet
+ * casa) e guarda no estado, onde o gravador também as deixa. Anexa sozinho só
+ * quando nada está anexado.
+ */
+async function carregarReunioes(forcar = false) {
+  if (!conectado || emAndamento.has("reunioes")) return;
+  const sala = atual.sala ?? "";
+  // Uma busca por sala: falhou, o erro aparece e o botão de atualizar tenta de novo
+  // (sem isto, cada mudança de estado buscaria outra vez, em laço com o freio da rota).
+  if (!forcar && listaDaSala === sala) return;
+  listaDaSala = sala;
+  emAndamento.add("reunioes");
+  desenhar(atual);
+  try {
+    const dado = await crm("/api/reunioes/assistente/inicio", { sala });
+    const parcial = { candidatos: dado.candidatos ?? [] };
+    if (dado.lead && !atual.lead) parcial.lead = dado.lead;
+    await comando("estado", { parcial });
+  } catch (e) {
+    await comando("estado", { parcial: { erro: e.message } });
+  } finally {
+    emAndamento.delete("reunioes");
+    desenhar(atual);
+  }
+}
+
+async function anexarLead(lead) {
+  trocando = false;
   pendente = null;
   desenhar(atual);
   const r = await chrome.runtime.sendMessage({ alvo: "gravador", tipo: "lead", contatoId: lead.contatoId }).catch(() => null);
   if (r?.ok) return;
   if (r) return comando("estado", { parcial: { erro: r.erro } });
-  // Sem gravador (a reunião acabou e o arquivo já saiu): o painel busca a ficha
-  // e o service worker, que é quem grava o estado, a guarda.
+  // Sem gravador (antes de gravar, ou a reunião acabou e o arquivo já saiu): o
+  // painel busca a ficha e o service worker, que é quem grava o estado, a guarda.
   try {
     const dado = await crm("/api/reunioes/assistente/inicio", { contato_id: lead.contatoId });
     await comando("estado", { parcial: { lead: dado.lead, erro: null } });
@@ -178,44 +174,138 @@ async function escolher(lead) {
   }
 }
 
-let busca = 0;
-$("busca").addEventListener("input", async (e) => {
-  const termo = e.target.value.trim();
-  const minha = ++busca;
-  if (termo.length < 2) return $("resultados").replaceChildren();
-  await new Promise((pronto) => setTimeout(pronto, 300));
-  if (minha !== busca) return;
-  try {
-    const { leads = [] } = await crm("/api/reunioes/assistente/leads", { termo });
-    if (minha !== busca) return;
-    $("resultados").replaceChildren(...(leads.length ? leads.map(opcao) : [texto("p", "Nenhum lead encontrado.", "suave")]));
-    desenharAnexo();
-  } catch (erro) {
-    $("resultados").replaceChildren(texto("p", erro.message, "suave"));
+// ── Desenho ─────────────────────────────────────────────────────────────────
+
+function desenharStatus(r) {
+  const status = $("status");
+  status.className = `status${r.status === "gravando" ? " gravando" : ""}`;
+  status.textContent = {
+    gravando: `Gravando ${duracao(Date.now() - (r.inicio ?? Date.now()))}`,
+    comecando: "Começando…",
+    pronta: "Pronta para gravar",
+    encerrada: "Reunião encerrada",
+  }[r.status] ?? "Aguardando a reunião";
+}
+
+function desenharReuniao(r) {
+  mostrar("reuniao", conectado);
+  const anexada = Boolean(r.lead) && !trocando;
+  mostrar("anexada", anexada);
+  if (r.lead) {
+    $("anexada-iniciais").textContent = iniciais(r.lead.nome);
+    $("anexada-nome").textContent = r.lead.nome;
+    $("anexada-resumo").textContent = (r.lead.resumo ?? []).join(" · ") || "Lead do CRM";
   }
+  const lista = anexada ? [] : r.candidatos ?? [];
+  $("lista").replaceChildren(...lista.map(cartaoDaReuniao));
+  const carregando = emAndamento.has("reunioes");
+  mostrar("lista-carregando", !anexada && carregando && !lista.length);
+  mostrar("lista-vazia", !anexada && !carregando && Array.isArray(r.candidatos) && !r.candidatos.length);
+  $("atualizar").classList.toggle("girando", carregando);
+  $("atualizar").disabled = carregando;
+  mostrar("atualizar", !anexada);
+}
+
+function desenharGravar(r) {
+  const antes = r.status === "parada" || r.status === "pronta";
+  mostrar("gravar", conectado && antes && !(r.status === "pronta" && r.esperandoClique));
+  mostrar("dica-aba", r.status === "parada");
+  const consente = $("consentimento");
+  consente.setAttribute("aria-checked", String(consentimento));
+  consente.disabled = r.status !== "pronta";
+  $("comecar").disabled = r.status !== "pronta" || !consentimento;
+}
+
+function desenharConducao(r) {
+  const gravando = r.status === "gravando";
+  const a = r.analise;
+  mostrar("conducao", gravando || (r.status === "encerrada" && Boolean(a)));
+  mostrar("objecao", Boolean(a?.objecao));
+  $("objecao-tipo").textContent = a?.objecao?.tipo ?? "";
+  $("objecao-frase").textContent = a?.objecao?.frase ? `“${a.objecao.frase}”` : "";
+  $("objecao-portras").textContent = a?.objecao?.porTras ? `Por trás: ${a.objecao.porTras}` : "";
+  $("sugestoes").replaceChildren(...(a?.conducao ?? []).map((t) => elemento("li", t)));
+  $("proximo").textContent = a?.proximoPasso ? `Próximo passo: ${a.proximoPasso}` : "";
+  mostrar("proximo", Boolean(a?.proximoPasso));
+  $("analise-quando").textContent = r.analisando
+    ? "Analisando…"
+    : r.analiseEm
+      ? `Atualizado às ${new Date(r.analiseEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+      : gravando
+        ? "As sugestões aparecem quando o lead falar."
+        : "";
+  $("sugerir").disabled = !gravando || r.analisando || !r.falas?.length;
+  mostrar("sugerir", gravando);
+}
+
+function desenharTranscricao(r) {
+  const gravando = r.status === "gravando" || r.status === "comecando";
+  const falas = r.falas ?? [];
+  mostrar("transcricao", gravando || (r.status === "encerrada" && falas.length > 0));
+  mostrar("ao-vivo", r.status === "gravando");
+  mostrar("ouvindo", gravando && falas.length === 0);
+  const ol = $("falas");
+  const estavaNoFim = ol.scrollTop + ol.clientHeight >= ol.scrollHeight - 12;
+  ol.replaceChildren(
+    ...falas.slice(-200).map((f) => {
+      const li = elemento("li", "", `fala ${f.fala === "lead" ? "lead" : "voce"}`);
+      li.append(elemento("span", f.fala === "lead" ? "Lead" : "Você", "quem"), elemento("span", f.texto, "texto"));
+      return li;
+    }),
+  );
+  if (estavaNoFim) ol.scrollTop = ol.scrollHeight;
+}
+
+function desenharFim(r) {
+  const encerrada = r.status === "encerrada";
+  mostrar("gravacao", encerrada && Boolean(r.arquivo));
+  $("baixar").disabled = Boolean(r.downloadId);
+  mostrar("resumo", encerrada && Boolean(r.falas?.length));
+  $("gerar-resumo").disabled = emAndamento.has("gerar") || !r.falas?.length;
+  $("salvar-resumo").disabled = emAndamento.has("salvar") || !r.lead || !$("resumo-texto").value.trim();
+  if (encerrada && !r.lead && !$("resumo-status").textContent) {
+    $("resumo-status").textContent = "Anexe a reunião acima para salvar o resumo na ficha do lead.";
+  }
+  mostrar("nova", encerrada && !r.arquivo);
+}
+
+function desenhar(r) {
+  atual = r;
+  desenharStatus(r);
+  mostrar("parar", r.status === "gravando");
+  mostrar("lembrete", r.status === "gravando");
+  $("erro").textContent = r.erro ?? "";
+  mostrar("erro", Boolean(r.erro));
+  $("aviso").textContent = r.aviso ?? "";
+  mostrar("aviso", Boolean(r.aviso));
+  mostrar("silencio", r.status === "gravando" && Boolean(r.silencioDesde));
+  desenharReuniao(r);
+  desenharGravar(r);
+  desenharConducao(r);
+  desenharTranscricao(r);
+  desenharFim(r);
+}
+
+// ── Ações ───────────────────────────────────────────────────────────────────
+
+$("atualizar").addEventListener("click", () => carregarReunioes(true));
+
+$("trocar").addEventListener("click", () => {
+  trocando = true;
+  pendente = null;
+  desenhar(atual);
+  if (!atual.candidatos) carregarReunioes(true);
 });
 
-$("consentimento").addEventListener("change", () => desenhar(atual));
+$("consentimento").addEventListener("click", () => {
+  consentimento = !consentimento;
+  desenhar(atual);
+});
 
 $("comecar").addEventListener("click", async () => {
   $("comecar").disabled = true;
   await comando("comecar", { consentimentoEm: new Date().toISOString() });
-  $("consentimento").checked = false;
-  desenhar(atual);
-});
-
-$("trocar-lead").addEventListener("click", () => {
-  trocandoLead = true;
-  pendente = null;
-  desenhar(atual);
-  $("busca").focus();
-});
-
-$("anexar-sim").addEventListener("click", () => {
-  if (pendente) escolher(pendente);
-});
-$("anexar-nao").addEventListener("click", () => {
-  pendente = null;
+  consentimento = false;
   desenhar(atual);
 });
 
@@ -227,6 +317,10 @@ $("parar").addEventListener("click", async () => {
 
 $("sugerir").addEventListener("click", () => {
   chrome.runtime.sendMessage({ alvo: "gravador", tipo: "sugerir" }).catch(() => {});
+});
+
+$("continuar").addEventListener("click", () => {
+  chrome.runtime.sendMessage({ alvo: "gravador", tipo: "continuar" }).catch(() => {});
 });
 
 $("baixar").addEventListener("click", () => comando("baixar"));
@@ -302,12 +396,10 @@ $("salvar-resumo").addEventListener("click", async () => {
   desenhar(atual);
 });
 
-$("continuar").addEventListener("click", () => {
-  chrome.runtime.sendMessage({ alvo: "gravador", tipo: "continuar" }).catch(() => {});
-});
-
 $("nova").addEventListener("click", async () => {
   pendente = null;
+  trocando = false;
+  listaDaSala = null;
   $("resumo-texto").value = "";
   $("resumo-status").textContent = "";
   mostrar("resumo-texto", false);
@@ -317,26 +409,24 @@ $("nova").addEventListener("click", async () => {
 
 $("liberar-mic").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("permissao.html") }));
 
-// A CONEXÃO COM O CRM, à vista no topo do painel: a extensão usa o login do
-// CRM neste navegador, e quem entrou por outro endereço (ou não entrou) via só
-// os erros das chamadas. Confere ao abrir, ao voltar para o painel (no máximo a
-// cada 30 s, pelo freio das rotas) e no "Tentar de novo".
+// A CONEXÃO COM O CRM, à vista no topo: a extensão usa o login do CRM neste
+// navegador. Confere ao abrir, ao voltar para o painel (no máximo a cada 30 s,
+// pelo freio das rotas) e no "Tentar de novo". Conectou, a lista de reuniões vem.
 let ultimaConferencia = 0;
 async function conferirConexao(agora = false) {
   if (!agora && Date.now() - ultimaConferencia < 30_000) return;
   ultimaConferencia = Date.now();
   const c = await descobrirCrm();
   await chrome.storage.session.set({ crmAtivo: c.url });
-  $("conectado").textContent = c.conectado ? `Conectado ao CRM (${new URL(c.url).host})` : "";
-  mostrar("conectado", c.conectado);
+  conectado = c.conectado;
+  $("conexao").title = c.conectado ? `Conectado a ${new URL(c.url).host}` : "";
+  mostrar("conexao", c.conectado);
   $("desconectado-motivo").textContent = c.erro ?? "";
   mostrar("desconectado", !c.conectado);
+  desenhar(atual);
+  if (c.conectado) carregarReunioes();
 }
 
-$("crm").addEventListener("change", async (e) => {
-  await chrome.storage.session.set({ crm: e.target.value });
-  conferirConexao(true);
-});
 $("tentar-de-novo").addEventListener("click", () => conferirConexao(true));
 $("abrir-crm").addEventListener("click", async () => {
   const { crm: escolha } = await chrome.storage.session.get("crm");
@@ -351,16 +441,22 @@ async function conferirMicrofone() {
 }
 
 chrome.storage.onChanged.addListener((mudancas, area) => {
-  if (area === "session" && mudancas.reuniao) desenhar(mudancas.reuniao.newValue ?? { status: "parada" });
+  if (area !== "session" || !mudancas.reuniao) return;
+  const novo = mudancas.reuniao.newValue ?? { status: "parada" };
+  const salaMudou = (novo.sala ?? "") !== (atual.sala ?? "");
+  desenhar(novo);
+  // Aba de reunião nova (o clique no ícone): a lista é buscada de novo para ela.
+  if (salaMudou) carregarReunioes();
 });
 
-// O relógio do "Gravando" anda sozinho.
+// O relógio do "Gravando" e os selos "agora / em 20 min" andam sozinhos.
 setInterval(() => {
   if (atual.status === "gravando") desenharStatus(atual);
 }, 1000);
+setInterval(() => {
+  if (!atual.lead && atual.candidatos?.length) desenharReuniao(atual);
+}, 60_000);
 
-const { crm: escolhido } = await chrome.storage.session.get("crm");
-$("crm").value = escolhido === "local" ? "local" : "producao";
 desenhar((await chrome.storage.session.get("reuniao")).reuniao ?? { status: "parada" });
 conferirMicrofone();
 conferirConexao(true);

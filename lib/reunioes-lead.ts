@@ -27,8 +27,11 @@ import { soDigitos } from "@/lib/telefone";
 import { ehUuid } from "@/lib/validacao";
 import { MARCA_ANOTACAO_IA } from "@/lib/ia/atendente";
 
-/** Um lead que a pessoa pode escolher na extensão. */
-export type CandidatoReuniao = { contatoId: string; nome: string; detalhe: string };
+/**
+ * Um lead que a pessoa pode escolher na extensão. `inicio` (ISO, desde 2026-10-30)
+ * deixa o painel mostrar a hora e marcar a reunião de agora.
+ */
+export type CandidatoReuniao = { contatoId: string; nome: string; detalhe: string; inicio?: string };
 
 /** A ficha do lead: o que a tela mostra e o que a IA lê. */
 export type FichaLead = {
@@ -84,6 +87,7 @@ export async function leadDaSala(usuario: UsuarioLogado, sala: string): Promise<
   const candidatos = reunioes.map((r) => ({
     contatoId: r.contato_id,
     nome: r.nome,
+    inicio: new Date(r.inicio).toISOString(),
     detalhe: `reunião às ${new Date(r.inicio).toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" })}`,
   }));
 

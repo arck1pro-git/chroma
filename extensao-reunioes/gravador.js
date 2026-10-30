@@ -64,7 +64,7 @@ function pedirParada() {
 
 const json = (corpo) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
 
-async function iniciar({ streamId, sala, crm }) {
+async function iniciar({ streamId, sala, crm, leadId }) {
   if (r && !r.encerrada) throw new Error("Já há uma gravação em andamento.");
   if (!Object.values(CRMS).includes(crm)) throw new Error("Endereço do CRM fora da lista.");
   if (r?.url) URL.revokeObjectURL(r.url);
@@ -96,7 +96,9 @@ async function iniciar({ streamId, sala, crm }) {
   inteiro.start(10_000);
 
   r = {
-    crm, sala, ctx, fluxos: [aba, mic].filter(Boolean), inteiro, pedacos, falas: [], leadId: null,
+    crm, sala, ctx, fluxos: [aba, mic].filter(Boolean), inteiro, pedacos, falas: [],
+    // A reunião anexada no painel antes de gravar (2026-10-30); sem ela, identificar() procura.
+    leadId: typeof leadId === "string" && leadId ? leadId : null,
     ultimaAnalise: 0, esperaAnalise: ANALISE_MS, novasDoLead: 0, analisando: false, agendada: null,
     encerrada: false, cortes: [], pendentes: new Set(), url: null,
     ultimoSomDaAba: Date.now(), perguntouEm: null,
@@ -108,7 +110,7 @@ async function iniciar({ streamId, sala, crm }) {
   r.cortes.push(cortar(aba, daAba, "lead"));
   if (mic) r.cortes.push(cortar(mic, doMic, "voce"));
   emitir({ aviso, erro: null });
-  identificar();
+  if (!r.leadId) identificar();
   return {};
 }
 

@@ -14,8 +14,9 @@
 //   1. clique no ícone (ou Alt+Shift+G) na aba da reunião: abre o painel e a aba
 //      fica "pronta". O Chrome só entrega o áudio da aba depois desse gesto; o
 //      aviso na página (aviso-reuniao.js) lembra de clicar.
-//   2. no painel, a pessoa confirma que avisou os participantes e clica em
-//      Começar. Só então a aba é capturada. Nunca começa sozinha.
+//   2. no painel, a pessoa anexa a reunião do CRM (a lista vem antes de gravar,
+//      2026-10-30), confirma que avisou os participantes e clica em Gravar. Só
+//      então a aba é capturada. Nunca começa sozinha.
 //   3. Parar, ou parada sozinha (a aba fecha ou sai da reunião, 15 min sem som da
 //      reunião sem ninguém confirmar que ela segue, 3 h de gravação): a gravação
 //      fica na memória do gravador até a pessoa escolher Baixar ou Descartar. A
@@ -107,7 +108,8 @@ async function preparar(aba) {
     return;
   }
   await chrome.action.setBadgeText({ tabId: aba.id, text: "" }).catch(() => {});
-  await mudar({ status: "pronta", abaId: aba.id, sala: aba.url }, true);
+  // A reunião já anexada no painel (antes do clique no ícone) continua anexada.
+  await mudar({ status: "pronta", abaId: aba.id, sala: aba.url, lead: atual.lead ?? null, candidatos: atual.candidatos ?? null }, true);
 }
 
 // A recusa do Chrome por falta do clique no ícone vem em inglês: "Extension has
@@ -143,11 +145,13 @@ async function iniciar(aba, consentimentoEm) {
   const crm = conexao.url;
   if (!Object.values(CRMS).includes(crm)) throw new Error("Endereço do CRM fora da lista.");
 
+  // O lead da reunião anexada antes de gravar vai junto: o gravador não procura outro.
+  const leadId = (await estado()).lead?.contatoId ?? null;
   await mudar({ status: "comecando", consentimentoEm, esperandoClique: false, sessao: crypto.randomUUID(), sala: aba.url, erro: null, aviso: null });
   try {
     const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: aba.id });
     await garantirGravador();
-    const r = await chrome.runtime.sendMessage({ alvo: "gravador", tipo: "iniciar", streamId, sala: aba.url, crm });
+    const r = await chrome.runtime.sendMessage({ alvo: "gravador", tipo: "iniciar", streamId, sala: aba.url, crm, leadId });
     if (!r?.ok) throw new Error(r?.erro ?? "o gravador não respondeu");
   } catch (e) {
     await fecharGravador();
