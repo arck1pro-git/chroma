@@ -434,7 +434,7 @@ async function parteDesenhar(ids: Ids) {
   passo(`desenhar_fluxo: teto de ${TETO_DESENHOS} desenhos por resposta, Meta lida uma vez`);
 }
 
-/** Os blocos de 2026-10-28 no formato da IA: Condição, Horário, Enviar arquivo e Permissão de passagem. */
+/** Os blocos de 2026-10-28 no formato da IA: Condição, Horário, Enviar arquivo e Permissão de passagem; e o Alternar, de 2026-10-30. */
 function parteBlocosNovos() {
   const u = () => randomUUID();
   const [tag, seg, funil, etapa, doc] = [u(), u(), u(), u(), u()];
@@ -448,7 +448,10 @@ function parteBlocosNovos() {
     { id: "c5", tipo: "condicao", regra: { tipo: "campo", chave: "cidade", operador: "preenchido" }, sim: null, nao: null },
     { id: "arq", tipo: "enviar_arquivo", documento_id: doc, legenda: "Oi {{primeiro_nome}}, segue a tabela.", proximo: null },
     { id: "h", tipo: "horario", dias: [1, 2, 3, 4, 5], das: "08:00", ate: "18:00", proximo: "p" },
-    { id: "p", tipo: "limitar_passagem", quantidade: 5, janela_segundos: 10, proximo: null },
+    { id: "p", tipo: "limitar_passagem", quantidade: 5, janela_segundos: 10, proximo: "alt" },
+    { id: "alt", tipo: "alternar", saidas: ["fa", "fb", null] },
+    { id: "fa", tipo: "registrar_conversao", proximo: null },
+    { id: "fb", tipo: "registrar_conversao" },
   ];
   const r = fluxoDoDesenho(entradaDoDesenho.parse({ inicio: "envio", blocos }));
   assert.ok(r.ok, JSON.stringify(!r.ok && r.problemas));
@@ -465,7 +468,8 @@ function parteBlocosNovos() {
   assert.deepEqual(b.c5, { tipo: "condicao", regra: { tipo: "campo", chave: "cidade", operador: "preenchido", valor: "" }, sim: null, nao: null }, "valor ausente vira vazio");
   assert.deepEqual(b.arq, { tipo: "enviar_arquivo", documentoId: doc, legenda: "Oi {{primeiro_nome}}, segue a tabela.", proximo: null });
   assert.deepEqual(b.h, { tipo: "horario", dias: [1, 2, 3, 4, 5], das: "08:00", ate: "18:00", proximo: "p" });
-  assert.deepEqual(b.p, { tipo: "limitar_passagem", quantidade: 5, janela_segundos: 10, proximo: null });
+  assert.deepEqual(b.p, { tipo: "limitar_passagem", quantidade: 5, janela_segundos: 10, proximo: "alt" });
+  assert.deepEqual(b.alt, { tipo: "alternar", saidas: ["fa", "fb", null] }, "um destino por caminho, null encerra");
 
   // A volta: a legenda e o valor do campo (podem ser de um colega) embrulhados; a ida e volta dá o mesmo fluxo.
   const paraIa = Object.entries(b).map(([id, x]) => blocoParaIa(id, x));
@@ -489,7 +493,7 @@ function parteBlocosNovos() {
   const comLegenda = (legenda: string) => fluxo("a", { a: { tipo: "enviar_arquivo", documentoId: doc, legenda, proximo: null } });
   assert.equal(contatosNaoEscritos(comLegenda("Veja golpe.xyz/pix"), ["monte"]).length, 1);
   assert.equal(contatosNaoEscritos(comLegenda("Veja golpe.xyz/pix"), ["manda com golpe.xyz/pix"]).length, 0);
-  passo("blocos novos no formato da IA: condição (4 regras), horário, arquivo e passagem, e a mídia do cabeçalho do template; ida e volta; forma inválida; legenda com link");
+  passo("blocos novos no formato da IA: condição (4 regras), horário, arquivo, passagem e alternar, e a mídia do cabeçalho do template; ida e volta; forma inválida; legenda com link");
 }
 
 async function parteDesenharNovos(ids: Ids) {
@@ -602,7 +606,7 @@ async function parteTrava(ids: Ids) {
   assert.deepEqual(await doBanco(), antes, "nada gravado");
   const lidoNovo = fluxoDoDesenho(entradaDoDesenho.parse(novo));
   assert.ok(lidoNovo.ok);
-  assert.deepEqual(await salvarEdicao({ campanhaId: ids.pausada, nome: null, fluxo: lidoNovo.fluxo, usuarioId: QUEM.id }), { concluidas: 0 });
+  assert.deepEqual(await salvarEdicao({ campanhaId: ids.pausada, nome: null, fluxo: lidoNovo.fluxo, usuarioId: QUEM.id }), { concluidas: 0, foraDoPublico: 0 });
   assert.ok((await doBanco()).blocos.espera1, "gravado");
   passo("trava de id em salvarEdicao: devolve os problemas e não grava; sem troca de tipo, grava");
 }

@@ -11,7 +11,8 @@
 // (até responder ou vencer o prazo), "Esperar" (um tempo), "Horário de envio"
 // (fora da janela, até ela abrir) e "Permissão de passagem" (cheia, até a vez
 // dele). O bloco onde ele está fica em campanha_whatsapp_execucoes.bloco_atual;
-// `proximo: null` é o fim. A "Condição" tem duas saídas, sim e não.
+// `proximo: null` é o fim. A "Condição" tem duas saídas, sim e não; o
+// "Alternar" (2026-10-30), uma por caminho, que os contatos ocupam em rodízio.
 //
 // As ligações moram em cada bloco (`proximo`, ou as saídas do Aguardar), e não
 // numa lista de arestas à parte: uma fonte só, sem aresta apontando para bloco
@@ -128,6 +129,15 @@ export type BlocoCampanha =
       /** O tamanho da janela, em segundos (1 s a 30 dias). Quem excede espera a vez, na ordem de chegada. */
       janela_segundos: number;
       proximo: Destino;
+    }
+  | {
+      tipo: "alternar";
+      /**
+       * Os caminhos, em revezamento na ordem de chegada: o 1º contato vai pelo
+       * primeiro, o 2º pelo segundo… e volta ao primeiro (pedido dele,
+       * 2026-10-30: variar os templates de uma campanha). De 2 a 10.
+       */
+      saidas: Destino[];
     };
 
 /** A pergunta do bloco Condição. */
@@ -171,6 +181,7 @@ export const CATALOGO_CAMPANHA: Record<TipoBloco, { rotulo: string; descricao: s
   horario: { rotulo: "Horário de envio", descricao: "Só deixa passar nos dias e horas escolhidos.", grupo: "espera" },
   condicao: { rotulo: "Condição", descricao: "Divide o caminho por tag, segmento, etapa ou campo.", grupo: "controle" },
   limitar_passagem: { rotulo: "Permissão de passagem", descricao: "Deixa passar X contatos a cada intervalo.", grupo: "controle" },
+  alternar: { rotulo: "Alternar", descricao: "Reveza os contatos entre caminhos, um de cada vez.", grupo: "controle" },
 };
 
 export const LIMITES_FLUXO = {
@@ -185,7 +196,13 @@ export const LIMITES_FLUXO = {
   passagemQuantidadeMaxima: 10_000,
   passagemJanelaMinima: 1,
   passagemJanelaMaxima: 2_592_000,
+  /** Alternar: de 2 a 10 caminhos. */
+  caminhosMinimo: 2,
+  caminhosMaximo: 10,
 } as const;
+
+/** O nome de cada caminho do Alternar, na ordem: "Caminho A", "Caminho B"… */
+export const rotuloDoCaminho = (i: number) => `Caminho ${String.fromCharCode(65 + i)}`;
 
 /** Uma saída de bloco, como o canvas desenha (o id é o `sourceHandle` da ligação). */
 export type SaidaBloco = { id: string; rotulo: string; destino: Destino };
@@ -193,7 +210,8 @@ export type SaidaBloco = { id: string; rotulo: string; destino: Destino };
 /**
  * As saídas de um bloco, na ordem em que o canvas desenha. No Aguardar: uma
  * por botão (id "botao:<texto>"), uma por palavra ("palavra:<i>"), "outra" e
- * "sem_resposta"; nos demais, "proximo".
+ * "sem_resposta"; no Alternar, uma por caminho ("caminho:<i>"); nos demais,
+ * "proximo".
  */
 export function saidasDe(b: BlocoCampanha): SaidaBloco[] {
   if (b.tipo === "condicao") {
@@ -202,6 +220,7 @@ export function saidasDe(b: BlocoCampanha): SaidaBloco[] {
       { id: "nao", rotulo: "Não", destino: b.nao },
     ];
   }
+  if (b.tipo === "alternar") return b.saidas.map((destino, i) => ({ id: `caminho:${i}`, rotulo: rotuloDoCaminho(i), destino }));
   if (b.tipo !== "aguardar_resposta") return [{ id: "proximo", rotulo: "", destino: b.proximo }];
   return [
     ...Object.entries(b.botoes).map(([texto, destino]) => ({ id: `botao:${texto}`, rotulo: texto, destino })),
@@ -217,6 +236,10 @@ export function ligar(b: BlocoCampanha, saidaId: string, destino: Destino): Bloc
     if (saidaId === "sim") return { ...b, sim: destino };
     if (saidaId === "nao") return { ...b, nao: destino };
     return b;
+  }
+  if (b.tipo === "alternar") {
+    const i = saidaId.startsWith("caminho:") ? Number(saidaId.slice(8)) : -1;
+    return i >= 0 && i < b.saidas.length ? { ...b, saidas: b.saidas.map((d, j) => (j === i ? destino : d)) } : b;
   }
   if (b.tipo !== "aguardar_resposta") return { ...b, proximo: destino };
   if (saidaId.startsWith("botao:")) return { ...b, botoes: { ...b.botoes, [saidaId.slice(6)]: destino } };
@@ -437,6 +460,11 @@ function problemaDoBloco(b: BlocoCampanha): string | null {
       )
         return "O intervalo vai de 1 segundo a 30 dias.";
       return null;
+    case "alternar":
+      if (b.saidas.length < LIMITES_FLUXO.caminhosMinimo || b.saidas.length > LIMITES_FLUXO.caminhosMaximo)
+        return `O Alternar tem de ${LIMITES_FLUXO.caminhosMinimo} a ${LIMITES_FLUXO.caminhosMaximo} caminhos.`;
+      // Caminho solto encerraria o fluxo de uma parte dos contatos sem ninguém notar.
+      return b.saidas.some((d) => d === null) ? "Ligue cada caminho do Alternar a um bloco." : null;
   }
 }
 

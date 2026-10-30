@@ -120,6 +120,8 @@ export function blocoNovo(tipo: TipoBloco, o: OpcoesFluxo): BlocoCampanha {
       return { tipo, documentoId: "", legenda: "", proximo: null };
     case "limitar_passagem":
       return { tipo, quantidade: 50, janela_segundos: 3600, proximo: null };
+    case "alternar":
+      return { tipo, saidas: [null, null] };
   }
 }
 
@@ -265,7 +267,7 @@ const VAO = 40;
 const VAO_DOS_SOLTOS = 120;
 
 /** Cartão com uma linha por saída, cada uma com a própria alça. */
-export const ehEmLinhas = (tipo: TipoBloco) => tipo === "aguardar_resposta" || tipo === "condicao";
+export const ehEmLinhas = (tipo: TipoBloco) => tipo === "aguardar_resposta" || tipo === "condicao" || tipo === "alternar";
 
 /** A altura de um cartão sem medir: o Aguardar cresce com as saídas, o template com o balão. */
 export function alturaEstimada(b: BlocoCampanha): number {
@@ -572,6 +574,8 @@ export function resumoDoBloco(b: BlocoCampanha, o: OpcoesFluxo): string {
       return nomeDoArquivo(o, b.documentoId) ?? "Escolha o arquivo";
     case "limitar_passagem":
       return `${quantosContatos(b.quantidade)} a cada ${janelaEmTexto(b.janela_segundos)}`;
+    case "alternar":
+      return `${b.saidas.length} caminhos, um de cada vez`;
   }
 }
 
@@ -648,13 +652,15 @@ export function revisaoDoFluxo(
         });
         break;
       // O horário e a passagem não fazem nada no CRM, mas mudam QUANDO as
-      // mensagens saem: quem ativa precisa ler o ritmo antes.
+      // mensagens saem: quem ativa precisa ler o ritmo antes. O Alternar muda
+      // QUAL mensagem cada contato recebe.
       case "mudar_tag":
       case "mudar_segmento":
       case "registrar_conversao":
       case "ligar_ia":
       case "horario":
       case "limitar_passagem":
+      case "alternar":
         efeito(`${CATALOGO_CAMPANHA[b.tipo].rotulo}: ${resumoDoBloco(b, o)}`);
         break;
       case "criar_oportunidade":

@@ -34,7 +34,7 @@ import {
 } from "@/lib/campanhas-whatsapp-base";
 import { enviarArquivo, enviarTemplate, enviarTexto, novaRodada, type Rodada } from "@/lib/campanhas-whatsapp-envios";
 import { executarAcao, type Resultado } from "@/lib/campanhas-whatsapp-acoes";
-import { executarCondicao, executarHorario, executarPassagem } from "@/lib/campanhas-whatsapp-controle";
+import { executarAlternar, executarCondicao, executarHorario, executarPassagem } from "@/lib/campanhas-whatsapp-controle";
 import { atualizarTotais } from "@/lib/campanhas-whatsapp-totais";
 
 /**
@@ -186,6 +186,8 @@ async function executarBloco(e: Execucao, id: string, b: BlocoCampanha, rodada: 
       return enviarArquivo(e, id, b);
     case "condicao":
       return executarCondicao(e, id, b);
+    case "alternar":
+      return executarAlternar(e, id, b);
     case "horario":
       return executarHorario(e, id, b);
     case "limitar_passagem":

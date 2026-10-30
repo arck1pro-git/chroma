@@ -117,6 +117,11 @@ const blocoDaIa = z.discriminatedUnion("tipo", [
     janela_segundos: z.number().describe("O intervalo, em segundos: 60 = 1 minuto, 3600 = 1 hora, 86400 = 1 dia (até 30 dias)."),
     proximo,
   }),
+  z.object({
+    id: idBloco,
+    tipo: z.literal("alternar"),
+    saidas: z.array(proximo).describe("De 2 a 10 caminhos, cada um o id de um bloco: o 1º contato vai pelo primeiro, o 2º pelo segundo… e volta ao primeiro."),
+  }),
 ]);
 
 export const entradaDoDesenho = z.object({
@@ -197,6 +202,8 @@ function blocoDoDesenho(b: BlocoDaIa): BlocoCampanha {
       return { tipo: b.tipo, documentoId: b.documento_id.trim(), legenda: semMarcas(b.legenda ?? ""), proximo: ate(b.proximo) };
     case "limitar_passagem":
       return { tipo: b.tipo, quantidade: b.quantidade, janela_segundos: b.janela_segundos, proximo: ate(b.proximo) };
+    case "alternar":
+      return { tipo: b.tipo, saidas: b.saidas.map((d) => ate(d)) };
   }
 }
 
@@ -298,6 +305,8 @@ export function blocoParaIa(id: string, b: BlocoCampanha): BlocoDaIa {
       return { id, tipo: b.tipo, documento_id: b.documentoId, legenda: b.legenda ? comoDado(b.legenda) : "", proximo: b.proximo };
     case "limitar_passagem":
       return { id, tipo: b.tipo, quantidade: b.quantidade, janela_segundos: b.janela_segundos, proximo: b.proximo };
+    case "alternar":
+      return { id, tipo: b.tipo, saidas: b.saidas };
   }
 }
 

@@ -32,7 +32,8 @@
 // envio (a próxima abertura em Brasília, puro, e a espera no motor); a
 // Permissão de passagem (janela deslizante, ordem de chegada, duas rodadas
 // juntas, vazão por minuto); o Enviar arquivo pelo caminho do chat, com um
-// Storage falso.
+// Storage falso. De 2026-10-30: o Alternar (um caminho de cada vez, na ordem
+// de chegada, sem trocar nem contar de novo a execução repetida).
 //
 // TRAVA DE AMBIENTE: com WHATSAPP_SO_PARA ativa (o .env do dev), os números de
 // teste não passam — e o teste NÃO a contorna. Nesse caso o envio do template
@@ -1319,6 +1320,47 @@ async function parteCondicao(ids: Ids) {
   passo("condição: tag, segmento, etapa da oportunidade mais recente e campo (igual, contém, preenchido); evento com a saída sim/não");
 }
 
+async function parteAlternar(ids: Ids) {
+  const f = fluxo("alt", {
+    alt: { tipo: "alternar", saidas: ["a", "b", "c"] },
+    a: tag(ids.tagA, null),
+    b: tag(ids.tagB, null),
+    c: conversao(),
+  });
+  const c = await campanha("alternar", f);
+  const pessoas = [];
+  for (let i = 0; i < 7; i++) {
+    const p = await contato();
+    pessoas.push({ ...p, execucao: await inscrever(c, p.id) });
+  }
+  await processarFila(20, c);
+  // Na ordem de inscrição (processarFila), um caminho de cada vez: A, B, C, A…
+  const caminhos = await Promise.all(pessoas.map(async (p) => (await caminho(p.execucao))[0]));
+  assert.deepEqual(caminhos, ["alt:caminho:0", "alt:caminho:1", "alt:caminho:2", "alt:caminho:0", "alt:caminho:1", "alt:caminho:2", "alt:caminho:0"]);
+  assert.deepEqual(
+    await Promise.all(pessoas.map((p) => temTag(p.id, ids.tagA))),
+    [true, false, false, true, false, false, true],
+    "o caminho A põe a tag A",
+  );
+  for (const p of pessoas) assert.equal((await execucao(p.execucao)).estado, "concluida");
+  const m = (await metricasDasCampanhas([{ id: c, definicao: f }])).get(c)!;
+  assert.deepEqual([m.porSaida["alt|caminho:0"], m.porSaida["alt|caminho:1"], m.porSaida["alt|caminho:2"]], [3, 2, 2]);
+  assert.deepEqual(m.porBloco.alt, { agora: 0, passaram: 7 });
+
+  // A rodada que caiu depois do evento: a mesma execução segue pelo caminho
+  // gravado, sem contar de novo (o próximo contato continua a ordem).
+  const volta = pessoas[1];
+  await sql`UPDATE campanha_whatsapp_execucoes SET estado = 'na_fila', bloco_atual = NULL, finalizado_em = NULL WHERE id = ${volta.execucao}::uuid`;
+  await processarFila(5, c);
+  const doBloco = (await caminho(volta.execucao)).filter((x) => x.startsWith("alt:"));
+  assert.deepEqual(doBloco, ["alt:caminho:1"], "não grava outro evento nem troca de caminho");
+  const nova = await contato();
+  const ex = await inscrever(c, nova.id);
+  await processarFila(5, c);
+  assert.equal((await caminho(ex))[0], "alt:caminho:1", "o 8º contato pega o caminho B");
+  passo("alternar: um caminho de cada vez na ordem de chegada (A, B, C, A…), métricas por caminho, a execução repetida não troca nem conta de novo");
+}
+
 async function parteHorario() {
   const hoje = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[
     new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", weekday: "short" }).format(new Date())
@@ -1542,6 +1584,7 @@ async function main() {
     await parteMidiaDoCabecalho(docs);
     await parteTemplateComImagem(docs, travaAtiva);
     await parteCondicao(ids);
+    await parteAlternar(ids);
     await parteHorario();
     await partePassagem();
     await parteArquivo(ids, docs);

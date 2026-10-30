@@ -146,6 +146,8 @@ const blocoEsquema = z.discriminatedUnion("tipo", [
     janela_segundos: z.number().int().min(0).max(100_000_000),
     proximo: destino,
   }),
+  // De 2026-10-30. De 2 a 10 caminhos, com frase própria, em problemasDoFluxo.
+  z.object({ tipo: z.literal("alternar"), saidas: z.array(destino).max(50) }),
 ]);
 
 const coordenada = z.number().min(-1_000_000).max(1_000_000);

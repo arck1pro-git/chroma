@@ -13,6 +13,9 @@
 //     deslizante por campanha+bloco, contada pelo evento 'passagem' {bloco}.
 //     Cheia, a execução espera até a vaga abrir e passa na ordem de chegada. Sem
 //     tabela nova: estado, prazo e eventos que o motor já tem.
+//   · Alternar (2026-10-30, pedido dele: variar os templates de uma campanha):
+//     reveza os contatos entre os caminhos na ordem de chegada, contando os
+//     eventos 'bloco' dele (executarAlternar).
 //
 // EVENTOS, como no "Esperar": quem passa direto deixa um evento 'bloco' com a
 // saída; quem espera deixa um 'bloco' sem saída ao chegar (conta em "passaram"
@@ -221,4 +224,34 @@ export async function executarPassagem(e: Execucao, id: string, b: Extract<Bloco
   if (!(await jaComecou(e, id))) await eventoBloco(e, id, b, { ok: true });
   await estacionarAte(e, id, abre);
   return PAROU;
+}
+
+// ── Alternar ────────────────────────────────────────────────────────────────
+
+/**
+ * O caminho da vez: quantos contatos já passaram por este bloco, módulo o
+ * número de caminhos. Sob pg_advisory_xact_lock da campanha+bloco, com o
+ * evento 'bloco' {saida: "caminho:<i>"} gravado na mesma transação: duas
+ * rodadas (ou a rodada e o webhook) não pegam a mesma vez. A execução que já
+ * passou aqui (a rodada caiu depois do evento) segue pelo caminho gravado e
+ * não conta de novo.
+ */
+export async function executarAlternar(e: Execucao, id: string, b: Extract<BlocoCampanha, { tipo: "alternar" }>): Promise<Passo> {
+  const total = b.saidas.length;
+  if (!total) return segue(null);
+  const vez = await sql.begin(async (tx: typeof sql) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`alternar|${e.campanha_id}|${id}`}::text))`;
+    const doBloco = () => tx`campanha_id = ${e.campanha_id}::uuid AND tipo = 'bloco' AND detalhe->>'bloco' = ${id}`;
+    const [antes] = (await tx`
+      SELECT detalhe->>'saida' AS saida FROM campanha_whatsapp_eventos
+       WHERE ${doBloco()} AND execucao_id = ${e.id}::uuid LIMIT 1`) as unknown as Array<{ saida: string | null }>;
+    const gravada = Number(/^caminho:(\d+)$/.exec(antes?.saida ?? "")?.[1] ?? NaN);
+    if (Number.isInteger(gravada)) return gravada % total;
+    const [{ n }] = (await tx`SELECT count(*)::int AS n FROM campanha_whatsapp_eventos WHERE ${doBloco()}`) as unknown as Array<{ n: number }>;
+    const i = n % total;
+    await tx`INSERT INTO campanha_whatsapp_eventos (campanha_id, execucao_id, tipo, detalhe)
+             VALUES (${e.campanha_id}::uuid, ${e.id}::uuid, 'bloco', ${sql.json({ bloco: id, tipo: b.tipo, saida: `caminho:${i}`, ok: true } as never)})`;
+    return i;
+  });
+  return segue(b.saidas[vez]);
 }

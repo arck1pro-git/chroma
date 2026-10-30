@@ -2,8 +2,8 @@
 // que cada resposta toma, a validação do grafo e a conversão do formato antigo;
 // e os envios e as consequências de lib/campanhas-fluxo-envios.ts. Desde
 // 2026-10-28, também os blocos Condição, Horário de envio, Enviar arquivo e
-// Permissão de passagem (validação, saídas, exigências e o filtro da IA).
-// Puro: sem banco, sem rede e sem .env.
+// Permissão de passagem (validação, saídas, exigências e o filtro da IA); desde
+// 2026-10-30, o Alternar. Puro: sem banco, sem rede e sem .env.
 //
 //   node scripts/jiti.mjs scripts/testar-campanhas-fluxo.ts
 import assert from "node:assert/strict";
@@ -348,5 +348,27 @@ caso("arquivo da campanha: imagem, PDF e vídeo, no formato e tamanho da Cloud A
 });
 caso("primeiro template passa pela condição (saída sim)", () =>
   assert.deepEqual(primeiroTemplate(fluxo({ c: condicao(tagSim, "envio", null), envio: envio(null) }, "c")), { template_nome: "convite", template_idioma: "pt_BR" }));
+
+// ── Alternar (2026-10-30) ───────────────────────────────────────────────────
+const alternar = (saidas: Array<string | null>): BlocoCampanha => ({ tipo: "alternar", saidas });
+caso("alternar: um caminho por saída (A, B, C…); ligar troca só o pedido", () => {
+  const a = alternar(["x", null, "z"]);
+  assert.deepEqual(saidasDe(a).map((s) => [s.id, s.rotulo, s.destino]), [["caminho:0", "Caminho A", "x"], ["caminho:1", "Caminho B", null], ["caminho:2", "Caminho C", "z"]]);
+  assert.deepEqual(ligar(a, "caminho:1", "y"), alternar(["x", "y", "z"]));
+  assert.equal(ligar(a, "caminho:3", "y"), a, "caminho que não existe não muda nada");
+  assert.equal(ligar(a, "proximo", "y"), a);
+});
+caso("alternar: de 2 a 10 caminhos, todos ligados; um template por caminho", () => {
+  const tres = fluxo({ alt: alternar(["e1", "e2", "e3"]), e1: envio(null), e2: envio(null), e3: envio(null) }, "alt");
+  assert.deepEqual(msgs(tres), [], "cada caminho alcança o seu template");
+  assert.deepEqual(primeiroTemplate(tres), { template_nome: "convite", template_idioma: "pt_BR" }, "o primeiro template vem do Caminho A");
+  const um = fluxo({ alt: alternar(["e1"]), e1: envio(null) }, "alt");
+  assert.deepEqual(msgs(um), [`O Alternar tem de ${LIMITES_FLUXO.caminhosMinimo} a ${LIMITES_FLUXO.caminhosMaximo} caminhos.`]);
+  const onze = Array.from({ length: 11 }, () => "e1");
+  assert.ok(msgs(fluxo({ alt: alternar(onze), e1: envio(null) }, "alt")).some((m) => /de 2 a 10 caminhos/.test(m)));
+  assert.deepEqual(msgs(fluxo({ alt: alternar(["e1", null]), e1: envio(null) }, "alt")), ["Ligue cada caminho do Alternar a um bloco."]);
+  assert.ok(msgs(fluxo({ envio: envio("alt"), alt: alternar(["envio", "envio"]) })).some((m) => /bloco anterior/.test(m)), "voltar por um caminho é laço");
+  assert.deepEqual(exigenciasDoFluxo(tres), [], "só Campanhas");
+});
 
 console.log(`\n${casos} casos passaram`);

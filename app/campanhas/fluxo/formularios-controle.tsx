@@ -3,12 +3,15 @@
 // Os formulários dos blocos de 2026-10-28 que decidem POR ONDE e QUANDO o
 // contato segue (pedido dele: "crie mais blocos"): Condição (tag, segmento,
 // etapa ou campo do contato; saídas Sim e Não), Horário de envio (dias e
-// faixa de horas, em Brasília) e Permissão de passagem (N contatos a cada
-// intervalo). O formato e os limites são do contrato (lib/campanhas-fluxo.ts:
-// RegraCondicao, LIMITES_FLUXO.passagem*); quem aponta valor fora do limite é
+// faixa de horas, em Brasília), Permissão de passagem (N contatos a cada
+// intervalo) e, desde 2026-10-30, Alternar (quantos caminhos em rodízio). O
+// formato e os limites são do contrato (lib/campanhas-fluxo.ts: RegraCondicao,
+// LIMITES_FLUXO.passagem* e caminhos*); quem aponta valor fora do limite é
 // a validação, como nos outros blocos. Fora de ./painel-bloco.tsx para ele não
 // passar de 300 linhas.
-import type { BlocoCampanha, RegraCondicao } from "@/lib/campanhas-fluxo";
+import { LIMITES_FLUXO, type BlocoCampanha, type RegraCondicao } from "@/lib/campanhas-fluxo";
+import { BotaoIcone } from "@/app/components/gaveta";
+import { Minus, Plus } from "@/app/components/icones";
 import { campoAds } from "../pecas";
 import { Ajuda, Alternar, Campo, Escolha, FunilEEtapa, Grupo, Numero, QuantidadeComUnidade, UNIDADES_EM_SEGUNDOS } from "./campos";
 import type { OpcoesFluxo } from "./grafo";
@@ -146,6 +149,31 @@ export function FormularioPassagem({ bloco: b, mudar }: { bloco: Bloco<"limitar_
         <QuantidadeComUnidade rotulo="Intervalo" valor={b.janela_segundos} unidades={UNIDADES_EM_SEGUNDOS} mudar={(janela_segundos) => mudar({ ...b, janela_segundos })} />
       </p>
       <Ajuda>O motor confere a cada minuto.</Ajuda>
+    </div>
+  );
+}
+
+/** Quantos caminhos: mais um no fim, ou tira o último (as ligações de cada um ficam em "Para onde vai"). */
+export function FormularioAlternar({ bloco: b, mudar }: { bloco: Bloco<"alternar">; mudar: (b: BlocoCampanha) => void }) {
+  const n = b.saidas.length;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1 text-[13px] text-zinc-700 dark:text-zinc-200">
+        <BotaoIcone
+          Icone={Minus}
+          rotulo="Tirar o último caminho"
+          disabled={n <= LIMITES_FLUXO.caminhosMinimo}
+          onClick={() => mudar({ ...b, saidas: b.saidas.slice(0, -1) })}
+        />
+        <span className="min-w-20 text-center tabular-nums">{n} caminhos</span>
+        <BotaoIcone
+          Icone={Plus}
+          rotulo="Mais um caminho"
+          disabled={n >= LIMITES_FLUXO.caminhosMaximo}
+          onClick={() => mudar({ ...b, saidas: [...b.saidas, null] })}
+        />
+      </div>
+      <Ajuda>Um contato para cada caminho, na ordem de chegada: A, B, C… e de novo A. Ligue um template em cada um.</Ajuda>
     </div>
   );
 }

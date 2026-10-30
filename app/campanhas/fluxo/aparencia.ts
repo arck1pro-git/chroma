@@ -18,6 +18,7 @@ import {
   MessageCircleReply,
   MessageSquareText,
   Paperclip,
+  Shuffle,
   Tag,
   Timer,
   Trophy,
@@ -41,6 +42,7 @@ export const ICONE_DO_BLOCO: Record<TipoBloco, TipoIcone> = {
   horario: Clock,
   condicao: GitBranch,
   limitar_passagem: Funnel,
+  alternar: Shuffle,
 };
 
 /**
@@ -57,6 +59,7 @@ export const ROTULO_CURTO: Record<TipoBloco, string> = {
   horario: "Horário",
   condicao: "Condição",
   limitar_passagem: "Passagem",
+  alternar: "Alternar",
   mudar_tag: "Tag",
   mudar_segmento: "Segmento",
   criar_oportunidade: "Criar oportunidade",

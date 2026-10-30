@@ -25,7 +25,7 @@ Blocos: Enviar template, Aguardar resposta, Enviar texto (só depois de uma
 resposta: a janela de 24 horas), Esperar, Tag, Segmento, Criar oportunidade,
 Mover oportunidade, Registrar conversão, Avisar a equipe e Passar para a IA. Desde
 2026-10-28 também Enviar arquivo, Horário de envio, Condição e Permissão de
-passagem (ver "Os blocos de controle e o arquivo").
+passagem, e desde 2026-10-30 o Alternar (ver "Os blocos de controle e o arquivo").
 Sem laço: nenhum caminho volta a um bloco anterior; "reenviar até responder" se
 monta em sequência. Até 60 blocos, e até 25 imediatos seguidos por rodada.
 
@@ -55,6 +55,7 @@ prazo e os eventos que o motor já tinha (`lib/campanhas-whatsapp-controle.ts` e
 | Condição | pergunta sobre o contato na hora em que ele chega: tem a tag, está no segmento, a oportunidade aberta mais recente dele no funil está na etapa, ou um campo personalizado do contato (`contatos.campos`) está preenchido, é igual ou contém o valor (sem acento e sem maiúscula). Duas saídas, `sim` e `nao` | imediato; evento `bloco` com `saida` `sim` ou `nao` (as métricas contam cada caminho) |
 | Horário de envio | só deixa passar nos dias (0 = domingo … 6 = sábado) e entre `das` e `ate` (HH:MM, fuso de Brasília). Fora, espera a próxima abertura, inclusive na virada da semana | dentro: `bloco` com `saida`; fora: `bloco` sem saída na chegada, `em_andamento` com `prazo_resposta` = a abertura. Ao vencer confere de novo: uma pausa longa não solta ninguém de madrugada |
 | Permissão de passagem | deixa passar `quantidade` contatos a cada `janela_segundos` (1 s a 30 dias), por campanha e bloco. Quem excede espera a vez, na ordem de chegada | com vaga: evento `passagem` {bloco} e `bloco` com `saida`; cheia: `bloco` sem saída na chegada, `em_andamento` com `prazo_resposta` = quando a vaga abre |
+| Alternar (2026-10-30) | reveza os contatos entre 2 e 10 caminhos (`saidas`), na ordem de chegada: o 1º vai pelo Caminho A, o 2º pelo B… e volta ao A. Uso típico: variar os templates de uma campanha, um Enviar template por caminho. Todo caminho tem de estar ligado | imediato; evento `bloco` com `saida` `caminho:<i>`, gravado sob `pg_advisory_xact_lock` da campanha+bloco junto da contagem (duas rodadas não pegam a mesma vez). A execução que já passou segue pelo caminho gravado, sem contar de novo |
 | Enviar arquivo | imagem JPG ou PNG até 5 MB, vídeo MP4 ou 3GPP até 16 MB ou PDF até 100 MB, da biblioteca de Documentos (as regras da Cloud API, as mesmas do cabeçalho de mídia: `problemaDoArquivoDaCampanha`), com legenda opcional (as marcas do contato valem). Só com a janela de 24 h aberta, como o texto livre | `enviando` antes e `bloco` depois (com o `wamid`); não saiu, fica registrado e o contato segue |
 
 **A vazão da Permissão de passagem.** A janela é deslizante: conta as passagens
@@ -93,8 +94,8 @@ do contato); o arquivo existente, não arquivado e imagem, PDF ou vídeo, e só
 depois de uma resposta. Quem salva ou ativa um fluxo com Enviar arquivo precisa
 ver o módulo Documentos; a Condição não pede nada além de Campanhas.
 
-**A IA de atendimento calada** segue as duas saídas da Condição (basta uma
-falar), conta o Enviar arquivo como mensagem e trata Horário e Permissão como
+**A IA de atendimento calada** segue as duas saídas da Condição e todos os
+caminhos do Alternar (basta um falar), conta o Enviar arquivo como mensagem e trata Horário e Permissão como
 passagem, não como espera.
 
 **Opções** (`lerOpcoesDaCampanha`): `documentos` (id, nome e tipo `imagem`,

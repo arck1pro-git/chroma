@@ -20,7 +20,7 @@ import { Plus, X } from "@/app/components/icones";
 import { campoAds } from "../pecas";
 import { Ajuda, Alternar, Campo, CampoDuracao, Escolha, FunilEEtapa, Grupo } from "./campos";
 import EditorTemplate from "./editor-template";
-import { FormularioCondicao, FormularioHorario, FormularioPassagem } from "./formularios-controle";
+import { FormularioAlternar, FormularioCondicao, FormularioHorario, FormularioPassagem } from "./formularios-controle";
 import { fechaLaco, rotuloDoBloco, type MetricasFluxo, type OpcoesFluxo } from "./grafo";
 
 type Props = {
@@ -129,6 +129,9 @@ function Configuracao({ id, bloco: b, templates, opcoes: o, mudar }: Props) {
 
     case "limitar_passagem":
       return <FormularioPassagem key={id} bloco={b} mudar={mudar} />;
+
+    case "alternar":
+      return <FormularioAlternar bloco={b} mudar={mudar} />;
 
     case "mudar_tag":
       return (
@@ -281,7 +284,7 @@ function TextoComMarcas({
 function Saidas({ id, bloco, fluxo, opcoes, metricas, ligar }: Props) {
   const outros = Object.entries(fluxo.blocos).filter(([outro]) => outro !== id);
   const voltaria = new Set(outros.filter(([outro]) => fechaLaco(fluxo, id, outro)).map(([outro]) => outro));
-  const varias = bloco.tipo === "aguardar_resposta" || bloco.tipo === "condicao";
+  const varias = bloco.tipo === "aguardar_resposta" || bloco.tipo === "condicao" || bloco.tipo === "alternar";
   return (
     <Grupo
       rotulo={bloco.tipo === "aguardar_resposta" ? "Para onde vai cada resposta" : varias ? "Para onde vai" : "Depois"}
