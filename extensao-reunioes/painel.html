@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="painel.css">
 </head>
 <body>
-  <header class="topo">
+  <header id="topo" class="topo">
     <div class="marca">
       <span class="marca-icone" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
@@ -25,6 +25,25 @@
       </button>
     </div>
   </header>
+
+  <!-- A sugestão nova, por cima de tudo: some sozinha, no ✕ ou no Esc -->
+  <div id="sugestao" class="pop" role="status" aria-live="polite" hidden>
+    <div class="pop-cabeca">
+      <span class="pop-rotulo">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4Z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8Z"/></svg>
+        Sugestão
+      </span>
+      <span id="pop-objecao" class="pop-chip" hidden></span>
+      <button id="pop-fechar" class="pop-fechar" aria-label="Fechar a sugestão" title="Fechar (Esc)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <p id="pop-frase" class="pop-frase" hidden></p>
+    <p id="pop-principal" class="pop-principal"></p>
+    <ul id="pop-mais" class="pop-mais"></ul>
+    <p id="pop-proximo" class="pop-proximo" hidden></p>
+    <span class="pop-tempo" aria-hidden="true"><span id="pop-barra"></span></span>
+  </div>
 
   <section id="desconectado" class="cartao alerta" hidden>
     <p id="desconectado-motivo"></p>
@@ -63,17 +82,11 @@
 
   <!-- 2. Gravar -->
   <section id="gravar" class="cartao" hidden>
-    <p id="dica-aba" class="dica" hidden>
-      Abra a reunião no Meet ou no Zoom e clique no ícone da extensão (<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>).
-    </p>
-    <button id="consentimento" class="interruptor" type="button" role="switch" aria-checked="false">
-      <span class="trilho" aria-hidden="true"><span class="bolinha"></span></span>
-      <span>Avisei os participantes que a reunião será gravada e transcrita</span>
-    </button>
-    <button id="comecar" class="botao gravar" disabled>
+    <button id="comecar" class="botao gravar">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" class="cheio"/></svg>
       Gravar
     </button>
+    <p class="dica">Grava a aba da reunião do Meet ou do Zoom. Avise os participantes que a reunião será gravada.</p>
     <p id="microfone" class="dica" hidden>
       O microfone não está liberado: só a voz do lead será transcrita.
       <button id="liberar-mic" class="link" type="button">Liberar o microfone</button>
@@ -110,7 +123,7 @@
       <span id="ao-vivo" class="pilula vivo" hidden>ao vivo</span>
     </div>
     <ol id="falas" class="falas"></ol>
-    <p id="ouvindo" class="vazio" hidden>Ouvindo… o que for dito aparece aqui em alguns segundos.</p>
+    <p id="ouvindo" class="vazio" hidden>Ouvindo… cada frase aparece aqui logo depois de dita.</p>
   </section>
 
   <!-- No fim -->

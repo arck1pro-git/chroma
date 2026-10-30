@@ -55,7 +55,9 @@ export type FichaLead = {
 // O link do Meet só é conferido nas reuniões perto de agora: cada uma é uma
 // leitura no Google, e a janela cobre quem atrasou e quem entrou antes.
 const JANELA_MS = 3 * 60 * 60 * 1000;
-const CODIGO_MEET = /^https:\/\/meet\.google\.com\/([a-z]{3}-[a-z]{4}-[a-z]{3})(?:[/?#]|$)/i;
+// A sala aberta vem como /abc-defg-hij ou, desde que o Meet passou a redirecionar
+// (visto em 2026-10-30), /meet/abc-defg-hij; o link do evento no Google, no antigo.
+const CODIGO_MEET = /^https:\/\/meet\.google\.com\/(?:meet\/)?([a-z]{3}-[a-z]{4}-[a-z]{3})(?:[/?#]|$)/i;
 
 // Campos do formulário que não dizem nada do lead (UTM, ids da Meta, cliques).
 const CAMPO_TECNICO = /^(utm_|campaign|adset|ad_|ad$|fbclid|gclid|_fb|form_?(id|name)?$|(lead|leadgen)_?id$|platform$|is_organic$|created_time$|page_?(id|name)$|instagram_|id_origem|responsavel_origem)/i;

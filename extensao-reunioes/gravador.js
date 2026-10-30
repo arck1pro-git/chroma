@@ -6,14 +6,19 @@
 //   · A reunião inteira (aba + microfone misturados) vai para um arquivo que só
 //     existe na memória deste computador: no fim, a pessoa escolhe no painel
 //     entre Baixar (o service worker salva em Downloads) e Descartar.
-//   · A cada TRECHO_MS fecha um trecho de cada fonte e o manda ao CRM para
-//     transcrever (/api/reunioes/assistente/trecho). Trecho em silêncio não sai:
-//     economiza a chamada e evita as frases que o Whisper inventa no silêncio.
+//   · Cada fonte é cortada em trechos que vão ao CRM para transcrever
+//     (/api/reunioes/assistente/trecho). Desde 2026-10-30 (pedido dele de menos
+//     latência) o corte é na PAUSA da fala: depois de TRECHO_MIN_MS, a primeira
+//     pausa de PAUSA_MS fecha o trecho, e TRECHO_MAX_MS fecha de qualquer jeito.
+//     A frase aparece ~1 s depois de dita, em vez de esperar o fim de um bloco
+//     fixo de 15 s, e o corte não cai no meio da palavra. Trecho em silêncio não
+//     sai: economiza a chamada e evita as frases que o Whisper inventa no silêncio.
 //   · Depois de uma fala NOVA do lead, pede a análise ao copiloto
 //     (/api/reunioes/assistente/analise), no máximo a cada ANALISE_MS: a fala que
 //     cai dentro da espera fica agendada para o fim dela. "Analisar agora" pula a
 //     espera. Recusa de freio (429) ou erro do CRM dobra a espera, até 5 min: a
-//     Groq e a Anthropic são as mesmas do atendimento de WhatsApp.
+//     Groq e a Anthropic são as mesmas do atendimento de WhatsApp. Os tetos das
+//     rotas (lib/reunioes-extensao.ts) acompanham estes tempos.
 //   · SILENCIO_MAXIMO sem som da reunião (no Meet e no Zoom, sair da chamada não
 //     muda a URL, e o microfone seguiria gravando a sala): o painel pergunta se
 //     a reunião continua; sem resposta em PRAZO_RESPOSTA, para. Para também com
@@ -26,8 +31,12 @@
 // e o painel), nunca ao content script da página da reunião.
 import { CRMS } from "./comum.js";
 
-const TRECHO_MS = 15_000;
-const ANALISE_MS = 60_000;
+const TRECHO_MIN_MS = 4_000;
+const TRECHO_MAX_MS = 12_000;
+const PAUSA_MS = 700;
+// De quanto em quanto tempo o volume é medido (fala ou pausa).
+const MEDIDA_MS = 100;
+const ANALISE_MS = 20_000;
 const ESPERA_MAXIMA_MS = 5 * 60_000;
 const DURACAO_MAXIMA_MS = 3 * 60 * 60_000;
 const SILENCIO_MAXIMO_MS = 15 * 60_000;
@@ -68,16 +77,19 @@ async function iniciar({ streamId, sala, crm, leadId }) {
   if (r && !r.encerrada) throw new Error("Já há uma gravação em andamento.");
   if (!Object.values(CRMS).includes(crm)) throw new Error("Endereço do CRM fora da lista.");
   if (r?.url) URL.revokeObjectURL(r.url);
-  const aba = await navigator.mediaDevices.getUserMedia({
-    audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } },
-  });
-  let mic = null;
-  let aviso = null;
-  try {
-    mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  } catch {
-    aviso = "Sem o microfone: só a fala do lead será transcrita. Use “Liberar microfone” no painel e grave de novo.";
+  // A aba e o microfone abrem juntos: começar espera o mais lento, não a soma.
+  const [daAbaPedido, doMicPedido] = await Promise.allSettled([
+    navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId } } }),
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }),
+  ]);
+  const mic = doMicPedido.status === "fulfilled" ? doMicPedido.value : null;
+  if (daAbaPedido.status === "rejected") {
+    // Sem a aba não há gravação: o microfone que abriu é solto na hora.
+    mic?.getTracks().forEach((t) => t.stop());
+    throw daAbaPedido.reason;
   }
+  const aba = daAbaPedido.value;
+  const aviso = mic ? null : "Sem o microfone: só a fala do lead será transcrita. Use “Liberar microfone” no painel e grave de novo.";
 
   const ctx = new AudioContext();
   const daAba = ctx.createMediaStreamSource(aba);
@@ -100,6 +112,8 @@ async function iniciar({ streamId, sala, crm, leadId }) {
     // A reunião anexada no painel antes de gravar (2026-10-30); sem ela, identificar() procura.
     leadId: typeof leadId === "string" && leadId ? leadId : null,
     ultimaAnalise: 0, esperaAnalise: ANALISE_MS, novasDoLead: 0, analisando: false, agendada: null,
+    // Trechos de cada fonte esperando o texto: o painel mostra os "…" no lado de quem falou.
+    transcrevendo: { lead: 0, voce: 0 },
     encerrada: false, cortes: [], pendentes: new Set(), url: null,
     ultimoSomDaAba: Date.now(), perguntouEm: null,
     limite: setTimeout(pedirParada, DURACAO_MAXIMA_MS),
@@ -140,9 +154,9 @@ function continuar() {
 }
 
 /**
- * Fecha um trecho de `fluxo` a cada TRECHO_MS e o manda transcrever, se não for
- * silêncio. `parar()` devolve uma promessa que resolve quando o último trecho
- * foi entregue.
+ * Corta `fluxo` em trechos e manda transcrever os que não são silêncio: fecha na
+ * primeira pausa depois de TRECHO_MIN_MS de trecho com fala, ou em TRECHO_MAX_MS.
+ * `parar()` devolve uma promessa que resolve quando o último trecho foi entregue.
  */
 function cortar(fluxo, fonte, fala) {
   const medidor = r.ctx.createAnalyser();
@@ -151,16 +165,9 @@ function cortar(fluxo, fonte, fala) {
   const amostra = new Float32Array(medidor.fftSize);
   let atual = null;
 
-  const medir = setInterval(() => {
-    if (!atual) return;
-    medidor.getFloatTimeDomainData(amostra);
-    let soma = 0;
-    for (const v of amostra) soma += v * v;
-    atual.nivel = Math.max(atual.nivel, Math.sqrt(soma / amostra.length));
-  }, 200);
-
   const novo = () => {
-    const trecho = { nivel: 0, partes: [], em: Date.now(), gravador: new MediaRecorder(fluxo, { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 32_000 }) };
+    // ultimaVoz: a última medida acima do silêncio (0 = ninguém falou ainda neste trecho).
+    const trecho = { nivel: 0, ultimaVoz: 0, partes: [], em: Date.now(), gravador: new MediaRecorder(fluxo, { mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 32_000 }) };
     trecho.entregue = new Promise((pronto) => {
       trecho.gravador.onstop = () => {
         if (trecho.nivel >= SILENCIO) {
@@ -182,35 +189,57 @@ function cortar(fluxo, fonte, fala) {
   };
 
   novo();
-  const ciclo = setInterval(() => {
-    fechar();
-    novo();
-  }, TRECHO_MS);
+  // Cada medida diz se é fala ou pausa; a pausa depois de fala fecha o trecho.
+  const medir = setInterval(() => {
+    medidor.getFloatTimeDomainData(amostra);
+    let soma = 0;
+    for (const v of amostra) soma += v * v;
+    const nivel = Math.sqrt(soma / amostra.length);
+    const agora = Date.now();
+    if (nivel >= SILENCIO) {
+      atual.nivel = Math.max(atual.nivel, nivel);
+      atual.ultimaVoz = agora;
+    }
+    const idade = agora - atual.em;
+    const pausou = atual.ultimaVoz > 0 && agora - atual.ultimaVoz >= PAUSA_MS;
+    if (idade >= TRECHO_MAX_MS || (idade >= TRECHO_MIN_MS && pausou)) {
+      fechar();
+      novo();
+    }
+  }, MEDIDA_MS);
   return {
     parar() {
-      clearInterval(ciclo);
       clearInterval(medir);
       return fechar();
     },
   };
 }
 
+const fontesTranscrevendo = () => Object.keys(r.transcrevendo).filter((f) => r.transcrevendo[f] > 0);
+
 function transcrever(audio, fala, em) {
   const corpo = new FormData();
   corpo.append("audio", audio, "trecho.webm");
+  r.transcrevendo[fala]++;
+  emitir({ transcrevendo: fontesTranscrevendo() });
   const tarefa = chamar("/api/reunioes/assistente/trecho", { method: "POST", body: corpo })
     .then(({ texto }) => {
-      if (!texto) return;
+      if (!texto) return {};
       r.falas.push({ fala, texto, em });
       // Os trechos voltam fora de ordem (cada um é uma chamada): vale a hora em que começou.
       r.falas.sort((a, b) => a.em - b.em);
-      emitir({ falas: r.falas });
-      if (fala === "lead" && !r.encerrada) {
+      return { falas: r.falas };
+    })
+    .catch((e) => ({ erro: e.message }))
+    .then((parcial) => {
+      // A fala e o fim dos "…" chegam ao painel juntos, numa escrita só.
+      r.transcrevendo[fala]--;
+      emitir({ ...parcial, transcrevendo: fontesTranscrevendo() });
+      if (parcial.falas && fala === "lead" && !r.encerrada) {
         r.novasDoLead++;
         analisar(false);
       }
     })
-    .catch((e) => emitir({ erro: e.message }))
     .finally(() => r.pendentes.delete(tarefa));
   r.pendentes.add(tarefa);
 }

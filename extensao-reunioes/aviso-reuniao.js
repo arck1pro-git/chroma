@@ -6,7 +6,7 @@
   // Só dentro de uma sala (o mesmo teste de ehReuniao, em comum.js): a página
   // inicial do Meet não é reunião.
   const sala =
-    /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/i.test(location.href) ||
+    /^https:\/\/meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/i.test(location.href) ||
     /^https:\/\/([a-z0-9-]+\.)?zoom\.us\/wc\//i.test(location.href);
   if (!sala || window.top !== window || document.getElementById("amaanoffice-reunioes-aviso")) return;
   chrome.runtime.sendMessage({ alvo: "sw", tipo: "reuniao-aberta" }).catch(() => {});
@@ -23,7 +23,7 @@
     button { border: 0; background: transparent; color: #a1a1aa; font: inherit; cursor: pointer; padding: 0; }`;
   const aviso = document.createElement("div");
   const textoDoAviso = document.createElement("span");
-  textoDoAviso.textContent = "AmaanOffice: para gravar e receber sugestões, clique no ícone da extensão (Alt+Shift+G) e confirme no painel.";
+  textoDoAviso.textContent = "AmaanOffice: para gravar e receber sugestões, clique no ícone da extensão (Alt+Shift+G) e em Gravar no painel.";
   const fechar = document.createElement("button");
   fechar.textContent = "✕";
   fechar.title = "Fechar";

@@ -4,7 +4,7 @@ import { lerCorpoJson, pedidoDaExtensao, responder } from "@/lib/reunioes-extens
 import { fichaVisivel } from "@/lib/reunioes-lead";
 
 // O copiloto da reunião (lib/ia/reuniao.ts): a extensão manda as falas mais
-// recentes e recebe perfil do lead, objeção e condução. Sem lead, a análise roda
+// recentes e recebe a objeção e a condução. Sem lead, a análise roda
 // só com a transcrição. Com lead, a ficha é lida no servidor pelo id, com o que
 // o acesso da pessoa deixa ver (lib/reunioes-lead.ts).
 

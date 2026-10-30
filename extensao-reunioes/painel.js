@@ -13,6 +13,14 @@
 //     produção (o "local" segue em storage.session, para quem desenvolve).
 //   · durante a reunião, a transcrição em balões (lead à esquerda, você à
 //     direita), com a condução compacta em cima quando há objeção.
+//   · o Gravar grava direto (ainda em 2026-10-30): sem o interruptor "avisei os
+//     participantes" e sem exigir o clique no ícone antes; o service worker acha
+//     a aba da reunião na janela.
+//   · a sugestão nova aparece num card por cima de tudo (ainda em 2026-10-30:
+//     "popup com brilho azul ao redor, fundo preto e letra branca"), ver
+//     abrirSugestao. A transcrição só acrescenta a fala nova, em vez de
+//     redesenhar a lista a cada mudança, e mostra "…" do lado de quem acabou de
+//     falar enquanto o trecho é transcrito.
 import { CRMS, descobrirCrm, enderecoDoCrm } from "./comum.js";
 
 const $ = (id) => document.getElementById(id);
@@ -21,9 +29,7 @@ let trocando = false;
 let conectado = false;
 // A reunião clicada, esperando o "Anexar": o clique sozinho não troca o lead da gravação.
 let pendente = null;
-// A confirmação "avisei os participantes", só desta tela: volta a desligada depois de gravar.
-let consentimento = false;
-// Os pedidos do painel em andamento ("gerar", "salvar", "reunioes"): o botão não religa no meio.
+// Os pedidos do painel em andamento ("comecar", "gerar", "salvar", "reunioes"): o botão não religa no meio.
 const emAndamento = new Set();
 // De que sala a lista já foi buscada: busca de novo só quando a aba de reunião muda.
 let listaDaSala = null;
@@ -174,6 +180,66 @@ async function anexarLead(lead) {
   }
 }
 
+// ── O card de sugestão ──────────────────────────────────────────────────────
+// Análise nova com o que fazer abre o card por cima de tudo. Ele some sozinho
+// quando a barra de baixo esvazia (o mouse em cima segura), no ✕ ou no Esc, e a
+// mesma análise segue no cartão Condução. Análise igual à anterior não reabre,
+// salvo depois do "Analisar agora". Fica no painel e nunca na página da
+// reunião: quem compartilha só a aba do Meet não mostra a sugestão ao lead.
+let analiseVista = null; // o analiseEm da última análise já tratada
+let assinaturaVista = "";
+let popupAberto = false;
+let pediuAgora = false;
+
+const assinatura = (a) => JSON.stringify([a?.objecao?.tipo ?? "", a?.conducao ?? []]);
+const temSugestao = (a) => Boolean(a?.conducao?.length || a?.objecao);
+
+function abrirSugestao(a) {
+  $("pop-objecao").textContent = a.objecao?.tipo ? `Objeção · ${a.objecao.tipo}` : "";
+  mostrar("pop-objecao", Boolean(a.objecao?.tipo));
+  $("pop-frase").textContent = a.objecao?.frase ? `“${a.objecao.frase}”` : "";
+  mostrar("pop-frase", Boolean(a.objecao?.frase));
+  const [principal, ...mais] = a.conducao ?? [];
+  $("pop-principal").textContent = principal ?? a.objecao?.porTras ?? "";
+  $("pop-mais").replaceChildren(...mais.map((t) => elemento("li", t)));
+  $("pop-proximo").replaceChildren(...(a.proximoPasso ? [elemento("b", "Próximo passo: "), a.proximoPasso] : []));
+  mostrar("pop-proximo", Boolean(a.proximoPasso));
+
+  const pop = $("sugestao");
+  // Já aberto: o card renova o brilho em vez de entrar de novo.
+  pop.classList.remove("renovada");
+  if (popupAberto) {
+    void pop.offsetWidth;
+    pop.classList.add("renovada");
+  }
+  // A barra recomeça a esvaziar: a sugestão nova ganha o tempo inteiro.
+  const barra = $("pop-barra");
+  barra.style.animation = "none";
+  void barra.offsetWidth;
+  barra.style.animation = "";
+  popupAberto = true;
+  mostrar("sugestao", true);
+  desenharConducao(atual);
+}
+
+function fecharSugestao() {
+  if (!popupAberto) return;
+  popupAberto = false;
+  mostrar("sugestao", false);
+  desenharConducao(atual);
+}
+
+/** Uma análise que o painel ainda não tratou: abre o card se ela traz algo novo a fazer. */
+function conferirSugestao(r) {
+  if (popupAberto && r.status !== "gravando") fecharSugestao();
+  if (!r.analiseEm || r.analiseEm === analiseVista) return;
+  analiseVista = r.analiseEm;
+  const nova = assinatura(r.analise) !== assinaturaVista;
+  assinaturaVista = assinatura(r.analise);
+  if (r.status === "gravando" && temSugestao(r.analise) && (nova || pediuAgora)) abrirSugestao(r.analise);
+  pediuAgora = false;
+}
+
 // ── Desenho ─────────────────────────────────────────────────────────────────
 
 function desenharStatus(r) {
@@ -209,50 +275,82 @@ function desenharReuniao(r) {
 function desenharGravar(r) {
   const antes = r.status === "parada" || r.status === "pronta";
   mostrar("gravar", conectado && antes && !(r.status === "pronta" && r.esperandoClique));
-  mostrar("dica-aba", r.status === "parada");
-  const consente = $("consentimento");
-  consente.setAttribute("aria-checked", String(consentimento));
-  consente.disabled = r.status !== "pronta";
-  $("comecar").disabled = r.status !== "pronta" || !consentimento;
+  $("comecar").disabled = emAndamento.has("comecar");
 }
 
 function desenharConducao(r) {
   const gravando = r.status === "gravando";
   const a = r.analise;
   mostrar("conducao", gravando || (r.status === "encerrada" && Boolean(a)));
-  mostrar("objecao", Boolean(a?.objecao));
-  $("objecao-tipo").textContent = a?.objecao?.tipo ?? "";
-  $("objecao-frase").textContent = a?.objecao?.frase ? `“${a.objecao.frase}”` : "";
-  $("objecao-portras").textContent = a?.objecao?.porTras ? `Por trás: ${a.objecao.porTras}` : "";
-  $("sugestoes").replaceChildren(...(a?.conducao ?? []).map((t) => elemento("li", t)));
-  $("proximo").textContent = a?.proximoPasso ? `Próximo passo: ${a.proximoPasso}` : "";
-  mostrar("proximo", Boolean(a?.proximoPasso));
+  // Com o card aberto, o cartão não repete a mesma sugestão embaixo dele.
+  const noCartao = popupAberto ? null : a;
+  mostrar("objecao", Boolean(noCartao?.objecao));
+  $("objecao-tipo").textContent = noCartao?.objecao?.tipo ?? "";
+  $("objecao-frase").textContent = noCartao?.objecao?.frase ? `“${noCartao.objecao.frase}”` : "";
+  $("objecao-portras").textContent = noCartao?.objecao?.porTras ? `Por trás: ${noCartao.objecao.porTras}` : "";
+  $("sugestoes").replaceChildren(...(noCartao?.conducao ?? []).map((t) => elemento("li", t)));
+  $("proximo").textContent = noCartao?.proximoPasso ? `Próximo passo: ${noCartao.proximoPasso}` : "";
+  mostrar("proximo", Boolean(noCartao?.proximoPasso));
+  const hora = r.analiseEm ? new Date(r.analiseEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
   $("analise-quando").textContent = r.analisando
     ? "Analisando…"
-    : r.analiseEm
-      ? `Atualizado às ${new Date(r.analiseEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
-      : gravando
-        ? "As sugestões aparecem quando o lead falar."
-        : "";
+    : popupAberto
+      ? `Sugestão das ${hora} aberta acima.`
+      : r.analiseEm
+        ? `Atualizado às ${hora}`
+        : gravando
+          ? "As sugestões aparecem quando o lead falar."
+          : "";
   $("sugerir").disabled = !gravando || r.analisando || !r.falas?.length;
   mostrar("sugerir", gravando);
 }
 
+// As falas já na tela, pela chave (hora do trecho + quem falou): a fala nova
+// entra no fim sem redesenhar a lista. Trecho que voltou fora de ordem, ou a
+// lista que mudou de outro jeito, redesenha tudo.
+let falasNaTela = [];
+const chaveDaFala = (f) => `${f.em}:${f.fala}`;
+const lado = (fala) => (fala === "lead" ? "lead" : "voce");
+
+/** Um balão. `anterior` é quem falou antes: a mesma pessoa seguida junta os balões. */
+function balao(quem, anterior, classe, conteudo) {
+  const li = elemento("li", "", `fala ${quem}${anterior === quem ? " continua" : ""}${classe ? ` ${classe}` : ""}`);
+  li.append(elemento("span", quem === "lead" ? "Lead" : "Você", "quem"), conteudo);
+  return li;
+}
+
+function digitando(quem, anterior) {
+  const pontos = elemento("span", "", "texto");
+  pontos.append(elemento("i", "", "ponto"), elemento("i", "", "ponto"), elemento("i", "", "ponto"));
+  const li = balao(quem, anterior, "digitando", pontos);
+  li.setAttribute("aria-label", quem === "lead" ? "Transcrevendo a fala do lead" : "Transcrevendo a sua fala");
+  return li;
+}
+
 function desenharTranscricao(r) {
   const gravando = r.status === "gravando" || r.status === "comecando";
-  const falas = r.falas ?? [];
+  const falas = (r.falas ?? []).slice(-200);
+  const pendentes = r.status === "gravando" ? r.transcrevendo ?? [] : [];
   mostrar("transcricao", gravando || (r.status === "encerrada" && falas.length > 0));
   mostrar("ao-vivo", r.status === "gravando");
-  mostrar("ouvindo", gravando && falas.length === 0);
+  mostrar("ouvindo", gravando && falas.length === 0 && pendentes.length === 0);
   const ol = $("falas");
   const estavaNoFim = ol.scrollTop + ol.clientHeight >= ol.scrollHeight - 12;
-  ol.replaceChildren(
-    ...falas.slice(-200).map((f) => {
-      const li = elemento("li", "", `fala ${f.fala === "lead" ? "lead" : "voce"}`);
-      li.append(elemento("span", f.fala === "lead" ? "Lead" : "Você", "quem"), elemento("span", f.texto, "texto"));
-      return li;
-    }),
-  );
+  ol.querySelectorAll(".digitando").forEach((li) => li.remove());
+  const chaves = falas.map(chaveDaFala);
+  const soAcrescentou = falasNaTela.length <= chaves.length && falasNaTela.every((c, i) => c === chaves[i]);
+  // Só a fala que chegou agora entra animada; a lista redesenhada, não.
+  const animar = soAcrescentou && falasNaTela.length > 0;
+  if (!soAcrescentou) ol.replaceChildren();
+  for (let i = soAcrescentou ? falasNaTela.length : 0; i < falas.length; i++) {
+    ol.append(balao(lado(falas[i].fala), falas[i - 1] && lado(falas[i - 1].fala), animar ? "nova" : "", elemento("span", falas[i].texto, "texto")));
+  }
+  falasNaTela = chaves;
+  let anterior = falas.length ? lado(falas.at(-1).fala) : null;
+  for (const quem of pendentes) {
+    ol.append(digitando(lado(quem), anterior));
+    anterior = lado(quem);
+  }
   if (estavaNoFim) ol.scrollTop = ol.scrollHeight;
 }
 
@@ -272,6 +370,8 @@ function desenharFim(r) {
 function desenhar(r) {
   atual = r;
   desenharStatus(r);
+  // Gravando, o topo dá lugar ao relógio e ao Parar: a conexão já foi conferida para começar.
+  mostrar("conexao", conectado && r.status !== "gravando");
   mostrar("parar", r.status === "gravando");
   mostrar("lembrete", r.status === "gravando");
   $("erro").textContent = r.erro ?? "";
@@ -279,6 +379,7 @@ function desenhar(r) {
   $("aviso").textContent = r.aviso ?? "";
   mostrar("aviso", Boolean(r.aviso));
   mostrar("silencio", r.status === "gravando" && Boolean(r.silencioDesde));
+  conferirSugestao(r);
   desenharReuniao(r);
   desenharGravar(r);
   desenharConducao(r);
@@ -297,15 +398,11 @@ $("trocar").addEventListener("click", () => {
   if (!atual.candidatos) carregarReunioes(true);
 });
 
-$("consentimento").addEventListener("click", () => {
-  consentimento = !consentimento;
-  desenhar(atual);
-});
-
 $("comecar").addEventListener("click", async () => {
-  $("comecar").disabled = true;
-  await comando("comecar", { consentimentoEm: new Date().toISOString() });
-  consentimento = false;
+  emAndamento.add("comecar");
+  desenhar(atual);
+  await comando("comecar");
+  emAndamento.delete("comecar");
   desenhar(atual);
 });
 
@@ -316,8 +413,21 @@ $("parar").addEventListener("click", async () => {
 });
 
 $("sugerir").addEventListener("click", () => {
+  // Pedida agora: o card abre mesmo que a sugestão venha igual à anterior.
+  pediuAgora = true;
   chrome.runtime.sendMessage({ alvo: "gravador", tipo: "sugerir" }).catch(() => {});
 });
+
+$("pop-fechar").addEventListener("click", fecharSugestao);
+// A barra do card esvaziou (o mouse em cima a segura): o card sai.
+$("pop-barra").addEventListener("animationend", fecharSugestao);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") fecharSugestao();
+});
+// O card fica logo abaixo do topo, que muda de altura com o status e os botões.
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty("--topo-altura", `${Math.ceil($("topo").getBoundingClientRect().height) + 8}px`);
+}).observe($("topo"));
 
 $("continuar").addEventListener("click", () => {
   chrome.runtime.sendMessage({ alvo: "gravador", tipo: "continuar" }).catch(() => {});
@@ -420,7 +530,6 @@ async function conferirConexao(agora = false) {
   await chrome.storage.session.set({ crmAtivo: c.url });
   conectado = c.conectado;
   $("conexao").title = c.conectado ? `Conectado a ${new URL(c.url).host}` : "";
-  mostrar("conexao", c.conectado);
   $("desconectado-motivo").textContent = c.erro ?? "";
   mostrar("desconectado", !c.conectado);
   desenhar(atual);
@@ -457,6 +566,10 @@ setInterval(() => {
   if (!atual.lead && atual.candidatos?.length) desenharReuniao(atual);
 }, 60_000);
 
-desenhar((await chrome.storage.session.get("reuniao")).reuniao ?? { status: "parada" });
+const inicial = (await chrome.storage.session.get("reuniao")).reuniao ?? { status: "parada" };
+// A análise que já estava lá quando o painel abriu não vira card: ela segue no cartão Condução.
+analiseVista = inicial.analiseEm ?? null;
+assinaturaVista = assinatura(inicial.analise);
+desenhar(inicial);
 conferirMicrofone();
 conferirConexao(true);

@@ -5,7 +5,7 @@
 //
 // Confere o caminho de uma reunião:
 //   · o clique e o "pronta";
-//   · Começar só pelo painel e com o aviso confirmado;
+//   · Gravar só pelo painel, com ou sem o clique no ícone antes (2026-10-30);
 //   · o status "gravando" gravado pelo service worker;
 //   · o estado que o gravador não pode mexer;
 //   · a parada quando a aba sai da reunião;
@@ -26,7 +26,9 @@ function conferir(ok, texto, extra = "") {
 // ── O chrome falso ──────────────────────────────────────────────────────────
 const ouvintes = { clique: [], mensagem: [], removida: [], atualizada: [], download: [] };
 const sessao = new Map();
-const abas = new Map([[7, { id: 7, url: MEET }], [8, { id: 8, url: "https://exemplo.com/" }]]);
+const abas = new Map([[7, { id: 7, url: MEET }], [8, { id: 8, url: "https://exemplo.com/" }], [9, { id: 9, url: "https://meet.google.com/meet/abc-defg-hij?authuser=0" }]]);
+// A aba aberta da janela em foco: o site comum, com a reunião numa aba ao lado.
+const ABA_ATIVA = 8;
 const badges = [];
 const pedidosAoGravador = [];
 let documentos = 0;
@@ -93,6 +95,7 @@ globalThis.chrome = {
       if (!abas.has(id)) throw new Error("No tab with id");
       return { ...abas.get(id) };
     },
+    query: async ({ active } = {}) => [...abas.values()].filter((a) => !active || a.id === ABA_ATIVA).map((a) => ({ ...a })),
     onRemoved: ouvinte(ouvintes.removida),
     onUpdated: ouvinte(ouvintes.atualizada),
   },
@@ -129,26 +132,30 @@ await import("../extensao-reunioes/service-worker.js");
 // ── 1. O clique ─────────────────────────────────────────────────────────────
 let r = await clicar(8);
 conferir(r.status === "parada" && /Abra a reunião/.test(r.aviso ?? ""), "clique fora de reunião: parada, com o aviso");
+// O Meet redireciona a sala para /meet/abc-defg-hij desde 2026-10-30 (antes, o painel dizia "abra a reunião").
+r = await clicar(9);
+conferir(r.status === "pronta" && r.abaId === 9, "clique no Meet com o endereço novo (/meet/abc-defg-hij): pronta");
+abas.delete(9);
 r = await clicar(7);
 conferir(r.status === "pronta" && r.abaId === 7, "clique na aba do Meet: pronta");
 conferir(badges.some((b) => b.tabId === 7 && b.text === ""), "o \"!\" do aviso sai do ícone da aba");
 
 // ── 2. Começar ──────────────────────────────────────────────────────────────
 const doContentScript = { id: ID, tab: { id: 7, url: MEET }, url: MEET };
-await enviar({ alvo: "sw", tipo: "comecar", consentimentoEm: new Date().toISOString() }, doContentScript);
+await enviar({ alvo: "sw", tipo: "comecar" }, doContentScript);
 r = await estado();
 conferir(r.status === "pronta" && !pedidosAoGravador.length, "Começar vindo da página da reunião (content script) é ignorado");
-const semAviso = await enviar({ alvo: "sw", tipo: "comecar" });
-conferir(semAviso?.ok === false && /avisou/.test(semAviso.erro), "sem a confirmação do aviso, não começa", semAviso?.erro);
 logadoEm = new Set();
-const semLogin = await enviar({ alvo: "sw", tipo: "comecar", consentimentoEm: new Date().toISOString() });
+const semLogin = await enviar({ alvo: "sw", tipo: "comecar" });
 r = await estado();
 conferir(semLogin?.ok === false && /login no CRM/.test(semLogin.erro) && !pedidosAoGravador.length, "sem login em nenhum endereço do CRM: avisa e não grava", semLogin?.erro);
+// A captura se prepara junto com a conferência do login (2026-10-30): sem login, o documento invisível fecha.
+conferir(documentos === 0 && r.status === "pronta", "sem login: o documento invisível preparado junto fecha e a aba volta a pronta", JSON.stringify({ documentos, s: r.status }));
 await clicar(7);
 logadoEm = new Set(["https://chromacrm.vercel.app"]);
-const comecou = await enviar({ alvo: "sw", tipo: "comecar", consentimentoEm: new Date().toISOString() });
+const comecou = await enviar({ alvo: "sw", tipo: "comecar" });
 r = await estado();
-conferir(comecou?.ok === true && r.status === "gravando", "com a confirmação: o estado vira gravando", r.status);
+conferir(comecou?.ok === true && r.status === "gravando", "Gravar: o estado vira gravando", r.status);
 conferir(pedidosAoGravador.some((p) => p.tipo === "iniciar" && p.crm === "https://chromacrm.vercel.app" && p.streamId === "stream-7"), "logado só pela Vercel: o gravador fala com o CRM pela Vercel");
 conferir(typeof r.sessao === "string" && r.sessao.length === 36 && Boolean(r.consentimentoEm), "sessão e hora do aviso guardadas para o resumo");
 conferir(badges.some((b) => b.tabId === 7 && b.text === "REC") && badges.some((b) => !b.tabId && b.text === "REC"), "REC na aba da reunião e no ícone");
@@ -195,27 +202,46 @@ conferir(r.status === "parada" && !r.falas?.length && !r.sessao, "Nova reunião 
 await clicar(7);
 capturaFalha = true;
 const fechadosAntes = fechados;
-await enviar({ alvo: "sw", tipo: "comecar", consentimentoEm: new Date().toISOString() });
+await enviar({ alvo: "sw", tipo: "comecar" });
 r = await estado();
-conferir(r.status === "pronta" && r.esperandoClique && /Falta um clique/.test(r.aviso ?? "") && Boolean(r.consentimentoEm), "o Chrome pediu o clique no ícone: volta a pronta, guarda a confirmação e diz o que fazer", r.aviso);
+conferir(r.status === "pronta" && r.esperandoClique && /Falta um clique/.test(r.aviso ?? "") && Boolean(r.consentimentoEm), "o Chrome pediu o clique no ícone: volta a pronta, guarda a hora do Gravar e diz o que fazer", r.aviso);
 capturaFalha = false;
 r = await clicar(7);
-conferir(r.status === "gravando" && !r.esperandoClique, "o clique no ícone, com o aviso já confirmado, começa a gravação");
+conferir(r.status === "gravando" && !r.esperandoClique, "o clique no ícone, com o Gravar já clicado, começa a gravação");
 for (const f of ouvintes.removida) f(7);
-abas.set(7, { id: 7, url: MEET });
+await estado();
 await enviar({ alvo: "sw", tipo: "limpar" });
-await clicar(7);
-const semPainel = await enviar({ alvo: "sw", tipo: "limpar" }).then(() => enviar({ alvo: "sw", tipo: "comecar", consentimentoEm: new Date().toISOString() }));
-conferir(semPainel?.ok === false && /não está ligado a uma reunião/.test(semPainel.erro), "Começar sem o clique no ícone da aba: explica o caminho", semPainel?.erro);
+
+// ── 6b. Gravar sem o clique no ícone antes (o painel aberto, a reunião ao lado) ──
+const direto = await enviar({ alvo: "sw", tipo: "comecar" });
+r = await estado();
+conferir(direto?.ok === true && r.status === "gravando" && r.abaId === 7 && Boolean(r.consentimentoEm), "Gravar com o painel parado: acha a reunião na janela e grava a aba dela", direto?.erro ?? r.status);
+for (const f of ouvintes.removida) f(7);
+await estado();
+await enviar({ alvo: "sw", tipo: "limpar" });
+capturaFalha = true;
+await enviar({ alvo: "sw", tipo: "comecar" });
+r = await estado();
+conferir(r.status === "pronta" && r.esperandoClique && r.abaId === 7, "o Chrome recusou sem o clique no ícone: a aba fica guardada para o clique", JSON.stringify({ s: r.status, aba: r.abaId }));
+capturaFalha = false;
+r = await clicar(7);
+conferir(r.status === "gravando", "e o clique no ícone dessa aba começa a gravação");
+for (const f of ouvintes.removida) f(7);
+await estado();
+await enviar({ alvo: "sw", tipo: "limpar" });
+abas.set(7, { id: 7, url: "https://exemplo.com/outra" });
+const semReuniao = await enviar({ alvo: "sw", tipo: "comecar" });
+conferir(semReuniao?.ok === false && /Abra a reunião/.test(semReuniao.erro), "Gravar sem reunião aberta na janela: explica o caminho", semReuniao?.erro);
+abas.set(7, { id: 7, url: MEET });
 await clicar(7);
 gravadorFalha = true;
-await enviar({ alvo: "sw", tipo: "comecar", consentimentoEm: new Date().toISOString() });
+await enviar({ alvo: "sw", tipo: "comecar" });
 r = await estado();
 conferir(r.status === "pronta" && /microfone travou/.test(r.erro ?? "") && fechados > fechadosAntes && documentos === 0, "o gravador falhou: volta a pronta e o documento invisível fecha", r.erro);
 gravadorFalha = false;
 
 // ── 7. A aba fecha no meio ──────────────────────────────────────────────────
-await enviar({ alvo: "sw", tipo: "comecar", consentimentoEm: new Date().toISOString() });
+await enviar({ alvo: "sw", tipo: "comecar" });
 r = await estado();
 conferir(r.status === "gravando", "começa de novo depois das falhas");
 for (const f of ouvintes.removida) f(7);

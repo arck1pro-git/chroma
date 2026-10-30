@@ -1,9 +1,14 @@
 /* O painel lateral da extensão de reuniões (revisto em 2026-10-30: "simples e
    intuitivo, com componentes personalizados"). A paleta zinc do CRM, modo
-   escuro pelo sistema, nenhum controle nativo à vista: o interruptor, os
-   cartões de reunião, os balões da transcrição e os botões são daqui. */
+   escuro pelo sistema, nenhum controle nativo à vista: os cartões de
+   reunião, os balões da transcrição e os botões são daqui.
+   No mesmo dia, "mais moderno, com o design semelhante": o topo fica preso e
+   translúcido, os cartões surgem, os balões entram, os "…" mostram o trecho
+   sendo transcrito, e a sugestão nova aparece num card preto com brilho azul
+   por cima de tudo (.pop), igual nos dois temas. */
 :root {
   --fundo: #f4f4f5;
+  --topo-fundo: rgba(244, 244, 245, 0.82);
   --cartao: #ffffff;
   --borda: #e4e4e7;
   --borda-forte: #d4d4d8;
@@ -27,13 +32,15 @@
   --aviso-texto: #92400e;
   --erro: #fef2f2;
   --erro-texto: #b91c1c;
-  --sombra: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.03);
+  --anel: rgba(59, 130, 246, 0.5);
+  --sombra: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 20px -14px rgba(0, 0, 0, 0.18);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --fundo: #09090b;
+    --topo-fundo: rgba(9, 9, 11, 0.78);
     --cartao: #18181b;
     --borda: #27272a;
     --borda-forte: #3f3f46;
@@ -57,7 +64,7 @@
     --aviso-texto: #fcd34d;
     --erro: rgba(239, 68, 68, 0.12);
     --erro-texto: #fca5a5;
-    --sombra: none;
+    --sombra: inset 0 1px 0 rgba(255, 255, 255, 0.03);
     color-scheme: dark;
   }
 }
@@ -66,38 +73,53 @@
 
 body {
   margin: 0;
-  padding: 12px;
+  padding: 0 12px 16px;
   background: var(--fundo);
   color: var(--texto);
-  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 13px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.015em; }
 h2 { margin: 0; font-size: 12px; font-weight: 650; display: flex; align-items: center; gap: 6px; }
 p { margin: 0; }
 button { font: inherit; }
+:focus-visible { outline: 2px solid var(--anel); outline-offset: 2px; }
 
 svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
 svg .cheio { fill: currentColor; stroke: none; }
 h2 svg { width: 14px; height: 14px; color: var(--suave); }
 
-/* ── Topo ── */
-.topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+/* ── Topo, preso e translúcido ── */
+.topo {
+  position: sticky; top: 0; z-index: 20; margin: 0 -12px 12px; padding: 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--topo-fundo); border-bottom: 1px solid var(--borda);
+  backdrop-filter: saturate(1.6) blur(14px);
+}
 .marca { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .marca-icone {
-  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
   background: var(--acento); color: var(--acento-texto);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 4px 10px -6px rgba(0, 0, 0, 0.45);
 }
 .marca-icone svg { width: 18px; height: 18px; }
 .topo-acoes { display: flex; align-items: center; gap: 8px; }
 
-.status { color: var(--suave); font-size: 12px; font-variant-numeric: tabular-nums; }
-.status.gravando { color: var(--gravando); font-weight: 650; }
-.status.gravando::before {
-  content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%;
-  background: var(--gravando); vertical-align: 1px; animation: pulsar 1.4s ease-in-out infinite;
+.status { color: var(--suave); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.status.gravando {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 1px; padding: 1px 8px 1px 7px; border-radius: 999px;
+  background: var(--gravando-fundo); color: var(--gravando); font-weight: 650;
 }
-@keyframes pulsar { 50% { opacity: 0.25; } }
+.status.gravando::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--gravando);
+  box-shadow: 0 0 0 0 var(--gravando); animation: pulsar 1.6s ease-out infinite;
+}
+@keyframes pulsar {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
+  70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
 
 .pilula {
   display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px;
@@ -111,15 +133,17 @@ h2 svg { width: 14px; height: 14px; color: var(--suave); }
 
 /* ── Cartões ── */
 .cartao {
-  margin-bottom: 10px; padding: 12px; border: 1px solid var(--borda); border-radius: 14px;
+  margin-bottom: 10px; padding: 12px; border: 1px solid var(--borda); border-radius: 16px;
   background: var(--cartao); box-shadow: var(--sombra); display: grid; gap: 10px;
+  animation: surgir 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+@keyframes surgir { from { opacity: 0; transform: translateY(4px); } }
 .cartao.destaque { border-color: var(--borda-forte); }
 .cartao.alerta { border-color: transparent; background: var(--aviso); color: var(--aviso-texto); box-shadow: none; }
 .cabeca { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .linha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-.faixa { margin-bottom: 10px; padding: 9px 11px; border-radius: 12px; font-size: 12px; }
+.faixa { margin-bottom: 10px; padding: 9px 11px; border-radius: 12px; font-size: 12px; animation: surgir 0.22s ease-out; }
 .faixa.aviso { background: var(--aviso); color: var(--aviso-texto); }
 .faixa.erro { background: var(--erro); color: var(--erro-texto); }
 
@@ -132,21 +156,28 @@ h2 svg { width: 14px; height: 14px; color: var(--suave); }
 .botao {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px solid var(--acento); border-radius: 10px; background: var(--acento); color: var(--acento-texto);
-  padding: 7px 12px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, background 0.15s;
+  padding: 7px 12px; font-weight: 600; cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s, transform 0.1s, box-shadow 0.15s;
 }
 .botao:hover { opacity: 0.88; }
+.botao:active:not(:disabled) { transform: scale(0.98); }
 .botao.leve { background: transparent; color: var(--texto); border-color: var(--borda-forte); font-weight: 500; }
 .botao.leve:hover { background: var(--realce); opacity: 1; }
 .botao.perigo { background: var(--gravando); border-color: var(--gravando); color: #fff; }
 .botao.pequeno { padding: 4px 9px; font-size: 12px; border-radius: 8px; }
 .botao:disabled { opacity: 0.4; cursor: default; }
-.botao.gravar { width: 100%; padding: 11px; font-size: 14px; border-radius: 12px; background: var(--gravando); border-color: var(--gravando); color: #fff; }
+.botao.gravar {
+  width: 100%; padding: 11px; font-size: 14px; border-radius: 12px; border-color: transparent; color: #fff;
+  background: linear-gradient(180deg, #ef4444, #dc2626);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 10px 22px -12px rgba(220, 38, 38, 0.8);
+}
+.botao.gravar:hover { opacity: 1; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 12px 26px -10px rgba(220, 38, 38, 0.9); }
 .botao.gravar svg { width: 14px; height: 14px; }
 .largo { width: 100%; margin-bottom: 10px; }
 
 .icone {
   width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--suave);
-  display: grid; place-items: center; cursor: pointer;
+  display: grid; place-items: center; cursor: pointer; transition: background 0.15s, color 0.15s;
 }
 .icone:hover { background: var(--realce); color: var(--texto); }
 .icone.girando svg { animation: girar 0.8s linear infinite; }
@@ -154,32 +185,16 @@ h2 svg { width: 14px; height: 14px; color: var(--suave); }
 
 .link { border: 0; background: none; padding: 0; color: var(--texto); font-weight: 600; text-decoration: underline; cursor: pointer; }
 
-/* ── Interruptor (o "avisei os participantes") ── */
-.interruptor {
-  display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 0; border: 0; background: none;
-  color: var(--texto); text-align: left; cursor: pointer; font-size: 12.5px;
-}
-.trilho {
-  position: relative; flex-shrink: 0; width: 34px; height: 20px; margin-top: 1px; border-radius: 999px;
-  background: var(--borda-forte); transition: background 0.15s;
-}
-.bolinha {
-  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
-  background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform 0.15s;
-}
-.interruptor[aria-checked="true"] .trilho { background: var(--ok); }
-.interruptor[aria-checked="true"] .bolinha { transform: translateX(14px); }
-.interruptor:disabled { opacity: 0.45; cursor: default; }
-
 /* ── As reuniões de hoje ── */
 .reunioes { display: grid; gap: 6px; }
 .reunioes:empty { display: none; }
 .reuniao {
   display: grid; gap: 8px; padding: 9px 10px; border: 1px solid var(--borda); border-radius: 12px;
-  background: var(--cartao); color: var(--texto); text-align: left; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+  background: var(--cartao); color: var(--texto); text-align: left; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
 }
-.reuniao:hover { border-color: var(--borda-forte); background: var(--realce); }
-.reuniao.escolhida { border-color: var(--acento); background: var(--cartao); cursor: default; }
+.reuniao:hover { border-color: var(--borda-forte); background: var(--realce); transform: translateY(-1px); }
+.reuniao.escolhida { border-color: var(--acento); background: var(--cartao); cursor: default; transform: none; }
 .reuniao-linha { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .hora {
   flex-shrink: 0; min-width: 46px; padding: 4px 0; border-radius: 8px; background: var(--realce);
@@ -204,31 +219,100 @@ h2 svg { width: 14px; height: 14px; color: var(--suave); }
 .sugestoes { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .sugestoes:empty { display: none; }
 .sugestoes li { position: relative; padding-left: 14px; }
-.sugestoes li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--suave); }
+.sugestoes li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: #3b82f6; }
 .proximo { font-weight: 600; }
+
+/* ── O card de sugestão: preto, letra branca, brilho azul, nos dois temas ── */
+.pop {
+  position: fixed; left: 12px; right: 12px; top: var(--topo-altura, 66px); z-index: 30;
+  display: grid; gap: 8px; padding: 13px 14px 16px; border-radius: 16px; overflow: hidden;
+  background: #000; color: #fff; border: 1px solid rgba(96, 165, 250, 0.6);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25), 0 0 22px rgba(59, 130, 246, 0.5), 0 0 60px -10px rgba(37, 99, 235, 0.6),
+    0 18px 40px -16px rgba(0, 0, 0, 0.6);
+  animation: pop-entrar 0.3s cubic-bezier(0.2, 0.9, 0.25, 1.15), brilhar 2.8s ease-in-out 0.3s infinite;
+}
+.pop.renovada { animation: pop-renovar 0.5s ease-out, brilhar 2.8s ease-in-out 0.5s infinite; }
+@keyframes pop-entrar { from { opacity: 0; transform: translateY(-10px) scale(0.97); } }
+@keyframes pop-renovar { 35% { transform: scale(1.015); border-color: rgba(147, 197, 253, 0.95); } }
+@keyframes brilhar {
+  50% {
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4), 0 0 30px rgba(59, 130, 246, 0.72), 0 0 80px -8px rgba(37, 99, 235, 0.75),
+      0 18px 40px -16px rgba(0, 0, 0, 0.6);
+  }
+}
+.pop-cabeca { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pop-rotulo {
+  display: inline-flex; align-items: center; gap: 6px; color: #93c5fd;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.pop-rotulo svg { width: 14px; height: 14px; }
+.pop-chip {
+  min-width: 0; padding: 2px 8px; border-radius: 999px; background: rgba(59, 130, 246, 0.2); color: #bfdbfe;
+  font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pop-fechar {
+  margin-left: auto; flex-shrink: 0; width: 26px; height: 26px; border: 0; border-radius: 8px; background: transparent; color: #a1a1aa;
+  display: grid; place-items: center; cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.pop-fechar:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.pop-frase { color: #a1a1aa; font-size: 12px; font-style: italic; }
+.pop-principal { font-size: 15px; line-height: 1.4; font-weight: 600; letter-spacing: -0.005em; }
+.pop-mais { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; color: #d4d4d8; }
+.pop-mais:empty { display: none; }
+.pop-mais li { position: relative; padding-left: 14px; }
+.pop-mais li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: #3b82f6; }
+.pop-proximo { padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); color: #d4d4d8; font-size: 12px; }
+.pop-proximo b { color: #fff; font-weight: 600; }
+.pop-tempo { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(255, 255, 255, 0.06); }
+/* A barra que esvazia é o relógio do card: o fim da animação o fecha (painel.js), e o mouse em cima segura. */
+.pop-tempo span {
+  display: block; height: 100%; transform-origin: left; background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  animation: esvaziar var(--pop-duracao, 25s) linear forwards;
+}
+.pop:hover .pop-tempo span { animation-play-state: paused; }
+@keyframes esvaziar { to { transform: scaleX(0); } }
 
 /* ── Transcrição ── */
 .falas {
   margin: 0; padding: 2px 2px 0; list-style: none; display: flex; flex-direction: column; gap: 6px;
   max-height: 52vh; overflow-y: auto; scroll-behavior: smooth;
+  scrollbar-width: thin; scrollbar-color: var(--borda-forte) transparent;
 }
 .falas:empty { display: none; }
 .fala { max-width: 88%; display: grid; gap: 2px; }
+.fala.nova { animation: entrar 0.22s ease-out; }
+@keyframes entrar { from { opacity: 0; transform: translateY(6px) scale(0.98); } }
+/* A mesma pessoa seguida: os balões se juntam e o nome aparece só no primeiro. */
+.fala.continua { margin-top: -3px; }
+.fala.continua .quem { display: none; }
 .fala .quem { font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em; color: var(--apagado); }
-.fala .texto { padding: 7px 10px; border-radius: 12px; white-space: pre-wrap; word-break: break-word; }
+.fala .texto { padding: 7px 10px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; }
 .fala.lead { align-self: flex-start; }
 .fala.lead .quem { color: var(--lead); }
-.fala.lead .texto { background: var(--lead-fundo); border-top-left-radius: 4px; }
+.fala.lead .texto { background: var(--lead-fundo); border-top-left-radius: 5px; }
 .fala.voce { align-self: flex-end; text-align: right; }
-.fala.voce .texto { background: var(--voce-fundo); color: var(--voce-texto); border-top-right-radius: 4px; text-align: left; }
+.fala.voce .texto { background: var(--voce-fundo); color: var(--voce-texto); border-top-right-radius: 5px; text-align: left; }
+/* O trecho indo para a transcrição: três pontos no lado de quem falou. */
+.fala.digitando .texto { display: inline-flex; align-items: center; gap: 4px; padding: 10px 12px; }
+.fala.lead.digitando .texto { color: var(--lead); }
+.ponto { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.35; animation: digitar 1.2s ease-in-out infinite; }
+.ponto:nth-child(2) { animation-delay: 0.15s; }
+.ponto:nth-child(3) { animation-delay: 0.3s; }
+@keyframes digitar { 30% { transform: translateY(-3px); opacity: 0.9; } }
 
 textarea {
   width: 100%; border: 1px solid var(--borda-forte); border-radius: 10px; background: var(--cartao); color: var(--texto);
-  padding: 8px 10px; font: inherit; resize: vertical; outline: none;
+  padding: 8px 10px; font: inherit; resize: vertical; outline: none; transition: border-color 0.15s, box-shadow 0.15s;
 }
-textarea:focus { border-color: var(--acento); }
+textarea:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18); }
 
 .rodape { margin: 2px 2px 0; color: var(--apagado); font-size: 11px; }
-kbd { padding: 0 4px; border: 1px solid var(--borda-forte); border-radius: 4px; font: 10.5px ui-monospace, monospace; }
+
+/* Movimento reduzido: sem entradas nem brilho pulsando; a barra do card segue, porque é o relógio dele. */
+@media (prefers-reduced-motion: reduce) {
+  .cartao, .faixa, .fala.nova, .pop, .pop.renovada { animation: none; }
+  .status.gravando::before, .ponto { animation: none; }
+  .falas { scroll-behavior: auto; }
+}
 
 [hidden] { display: none !important; }

@@ -3,14 +3,14 @@ import { transcreverAudio } from "@/lib/transcricao";
 import { limparTranscricao } from "@/lib/ia/reuniao";
 import { pedidoDaExtensao, responder } from "@/lib/reunioes-extensao";
 
-// Um trecho de ~15 s da reunião (da aba = o lead, ou do microfone = quem grava)
-// vira texto pela Groq, a mesma do áudio do chat (lib/transcricao.ts). Nada é
+// Um trecho de 4 a 12 s da reunião (da aba = o lead, ou do microfone = quem
+// grava; a extensão corta na pausa da fala desde 2026-10-30) vira texto pela Groq, a mesma do áudio do chat (lib/transcricao.ts). Nada é
 // guardado nem vai para o log: o áudio passa e some, e o texto volta para a
 // extensão.
 
 export const dynamic = "force-dynamic";
 
-// 15 s de opus a 32 kbps dão ~60 KB; 1 MB folga sem deixar a rota virar
+// 12 s de opus a 32 kbps dão ~50 KB; 1 MB folga sem deixar a rota virar
 // depósito de arquivo grande.
 const TETO_BYTES = 1024 * 1024;
 // Todo arquivo webm (Matroska) começa com o cabeçalho EBML.

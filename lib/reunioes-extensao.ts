@@ -27,13 +27,16 @@ export const ID_EXTENSAO = "eohffkhganngbodiakbkccchdjndkjpf";
 
 type Rota = "inicio" | "leads" | "trecho" | "analise" | "resumo" | "encerrar";
 
-// Chamadas por minuto, por pessoa. Uma reunião normal: dois trechos a cada 15 s
-// (8/min) e uma análise por minuto, mais o botão "Analisar agora".
+// Chamadas por minuto, por pessoa. Desde 2026-10-30 (pedido dele de menos
+// latência) a extensão corta o áudio na pausa da fala, com trechos de 4 a 12 s
+// de cada lado: até 15/min de um lado falando sem parar, e na prática ~10/min
+// somados, porque um fala enquanto o outro escuta (trecho em silêncio não sai).
+// A análise vem no máximo a cada 20 s (3/min), mais o botão "Analisar agora".
 const TETO_POR_MINUTO: Record<Rota, number> = {
   inicio: 10,
   leads: 30,
-  trecho: 12,
-  analise: 4,
+  trecho: 30,
+  analise: 6,
   // O resumo manda a reunião inteira ao modelo: é a chamada mais cara.
   resumo: 1,
   encerrar: 3,

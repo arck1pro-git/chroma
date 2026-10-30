@@ -64,9 +64,12 @@ export async function enderecoDoCrm() {
 /**
  * A aba é uma reunião que dá para gravar? Meet numa sala (abc-defg-hij) ou o
  * Zoom no navegador (/wc/), também em subdomínio (us05web.zoom.us, empresa.zoom.us).
- * O mesmo teste está em aviso-reuniao.js, que não importa módulo.
+ * O Meet passou a redirecionar a sala para /meet/abc-defg-hij (visto em
+ * 2026-10-30, quando a extensão dizia "abra a reunião" com o Meet aberto): os
+ * dois formatos valem. O mesmo teste está em aviso-reuniao.js, que não importa
+ * módulo, e o código da sala em lib/reunioes-lead.ts.
  */
 export function ehReuniao(url) {
-  return /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/i.test(url ?? "") ||
+  return /^https:\/\/meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}(?:[/?#]|$)/i.test(url ?? "") ||
     /^https:\/\/([a-z0-9-]+\.)?zoom\.us\/wc\//i.test(url ?? "");
 }

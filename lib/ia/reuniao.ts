@@ -1,7 +1,7 @@
 // O COPILOTO DA REUNIÃO (extensão do Chrome, pedido dele em 2026-10-28): lê o
-// que foi dito na reunião com o lead e devolve, em JSON, quem é o lead, a
-// objeção que acabou de aparecer e como conduzir. No fim, o rascunho do resumo,
-// que o vendedor revê antes de virar anotação na ficha.
+// que foi dito na reunião com o lead e devolve, em JSON, a objeção que acabou
+// de aparecer e como conduzir. No fim, o rascunho do resumo, que o vendedor
+// revê antes de virar anotação na ficha.
 //
 // DECISÕES:
 //   · O conhecimento do produto é o prompt da IA de WhatsApp do funil do lead
@@ -18,6 +18,10 @@
 //     copiloto é chamado dezenas de vezes com o mesmo começo.
 //   · Esforço baixo: a sugestão tem de chegar enquanto a objeção ainda está na
 //     mesa. Modelo trocável sem mexer no código: IA_REUNIAO_MODELO.
+//   · Resposta curta (2026-10-30, pedido dele de menos latência): o "perfil do
+//     lead" saiu do JSON, porque o painel nunca o mostrava e cada análise
+//     gastava tempo escrevendo-o; a condução pede 2 ou 3 frases, que cabem no
+//     card de sugestão da extensão.
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
@@ -68,7 +72,6 @@ export function limparTranscricao(texto: string | null): string | null {
 // uma citação comprida do lead não pode derrubar a condução daquela objeção.
 const curto = (teto: number) => z.string().transform((s) => s.trim().slice(0, teto));
 const ANALISE = z.object({
-  perfil: z.array(curto(300)).transform((l) => l.slice(0, 4)),
   objecao: z.object({ tipo: curto(80), frase: curto(400), porTras: curto(300) }).nullable(),
   conducao: z.array(curto(400)).transform((l) => l.slice(0, 4)),
   proximoPasso: curto(400),
@@ -78,9 +81,8 @@ export type AnaliseReuniao = z.infer<typeof ANALISE>;
 const SCHEMA_ANALISE = {
   type: "object",
   additionalProperties: false,
-  required: ["perfil", "objecao", "conducao", "proximoPasso"],
+  required: ["objecao", "conducao", "proximoPasso"],
   properties: {
-    perfil: { type: "array", items: { type: "string" }, description: "Até 4 frases curtas: quem é o lead e o que ele quer, pelo que já disse." },
     objecao: {
       anyOf: [
         { type: "null" },
@@ -96,7 +98,7 @@ const SCHEMA_ANALISE = {
         },
       ],
     },
-    conducao: { type: "array", items: { type: "string" }, description: "2 a 4 sugestões curtas, do que dizer ou perguntar agora, na voz do vendedor." },
+    conducao: { type: "array", items: { type: "string" }, description: "2 ou 3 sugestões curtas, do que dizer ou perguntar agora, na voz do vendedor; a primeira é a mais importante." },
     proximoPasso: { type: "string", description: "Para onde levar a reunião a partir daqui, numa frase." },
   },
 };
@@ -111,12 +113,12 @@ const REGRAS_FIXAS = `REGRAS FIXAS (valem acima do conhecimento do produto)
 
 // A empresa não vai escrita aqui: a reunião pode ser da AMAAN ou da Arck1Pro, e
 // quem diz qual é o funil do lead e o conhecimento do produto.
-const SISTEMA_ANALISE = `Você é o copiloto de um vendedor numa reunião AO VIVO com um lead, por vídeo. A empresa e o produto são os do conhecimento do produto e do funil do lead. Você lê a transcrição dos últimos minutos e ajuda a conduzir: quem é o lead, se acabou de aparecer uma objeção e o que dizer ou perguntar agora.
+const SISTEMA_ANALISE = `Você é o copiloto de um vendedor numa reunião AO VIVO com um lead, por vídeo. A empresa e o produto são os do conhecimento do produto e do funil do lead. Você lê a transcrição dos últimos minutos e ajuda a conduzir: se acabou de aparecer uma objeção e o que dizer ou perguntar agora.
 
 COMO RESPONDER
 - Só o JSON pedido. Frases curtas, que o vendedor lê de relance enquanto fala.
 - "objecao": só se o LEAD levantou uma objeção nas falas mais recentes e ela ainda não foi bem respondida. Senão, null.
-- "conducao": 2 a 4 sugestões concretas, na voz do vendedor ("Pergunte...", "Diga que..."). Com objeção, primeiro acolha e entenda o receio, depois responda com o que o conhecimento do produto permite. Sem objeção, ajude a avançar a reunião.
+- "conducao": 2 ou 3 sugestões concretas, na voz do vendedor ("Pergunte...", "Diga que..."), a mais importante primeiro. Com objeção, primeiro acolha e entenda o receio, depois responda com o que o conhecimento do produto permite. Sem objeção, ajude a avançar a reunião.
 
 ${REGRAS_FIXAS}
 
@@ -216,9 +218,9 @@ async function chamar(sistema: string, ficha: string, pedido: string, schema: Re
   return texto;
 }
 
-/** Lê a reunião até aqui e devolve perfil, objeção e condução. */
+/** Lê a reunião até aqui e devolve objeção e condução. */
 export async function analisarReuniao(ficha: FichaLead | null, falas: Fala[]): Promise<AnaliseReuniao> {
-  if (!falas.length) return { perfil: [], objecao: null, conducao: [], proximoPasso: "" };
+  if (!falas.length) return { objecao: null, conducao: [], proximoPasso: "" };
   const texto = await chamar(
     SISTEMA_ANALISE,
     fichaParaModelo(ficha, await conhecimentoDaIa(ficha?.iaId ?? null)),

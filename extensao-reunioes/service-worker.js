@@ -14,9 +14,13 @@
 //   1. clique no ícone (ou Alt+Shift+G) na aba da reunião: abre o painel e a aba
 //      fica "pronta". O Chrome só entrega o áudio da aba depois desse gesto; o
 //      aviso na página (aviso-reuniao.js) lembra de clicar.
-//   2. no painel, a pessoa anexa a reunião do CRM (a lista vem antes de gravar,
-//      2026-10-30), confirma que avisou os participantes e clica em Gravar. Só
-//      então a aba é capturada. Nunca começa sozinha.
+//   2. no painel, a pessoa anexa a reunião do CRM (a lista vem antes de gravar)
+//      e clica em Gravar. Só então a aba é capturada. Nunca começa sozinha.
+//      Desde 2026-10-30 (pedido dele: "o botão gravar deve já permitir gravar")
+//      o Gravar não espera o interruptor "avisei os participantes" nem o passo 1:
+//      sem a aba preparada, grava a reunião aberta na janela, e a hora do clique
+//      é a hora do aviso (consentimentoEm). Se o Chrome recusar a captura por
+//      falta do clique no ícone, o painel pede esse clique e ele começa.
 //   3. Parar, ou parada sozinha (a aba fecha ou sai da reunião, 15 min sem som da
 //      reunião sem ninguém confirmar que ela segue, 3 h de gravação): a gravação
 //      fica na memória do gravador até a pessoa escolher Baixar ou Descartar. A
@@ -35,6 +39,7 @@ const VAZIA = {
   lead: null,
   candidatos: null, // as reuniões de hoje; null = o CRM ainda não respondeu
   falas: [],
+  transcrevendo: [], // de que lado ("lead", "voce") há trecho esperando o texto: o painel mostra "…"
   analise: null,
   analiseEm: null,
   analisando: false,
@@ -47,7 +52,7 @@ const VAZIA = {
 
 // O que o gravador e o painel podem pôr no estado. O resto (status, sessão,
 // arquivo, aba) só este arquivo grava.
-const CHAVES_DO_ESTADO = ["lead", "candidatos", "falas", "analise", "analiseEm", "analisando", "silencioDesde", "erro", "aviso"];
+const CHAVES_DO_ESTADO = ["lead", "candidatos", "falas", "transcrevendo", "analise", "analiseEm", "analisando", "silencioDesde", "erro", "aviso"];
 const soChavesPermitidas = (parcial) =>
   Object.fromEntries(Object.entries(parcial ?? {}).filter(([k]) => CHAVES_DO_ESTADO.includes(k)));
 
@@ -101,8 +106,8 @@ async function preparar(aba) {
     await mudar({ status: "parada", aviso: "Abra a reunião do Meet ou do Zoom no navegador e clique no ícone de novo." }, true);
     return;
   }
-  // O Chrome recusou a captura pelo botão Começar e pediu o clique no ícone: com
-  // o aviso aos participantes já confirmado nesta aba, este clique começa.
+  // O Chrome recusou a captura pelo Gravar e pediu o clique no ícone: com o
+  // Gravar já clicado nesta aba, este clique começa.
   if (atual.status === "pronta" && atual.esperandoClique && atual.abaId === aba.id && atual.consentimentoEm) {
     await iniciar(aba, atual.consentimentoEm);
     return;
@@ -123,34 +128,67 @@ function motivoDaCaptura(e) {
   return `A gravação não começou: ${texto}`;
 }
 
-/** O Começar do painel, depois da confirmação do aviso aos participantes. */
-async function comecar(consentimentoEm) {
-  const atual = await estado();
-  if (atual.status !== "pronta" || !atual.abaId) {
-    throw new Error("O painel não está ligado a uma reunião. Vá até a aba da reunião, clique no ícone da extensão nela e depois em Começar.");
+/**
+ * A aba a gravar: a que o clique no ícone preparou ou, sem ele, a reunião da
+ * janela em foco (a aba aberta, ou a única reunião entre as abas dela).
+ */
+async function abaDaReuniao(atual) {
+  if (atual.status === "pronta" && atual.abaId) {
+    const aba = await chrome.tabs.get(atual.abaId).catch(() => null);
+    if (aba && ehReuniao(aba.url)) return aba;
   }
-  if (!consentimentoEm) throw new Error("Confirme que avisou os participantes da gravação.");
-  const aba = await chrome.tabs.get(atual.abaId).catch(() => null);
-  if (!aba || !ehReuniao(aba.url)) throw new Error("A aba da reunião não está mais aberta. Abra a reunião e clique no ícone da extensão nela.");
-  await iniciar(aba, consentimentoEm);
+  const [ativa] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (ativa && ehReuniao(ativa.url)) return ativa;
+  const reunioes = (await chrome.tabs.query({ lastFocusedWindow: true })).filter((a) => ehReuniao(a.url));
+  return reunioes.length === 1 ? reunioes[0] : null;
 }
 
-/** Captura a aba e liga o gravador. Pelo botão Começar ou pelo clique no ícone. */
-async function iniciar(aba, consentimentoEm) {
-  // Sem login no CRM não adianta gravar: nada seria transcrito nem analisado.
-  // Confere na hora (a pessoa pode ter entrado ou saído depois de abrir o painel).
-  const conexao = await descobrirCrm();
-  await chrome.storage.session.set({ crmAtivo: conexao.url });
-  if (!conexao.conectado) throw new Error(conexao.erro);
-  const crm = conexao.url;
-  if (!Object.values(CRMS).includes(crm)) throw new Error("Endereço do CRM fora da lista.");
+/** O Gravar do painel. A hora do clique fica como a hora do aviso aos participantes. */
+async function comecar() {
+  const atual = await estado();
+  if (atual.status !== "parada" && atual.status !== "pronta") throw new Error("Já há uma reunião neste painel: pare a gravação ou clique em Nova reunião.");
+  const aba = await abaDaReuniao(atual);
+  if (!aba) throw new Error("Abra a reunião do Meet ou do Zoom nesta janela e clique em Gravar.");
+  await iniciar(aba, new Date().toISOString());
+}
 
+/**
+ * O id da captura da aba e o documento invisível, preparados juntos. Espera os
+ * dois terminarem antes de recusar: fechar o documento no meio da criação o
+ * deixaria aberto.
+ */
+async function prepararCaptura(aba) {
+  const [captura, documento] = await Promise.allSettled([chrome.tabCapture.getMediaStreamId({ targetTabId: aba.id }), garantirGravador()]);
+  if (captura.status === "rejected") throw captura.reason;
+  if (documento.status === "rejected") throw documento.reason;
+  return captura.value;
+}
+
+/** Captura a aba e liga o gravador. Pelo Gravar ou pelo clique no ícone. */
+async function iniciar(aba, consentimentoEm) {
   // O lead da reunião anexada antes de gravar vai junto: o gravador não procura outro.
   const leadId = (await estado()).lead?.contatoId ?? null;
-  await mudar({ status: "comecando", consentimentoEm, esperandoClique: false, sessao: crypto.randomUUID(), sala: aba.url, erro: null, aviso: null });
+  // A aba entra aqui também: pelo Gravar sem o clique no ícone, é a primeira vez,
+  // e o "Falta um clique" logo abaixo precisa dela para o clique começar.
+  await mudar({ status: "comecando", abaId: aba.id, consentimentoEm, esperandoClique: false, sessao: crypto.randomUUID(), sala: aba.url, erro: null, aviso: null });
+
+  // Sem login no CRM não adianta gravar: nada seria transcrito nem analisado.
+  // Confere na hora (a pessoa pode ter entrado ou saído depois de abrir o
+  // painel), ao mesmo tempo em que a captura se prepara (2026-10-30, menos
+  // latência para começar). O gravador só recebe a ordem depois do login.
+  const preparo = prepararCaptura(aba);
+  preparo.catch(() => {}); // a recusa é lida logo abaixo, depois do login
+  const conexao = await descobrirCrm();
+  await chrome.storage.session.set({ crmAtivo: conexao.url });
+  const crm = conexao.url;
+  if (!conexao.conectado || !Object.values(CRMS).includes(crm)) {
+    await preparo.catch(() => {});
+    await fecharGravador();
+    await mudar({ status: "pronta" });
+    throw new Error(conexao.conectado ? "Endereço do CRM fora da lista." : conexao.erro);
+  }
   try {
-    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: aba.id });
-    await garantirGravador();
+    const streamId = await preparo;
     const r = await chrome.runtime.sendMessage({ alvo: "gravador", tipo: "iniciar", streamId, sala: aba.url, crm, leadId });
     if (!r?.ok) throw new Error(r?.erro ?? "o gravador não respondeu");
   } catch (e) {
@@ -180,7 +218,7 @@ async function parar() {
   const r = await chrome.runtime.sendMessage({ alvo: "gravador", tipo: "parar" }).catch(() => null);
   await badge(atual.abaId, "");
   if (!r?.ok) await fecharGravador();
-  await mudar({ status: "encerrada", fim: Date.now(), analisando: false, silencioDesde: null, arquivo: r?.ok ? r.url ?? null : null });
+  await mudar({ status: "encerrada", fim: Date.now(), analisando: false, transcrevendo: [], silencioDesde: null, arquivo: r?.ok ? r.url ?? null : null });
 }
 
 function nomeDoArquivo(r) {
@@ -239,7 +277,7 @@ chrome.action.onClicked.addListener((aba) => {
 const dePaginaDaExtensao = (remetente) => !remetente.tab;
 
 const COMANDOS = {
-  comecar: (msg) => comecar(msg.consentimentoEm),
+  comecar: () => comecar(),
   parar,
   baixar,
   descartar,
