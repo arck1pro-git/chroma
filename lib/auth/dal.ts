@@ -249,9 +249,15 @@ export async function exigirGerenciaAcessos(): Promise<UsuarioLogado> {
   return usuario;
 }
 
-// Contas são exclusivas do Admin, independentemente dos módulos concedidos.
+// Contas (criar, editar, mover de departamento, ligar o WhatsApp) são do Admin
+// e de quem administra acessos (o TI), independentemente dos módulos
+// concedidos. Era só do Admin desde 2026-10-27, e aí ninguém conseguia mover
+// gente de departamento, que exige também administrar acessos (só o TI tem).
+// Pedido dele em 2026-11-03: "preciso que o TI tenha acesso para editar os
+// acessos no sistema e departamentos". O teto de quem NÃO administra acessos
+// continua em app/configuracoes/acoes-usuarios.ts.
 export function gereUsuarios(usuario: UsuarioLogado): boolean {
-  return usuario.departamento?.slug === "admin";
+  return usuario.departamento?.slug === "admin" || usuario.departamento?.gerenciaAcessos === true;
 }
 
 export async function exigirGestaoDeUsuarios(): Promise<UsuarioLogado> {

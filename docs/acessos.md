@@ -151,10 +151,16 @@ e "mexer em quem vê o quê" é outra.
 ### Quem cria contas
 
 Configurações · Usuários cria e edita a conta — e-mail, senha e departamento —
-e quem abre a tela é `gereUsuarios()` (lib/auth/dal.ts): **somente Admin**, pelo
-slug estável `admin`. Ter Configurações ou administrar acessos não concede
-esse direito. A troca de departamento em Acessos também exige Admin e a
-administração de acessos; vincular um usuário ao WhatsApp exige Admin.
+e quem abre a tela é `gereUsuarios()` (lib/auth/dal.ts): o **Admin**, pelo slug
+estável `admin`, e **quem administra acessos** (o TI). Ter Configurações não
+concede esse direito. A troca de departamento em Acessos exige gerir usuários e
+administrar acessos, ou seja, é do TI; vincular um usuário ao WhatsApp exige
+gerir usuários.
+
+De 2026-10-27 a 2026-11-03 as contas foram só do Admin, e a troca de
+departamento, que pede as duas coisas, não estava ao alcance de ninguém (o Admin
+não administra acessos). Pedido dele em 2026-11-03: o TI edita acessos,
+departamentos e contas.
 
 Abrir a tela não é poder tudo lá dentro. Quem **não** administra acessos tem um
 teto, conferido nas actions (`app/configuracoes/acoes-usuarios.ts`) e repetido no
