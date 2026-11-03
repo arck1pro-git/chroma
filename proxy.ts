@@ -86,6 +86,14 @@ const SERVICO_EXATAS = new Set([
   "/api/chat/agendadas/enviar",
 ]);
 
+// Descoberta de OAuth (RFC 9728 e 8414), que o cliente MCP consulta antes de
+// conectar. O conector do CRM não tem login (a tranca é o segredo na URL), e
+// "não tem" se diz com 404. Antes daqui caía no redirecionamento para o /login,
+// que pode ser lido como "este conector exige entrar". Era o principal suspeito
+// de o CHROMA-CRM ficar de fora das tarefas agendadas do Claude, que não têm
+// ninguém para entrar (2026-11-03).
+const DESCOBERTA_OAUTH = /^\/\.well-known\/(oauth-protected-resource|oauth-authorization-server|openid-configuration)(\/|$)/;
+
 function dispensaSessao(caminho: string): boolean {
   if (PUBLICAS_EXATAS.has(caminho) || SERVICO_EXATAS.has(caminho)) return true;
   return PUBLICAS_PREFIXO.some((p) => caminho.startsWith(p));
@@ -93,6 +101,7 @@ function dispensaSessao(caminho: string): boolean {
 
 export default async function proxy(req: NextRequest) {
   const caminho = req.nextUrl.pathname;
+  if (DESCOBERTA_OAUTH.test(caminho)) return new NextResponse(null, { status: 404 });
   const sessao = await verificar(req.cookies.get(COOKIE_SESSAO)?.value);
 
   if (dispensaSessao(caminho)) {
