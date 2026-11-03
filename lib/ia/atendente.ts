@@ -51,6 +51,9 @@
 //     no que o cliente escolher (lib/agenda.ts). Diferente das outras ações,
 //     esta EXECUTA antes de responder: a confirmação ao cliente precisa do
 //     link do Meet, e o horário pode ter sido ocupado no meio do caminho.
+//   · agendar_retorno — o cliente pede para falar em outro momento e ela anota
+//     o dia e a hora; a rodada das retomadas volta à conversa nesse horário
+//     (lib/ia/retorno.ts). Grava depois que a confirmação ao cliente saiu.
 //
 // QUEM ELA É vem do prompt da IA (/ botão IA do topo); as REGRAS FIXAS abaixo
 // valem por cima dele. As informações sobre o negócio vêm das instruções da
@@ -73,6 +76,15 @@ import { NOME_PROVISORIO } from "@/lib/instagram";
 import { conexaoGoogle } from "@/lib/google-oauth";
 import { linkDaConversa } from "@/lib/link-do-crm";
 import { ETAPA_ATENDIMENTO_HUMANO, PASSOU_PELA_IA } from "@/lib/atendimento-humano";
+import {
+  conferirRetorno,
+  FERRAMENTA_RETORNO,
+  linhaDoRetorno,
+  registrarRetorno,
+  resultadoDoRetorno,
+  retornoMarcado,
+  type RetornoPedido,
+} from "@/lib/ia/retorno";
 import {
   horariosLivres,
   horariosPorDia,
@@ -403,6 +415,14 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
         // entregue, e o cliente não recebeu nada.
         console.error("[ia atendente] envio falhou:", atendimentoId, r.erro);
         return;
+      }
+      // Só depois da confirmação entregue: o combinado é o que o cliente leu.
+      if (saida.tipo === "texto" && saida.retorno) {
+        try {
+          await registrarRetorno(s.contato_id, s.op_id, saida.retorno);
+        } catch (e) {
+          console.error("[ia atendente] não anotou o retorno:", atendimentoId, e);
+        }
       }
     } else if (!saida.mover) {
       console.info(`[ia atendente] modelo não devolveu texto para ${atendimentoId}`);
@@ -781,6 +801,8 @@ type Saida = (
       mover: Movimento | null;
       /** A IA reservou a reunião nesta resposta (o card vai para "reunião agendada"). */
       marcou?: boolean;
+      /** O retorno combinado (agendar_retorno), já conferido; grava depois do envio. */
+      retorno?: RetornoPedido | null;
     }
   | { tipo: "humano"; motivo: string; mensagem: string | null; mover: Movimento | null }
 ) & { objecoes?: Objecao[] };
@@ -1281,7 +1303,7 @@ async function gerarResposta(
   // quando a principal cai, a conversa segue na da secundária, e a IA precisa
   // do que veio antes da queda. Número sem secundária lê só esta conversa.
   const conversas = await conversasDoPar(atendimentoId);
-  const [historico, oportunidades, ias, etapasDoFunil, origens, rotulosDeCampo] = await Promise.all([
+  const [historico, oportunidades, ias, etapasDoFunil, origens, rotulosDeCampo, retornoAberto] = await Promise.all([
     sql`
       SELECT m.origem, m.enviada_por, u.nome AS autor, m.texto, m.tipo, m.midia_nome, m.data_criacao
       FROM mensagens m
@@ -1319,6 +1341,8 @@ async function gerarResposta(
       LEFT JOIN oportunidades o ON o.id = ${s.op_id}::uuid
       WHERE c.id = ${s.contato_id}`,
     sql`SELECT entidade, chave, rotulo FROM campos_personalizados`,
+    // Consulta pelo índice do histórico do contato: barata, vai junto com as outras.
+    retornoMarcado(s.contato_id),
   ]);
 
   const ia = ias[0] as { nome: string; prompt: string; acoes: string[] } | undefined;
@@ -1372,6 +1396,7 @@ async function gerarResposta(
     // A que mover_etapa move — sem ela o modelo não sabe de onde está saindo.
     ...(destinos.size && s.op_nome ? [`Oportunidade desta conversa: ${s.op_nome} (etapa atual: ${etapaAtual ?? "?"})`] : []),
     ...(agenda ? [agenda.linha] : []),
+    ...(retornoAberto && ia.acoes.includes("agendar_retorno") ? [linhaDoRetorno(retornoAberto)] : []),
     `Agora: ${fmtAgora.format(new Date())}`,
     "",
     "<conversa>",
@@ -1397,6 +1422,7 @@ async function gerarResposta(
     ...(ia.acoes.includes("registrar_objecao") ? [FERRAMENTA_OBJECAO] : []),
     ...(horariosPorRotulo.size ? [ferramentaAgendar([...horariosPorRotulo.keys()])] : []),
     ...(tabela ? [FERRAMENTA_TAXAS] : []),
+    ...(ia.acoes.includes("agendar_retorno") ? [FERRAMENTA_RETORNO] : []),
   ];
   const base = {
     model: MODELO,
@@ -1473,15 +1499,18 @@ async function gerarResposta(
   // para um "Oi" (visto no teste de 2026-09-29). Devolve e pede o texto, agora
   // sem ferramentas: as ações já ficaram decididas na primeira chamada.
   // passar_para_humano não entra: a mensagem ao cliente vem no próprio input.
-  // Com agendar_reuniao e consultar_taxas a volta é obrigatória, mesmo que já
-  // houvesse texto: só o resultado diz se dá para confirmar (e com qual link),
-  // ou quais são as taxas.
+  // Com agendar_reuniao, consultar_taxas e agendar_retorno a volta é
+  // obrigatória, mesmo que já houvesse texto: só o resultado diz se dá para
+  // confirmar (e com qual link), quais são as taxas, ou se o dia do retorno
+  // valeu.
   const consulta = usou(FERRAMENTA_TAXAS.name);
   const taxas =
     consulta && tabela && resposta.stop_reason === "tool_use"
       ? taxasParaValor(tabela, Number((consulta.input as { valor?: unknown }).valor))
       : null;
-  if ((agendamento || taxas || (!texto && resposta.stop_reason === "tool_use")) && !usou(FERRAMENTA_HUMANO.name)) {
+  const pedidoRetorno = usou(FERRAMENTA_RETORNO.name);
+  const retorno = pedidoRetorno && resposta.stop_reason === "tool_use" ? conferirRetorno(pedidoRetorno.input) : null;
+  if ((agendamento || taxas || retorno || (!texto && resposta.stop_reason === "tool_use")) && !usou(FERRAMENTA_HUMANO.name)) {
     const resultados: Anthropic.ToolResultBlockParam[] = resposta.content
       .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
       .map((b) => ({
@@ -1494,10 +1523,12 @@ async function gerarResposta(
               ? agendamento.resultado
               : b.name === FERRAMENTA_TAXAS.name && taxas
                 ? taxas
-                : "Registrado.",
+                : b.name === FERRAMENTA_RETORNO.name && retorno
+                  ? resultadoDoRetorno(retorno)
+                  : "Registrado.",
       }));
     // O texto da primeira chamada foi escrito sem saber o resultado: não vale.
-    if (agendamento || taxas) texto = "";
+    if (agendamento || taxas || retorno) texto = "";
     const continuacao = await cliente.messages.create({
       ...base,
       tool_choice: { type: "none" },
@@ -1569,6 +1600,7 @@ async function gerarResposta(
     objecoes,
     // textoReserva só existe quando a reserva no Google deu certo.
     marcou: Boolean(agendamento?.textoReserva),
+    retorno: retorno && !("erro" in retorno) ? retorno : null,
   };
 }
 

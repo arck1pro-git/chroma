@@ -197,6 +197,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   da biblioteca de Documentos pela URL assinada e as recusas do registro),
   `testar-instancia-secundaria.ts` (pelo runner, contra o DEV com a uazapi falsa num servidor local e marca apagada no
   fim: quando a secundária assume, onde a mensagem fica, a volta à principal e as travas do banco),
+  `testar-ia-retorno.ts` (pelo runner, contra o DEV com a Anthropic falsa num servidor local e marca apagada no fim: o
+  retorno combinado da IA, a rodada que retoma no horário e a retomada por silêncio que o respeita),
   `scripts/testar-extensao-reunioes.mjs` (direto com `node`: o service worker da extensão com um `chrome` falso; o áudio
   de verdade só no Chrome, ver `extensao-reunioes/LEIAME.md`) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`

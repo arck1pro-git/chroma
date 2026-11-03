@@ -82,11 +82,12 @@ function validar(d: DadosIa): IaValidada | string {
 }
 
 /**
- * Com retomadas, liga o agendador do n8n que as dispara (lib/ia/retomada.ts).
- * Devolve o aviso para a tela quando não deu: a IA fica salva do mesmo jeito.
+ * Com retomadas ou com o retorno combinado (agendar_retorno), liga o agendador
+ * do n8n que os dispara (lib/ia/retomada.ts). Devolve o aviso para a tela
+ * quando não deu: a IA fica salva do mesmo jeito.
  */
 async function ligarAgendador(v: IaValidada): Promise<string | undefined> {
-  if (v.retomarApos.length === 0) return undefined;
+  if (v.retomarApos.length === 0 && !v.acoes.includes("agendar_retorno")) return undefined;
   const { url, publico, host } = enderecoDoCrm(await headers());
   // O n8n é o da produção: um agendador apontando para localhost não falharia
   // aqui, falharia lá, de 5 em 5 minutos.

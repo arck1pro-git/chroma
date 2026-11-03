@@ -31,6 +31,12 @@ export const ACOES_IA = [
     descricao:
       "Com a agenda conectada em Integrações, ela oferece os horários livres do especialista (seg a sex, 10h às 18h, reuniões de 1h, nos próximos 10 dias úteis) e marca a reunião com link do Meet quando o cliente escolhe. A reunião fica ligada à oportunidade, entra no histórico, e o contato com e-mail recebe o convite. Quem já tem reunião marcada não recebe outra.",
   },
+  {
+    chave: "agendar_retorno",
+    rotulo: "Retomar quando o cliente pedir",
+    descricao:
+      'Quando o cliente pede para falar em outro momento ("me chama amanhã às 15h", "agora não posso, fala comigo segunda"), ela anota o dia e a hora no histórico do contato e retoma a conversa nesse horário (até 60 dias à frente). Se ele voltar a falar antes ou alguém da equipe estiver na conversa, o retorno cai. Se ela não puder retomar (contato fora da IA, janela da Meta fechada), o responsável da oportunidade é avisado no WhatsApp.',
+  },
 ] as const;
 
 export type AcaoIa = (typeof ACOES_IA)[number]["chave"];

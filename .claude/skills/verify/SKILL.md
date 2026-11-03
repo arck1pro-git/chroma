@@ -40,6 +40,7 @@ o `npx` baixaria pacotes do registro.
 | Número secundário | mudou `lib/uazapi-reserva.ts`, `lib/uazapi-estado.ts`, `lib/conversa-envio.ts`, `lib/automacoes/conversa-da-cadencia.ts` ou `definirSecundaria`/`criarInstanciaNaUazapi` em `app/configuracoes/acoes-whatsapp.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-instancia-secundaria.ts` |
 | Extensão de reuniões | mudou `extensao-reunioes/` | `node scripts/testar-extensao-reunioes.mjs` (o service worker; o áudio de verdade só no Chrome, ver o LEIAME da pasta) |
 | Atendimento humano | mudou `lib/atendimento-humano.ts`, `lib/automacoes/mover-pela-cadencia.ts`, `avancarPelaIa`/`passarParaHumano` em `lib/ia/atendente.ts` ou a pill em `lib/funil.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-atendimento-humano.ts` |
+| Retomadas e retorno combinado da IA | mudou `lib/ia/retorno.ts`, `lib/ia/retomada.ts` ou `gerarResposta`/`responderComIa` em `lib/ia/atendente.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-ia-retorno.ts` |
 | Hooks do Claude Code | mudou `.claude/hooks/` ou `.claude/settings.json` | `node scripts/testar-hooks.mjs` |
 | Build | mudou `next.config.ts`, `proxy.ts`, `app/layout.tsx`, `package.json` ou `tsconfig.json`; rota ou página nova; alvo `build` ou `tudo` | `npm run build` |
 
