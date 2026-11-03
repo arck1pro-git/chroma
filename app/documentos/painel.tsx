@@ -31,6 +31,7 @@ import {
   X,
   type TipoIcone,
 } from "@/app/components/icones";
+import { otimizarFoto } from "@/app/components/otimizar-foto";
 import {
   alternarArquivado,
   prepararEnvio,
@@ -118,8 +119,11 @@ export default function PainelDocumentos({
     let entraram = 0;
     const erros: string[] = [];
 
-    for (const arquivo of Array.from(arquivos)) {
+    for (const original of Array.from(arquivos)) {
       try {
+        // Foto otimizada em JPEG, e não WebP: o documento vai ao lead pelo
+        // WhatsApp, e a API oficial só aceita JPEG ou PNG como imagem.
+        const arquivo = await otimizarFoto(original, "jpeg");
         const preparo = await prepararEnvio({ nomeArquivo: arquivo.name, tamanho: arquivo.size });
         if (!preparo.ok) {
           erros.push(`${arquivo.name}: ${preparo.mensagem}`);
@@ -140,7 +144,7 @@ export default function PainelDocumentos({
         if (r.ok) entraram++;
         else erros.push(`${arquivo.name}: ${r.mensagem}`);
       } catch {
-        erros.push(`${arquivo.name}: falhou no envio`);
+        erros.push(`${original.name}: falhou no envio`);
       }
     }
 

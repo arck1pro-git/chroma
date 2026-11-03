@@ -27,6 +27,7 @@ import fs from "fs/promises";
 import path from "path";
 import { sql } from "@/lib/db";
 import { BUCKET_DOCUMENTOS, baixar, subir } from "@/lib/armazenamento";
+import { otimizarFoto } from "@/lib/otimizar-foto";
 import { baixarMidiaMeta } from "@/lib/meta";
 import { linkDaMidiaRecebida } from "@/lib/uazapi";
 import { transcreverAudio } from "@/lib/transcricao";
@@ -165,6 +166,8 @@ export function temArquivo(tipo: TipoMensagem): boolean {
 // ── Armazenamento ───────────────────────────────────────────────────────────
 //
 // Supabase Storage, no bucket do CRM (lib/armazenamento.ts), sob `midias/`.
+// Desde 2026-11-03 a foto recebida vira WebP menor antes de guardar
+// (lib/otimizar-foto.ts), e a linha grava o tipo e o tamanho do que ficou.
 //
 // ERA DISCO LOCAL (MIDIA_DIR), e na Vercel isso não funciona: o sistema de
 // arquivos é somente-leitura fora de /tmp e cada invocação pode cair numa
@@ -362,14 +365,20 @@ export async function baixarPendentes(limite = 20): Promise<{
       // do evento, o arquivo seria salvo .ogg com bytes de MP3. Genérico
       // (octet-stream) não diz nada, e aí fica o do evento.
       const doArquivo = mimeOrigem && !/octet-stream/i.test(mimeOrigem) ? mimeOrigem : null;
-      const mime = doArquivo ?? linha.midia_mime;
-      const caminho = await salvarArquivo(linha.id, bytes, mime, linha.midia_nome);
+      const mimeRecebido = doArquivo ?? linha.midia_mime;
+      // Foto vira WebP menor antes de guardar (lib/otimizar-foto.ts). Com a
+      // troca, a extensão do nome também vira .webp, para o arquivo bater com o tipo.
+      const foto = await otimizarFoto(bytes, mimeRecebido);
+      const mime = foto.mime;
+      const nome = foto.otimizada && linha.midia_nome ? linha.midia_nome.replace(/\.[^.]+$/, "") + ".webp" : linha.midia_nome;
+      const caminho = await salvarArquivo(linha.id, foto.bytes, mime, nome);
 
       await sql`
         UPDATE mensagens SET
           midia_caminho = ${caminho},
           midia_mime    = ${mime},
-          midia_tamanho = ${bytes.byteLength},
+          midia_tamanho = ${foto.bytes.byteLength},
+          midia_nome    = ${nome},
           midia_estado  = 'salva',
           midia_erro    = NULL
         WHERE id = ${linha.id}`;

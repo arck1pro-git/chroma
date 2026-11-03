@@ -3,44 +3,15 @@
 // Usado pelo formulário (app/components/modal-demanda.tsx) e pela gaveta
 // (app/demandas/anexos.tsx).
 //
-// FOTO VIRA WEBP antes de subir (pedido dele, 2026-10-15): no máximo 1920 px no
-// lado maior, qualidade 0,8. Uma foto de celular de 4 MB costuma cair para
-// algumas centenas de KB. O que não dá para comprimir sobe como veio: GIF (a
-// animação se perderia), SVG, HEIC que o navegador não abre, e o navegador que
-// não sabe gerar WebP.
+// FOTO VIRA WEBP antes de subir (pedido dele, 2026-10-15), pela otimização
+// compartilhada (app/components/otimizar-foto.ts): o anexo fica só no CRM.
 import { prepararAnexoDemanda } from "./acoes";
 import type { AnexoDemanda } from "@/lib/demandas-tipos";
-
-const LADO_MAX = 1920;
-const QUALIDADE = 0.8;
-const COMPRIMIVEL = /^image\/(jpeg|png|webp|bmp|heic|heif|avif)$/i;
-
-export async function comprimirFoto(arquivo: File): Promise<File> {
-  if (!COMPRIMIVEL.test(arquivo.type)) return arquivo;
-  try {
-    // from-image: a foto de celular deitada pelo EXIF sai em pé.
-    const imagem = await createImageBitmap(arquivo, { imageOrientation: "from-image" });
-    const escala = Math.min(1, LADO_MAX / Math.max(imagem.width, imagem.height));
-    const tela = document.createElement("canvas");
-    tela.width = Math.max(1, Math.round(imagem.width * escala));
-    tela.height = Math.max(1, Math.round(imagem.height * escala));
-    tela.getContext("2d")?.drawImage(imagem, 0, 0, tela.width, tela.height);
-    imagem.close();
-    const webp = await new Promise<Blob | null>((pronto) => tela.toBlob(pronto, "image/webp", QUALIDADE));
-    // Navegador sem codificador de WebP devolve PNG: aí sobe a original.
-    if (!webp || webp.type !== "image/webp") return arquivo;
-    // Uma WebP pequena que já veio otimizada pode crescer ao recomprimir.
-    if (arquivo.type === "image/webp" && webp.size >= arquivo.size) return arquivo;
-    const base = arquivo.name.replace(/\.[^.]+$/, "") || "foto";
-    return new File([webp], `${base}.webp`, { type: "image/webp" });
-  } catch {
-    return arquivo;
-  }
-}
+import { otimizarFoto } from "@/app/components/otimizar-foto";
 
 /** Comprime (se for foto), assina e sobe. Devolve o anexo para a ação gravar. */
 export async function subirAnexo(original: File): Promise<AnexoDemanda> {
-  const arquivo = await comprimirFoto(original);
+  const arquivo = await otimizarFoto(original, "webp");
   const preparo = await prepararAnexoDemanda(arquivo.size);
   if (!preparo.ok) throw new Error(preparo.mensagem);
 
