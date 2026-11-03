@@ -269,3 +269,20 @@ export async function remover(bucket: string, caminho: string): Promise<void> {
     console.error(`[armazenamento] falhei ao apagar ${bucket}/${caminho}:`, e);
   }
 }
+
+/**
+ * O Storage está no ar? Lista os buckets, a chamada mais leve, e devolve o
+ * status. O Supabase responde 402 quando suspende o projeto por cota do plano
+ * (tráfego de saída, espaço), com o motivo na mensagem. É o que o módulo Infra
+ * mostra (lib/infra-banco.ts).
+ */
+export async function situacaoDoStorage(): Promise<{ status: number; mensagem: string | null }> {
+  const r = await fetch(`${URL_BASE()}/storage/v1/bucket`, {
+    headers: cabecalhos(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (r.ok) return { status: r.status, mensagem: null };
+  const corpo = (await r.json().catch(() => null)) as { message?: string; error?: string } | null;
+  return { status: r.status, mensagem: (corpo?.message ?? corpo?.error ?? "").slice(0, 300) || null };
+}

@@ -61,8 +61,9 @@ public/               só ícones e o que o app serve; nada de material interno
 ```
 
 Módulos (chave, rota): inicio `/`, chat, contatos, agenda, demandas, metricas, emails, automacoes, campanhas,
-templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, configuracoes. A rota é
-`/<chave>`, exceto inicio. Quem vê cada um é decidido no banco (`departamento_modulos`), não no código.
+templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, infra, configuracoes. A rota é
+`/<chave>`, exceto inicio. Quem vê cada um é decidido no banco (`departamento_modulos`), não no código. O `infra`
+(`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem.
 
 ## 2. Fluxo de execução e pontos de entrada
 

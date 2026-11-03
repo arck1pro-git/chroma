@@ -149,6 +149,7 @@ import {
   faRoute,
   faRss,
   faSackDollar,
+  faServer,
   faShieldHalved,
   faShuffle,
   faSitemap,
@@ -357,6 +358,7 @@ export const Search = icone(faMagnifyingGlass, "Search");
 export const SearchX = icone(faMagnifyingGlassMinus, "SearchX");
 export const Send = icone(faPaperPlane, "Send");
 export const SendHorizonal = icone(faPaperPlane, "SendHorizonal");
+export const Server = icone(faServer, "Server");
 export const Settings = icone(faGear, "Settings");
 export const Settings2 = icone(faSliders, "Settings2");
 export const ShieldCheck = icone(faShieldHalved, "ShieldCheck");

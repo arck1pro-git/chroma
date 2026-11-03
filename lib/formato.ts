@@ -111,3 +111,15 @@ export function iniciais(nome: string) {
   const ultima = partes.length > 1 ? partes[partes.length - 1][0] : "";
   return (primeira + ultima).toUpperCase();
 }
+
+// 51740672 → "49,3 MB", para tamanhos de banco e de arquivo (módulo Infra).
+export function tamanhoArquivo(bytes: number) {
+  const unidades = ["B", "KB", "MB", "GB", "TB"];
+  let valor = bytes;
+  let i = 0;
+  while (valor >= 1024 && i < unidades.length - 1) {
+    valor /= 1024;
+    i++;
+  }
+  return `${valor.toLocaleString("pt-BR", { maximumFractionDigits: i === 0 ? 0 : 1 })} ${unidades[i]}`;
+}

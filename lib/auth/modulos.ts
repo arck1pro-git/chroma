@@ -33,6 +33,7 @@ export type ChaveModulo =
   | "videos"
   | "meta"
   | "integracoes"
+  | "infra"
   | "configuracoes";
 
 /**
@@ -221,6 +222,15 @@ export const MODULOS: readonly Modulo[] = [
     escopavel: false,
     naBarra: false,
     descricao: "Conexões com sistemas de fora.",
+  },
+  {
+    chave: "infra",
+    rotulo: "Infra",
+    href: "/infra",
+    escopavel: false,
+    naBarra: true,
+    descricao:
+      "Os serviços de que o CRM depende (banco, arquivos, IA, transcrição, WhatsApp, n8n, Google), com o uso contra o limite e o que pede ação. Para o TI.",
   },
   {
     chave: "configuracoes",
