@@ -7,9 +7,8 @@
 //
 // Um eixo só, sempre em horas: a pessoa contra a média da equipe é a mesma
 // grandeza. O total da equipe não divide gráfico com a média por pessoa (uma
-// é dez vezes a outra); a média vai no tooltip. Por mês, a equipe aparece em
-// média por pessoa: o total sobe e desce com quem entrou e saiu, e passa de
-// mil horas, que o eixo não comporta.
+// é dez vezes a outra); a média vai no tooltip. O gráfico da equipe por mês saiu
+// a pedido dele (2026-11-03); por mês, só o de cada colaborador.
 import { LinhasPorDia, type EscalaLinha, type SerieLinha } from "@/app/components/grafico-linhas";
 
 /** Horas em decimal → "7h32". */
@@ -30,7 +29,7 @@ function porMes(atual: string): EscalaLinha {
   };
 }
 
-/** Um ponto do gráfico da equipe: `dia` é AAAA-MM-DD (por dia) ou AAAA-MM-01 (por mês). */
+/** Um ponto do gráfico da equipe por dia (AAAA-MM-DD). */
 export type PontoEquipe = { dia: string; horas: number; pessoas: number };
 /** Um ponto do gráfico de uma pessoa, com a média da equipe no mesmo período. */
 export type PontoPessoa = { dia: string; pessoa: number; media: number };
@@ -51,25 +50,6 @@ export function EquipePorDia({ dados }: { dados: PontoEquipe[] }) {
       altura="h-40"
       vazio="Ninguém bateu ponto neste mês."
       titulo="Horas da equipe por dia no mês"
-    />
-  );
-}
-
-const SERIE_MEDIA: SerieLinha<PontoEquipe>[] = [
-  { nome: "Horas por pessoa", cor: "var(--serie-ok)", valor: (d) => (d.pessoas ? d.horas / d.pessoas : 0), formatar: horas },
-];
-
-export function EquipePorMes({ dados, atual }: { dados: PontoEquipe[]; atual: string }) {
-  return (
-    <LinhasPorDia
-      dados={dados}
-      series={SERIE_MEDIA}
-      resumo={`${dados.length} ${dados.length === 1 ? "mês" : "meses"}`}
-      notaNoDia={(d) => `${horas(d.horas)} da equipe · ${d.pessoas} ${d.pessoas === 1 ? "pessoa" : "pessoas"}`}
-      escala={porMes(atual)}
-      altura="h-40"
-      vazio="Sem batidas registradas."
-      titulo="Média de horas por pessoa, por mês"
     />
   );
 }

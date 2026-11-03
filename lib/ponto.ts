@@ -117,6 +117,12 @@ export function calcularDia(
   return { minutos, situacao: irregular ? "irregular" : "completo" };
 }
 
+/** O cadastro existe no app de ponto? É o que a ação confere antes de gravar o pagamento de alguém. */
+export async function existeColaborador(id: string): Promise<boolean> {
+  const linhas = await lerPonto((sql) => sql`SELECT 1 FROM users WHERE id = ${id} LIMIT 1`);
+  return linhas.length > 0;
+}
+
 /** "08:42" → 522. */
 const minutosDoDia = (hora: string) => Number(hora.slice(0, 2)) * 60 + Number(hora.slice(3, 5));
 

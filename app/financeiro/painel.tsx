@@ -1,17 +1,21 @@
-// A tela do Financeiro: a faixa de abas (hoje só o Ponto) e, na aba Ponto, o
-// mês de todo mundo. Duas visões na mesma aba:
-//   · a equipe: os números do mês, as horas por dia e por mês, a tabela por
-//     pessoa com o mês de cada um em barrinhas, e o dia a dia;
-//   · um colaborador (clicar na pessoa, ?pessoa=<id>): os números dele contra a
-//     média da equipe, os mesmos gráficos com a média ao lado e o dia a dia dele.
+// A tela do Financeiro: a faixa de abas e a aba aberta. Duas abas:
+//   · Ponto (aqui): o mês de todo mundo. Na visão da equipe, os números do
+//     mês, as horas por dia, a tabela por pessoa com o mês de cada um em
+//     barrinhas e o dia a dia; na de um colaborador (?pessoa=<id>), os números
+//     dele contra a média da equipe, os gráficos com a média ao lado e o dia a
+//     dia dele.
+//   · Folha (./folha.tsx): o que pagar a cada um no mês, por setor.
 // Componente de servidor: os filtros são links, sem estado no navegador; só os
-// gráficos são do cliente (./graficos.tsx).
+// gráficos e o formulário da folha são do cliente.
 import type { ReactNode } from "react";
 import Link from "next/link";
+import type { Folha } from "@/lib/financeiro-pagamentos";
 import { horaCurta } from "@/lib/formato";
 import { mesAtual, type DadosPonto, type DiaPonto, type Modalidade, type PessoaPonto, type ResumoPonto, type SituacaoDia } from "@/lib/ponto";
-import { AlertTriangle, ChevronLeft, ChevronRight, Clock, X } from "@/app/components/icones";
-import { EquipePorDia, EquipePorMes, PessoaPorDia, PessoaPorMes } from "./graficos";
+import { AlertTriangle, BadgeDollarSign, Clock, X } from "@/app/components/icones";
+import { cartao, endereco, horas, Indicador, NavegacaoDoMes, type Aba } from "./comum";
+import AbaFolha from "./folha";
+import { EquipePorDia, PessoaPorDia, PessoaPorMes } from "./graficos";
 
 type Problema = "sem_base" | "sem_resposta";
 
@@ -46,13 +50,6 @@ const SITUACAO: Record<SituacaoDia, { rotulo: string; classe: string; barra: str
 const MODALIDADE: Record<Modalidade, string> = { presencial: "Presencial", home_office: "Home office" };
 
 const selo = "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset";
-const cartao = "rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900";
-
-/** 452 → "7h32". */
-function horas(minutos: number): string {
-  const m = Math.round(minutos);
-  return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`;
-}
 
 /** 522 (minutos desde a meia-noite) → "08:42". */
 function relogio(minutos: number | null): string {
@@ -60,29 +57,11 @@ function relogio(minutos: number | null): string {
   return `${String(Math.floor(minutos / 60)).padStart(2, "0")}:${String(minutos % 60).padStart(2, "0")}`;
 }
 
-/** "2026-11" → "Novembro de 2026". */
-function nomeDoMes(mes: string): string {
-  const nome = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${mes}-01T12:00:00Z`));
-  return nome.charAt(0).toUpperCase() + nome.slice(1);
-}
-
 /** "2026-11-03" → "03/11 ter". */
 function nomeDoDia(dia: string): string {
   const d = new Date(`${dia}T12:00:00Z`);
   const semana = new Intl.DateTimeFormat("pt-BR", { weekday: "short", timeZone: "UTC" }).format(d).replace(".", "");
   return `${dia.slice(8, 10)}/${dia.slice(5, 7)} ${semana}`;
-}
-
-function somarMes(mes: string, n: number): string {
-  const [a, m] = mes.split("-").map(Number);
-  const d = new Date(Date.UTC(a, m - 1 + n, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-function endereco(mes: string, pessoaId: string | null): string {
-  const q = new URLSearchParams({ mes });
-  if (pessoaId) q.set("pessoa", pessoaId);
-  return `/financeiro?${q}`;
 }
 
 /** As batidas do dia: em pares (08:02 → 12:00) quando fecham, uma a uma quando não. */
@@ -130,16 +109,6 @@ function BarrasDoMes({ diasDaEquipe, diasDaPessoa }: { diasDaEquipe: string[]; d
   );
 }
 
-function Indicador({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe?: string }) {
-  return (
-    <div className={`${cartao} px-4 py-3`}>
-      <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{rotulo}</p>
-      <p className="mt-0.5 text-lg font-semibold tabular-nums tracking-tight text-zinc-900 dark:text-zinc-50">{valor}</p>
-      {detalhe && <p className="text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">{detalhe}</p>}
-    </div>
-  );
-}
-
 function CartaoGrafico({ titulo, children }: { titulo: string; children: ReactNode }) {
   return (
     <section className={`${cartao} px-4 pb-3 pt-3.5`}>
@@ -149,15 +118,27 @@ function CartaoGrafico({ titulo, children }: { titulo: string; children: ReactNo
   );
 }
 
+const ABAS: Array<{ aba: Aba; rotulo: string; Icone: typeof Clock }> = [
+  { aba: "ponto", rotulo: "Ponto", Icone: Clock },
+  { aba: "folha", rotulo: "Folha", Icone: BadgeDollarSign },
+];
+
 export default function PainelFinanceiro({
+  aba,
   mes,
   dados,
+  folha,
   pessoaId = null,
+  podeEditar = false,
   problema,
 }: {
+  aba: Aba;
   mes: string;
   dados?: DadosPonto;
+  /** null = as tabelas da folha ainda não existem neste banco. */
+  folha?: Folha | null;
   pessoaId?: string | null;
+  podeEditar?: boolean;
   problema?: Problema;
 }) {
   return (
@@ -166,14 +147,21 @@ export default function PainelFinanceiro({
         <header>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Financeiro</h1>
           <nav className="mt-3 flex gap-1 border-b border-zinc-200 dark:border-zinc-800" aria-label="Abas do Financeiro">
-            <Link
-              href={endereco(mes, null)}
-              aria-current="page"
-              className="-mb-px flex items-center gap-1.5 border-b-2 border-zinc-900 px-3 py-2 text-[13px] font-medium text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
-            >
-              <Clock className="size-3.5" aria-hidden="true" />
-              Ponto
-            </Link>
+            {ABAS.map(({ aba: a, rotulo, Icone }) => (
+              <Link
+                key={a}
+                href={endereco(a, mes)}
+                aria-current={a === aba ? "page" : undefined}
+                className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-medium transition ${
+                  a === aba
+                    ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
+                    : "border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                }`}
+              >
+                <Icone className="size-3.5" aria-hidden="true" />
+                {rotulo}
+              </Link>
+            ))}
           </nav>
         </header>
 
@@ -184,6 +172,8 @@ export default function PainelFinanceiro({
               ? "A base do app de ponto não está configurada neste ambiente (PONTO_DATABASE_URL)."
               : "A base do app de ponto não respondeu agora. Tente de novo em instantes."}
           </p>
+        ) : aba === "folha" ? (
+          <AbaFolha dados={dados} folha={folha ?? null} pessoaId={pessoaId} podeEditar={podeEditar} />
         ) : (
           <AbaPonto dados={dados} pessoaId={pessoaId} />
         )}
@@ -208,12 +198,8 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
   );
   const comBatida = resumos.filter((r) => r.diasComBatida > 0).length;
   const dias = pessoaId ? dados.dias.filter((d) => d.pessoaId === pessoaId) : dados.dias;
-  const maisVelho = dados.meses[dados.meses.length - 1] ?? mes;
-  const anterior = mes > maisVelho ? somarMes(mes, -1) : null;
-  const seguinte = dados.meses[0] && mes < dados.meses[0] ? somarMes(mes, 1) : null;
   const selecionada = pessoaId ? pessoa.get(pessoaId) : null;
   const resumoDela = pessoaId ? resumos.find((r) => r.pessoaId === pessoaId) : undefined;
-  const atual = `${mesAtual()}-01`;
   const diasDaEquipe = dados.porDia.map((d) => d.dia);
   const diasPorPessoa = new Map<string, Map<string, DiaPonto>>();
   for (const d of dados.dias) {
@@ -221,37 +207,16 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
     diasPorPessoa.get(d.pessoaId)!.set(d.dia, d);
   }
   const maiorMes = Math.max(1, ...resumos.map((r) => r.minutos));
-  const botaoMes =
-    "inline-flex size-8 items-center justify-center rounded-lg border border-zinc-300 text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          {anterior ? (
-            <Link href={endereco(anterior, pessoaId)} className={botaoMes} aria-label="Mês anterior">
-              <ChevronLeft className="size-3.5" aria-hidden="true" />
-            </Link>
-          ) : (
-            <span className={`${botaoMes} pointer-events-none opacity-40`} aria-hidden="true">
-              <ChevronLeft className="size-3.5" />
-            </span>
-          )}
-          <p className="min-w-40 text-center text-[14px] font-medium text-zinc-900 dark:text-zinc-50">{nomeDoMes(mes)}</p>
-          {seguinte ? (
-            <Link href={endereco(seguinte, pessoaId)} className={botaoMes} aria-label="Mês seguinte">
-              <ChevronRight className="size-3.5" aria-hidden="true" />
-            </Link>
-          ) : (
-            <span className={`${botaoMes} pointer-events-none opacity-40`} aria-hidden="true">
-              <ChevronRight className="size-3.5" />
-            </span>
-          )}
-        </div>
-        <p className="text-[12px] text-zinc-500 dark:text-zinc-400">
-          Lido do app de ponto às {horaCurta(dados.lidoEm)} · {dados.pessoas.length} cadastros, {resumos.length} com registro no mês
-        </p>
-      </div>
+      <NavegacaoDoMes
+        aba="ponto"
+        mes={mes}
+        meses={dados.meses}
+        pessoaId={pessoaId}
+        legenda={`Lido do app de ponto às ${horaCurta(dados.lidoEm)} · ${dados.pessoas.length} cadastros, ${resumos.length} com registro no mês`}
+      />
 
       {selecionada ? (
         <FichaDaPessoa
@@ -260,7 +225,6 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
           resumo={resumoDela}
           mediaEquipe={comBatida ? total.minutos / comBatida : 0}
           mediaDiaEquipe={total.dias ? total.minutos / total.dias : 0}
-          atual={atual}
         />
       ) : (
         <>
@@ -270,14 +234,9 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
             <Indicador rotulo="Presencial · home office" valor={`${total.presencial} · ${total.homeOffice}`} detalhe="dias no mês" />
             <Indicador rotulo="Dias com pendência" valor={String(total.pendencias)} detalhe="falta saída, irregular ou sem batida" />
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <CartaoGrafico titulo="Horas da equipe por dia">
-              <EquipePorDia dados={dados.porDia.map((d) => ({ dia: d.dia, horas: d.minutos / 60, pessoas: d.pessoas }))} />
-            </CartaoGrafico>
-            <CartaoGrafico titulo="Média de horas por pessoa, por mês">
-              <EquipePorMes atual={atual} dados={dados.porMes.map((m) => ({ dia: `${m.mes}-01`, horas: m.minutos / 60, pessoas: m.pessoas }))} />
-            </CartaoGrafico>
-          </div>
+          <CartaoGrafico titulo="Horas da equipe por dia">
+            <EquipePorDia dados={dados.porDia.map((d) => ({ dia: d.dia, horas: d.minutos / 60, pessoas: d.pessoas }))} />
+          </CartaoGrafico>
         </>
       )}
 
@@ -306,17 +265,18 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
                 {resumos.map((r) => {
                   const p = pessoa.get(r.pessoaId);
                   const ativa = r.pessoaId === pessoaId;
+                  const link = endereco("ponto", mes, ativa ? null : r.pessoaId);
                   return (
                     <tr key={r.pessoaId} className={ativa ? "bg-zinc-50 dark:bg-zinc-800/60" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"}>
                       <td className="px-4 py-2">
-                        <Link href={endereco(mes, ativa ? null : r.pessoaId)} className="block min-w-0">
+                        <Link href={link} className="block min-w-0">
                           <span className="font-medium text-zinc-900 dark:text-zinc-100">{p?.nome ?? "Cadastro removido"}</span>
                           {p?.admin && <span className="ml-1.5 text-[11px] text-zinc-400 dark:text-zinc-500">admin</span>}
                           <span className="block truncate text-[11px] text-zinc-500 dark:text-zinc-400">{p?.email}</span>
                         </Link>
                       </td>
                       <td className="px-3 py-2">
-                        <Link href={endereco(mes, ativa ? null : r.pessoaId)} aria-label={`Ver o andamento de ${p?.nome ?? "esta pessoa"}`}>
+                        <Link href={link} aria-label={`Ver o andamento de ${p?.nome ?? "esta pessoa"}`}>
                           <BarrasDoMes diasDaEquipe={diasDaEquipe} diasDaPessoa={diasPorPessoa.get(r.pessoaId) ?? new Map()} />
                         </Link>
                       </td>
@@ -353,7 +313,7 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
           <h2 className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">Dia a dia</h2>
           {selecionada && (
             <Link
-              href={endereco(mes, null)}
+              href={endereco("ponto", mes)}
               className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-0.5 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               {selecionada.nome}
@@ -382,7 +342,7 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
                     <td className="whitespace-nowrap px-4 py-2 tabular-nums text-zinc-700 dark:text-zinc-300">{nomeDoDia(d.dia)}</td>
                     {!pessoaId && (
                       <td className="whitespace-nowrap px-3 py-2 text-zinc-900 dark:text-zinc-100">
-                        <Link href={endereco(mes, d.pessoaId)} className="hover:underline">
+                        <Link href={endereco("ponto", mes, d.pessoaId)} className="hover:underline">
                           {pessoa.get(d.pessoaId)?.nome ?? "Cadastro removido"}
                         </Link>
                       </td>
@@ -413,14 +373,12 @@ function FichaDaPessoa({
   resumo,
   mediaEquipe,
   mediaDiaEquipe,
-  atual,
 }: {
   dados: DadosPonto;
   pessoa: PessoaPonto;
   resumo: ResumoPonto | undefined;
   mediaEquipe: number;
   mediaDiaEquipe: number;
-  atual: string;
 }) {
   const minutosNoDia = new Map(dados.dias.filter((d) => d.pessoaId === pessoa.id).map((d) => [d.dia, d.minutos]));
   const porDia = dados.porDia.map((e) => ({ dia: e.dia, pessoa: (minutosNoDia.get(e.dia) ?? 0) / 60, media: e.minutos / e.pessoas / 60 }));
@@ -443,13 +401,22 @@ function FichaDaPessoa({
           </h2>
           <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{pessoa.email}</p>
         </div>
-        <Link
-          href={endereco(dados.mes, null)}
-          className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-1 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        >
-          <X className="size-3" aria-hidden="true" />
-          Ver a equipe
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={endereco("folha", dados.mes, pessoa.id)}
+            className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-1 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            <BadgeDollarSign className="size-3" aria-hidden="true" />
+            Ver na folha
+          </Link>
+          <Link
+            href={endereco("ponto", dados.mes)}
+            className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-1 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            <X className="size-3" aria-hidden="true" />
+            Ver a equipe
+          </Link>
+        </div>
       </header>
 
       {!r ? (
@@ -470,7 +437,7 @@ function FichaDaPessoa({
           <PessoaPorDia nome={pessoa.nome.split(" ")[0]} dados={porDia} />
         </CartaoGrafico>
         <CartaoGrafico titulo="Horas por mês">
-          <PessoaPorMes nome={pessoa.nome.split(" ")[0]} atual={atual} dados={porMes} />
+          <PessoaPorMes nome={pessoa.nome.split(" ")[0]} atual={`${mesAtual()}-01`} dados={porMes} />
         </CartaoGrafico>
       </div>
     </section>

@@ -63,8 +63,10 @@ public/               só ícones e o que o app serve; nada de material interno
 Módulos (chave, rota): inicio `/`, chat, contatos, agenda, demandas, metricas, emails, automacoes, campanhas,
 templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, financeiro, infra, configuracoes. A rota é
 `/<chave>`, exceto inicio. Quem vê cada um é decidido no banco (`departamento_modulos`), não no código. O `infra`
-(`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem. O `financeiro` tem hoje
-a aba Ponto (`lib/ponto.ts`), lida da base do app de ponto da equipe (outro sistema, só leitura, `lib/ponto-db.ts`).
+(`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem. O `financeiro` tem a aba
+Ponto (`lib/ponto.ts`), lida da base do app de ponto da equipe (outro sistema, só leitura, `lib/ponto-db.ts`), e a aba
+Folha (`lib/financeiro-pagamentos.ts`, conta em `lib/financeiro-tipos.ts`): cadastro de pagamento por colaborador e
+adicional e descontos por mês, no banco do CRM, que a IA (`chroma_ia`) não lê.
 
 ## 2. Fluxo de execução e pontos de entrada
 
@@ -204,7 +206,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   `testar-ia-retorno.ts` (pelo runner, contra o DEV com a Anthropic falsa num servidor local e marca apagada no fim: o
   retorno combinado da IA, a rodada que retoma no horário e a retomada por silêncio que o respeita),
   `testar-ponto.ts` (pelo runner: as regras das horas do ponto; com `PONTO_DATABASE_URL`, lê dois meses da base do app
-  de ponto e confere que a conexão recusa escrita, sem gravar nada lá),
+  de ponto e confere que a conexão recusa escrita, sem gravar nada lá), `testar-folha.ts` (pelo runner: a conta da folha
+  e as recusas; contra o DEV, grava e lê cadastro e lançamento com marca apagada no fim e confere que a IA não lê),
   `scripts/testar-extensao-reunioes.mjs` (direto com `node`: o service worker da extensão com um `chrome` falso; o áudio
   de verdade só no Chrome, ver `extensao-reunioes/LEIAME.md`) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
