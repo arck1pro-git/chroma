@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { exigirModulo } from "@/lib/auth/dal";
-import { limiteDoBucket } from "@/lib/armazenamento";
+import { bucketExiste } from "@/lib/armazenamento";
 import { enderecoDoCrm } from "@/lib/endereco";
-import { BUCKET_VIDEOS, listarVideos, pessoasDoVideo } from "@/lib/videos";
+import { BUCKET_VIDEOS, listarVideos, pessoasDoVideo, TETO_VIDEO } from "@/lib/videos";
 import PainelVideos from "./painel";
 
 export const metadata: Metadata = {
@@ -38,11 +38,11 @@ export default async function VideosPage({
     throw e;
   }
 
-  const [cabecalhos, limite] = await Promise.all([
+  const [cabecalhos, temBucket] = await Promise.all([
     headers(),
-    // undefined = o bucket não existe (ou o Supabase não respondeu): a tela
-    // mostra o vídeo que já existe e explica por que não dá para subir.
-    limiteDoBucket(BUCKET_VIDEOS).catch(() => undefined),
+    // false = o bucket não existe (ou o Storage não respondeu): a tela mostra o
+    // vídeo que já existe e explica por que não dá para subir.
+    bucketExiste(BUCKET_VIDEOS).catch(() => false),
   ]);
 
   const selecionado = videos.find((v) => v.id === escolhido) ?? videos[0] ?? null;
@@ -54,8 +54,8 @@ export default async function VideosPage({
       selecionado={selecionado}
       pessoas={pessoas}
       base={enderecoDoCrm(cabecalhos)}
-      limite={limite ?? null}
-      problema={limite === undefined ? "bucket" : null}
+      limite={TETO_VIDEO}
+      problema={temBucket ? null : "bucket"}
     />
   );
 }

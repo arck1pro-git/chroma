@@ -18,7 +18,15 @@ import { sql } from "@/lib/db";
 import { chaveTelefone, soDigitos } from "@/lib/telefone";
 import { ehUuid } from "@/lib/validacao";
 
-export const BUCKET_VIDEOS = process.env.SUPABASE_BUCKET_VIDEOS ?? "crm-videos";
+export const BUCKET_VIDEOS = "crm-videos";
+
+// O teto por vídeo era o do bucket no Supabase (50 MB). O bucket do Neon não
+// guarda teto: quem trava agora é a assinatura do envio (lib/armazenamento.ts),
+// com o tamanho que `prepararEnvio` aprovou. Mantido em 50 MB, porque o vídeo
+// toca no 4G do lead.
+export const TETO_VIDEO = 50 * 1024 * 1024;
+/** A capa é um quadro em JPEG tirado no navegador; passa de 5 MB só se algo deu errado. */
+export const TETO_CAPA = 5 * 1024 * 1024;
 
 export type Video = {
   id: string;

@@ -165,7 +165,8 @@ export function temArquivo(tipo: TipoMensagem): boolean {
 
 // ── Armazenamento ───────────────────────────────────────────────────────────
 //
-// Supabase Storage, no bucket do CRM (lib/armazenamento.ts), sob `midias/`.
+// No Storage do CRM (lib/armazenamento.ts; Neon desde 2026-11-03), no bucket
+// dos documentos, sob `midias/`.
 // Desde 2026-11-03 a foto recebida vira WebP menor antes de guardar
 // (lib/otimizar-foto.ts), e a linha grava o tipo e o tamanho do que ficou.
 //

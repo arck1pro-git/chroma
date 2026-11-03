@@ -4,8 +4,8 @@
 // O ARQUIVO não passa pelo CRM: a Vercel corta corpo acima de ~4,5 MB, e foto
 // de celular e PDF passam disso fácil. É o caminho dos vídeos, em três tempos:
 //   1. prepararEnvio sorteia o id (que é o nome do objeto no bucket) e assina
-//      um upload só para ele;
-//   2. o navegador sobe direto para o Supabase — a foto já comprimida em WebP
+//      um upload só para ele, com o tamanho e o tipo do arquivo;
+//   2. o navegador sobe direto para o Storage — a foto já comprimida em WebP
 //      (app/demandas/anexos-envio.ts);
 //   3. quem cria a demanda (ou anexa depois) manda o id, e o servidor confere
 //      no Storage que o arquivo chegou antes de gravar a linha.
@@ -20,7 +20,15 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { UsuarioLogado } from "@/lib/auth/dal";
-import { copiarObjeto, garantirBucket, infoDoObjeto, remover, urlDeEnvio, urlDeLeitura } from "@/lib/armazenamento";
+import {
+  copiarObjeto,
+  garantirBucket,
+  infoDoObjeto,
+  mimeDeEnvio,
+  remover,
+  urlDeEnvio,
+  urlDeLeitura,
+} from "@/lib/armazenamento";
 import { listaUuid, sql } from "@/lib/db";
 import { TETO_ANEXOS, TETO_NOME_ANEXO, TETO_TAMANHO_ANEXO, type AnexoDemanda } from "@/lib/demandas-tipos";
 import { ehUuid } from "@/lib/validacao";
@@ -33,9 +41,7 @@ export type Copias = { ids: string[]; criadoPor: string | null };
 let bucketPronto = false;
 async function garantir() {
   if (bucketPronto) return;
-  // O teto vai no bucket: o upload é direto do navegador, e é a única trava de
-  // tamanho que ele não contorna.
-  await garantirBucket(BUCKET_DEMANDAS, TETO_TAMANHO_ANEXO);
+  await garantirBucket(BUCKET_DEMANDAS);
   bucketPronto = true;
 }
 
@@ -57,14 +63,24 @@ function nomeLivre(nome: string, usados: Set<string>): string {
 
 // ── Envio ───────────────────────────────────────────────────────────────────
 
-/** Passo 1: o id do anexo e a URL assinada para o navegador subir o arquivo. */
-export async function prepararEnvio(tamanho: unknown): Promise<{ id: string; url: string } | { erro: string }> {
+/**
+ * Passo 1: o id do anexo e a URL assinada para o navegador subir o arquivo.
+ * O teto vai na assinatura: o upload é direto do navegador, e é a única trava
+ * de tamanho que ele não contorna. O `mime` devolvido é o que ele manda no
+ * Content-Type.
+ */
+export async function prepararEnvio(
+  tamanho: unknown,
+  tipo: unknown,
+): Promise<{ id: string; mime: string; url: string } | { erro: string }> {
   const bytes = Number(tamanho);
-  if (!Number.isFinite(bytes) || bytes <= 0) return { erro: "O arquivo está vazio." };
+  const mime = mimeDeEnvio(tipo);
+  if (!Number.isSafeInteger(bytes) || bytes <= 0) return { erro: "O arquivo está vazio." };
   if (bytes > TETO_TAMANHO_ANEXO) return { erro: `Cada anexo vai até ${TETO_TAMANHO_ANEXO / 1048576} MB.` };
+  if (!mime) return { erro: "Tipo de arquivo não reconhecido." };
   await garantir();
   const id = randomUUID();
-  return { id, url: await urlDeEnvio(BUCKET_DEMANDAS, id) };
+  return { id, mime, url: await urlDeEnvio(BUCKET_DEMANDAS, id, { mime, tamanho: bytes }) };
 }
 
 /**
@@ -195,8 +211,7 @@ export async function anexoVisivel(
 
 /** Link de leitura de 10 minutos; com `baixar`, o navegador salva com o nome do anexo. */
 export async function linkDoAnexo(anexoId: string, nome: string, baixar: boolean): Promise<string> {
-  const url = await urlDeLeitura(BUCKET_DEMANDAS, anexoId, 600);
-  return baixar ? `${url}&download=${encodeURIComponent(nome)}` : url;
+  return urlDeLeitura(BUCKET_DEMANDAS, anexoId, 600, baixar ? { baixarComo: nome } : {});
 }
 
 // ── Limpeza ─────────────────────────────────────────────────────────────────

@@ -4,14 +4,14 @@
 //
 // O UPLOAD É EM TRÊS TEMPOS, e nenhum byte de vídeo passa pelo CRM:
 //   1. `prepararEnvio` confere tipo e tamanho e devolve duas URLs assinadas (o
-//      vídeo e a capa) — a Vercel corta corpo acima de ~4,5 MB, e server action
-//      acima de 1 MB;
-//   2. o navegador sobe direto para o Supabase (app/videos/painel.tsx);
+//      vídeo e a capa), cada uma presa ao tamanho e ao tipo aprovados — a
+//      Vercel corta corpo acima de ~4,5 MB, e server action acima de 1 MB;
+//   2. o navegador sobe direto para o Storage (app/videos/painel.tsx);
 //   3. `registrarVideo` confere no Storage que o arquivo chegou e só então cria
 //      a linha. Tamanho e tipo saem do Storage, não do que o navegador disse.
 import { revalidatePath } from "next/cache";
 import { exigirModulo } from "@/lib/auth/dal";
-import { infoDoObjeto, limiteDoBucket, remover, urlDeEnvio } from "@/lib/armazenamento";
+import { infoDoObjeto, mimeDeEnvio, remover, urlDeEnvio } from "@/lib/armazenamento";
 import {
   BUCKET_VIDEOS,
   CAMINHO_VALIDO,
@@ -20,6 +20,8 @@ import {
   excluirVideo,
   novoCaminho,
   renomearVideo,
+  TETO_CAPA,
+  TETO_VIDEO,
 } from "@/lib/videos";
 import { ehUuid } from "@/lib/validacao";
 
@@ -32,33 +34,40 @@ function idValido(id: unknown): id is string {
   return typeof id === "string" && ehUuid(id);
 }
 
+/**
+ * Passo 1. `tamanhoCapa` é o do JPEG que o navegador já tirou (0 = sem capa).
+ * Devolve o `mime` assinado: é ele que o navegador manda no Content-Type.
+ */
 export async function prepararEnvio(dados: {
   nomeArquivo: unknown;
   mime: unknown;
   tamanho: unknown;
-}): Promise<{ ok: true; caminho: string; url: string; urlCapa: string } | { ok: false; mensagem: string }> {
+  tamanhoCapa: unknown;
+}): Promise<
+  { ok: true; caminho: string; mime: string; url: string; urlCapa: string | null } | { ok: false; mensagem: string }
+> {
   await exigirModulo("videos", "criar");
-  const mime = typeof dados.mime === "string" ? dados.mime : "";
+  const mime = mimeDeEnvio(dados.mime);
   const tamanho = Number(dados.tamanho);
+  const tamanhoCapa = Number(dados.tamanhoCapa);
   const nomeArquivo = typeof dados.nomeArquivo === "string" ? dados.nomeArquivo : "";
 
-  if (!mime.startsWith("video/")) return { ok: false, mensagem: "Escolha um arquivo de vídeo." };
-  if (!Number.isFinite(tamanho) || tamanho <= 0) return { ok: false, mensagem: "Arquivo vazio." };
-
-  const limite = await limiteDoBucket(BUCKET_VIDEOS);
-  if (limite && tamanho > limite) {
+  if (!mime?.startsWith("video/")) return { ok: false, mensagem: "Escolha um arquivo de vídeo." };
+  if (!Number.isSafeInteger(tamanho) || tamanho <= 0) return { ok: false, mensagem: "Arquivo vazio." };
+  if (tamanho > TETO_VIDEO) {
     return {
       ok: false,
-      mensagem: `O vídeo tem ${mb(tamanho)} e o limite por arquivo é ${mb(limite)}. Exporte em resolução menor (720p costuma bastar no celular) e suba de novo.`,
+      mensagem: `O vídeo tem ${mb(tamanho)} e o limite por arquivo é ${mb(TETO_VIDEO)}. Exporte em resolução menor (720p costuma bastar no celular) e suba de novo.`,
     };
   }
 
   const caminho = novoCaminho(nomeArquivo, mime);
+  const comCapa = Number.isSafeInteger(tamanhoCapa) && tamanhoCapa > 0 && tamanhoCapa <= TETO_CAPA;
   const [url, urlCapa] = await Promise.all([
-    urlDeEnvio(BUCKET_VIDEOS, caminho),
-    urlDeEnvio(BUCKET_VIDEOS, caminhoDaCapa(caminho)),
+    urlDeEnvio(BUCKET_VIDEOS, caminho, { mime, tamanho }),
+    comCapa ? urlDeEnvio(BUCKET_VIDEOS, caminhoDaCapa(caminho), { mime: "image/jpeg", tamanho: tamanhoCapa }) : null,
   ]);
-  return { ok: true, caminho, url, urlCapa };
+  return { ok: true, caminho, mime, url, urlCapa };
 }
 
 export async function registrarVideo(dados: {
@@ -75,7 +84,7 @@ export async function registrarVideo(dados: {
   if (!CAMINHO_VALIDO.test(caminho)) return { ok: false, mensagem: "Envio inválido." };
 
   const info = await infoDoObjeto(BUCKET_VIDEOS, caminho);
-  if (!info) return { ok: false, mensagem: "O arquivo não chegou ao Supabase. Tente subir de novo." };
+  if (!info) return { ok: false, mensagem: "O arquivo não chegou ao servidor de arquivos. Tente subir de novo." };
 
   const capa = dados.temCapa === true ? caminhoDaCapa(caminho) : null;
   const capaChegou = capa ? Boolean(await infoDoObjeto(BUCKET_VIDEOS, capa)) : false;

@@ -7,14 +7,15 @@
 //   · antes de subir, o próprio navegador abre o vídeo para ler duração e
 //     formato e tirar a capa (um quadro em JPEG) — o servidor não tem como ver
 //     dentro do arquivo sem baixá-lo inteiro;
-//   · o arquivo sobe por XMLHttpRequest, e não fetch, porque só ele dá o
-//     progresso do envio: 40 MB no 4G levam minutos, e uma tela parada nesse
-//     tempo parece travada.
+//   · o arquivo sobe direto para o Storage com progresso
+//     (app/components/enviar-arquivo.ts): 40 MB no 4G levam minutos, e uma tela
+//     parada nesse tempo parece travada.
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { EnderecoCrm } from "@/lib/endereco";
 import type { PessoaDoVideo, Video } from "@/lib/videos";
+import { enviarArquivo } from "@/app/components/enviar-arquivo";
 import { Clapperboard, Film, Loader2, Search, Upload } from "@/app/components/icones";
 import { prepararEnvio, registrarVideo } from "./acoes";
 import Detalhe, { duracaoEmTexto } from "./detalhe";
@@ -73,31 +74,6 @@ async function lerVideo(arquivo: File) {
   }
 }
 
-/** PUT multipart na URL assinada — o mesmo formato que o supabase-js usa. */
-function subirArquivo(url: string, arquivo: Blob, nome: string, aoProgredir?: (fracao: number) => void) {
-  return new Promise<void>((pronto, falhou) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url);
-    xhr.setRequestHeader("x-upsert", "false");
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) aoProgredir?.(e.loaded / e.total);
-    };
-    xhr.onload = () => {
-      if (xhr.status < 300) return pronto();
-      let motivo = `erro ${xhr.status}`;
-      try {
-        motivo = (JSON.parse(xhr.responseText) as { message?: string }).message ?? motivo;
-      } catch {}
-      falhou(new Error(motivo));
-    };
-    xhr.onerror = () => falhou(new Error("a conexão caiu no meio do envio"));
-    const corpo = new FormData();
-    corpo.append("cacheControl", "3600");
-    corpo.append("", arquivo, nome);
-    xhr.send(corpo);
-  });
-}
-
 export default function PainelVideos({
   videos,
   selecionado,
@@ -128,8 +104,8 @@ export default function PainelVideos({
     if (inputRef.current) inputRef.current.value = "";
     if (!arquivo) return;
     setErro(null);
-    // Alguns sistemas não dizem o tipo de .mkv/.mov: sem tipo, o bucket (que só
-    // aceita video/*) recusaria.
+    // Alguns sistemas não dizem o tipo de .mkv/.mov: sem tipo, o servidor (que
+    // só assina video/*) recusaria.
     const mime = arquivo.type || "video/mp4";
     if (!mime.startsWith("video/")) return setErro("Escolha um arquivo de vídeo.");
     if (limite && arquivo.size > limite) {
@@ -141,17 +117,23 @@ export default function PainelVideos({
       setEnvio({ nome, etapa: "lendo", progresso: 0 });
       const meta = await lerVideo(arquivo);
 
-      const preparo = await prepararEnvio({ nomeArquivo: arquivo.name, mime, tamanho: arquivo.size });
+      const preparo = await prepararEnvio({
+        nomeArquivo: arquivo.name,
+        mime,
+        tamanho: arquivo.size,
+        tamanhoCapa: meta.capa?.size ?? 0,
+      });
       if (!preparo.ok) throw new Error(preparo.mensagem);
 
       setEnvio({ nome, etapa: "enviando", progresso: 0 });
-      await subirArquivo(preparo.url, arquivo.slice(0, arquivo.size, mime), arquivo.name, (p) =>
+      await enviarArquivo(preparo.url, arquivo, preparo.mime, (p) =>
         setEnvio({ nome, etapa: "enviando", progresso: p }),
       );
       // A capa é bônus: se ela falhar, o vídeo entra do mesmo jeito.
-      const temCapa = meta.capa
-        ? await subirArquivo(preparo.urlCapa, meta.capa, "capa.jpg").then(() => true, () => false)
-        : false;
+      const temCapa =
+        meta.capa && preparo.urlCapa
+          ? await enviarArquivo(preparo.urlCapa, meta.capa, "image/jpeg").then(() => true, () => false)
+          : false;
 
       setEnvio({ nome, etapa: "registrando", progresso: 1 });
       const registro = await registrarVideo({
@@ -223,7 +205,7 @@ export default function PainelVideos({
             {erro ??
               (problema === "migration"
                 ? "As tabelas de vídeo ainda não existem no banco. Rode migration-videos.sql e recarregue."
-                : "O bucket crm-videos não respondeu no Supabase — sem ele não dá para subir. Os vídeos que já existem continuam abrindo.")}
+                : "O bucket crm-videos não respondeu no Storage — sem ele não dá para subir. Os vídeos que já existem continuam abrindo.")}
           </p>
         )}
 

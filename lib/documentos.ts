@@ -12,9 +12,9 @@
 // é ACERVO — alguém sobe, renomeia, arquiva, e o mesmo arquivo sai mil vezes.
 // Juntar os dois faria a fila de download carregar regra de acervo e vice-versa.
 //
-// ONDE FICA O ARQUIVO: Supabase Storage, bucket `crm-documentos`
-// (lib/armazenamento.ts). Era disco local até 2026-09-18, e a troca não foi
-// preferência — era bug: o CRM roda na Vercel, onde não há disco gravável, e a
+// ONDE FICA O ARQUIVO: Neon Object Storage, bucket `crm-documentos`
+// (lib/armazenamento.ts; Supabase até 2026-11-03). Era disco local até
+// 2026-09-18, e a troca não foi preferência — era bug: o CRM roda na Vercel, onde não há disco gravável, e a
 // primeira cadência com anexo morreu com ENOENT apontando para um arquivo que
 // só existia na máquina de quem subiu. Ver o cabeçalho de lib/armazenamento.ts.
 //
@@ -26,7 +26,7 @@
 // requisição em ~4,5 MB e devolvia 413 para qualquer vídeo. É o caminho dos
 // vídeos e dos anexos de demandas, em três tempos: o servidor sorteia o
 // caminho e assina o envio (app/documentos/acoes.ts), o navegador sobe direto
-// para o Supabase, e `registrarDocumento` confere no Storage o que chegou antes
+// para o Storage, e `registrarDocumento` confere no Storage o que chegou antes
 // de gravar a linha.
 import "server-only";
 import path from "path";
@@ -242,7 +242,7 @@ export async function registrarDocumento(dados: {
   if (!CAMINHO_VALIDO.test(caminho)) throw new Recusa("Envio inválido.");
 
   const info = await infoDoObjeto(BUCKET_DOCUMENTOS, caminho);
-  if (!info) throw new Recusa("O arquivo não chegou ao Supabase. Tente subir de novo.");
+  if (!info) throw new Recusa("O arquivo não chegou ao servidor de arquivos. Tente subir de novo.");
 
   // Caminho que já é de outro documento não vira um segundo: além de não ser
   // um envio novo, apagar um dos dois levaria o arquivo do outro junto.

@@ -207,18 +207,18 @@ export async function abrirChamado(dados: DadosDemanda): Promise<ResultadoDemand
 // O arquivo vai do navegador direto para o Storage (lib/demandas-anexos.ts);
 // estas ações só assinam o envio e ligam o arquivo que chegou à demanda.
 
-export type ResultadoEnvio = { ok: true; id: string; url: string } | { ok: false; mensagem: string };
+export type ResultadoEnvio = { ok: true; id: string; mime: string; url: string } | { ok: false; mensagem: string };
 
 /**
  * Passo 1 do anexo: o id e a URL assinada para subir. Basta estar logado — o
  * "Abrir chamado" do Dashboard também anexa, e ele não exige módulo. O que
  * subir sem virar anexo de uma demanda não aparece para ninguém.
  */
-export async function prepararAnexoDemanda(tamanho: number): Promise<ResultadoEnvio> {
+export async function prepararAnexoDemanda(tamanho: number, mime: string): Promise<ResultadoEnvio> {
   await exigirModulo("demandas", "criar");
   await exigirLogin();
   try {
-    const r = await prepararEnvio(tamanho);
+    const r = await prepararEnvio(tamanho, mime);
     return "erro" in r ? { ok: false, mensagem: r.erro } : { ok: true, ...r };
   } catch (e) {
     console.error("[demandas] preparar anexo:", e);

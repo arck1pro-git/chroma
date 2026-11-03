@@ -1,15 +1,16 @@
 // O envio de documentos direto para o Storage (2026-10-28) contra o banco DEV
-// e o Supabase Storage do .env.
+// e o Storage do .env (o Neon desde 2026-11-03).
 //
 //   node --env-file=.env scripts/jiti.mjs scripts/testar-documentos-envio.ts
 //
 // Faz o que a tela faz (app/documentos/painel.tsx): sorteia o caminho, sobe
-// por PUT multipart na URL assinada e registra com as funções reais de
-// lib/documentos.ts. Confere também as recusas: caminho que o servidor não
-// sorteou, arquivo que não chegou, caminho já registrado, nome repetido e
-// arquivo acima do teto (o teto vai a 1 MB só neste processo). Tudo leva a
-// marca "seed-documentos-envio" e sai do banco e do bucket no fim.
-import { BUCKET_DOCUMENTOS, infoDoObjeto, remover, urlDeEnvio } from "@/lib/armazenamento";
+// por PUT na URL assinada e registra com as funções reais de
+// lib/documentos.ts. Confere também as recusas: o link que não aceita outro
+// tamanho nem outro tipo, caminho que o servidor não sorteou, arquivo que não
+// chegou, caminho já registrado, nome repetido e arquivo acima do teto (o teto
+// vai a 1 MB só neste processo). Tudo leva a marca "seed-documentos-envio" e
+// sai do banco e do bucket no fim.
+import { BUCKET_DOCUMENTOS, infoDoObjeto, mimeDeEnvio, remover, urlDeEnvio } from "@/lib/armazenamento";
 import { sql } from "@/lib/db";
 
 const MARCA = "seed-documentos-envio";
@@ -21,18 +22,27 @@ function conferir(ok: boolean, texto: string, extra = "") {
   console.log(`${ok ? "ok   " : "FALHA"} ${texto}${extra ? ` → ${extra}` : ""}`);
 }
 
-/** O mesmo PUT da tela: multipart, campo sem nome, o token na própria URL. */
-async function subirComoATela(caminho: string, bytes: Uint8Array, nome: string, mime: string) {
+/**
+ * O mesmo PUT da tela (app/components/enviar-arquivo.ts): o arquivo no corpo e
+ * o Content-Type que a ação assinou. `enviar` muda o que sai de verdade, para
+ * conferir que o link recusa outro arquivo. Devolve o status.
+ */
+async function subirComoATela(
+  caminho: string,
+  bytes: Uint8Array,
+  tipoDoNavegador: string,
+  enviar: { bytes?: Uint8Array; mime?: string } = {},
+): Promise<number> {
   enviados.push(caminho);
-  const corpo = new FormData();
-  corpo.append("cacheControl", "3600");
-  corpo.append("", new Blob([new Uint8Array(bytes)], { type: mime }), nome);
-  const res = await fetch(await urlDeEnvio(BUCKET_DOCUMENTOS, caminho), {
+  const mime = mimeDeEnvio(tipoDoNavegador)!;
+  const url = await urlDeEnvio(BUCKET_DOCUMENTOS, caminho, { mime, tamanho: bytes.byteLength });
+  const res = await fetch(url, {
     method: "PUT",
-    headers: { "x-upsert": "false" },
-    body: corpo,
+    headers: { "Content-Type": enviar.mime ?? mime },
+    body: new Uint8Array(enviar.bytes ?? bytes),
   });
-  if (!res.ok) throw new Error(`o PUT na URL assinada falhou (${res.status}): ${await res.text()}`);
+  if (!res.ok && !enviar.bytes && !enviar.mime) throw new Error(`o PUT na URL assinada falhou (${res.status}): ${await res.text()}`);
+  return res.status;
 }
 
 /** A recusa (ou o erro) de uma chamada que deveria falhar. */
@@ -82,9 +92,16 @@ async function main() {
   const naoSubiu = await erroDe(doc.registrarDocumento({ nome: `${MARCA} sem arquivo`, descricao: null, arquivoNome: "x.pdf", caminho: doc.novoCaminho("x.pdf"), criadoPor: null }));
   conferir(naoSubiu instanceof Recusa && /não chegou/.test(naoSubiu.message), "registrar sem o arquivo no Storage é recusado", String((naoSubiu as Error)?.message));
 
-  // ── O caminho feliz ────────────────────────────────────────────────────────
+  // ── O link só aceita o arquivo que foi aprovado ────────────────────────────
   const bytes = bytesAleatorios(300_000);
-  await subirComoATela(caminho, bytes, `${MARCA}.MP4`, "video/mp4");
+  const maior = await subirComoATela(caminho, bytes, "video/mp4", { bytes: bytesAleatorios(300_001) });
+  conferir(maior === 403, "o link recusa um arquivo de outro tamanho", `${maior}`);
+  const outroTipo = await subirComoATela(caminho, bytes, "video/mp4", { mime: "text/html" });
+  conferir(outroTipo === 403, "o link recusa outro Content-Type", `${outroTipo}`);
+  conferir(!(await infoDoObjeto(BUCKET_DOCUMENTOS, caminho)), "e nada fica no bucket");
+
+  // ── O caminho feliz ────────────────────────────────────────────────────────
+  await subirComoATela(caminho, bytes, "video/mp4");
   const nome = `${MARCA} vídeo`;
   const novo = await doc.registrarDocumento({ nome, descricao: null, arquivoNome: `${MARCA}.MP4`, caminho, criadoPor: null });
   conferir(novo.tamanho === bytes.byteLength, "o tamanho vem do Storage", `${novo.tamanho}`);
@@ -101,21 +118,21 @@ async function main() {
 
   // ── Nome repetido: o banco recusa e o arquivo novo sai do bucket ───────────
   const outro = doc.novoCaminho("outro.pdf");
-  await subirComoATela(outro, bytesAleatorios(1000), "outro.pdf", "application/pdf");
+  await subirComoATela(outro, bytesAleatorios(1000), "application/pdf");
   const duplicado = await erroDe(doc.registrarDocumento({ nome, descricao: null, arquivoNome: "outro.pdf", caminho: outro, criadoPor: null }));
   conferir(ehDuplicado(duplicado), "nome repetido cai no índice único (a ação traduz)", String((duplicado as Error)?.message).slice(0, 80));
   conferir(!(await infoDoObjeto(BUCKET_DOCUMENTOS, outro)), "e o arquivo que não virou documento sai do bucket");
 
   // ── Acima do teto (1 MB neste processo) ────────────────────────────────────
   const grande = doc.novoCaminho("grande.pdf");
-  await subirComoATela(grande, bytesAleatorios(1_200_000), "grande.pdf", "application/pdf");
+  await subirComoATela(grande, bytesAleatorios(1_200_000), "application/pdf");
   const acima = await erroDe(doc.registrarDocumento({ nome: `${MARCA} grande`, descricao: null, arquivoNome: "grande.pdf", caminho: grande, criadoPor: null }));
   conferir(acima instanceof Recusa && /acima do limite de 1 MB/.test(acima.message), "arquivo acima do teto é recusado", String((acima as Error)?.message));
   conferir(!(await infoDoObjeto(BUCKET_DOCUMENTOS, grande)), "e sai do bucket");
 
-  // ── Sem tipo: a extensão decide ────────────────────────────────────────────
+  // ── Sem tipo (vira application/octet-stream na ação): a extensão decide ────
   const foto = doc.novoCaminho("foto.jpg");
-  await subirComoATela(foto, bytesAleatorios(2000), "foto.jpg", "");
+  await subirComoATela(foto, bytesAleatorios(2000), "");
   const semTipo = await doc.registrarDocumento({ nome: `${MARCA} foto`, descricao: null, arquivoNome: "foto.jpg", caminho: foto, criadoPor: null });
   conferir(semTipo.tipo === "imagem", "arquivo sem tipo vira imagem pela extensão", `${semTipo.tipo} ${semTipo.mime}`);
 }

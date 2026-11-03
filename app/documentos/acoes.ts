@@ -4,8 +4,9 @@
 //
 // O UPLOAD É EM TRÊS TEMPOS, e nenhum byte do arquivo passa pelo CRM (desde
 // 2026-10-28; antes era uma rota, e a Vercel devolvia 413 acima de ~4,5 MB):
-//   1. `prepararEnvio` confere tamanho e nome e devolve a URL assinada;
-//   2. o navegador sobe direto para o Supabase (app/documentos/painel.tsx);
+//   1. `prepararEnvio` confere tamanho, tipo e nome e devolve a URL assinada,
+//      presa a esse tamanho e a esse tipo;
+//   2. o navegador sobe direto para o Storage (app/documentos/painel.tsx);
 //   3. `registrarEnvio` grava a linha depois de lib/documentos.ts conferir no
 //      Storage o que chegou.
 //
@@ -14,7 +15,7 @@
 // pode conferir sem ir ao banco — se a pessoa ainda existe, ainda está ativa e
 // tem este módulo.
 import { revalidatePath } from "next/cache";
-import { BUCKET_DOCUMENTOS, urlDeEnvio } from "@/lib/armazenamento";
+import { BUCKET_DOCUMENTOS, mimeDeEnvio, urlDeEnvio } from "@/lib/armazenamento";
 import { exigirModulo } from "@/lib/auth/dal";
 import {
   arquivarDocumento,
@@ -50,16 +51,22 @@ function nomeDoArquivo(nomeArquivo: string): string {
   return nomeArquivo.replace(/\.[^.]+$/, "").trim().slice(0, TETO_NOME) || "Documento";
 }
 
-/** Passo 1: confere o que dá para conferir antes de subir e assina o envio. */
+/**
+ * Passo 1: confere o que dá para conferir antes de subir e assina o envio.
+ * Devolve o `mime` assinado: é ele que o navegador manda no Content-Type.
+ */
 export async function prepararEnvio(dados: {
   nomeArquivo: unknown;
+  mime: unknown;
   tamanho: unknown;
-}): Promise<{ ok: true; caminho: string; url: string } | { ok: false; mensagem: string }> {
+}): Promise<{ ok: true; caminho: string; mime: string; url: string } | { ok: false; mensagem: string }> {
   await exigirModulo("documentos", "criar");
   const nomeArquivo = texto(dados.nomeArquivo, 255);
+  const mime = mimeDeEnvio(dados.mime);
   const tamanho = Number(dados.tamanho);
   if (!nomeArquivo) return { ok: false, mensagem: "Escolha um arquivo." };
-  if (!Number.isFinite(tamanho) || tamanho <= 0) return { ok: false, mensagem: "Arquivo vazio." };
+  if (!mime) return { ok: false, mensagem: "Tipo de arquivo não reconhecido." };
+  if (!Number.isSafeInteger(tamanho) || tamanho <= 0) return { ok: false, mensagem: "Arquivo vazio." };
   if (tamanho > TETO_BYTES) return { ok: false, mensagem: `Arquivo acima do limite de ${TETO_MB} MB.` };
 
   // O nome repetido o banco também recusaria, mas só depois de o arquivo
@@ -68,7 +75,7 @@ export async function prepararEnvio(dados: {
   if (await nomeEmUso(nome)) return { ok: false, mensagem: `Já existe um documento chamado "${nome}".` };
 
   const caminho = novoCaminho(nomeArquivo);
-  return { ok: true, caminho, url: await urlDeEnvio(BUCKET_DOCUMENTOS, caminho) };
+  return { ok: true, caminho, mime, url: await urlDeEnvio(BUCKET_DOCUMENTOS, caminho, { mime, tamanho }) };
 }
 
 /** Passo 3: o arquivo já está no Storage; grava o documento. */

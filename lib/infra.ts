@@ -21,7 +21,7 @@ const LEITORES: Array<{ chave: string; titulo: string; subtitulo: string; ler: (
   { chave: "whatsapp-web", titulo: "WhatsApp Web", subtitulo: "uazapi · chat do comercial, IA e cadências", ler: cartaoWhatsappWeb },
   { chave: "anthropic", titulo: "IA", subtitulo: "Anthropic · atendimento, copiloto e IAs das telas", ler: cartaoAnthropic },
   { chave: "groq", titulo: "Transcrição de áudio", subtitulo: "Groq · áudio do chat e das reuniões", ler: cartaoGroq },
-  { chave: "armazenamento", titulo: "Arquivos", subtitulo: "Supabase Storage · documentos, mídias e vídeos", ler: cartaoArmazenamento },
+  { chave: "armazenamento", titulo: "Arquivos", subtitulo: "Neon · Object Storage, documentos, mídias e vídeos", ler: cartaoArmazenamento },
   { chave: "banco", titulo: "Banco de dados", subtitulo: "Neon · Postgres", ler: cartaoBanco },
   { chave: "n8n", titulo: "Automações", subtitulo: "n8n · cadências e agendadores", ler: cartaoN8n },
   { chave: "google", titulo: "Google", subtitulo: "Agenda das reuniões e gravações do Meet", ler: cartaoGoogle },
@@ -32,7 +32,7 @@ export const SEM_LEITURA = [
   "Vercel (uso das funções e do tráfego): precisa de um token da Vercel.",
   "Gasto da Anthropic em dólar: precisa da chave de admin da Anthropic.",
   "Saldo da Magnific (a voz da IA): a API não tem consulta de saldo.",
-  "Cobrança e cotas do plano do Neon e do Supabase: precisam do token de gestão de cada um.",
+  "Cobrança e cotas do plano do Neon (banco e arquivos): precisam do token de gestão do Neon.",
 ];
 
 const ORDEM: Record<EstadoInfra, number> = { critico: 0, atencao: 1, desconhecido: 2, ok: 3 };

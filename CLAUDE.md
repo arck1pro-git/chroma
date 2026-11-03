@@ -19,7 +19,7 @@ seu divergirem, vale o que está aqui. O diagnóstico da estrutura atual e a dir
 | Framework | Next.js 16.3 (App Router), React 19.2, TypeScript estrito |
 | Estilo | Tailwind v4 (paleta zinc), ícones Font Awesome Free Solid por `app/components/icones.tsx`, gráficos `chart.js`; sem biblioteca de componentes |
 | Banco | Postgres no Neon, via `postgres.js` (`lib/db.ts`); sem ORM |
-| Arquivos | Supabase Storage (`lib/armazenamento.ts`), buckets privados |
+| Arquivos | Neon Object Storage, API do S3 (`lib/armazenamento.ts`), buckets privados; Supabase até 2026-11-03 |
 | Sessão | JWT HS256 em cookie (`jose`), senha com scrypt |
 | Validação | à mão na entrada; `zod` 4 em IA, MCP, Meta Ads, login e configurações |
 | IA | SDK da Anthropic; Groq para transcrever áudio; Magnific para voz |
@@ -283,15 +283,15 @@ inteiro, dividido por assunto; sobretudo `-rodada`, `-envios` e `-controle`), `l
 `extensao-reunioes/manifest.json` (permissões e a chave que fixa o ID) e `extensao-reunioes/service-worker.js`.
 
 **Dependências que importam:** `next` 16.3 (API diferente do treino, ver `AGENTS.md`), `postgres` (fora do
-bundle, `serverExternalPackages`), `jose`, `zod` 4, `@anthropic-ai/sdk` (o Storage do Supabase é chamado por `fetch` em `lib/armazenamento.ts`, sem SDK),
-`@xyflow/react` (editor de fluxos), `@dnd-kit/*` (arrastar no quadro), `chart.js`.
+bundle, `serverExternalPackages`), `jose`, `zod` 4, `@anthropic-ai/sdk`, `@aws-sdk/client-s3` e `@aws-sdk/s3-request-presigner` (o Storage do
+Neon, só em `lib/armazenamento.ts`), `@xyflow/react` (editor de fluxos), `@dnd-kit/*` (arrastar no quadro), `chart.js`.
 
 **Integrações externas:**
 
 | Serviço | Para quê | Onde | Cuidado |
 |---|---|---|---|
 | Neon | banco (DEV local, produção na Vercel) | `lib/db.ts` | produção só com pedido |
-| Supabase Storage | documentos, anexos, vídeos | `lib/armazenamento.ts` | buckets privados, link assinado |
+| Neon Object Storage | documentos, mídias do chat, anexos, vídeos | `lib/armazenamento.ts` | buckets privados no projeto da produção (o DEV usa os mesmos); link de envio assinado com tamanho e tipo; envio do navegador por `app/components/enviar-arquivo.ts` |
 | uazapi | WhatsApp não oficial | `lib/uazapi.ts` | instância compartilhada; laço bane o número |
 | Meta | WhatsApp Cloud API, leads, Ads, Conversions API, posts, Instagram (DM e comentários) | `lib/whatsapp-oficial.ts`, `lib/meta*.ts`, `lib/social/`, `lib/instagram*.ts` | eventos sempre ligados na produção; app compartilhado (WhatsApp, leads, Instagram): mexer só na assinatura do objeto em questão |
 | n8n | executa cadências e agendadores | `lib/automacoes/motores/n8n/` | instância compartilhada; só tocar o que o CRM criou |

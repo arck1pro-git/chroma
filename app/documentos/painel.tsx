@@ -7,7 +7,7 @@
 // é o mesmo retângulo cinza. A lista mostra o que diferencia: nome, tipo,
 // tamanho, quem subiu, quando.
 //
-// O ARQUIVO VAI DIRETO PARA O SUPABASE, não pelo CRM: a Vercel corta o corpo
+// O ARQUIVO VAI DIRETO PARA O STORAGE, não pelo CRM: a Vercel corta o corpo
 // da requisição em ~4,5 MB (o 413 de 2026-10-28) e server action topa 1 MB. O
 // servidor só assina o envio e depois grava a linha (ver ./acoes.ts).
 import { useMemo, useRef, useState, useTransition } from "react";
@@ -31,6 +31,7 @@ import {
   X,
   type TipoIcone,
 } from "@/app/components/icones";
+import { enviarArquivo } from "@/app/components/enviar-arquivo";
 import { otimizarFoto } from "@/app/components/otimizar-foto";
 import {
   alternarArquivado,
@@ -124,20 +125,17 @@ export default function PainelDocumentos({
         // Foto otimizada em JPEG, e não WebP: o documento vai ao lead pelo
         // WhatsApp, e a API oficial só aceita JPEG ou PNG como imagem.
         const arquivo = await otimizarFoto(original, "jpeg");
-        const preparo = await prepararEnvio({ nomeArquivo: arquivo.name, tamanho: arquivo.size });
+        const preparo = await prepararEnvio({ nomeArquivo: arquivo.name, mime: arquivo.type, tamanho: arquivo.size });
         if (!preparo.ok) {
           erros.push(`${arquivo.name}: ${preparo.mensagem}`);
           continue;
         }
-        // O mesmo formato do supabase-js (e dos vídeos e anexos de demandas):
-        // PUT multipart, campo sem nome, sem Authorization — o token está na URL.
-        const corpo = new FormData();
-        corpo.append("cacheControl", "3600");
-        corpo.append("", arquivo, arquivo.name);
-        const res = await fetch(preparo.url, { method: "PUT", headers: { "x-upsert": "false" }, body: corpo });
-        if (!res.ok) {
-          const motivo = await res.json().then((j: { message?: string }) => j.message).catch(() => null);
-          erros.push(`${arquivo.name}: não subiu${motivo ? ` (${motivo})` : ""}`);
+        const falha = await enviarArquivo(preparo.url, arquivo, preparo.mime).then(
+          () => null,
+          (e: Error) => e.message,
+        );
+        if (falha) {
+          erros.push(`${arquivo.name}: não subiu (${falha})`);
           continue;
         }
         const r = await registrarEnvio({ caminho: preparo.caminho, nomeArquivo: arquivo.name });

@@ -49,6 +49,8 @@
 // Os imports vão pelo alias "@/": é por ele que o código importa, e o runner
 // carregaria uma segunda cópia de cada módulo pelo caminho relativo.
 import assert from "node:assert/strict";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { sql } from "@/lib/db";
 import { conferirDestino } from "@/lib/destino-permitido";
 import { instanciasParaAviso } from "@/lib/aviso-equipe-whatsapp";
@@ -111,7 +113,19 @@ const TEMPLATE_FOTO = {
   components: [{ type: "HEADER", format: "IMAGE", example: { header_handle: ["https://exemplo.invalid/foto.jpg"] } }, ...TEMPLATE.components],
 };
 
-const STORAGE_FALSO = "armazenamento-falso.invalid";
+// O Storage falso: o "Enviar arquivo" baixa os bytes do documento antes de subir
+// à Meta. É um servidor local, e não o fetch falso, porque o SDK do S3
+// (lib/armazenamento.ts) fala por node:http.
+let storageFalso: Server | null = null;
+async function abrirStorageFalso(): Promise<string> {
+  storageFalso = createServer((req, res) => {
+    if (req.method !== "GET") return void res.writeHead(405).end();
+    res.writeHead(200, { "Content-Type": "application/pdf", "Content-Length": "4" }).end(Buffer.from([0x25, 0x50, 0x44, 0x46]));
+  });
+  await new Promise<void>((pronto) => storageFalso!.listen(0, "127.0.0.1", pronto));
+  return `http://127.0.0.1:${(storageFalso.address() as AddressInfo).port}`;
+}
+
 const graph: Array<{ metodo: string; caminho: string; corpo: Record<string, unknown> | null }> = [];
 const uazapi: Array<{ corpo: Record<string, unknown> }> = [];
 let hostUazapi = "";
@@ -135,8 +149,6 @@ async function fetchFalso(entrada: RequestInfo | URL, init?: RequestInit): Promi
     if (metodo === "POST" && caminho === `/${TELEFONE_ID}/media`) return Response.json({ id: "midia-falsa" });
     return Response.json({ error: { message: `graph falsa não conhece ${metodo} ${caminho}` } }, { status: 404 });
   }
-  // O Storage falso: o "Enviar arquivo" baixa os bytes do documento antes de subir à Meta.
-  if (url.hostname === STORAGE_FALSO && metodo === "GET") return new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]));
   if (hostUazapi && url.host === hostUazapi) {
     uazapi.push({ corpo: corpo ?? {} });
     return Response.json({ messageid: `uaz-${uazapi.length}` });
@@ -1507,8 +1519,9 @@ async function main() {
   if ((process.env.DATABASE_URL ?? "").includes("ep-noisy-pond")) throw new Error("RECUSADO: DATABASE_URL aponta para PRODUÇÃO");
   // Nenhuma credencial real sai daqui, nem para a rede falsa.
   process.env.META_SYSTEM_USER_TOKEN = "token-de-teste";
-  process.env.SUPABASE_URL = `https://${STORAGE_FALSO}`;
-  process.env.SUPABASE_SECRET_KEY = "chave-de-teste";
+  process.env.NEON_STORAGE_ENDPOINT = await abrirStorageFalso();
+  process.env.NEON_STORAGE_ACCESS_KEY_ID = "chave-de-teste";
+  process.env.NEON_STORAGE_SECRET_ACCESS_KEY = "segredo-de-teste";
   globalThis.fetch = fetchFalso as typeof fetch;
 
   const travaAtiva = (() => {
@@ -1601,6 +1614,7 @@ async function main() {
            + (SELECT count(*) FROM documentos WHERE nome LIKE ${MARCA + "%"}) AS n`;
     console.log(`limpeza: ${n} linha(s) de teste restando`);
     globalThis.fetch = fetchOriginal;
+    storageFalso?.close();
     await sql.end();
   }
 }

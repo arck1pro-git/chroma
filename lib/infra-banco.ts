@@ -1,11 +1,11 @@
-// Módulo Infra: o banco de dados (Neon) e o armazenamento de arquivos (Supabase
-// Storage). Tudo lido daqui, sem chave de gestão:
+// Módulo Infra: o banco de dados e o armazenamento de arquivos, os dois no Neon
+// (os arquivos estavam no Supabase até 2026-11-03). Tudo lido daqui, sem chave
+// de gestão:
 //   · o limite de tamanho do banco vem do próprio Neon (neon.max_cluster_size,
 //     o teto do plano); fora do Neon, o tamanho aparece sem barra;
-//   · o Storage não tem leitura de uso sem o token de gestão do Supabase. O total
-//     do CRM sai das próprias tabelas (o tamanho de cada documento, mídia e vídeo
-//     que o CRM guardou), e o estado do serviço, de uma chamada leve que mostra a
-//     suspensão por cota (402).
+//   · o Storage não tem leitura de uso sem o token de gestão do Neon. O total do
+//     CRM sai das próprias tabelas (o tamanho de cada documento, mídia e vídeo
+//     que o CRM guardou), e o estado do serviço, de uma chamada leve ao bucket.
 import "server-only";
 import { sql } from "@/lib/db";
 import { situacaoDoStorage } from "@/lib/armazenamento";
@@ -72,14 +72,6 @@ export async function cartaoBanco(): Promise<CartaoInfra> {
   };
 }
 
-/** O motivo da suspensão em português, com o que fazer. */
-function motivoDaSuspensao(mensagem: string | null): string {
-  const m = (mensagem ?? "").toLowerCase();
-  if (m.includes("egress")) return "o projeto passou da cota de tráfego de saída (egress) do plano";
-  if (m.includes("storage") || m.includes("size")) return "o projeto passou do espaço do plano";
-  return mensagem ? `"${mensagem}"` : "motivo não informado";
-}
-
 export async function cartaoArmazenamento(): Promise<CartaoInfra> {
   const [s] = await sql`
     SELECT (SELECT coalesce(sum(tamanho), 0) FROM documentos)::bigint AS documentos,
@@ -92,15 +84,13 @@ export async function cartaoArmazenamento(): Promise<CartaoInfra> {
   let servico: MedidaInfra;
   if (!situacao) {
     servico = { rotulo: "Serviço", valor: "Sem resposta", estado: "desconhecido" };
-    avisos.push("O Supabase não respondeu agora.");
-  } else if (situacao.status === 402) {
-    servico = { rotulo: "Serviço", valor: "Suspenso", estado: "critico" };
-    avisos.push(
-      `O Supabase suspendeu o Storage: ${motivoDaSuspensao(situacao.mensagem)}. Documentos, anexos, mídias do chat e vídeos não sobem nem abrem até subir o plano ou tirar o teto de gasto no painel do Supabase.`,
-    );
+    avisos.push("O Storage do Neon não respondeu agora.");
   } else if (situacao.status >= 400) {
-    servico = { rotulo: "Serviço", valor: `Erro ${situacao.status}`, estado: "atencao" };
-    avisos.push(`O Storage respondeu ${situacao.status}${situacao.mensagem ? `: ${situacao.mensagem}` : ""}.`);
+    // 403 é credencial recusada, 404 é o bucket que sumiu: nos dois, nada sobe nem abre.
+    servico = { rotulo: "Serviço", valor: `Erro ${situacao.status}`, estado: "critico" };
+    avisos.push(
+      `O Storage respondeu ${situacao.status}${situacao.mensagem ? `: ${situacao.mensagem}` : ""}. Documentos, anexos, mídias do chat e vídeos não sobem nem abrem.`,
+    );
   } else {
     servico = { rotulo: "Serviço", valor: "No ar", estado: "ok" };
   }
@@ -108,11 +98,11 @@ export async function cartaoArmazenamento(): Promise<CartaoInfra> {
   return {
     chave: "armazenamento",
     titulo: "Arquivos",
-    subtitulo: "Supabase Storage · documentos, mídias e vídeos",
+    subtitulo: "Neon · Object Storage, documentos, mídias e vídeos",
     estado: piorEstado(servico.estado),
     medidas: [
       servico,
-      { rotulo: "Guardado pelo CRM", valor: tamanhoArquivo(total), limite: "o projeto é dividido com outros usos da empresa" },
+      { rotulo: "Guardado pelo CRM", valor: tamanhoArquivo(total) },
       { rotulo: "Documentos", valor: tamanhoArquivo(Number(s.documentos)) },
       { rotulo: "Mídias do chat", valor: tamanhoArquivo(Number(s.midias)) },
       { rotulo: "Vídeos", valor: tamanhoArquivo(Number(s.videos)) },
