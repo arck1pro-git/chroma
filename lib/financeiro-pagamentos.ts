@@ -77,8 +77,11 @@ function lerTexto(bruto: unknown, rotulo: string, teto: number): string | null {
   return t || null;
 }
 
-/** Tipo, valor hora, valor mês e PIX: a parte do cadastro que decide a conta. */
-function conferirPagamento(dados: Record<string, unknown>): Pick<CadastroPagamento, "pessoaId" | "tipo" | "valorHora" | "valorMes" | "pix"> {
+/** Tipo, valor hora, valor mês e PIX: a parte do cadastro que decide a conta, e a que se edita na linha da folha. */
+export type PagamentoDaLinha = Pick<CadastroPagamento, "pessoaId" | "tipo" | "valorHora" | "valorMes" | "pix">;
+
+/** Confere tipo, valores e PIX vindos da tela. Lança Recusa com a frase para a pessoa ler. */
+export function conferirPagamento(dados: Record<string, unknown>): PagamentoDaLinha {
   const { pessoaId, tipo } = dados;
   if (typeof pessoaId !== "string" || !pessoaId || pessoaId.length > 64) throw new Recusa("Colaborador inválido.");
   if (tipo !== "hora" && tipo !== "fixo") throw new Recusa("Escolha se a pessoa recebe por hora ou fixo.");
@@ -122,6 +125,25 @@ export async function salvarFolha(c: CadastroPagamento, mes: string, l: Lancamen
         ON CONFLICT (pessoa_id, mes) DO UPDATE
            SET adicional = EXCLUDED.adicional, descontos = EXCLUDED.descontos`;
     });
+    return true;
+  } catch (e) {
+    if (faltaTabela(e)) return false;
+    throw e;
+  }
+}
+
+/**
+ * Grava só tipo, valores e PIX (o que se edita na linha da folha). Setor,
+ * atividade e os lançamentos de quem já tinha cadastro ficam como estavam.
+ * false = a migration ainda não rodou.
+ */
+export async function salvarPagamento(p: PagamentoDaLinha): Promise<boolean> {
+  try {
+    await sql`
+      INSERT INTO financeiro_colaboradores (pessoa_id, tipo, valor_hora, valor_mes, pix)
+      VALUES (${p.pessoaId}, ${p.tipo}, ${p.valorHora}, ${p.valorMes}, ${p.pix})
+      ON CONFLICT (pessoa_id) DO UPDATE
+         SET tipo = EXCLUDED.tipo, valor_hora = EXCLUDED.valor_hora, valor_mes = EXCLUDED.valor_mes, pix = EXCLUDED.pix`;
     return true;
   } catch (e) {
     if (faltaTabela(e)) return false;

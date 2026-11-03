@@ -66,7 +66,8 @@ templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, f
 (`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem. O `financeiro` reúne o
 ponto (`lib/ponto.ts`), lido da base do app de ponto da equipe (outro sistema, só leitura, `lib/ponto-db.ts`), e a folha
 do mês embaixo dele (`lib/financeiro-pagamentos.ts`, conta em `lib/financeiro-tipos.ts`): cadastro de pagamento por
-colaborador, editado na ficha dele, e adicional e descontos por mês, no banco do CRM, que a IA (`chroma_ia`) não lê.
+colaborador (tipo, valores e PIX direto na linha da folha; setor, atividade, adicional e descontos na ficha dele),
+no banco do CRM, que a IA (`chroma_ia`) não lê.
 
 ## 2. Fluxo de execução e pontos de entrada
 

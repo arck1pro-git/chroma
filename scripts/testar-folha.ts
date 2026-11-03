@@ -5,11 +5,12 @@
 // A conta do profissional (por hora, fixo, sem cadastro, adicional e
 // descontos, centavos), as recusas da validação e, contra o banco DEV, gravar
 // e ler o cadastro e o lançamento do mês (o lançamento é por mês: mexer em um
-// não muda o outro) e conferir que a IA (papel chroma_ia) não lê as tabelas.
+// não muda o outro), a gravação pela linha da folha (só tipo, valores e PIX) e
+// conferir que a IA (papel chroma_ia) não lê as tabelas.
 // As linhas de teste levam a marca "seed-folha-" e saem no fim.
 import assert from "node:assert/strict";
 import { sql } from "@/lib/db";
-import { carregarFolha, conferirFolha, salvarFolha } from "@/lib/financeiro-pagamentos";
+import { carregarFolha, conferirFolha, conferirPagamento, salvarFolha, salvarPagamento } from "@/lib/financeiro-pagamentos";
 import { contaDoMes, reais } from "@/lib/financeiro-tipos";
 import { Recusa } from "@/lib/resultado-acao";
 
@@ -80,6 +81,18 @@ async function noBanco() {
     assert.deepEqual((await carregarFolha("2026-11"))!.lancamentos.get(id), { adicional: 0, descontos: 80 });
     assert.equal((await carregarFolha("2026-09"))!.lancamentos.has(id), false, "mês sem lançamento não tem linha (é zero)");
     passo("o cadastro troca para todos os meses; o lançamento de novembro não mexe no de outubro");
+
+    // A linha da folha grava só tipo, valores e PIX: setor, atividade e lançamentos ficam.
+    assert.equal(await salvarPagamento(conferirPagamento({ pessoaId: id, tipo: "hora", valorHora: 42.5, valorMes: null, pix: "chave-nova" })), true);
+    f = (await carregarFolha("2026-10"))!;
+    const depois = f.cadastros.get(id)!;
+    assert.deepEqual([depois.tipo, depois.valorHora, depois.valorMes, depois.pix], ["hora", 42.5, null, "chave-nova"]);
+    assert.deepEqual([depois.setor, depois.atividade], ["Marketing", "Edição"], "setor e atividade não mudam pela linha");
+    assert.deepEqual(f.lancamentos.get(id), { adicional: 200, descontos: 50 }, "o lançamento do mês não muda pela linha");
+    const novo = `${MARCA}novo-${Date.now()}`;
+    assert.equal(await salvarPagamento(conferirPagamento({ pessoaId: novo, tipo: "fixo", valorHora: null, valorMes: 2800, pix: "" })), true);
+    assert.deepEqual((await carregarFolha("2026-10"))!.cadastros.get(novo), { pessoaId: novo, setor: null, atividade: null, tipo: "fixo", valorHora: null, valorMes: 2800, pix: null });
+    passo("pela linha da folha: troca tipo, valores e PIX sem tocar em setor, atividade e lançamentos; quem não tinha cadastro nasce sem setor");
 
     const ia = await sql`SELECT table_name FROM information_schema.role_table_grants WHERE grantee = 'chroma_ia' AND table_name LIKE 'financeiro_%'`;
     assert.equal(ia.length, 0, "a IA não tem permissão nas tabelas da folha");
