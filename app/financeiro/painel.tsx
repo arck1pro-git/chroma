@@ -1,55 +1,37 @@
-// A tela do Financeiro: a faixa de abas e a aba aberta. Duas abas:
-//   · Ponto (aqui): o mês de todo mundo. Na visão da equipe, os números do
-//     mês, as horas por dia, a tabela por pessoa com o mês de cada um em
-//     barrinhas e o dia a dia; na de um colaborador (?pessoa=<id>), os números
-//     dele contra a média da equipe, os gráficos com a média ao lado e o dia a
-//     dia dele.
-//   · Folha (./folha.tsx): o que pagar a cada um no mês, por setor.
+// A tela do Financeiro: a aba Ponto, que reúne o ponto e a folha do mês.
+//   · Na visão da equipe: os números do mês, as horas por dia, a tabela por
+//     pessoa com o mês de cada um em barrinhas e, embaixo, a folha do mês por
+//     setor (./folha.tsx), no lugar do antigo "Dia a dia" (pedido dele,
+//     2026-11-03).
+//   · Na de um colaborador (?pessoa=<id>): os números dele contra a média da
+//     equipe, o pagamento dele para configurar (./editar-folha.tsx), os
+//     gráficos com a média ao lado e as mesmas tabelas embaixo.
+// A folha teve aba própria por algumas horas em 2026-11-03; juntou-se aqui para
+// a mesma tabela não morar em dois lugares.
 // Componente de servidor: os filtros são links, sem estado no navegador; só os
-// gráficos e o formulário da folha são do cliente.
+// gráficos e o formulário de pagamento são do cliente.
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Folha } from "@/lib/financeiro-pagamentos";
+import { SEM_LANCAMENTO } from "@/lib/financeiro-tipos";
 import { horaCurta } from "@/lib/formato";
-import { mesAtual, type DadosPonto, type DiaPonto, type Modalidade, type PessoaPonto, type ResumoPonto, type SituacaoDia } from "@/lib/ponto";
-import { AlertTriangle, BadgeDollarSign, Clock, X } from "@/app/components/icones";
-import { cartao, endereco, horas, Indicador, NavegacaoDoMes, type Aba } from "./comum";
-import AbaFolha from "./folha";
+import { mesAtual, type DadosPonto, type DiaPonto, type PessoaPonto, type ResumoPonto, type SituacaoDia } from "@/lib/ponto";
+import { AlertTriangle, Clock, X } from "@/app/components/icones";
+import { cartao, endereco, horas, Indicador, NavegacaoDoMes, nomeDoMes } from "./comum";
+import EditarFolha from "./editar-folha";
+import FolhaDoMes from "./folha";
 import { EquipePorDia, PessoaPorDia, PessoaPorMes } from "./graficos";
 
 type Problema = "sem_base" | "sem_resposta";
 
-const SITUACAO: Record<SituacaoDia, { rotulo: string; classe: string; barra: string }> = {
-  completo: {
-    rotulo: "Ok",
-    classe: "bg-emerald-50 text-emerald-700 ring-emerald-600/15 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-400/20",
-    barra: "fill-zinc-400 dark:fill-zinc-500",
-  },
-  em_andamento: {
-    rotulo: "Em andamento",
-    classe: "bg-sky-50 text-sky-700 ring-sky-600/15 dark:bg-sky-500/10 dark:text-sky-400 dark:ring-sky-400/20",
-    barra: "fill-sky-500 dark:fill-sky-400",
-  },
-  falta_saida: {
-    rotulo: "Falta saída",
-    classe: "bg-amber-50 text-amber-700 ring-amber-600/15 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-400/20",
-    barra: "fill-amber-500 dark:fill-amber-400",
-  },
-  irregular: {
-    rotulo: "Irregular",
-    classe: "bg-amber-50 text-amber-700 ring-amber-600/15 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-400/20",
-    barra: "fill-amber-500 dark:fill-amber-400",
-  },
-  sem_batida: {
-    rotulo: "Sem batida",
-    classe: "bg-red-50 text-red-700 ring-red-600/15 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-400/20",
-    barra: "fill-red-500 dark:fill-red-400",
-  },
+/** A situação do dia nas barrinhas do mês: o nome (no título da barra) e a cor. */
+const SITUACAO: Record<SituacaoDia, { rotulo: string; barra: string }> = {
+  completo: { rotulo: "Ok", barra: "fill-zinc-400 dark:fill-zinc-500" },
+  em_andamento: { rotulo: "Em andamento", barra: "fill-sky-500 dark:fill-sky-400" },
+  falta_saida: { rotulo: "Falta saída", barra: "fill-amber-500 dark:fill-amber-400" },
+  irregular: { rotulo: "Irregular", barra: "fill-amber-500 dark:fill-amber-400" },
+  sem_batida: { rotulo: "Sem batida", barra: "fill-red-500 dark:fill-red-400" },
 };
-
-const MODALIDADE: Record<Modalidade, string> = { presencial: "Presencial", home_office: "Home office" };
-
-const selo = "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset";
 
 /** 522 (minutos desde a meia-noite) → "08:42". */
 function relogio(minutos: number | null): string {
@@ -62,25 +44,6 @@ function nomeDoDia(dia: string): string {
   const d = new Date(`${dia}T12:00:00Z`);
   const semana = new Intl.DateTimeFormat("pt-BR", { weekday: "short", timeZone: "UTC" }).format(d).replace(".", "");
   return `${dia.slice(8, 10)}/${dia.slice(5, 7)} ${semana}`;
-}
-
-/** As batidas do dia: em pares (08:02 → 12:00) quando fecham, uma a uma quando não. */
-function Batidas({ dia }: { dia: DiaPonto }) {
-  if (dia.batidas.length === 0) return <span className="text-zinc-400 dark:text-zinc-500">nenhuma</span>;
-  if (dia.situacao === "completo" || dia.situacao === "em_andamento") {
-    const trechos: string[] = [];
-    for (let i = 0; i < dia.batidas.length; i += 2) trechos.push(`${dia.batidas[i].hora} → ${dia.batidas[i + 1]?.hora ?? "…"}`);
-    return <span className="tabular-nums">{trechos.join("  ·  ")}</span>;
-  }
-  return (
-    <span className="tabular-nums">
-      {dia.batidas.map((b, i) => (
-        <span key={i} className="mr-2 whitespace-nowrap">
-          <span className="text-zinc-400 dark:text-zinc-500">{b.tipo === "in" ? "entrada" : "saída"}</span> {b.hora}
-        </span>
-      ))}
-    </span>
-  );
 }
 
 /**
@@ -118,13 +81,7 @@ function CartaoGrafico({ titulo, children }: { titulo: string; children: ReactNo
   );
 }
 
-const ABAS: Array<{ aba: Aba; rotulo: string; Icone: typeof Clock }> = [
-  { aba: "ponto", rotulo: "Ponto", Icone: Clock },
-  { aba: "folha", rotulo: "Folha", Icone: BadgeDollarSign },
-];
-
 export default function PainelFinanceiro({
-  aba,
   mes,
   dados,
   folha,
@@ -132,7 +89,6 @@ export default function PainelFinanceiro({
   podeEditar = false,
   problema,
 }: {
-  aba: Aba;
   mes: string;
   dados?: DadosPonto;
   /** null = as tabelas da folha ainda não existem neste banco. */
@@ -147,21 +103,14 @@ export default function PainelFinanceiro({
         <header>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Financeiro</h1>
           <nav className="mt-3 flex gap-1 border-b border-zinc-200 dark:border-zinc-800" aria-label="Abas do Financeiro">
-            {ABAS.map(({ aba: a, rotulo, Icone }) => (
-              <Link
-                key={a}
-                href={endereco(a, mes)}
-                aria-current={a === aba ? "page" : undefined}
-                className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-medium transition ${
-                  a === aba
-                    ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
-                    : "border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-                }`}
-              >
-                <Icone className="size-3.5" aria-hidden="true" />
-                {rotulo}
-              </Link>
-            ))}
+            <Link
+              href={endereco(mes)}
+              aria-current="page"
+              className="-mb-px flex items-center gap-1.5 border-b-2 border-zinc-900 px-3 py-2 text-[13px] font-medium text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
+            >
+              <Clock className="size-3.5" aria-hidden="true" />
+              Ponto
+            </Link>
           </nav>
         </header>
 
@@ -172,17 +121,15 @@ export default function PainelFinanceiro({
               ? "A base do app de ponto não está configurada neste ambiente (PONTO_DATABASE_URL)."
               : "A base do app de ponto não respondeu agora. Tente de novo em instantes."}
           </p>
-        ) : aba === "folha" ? (
-          <AbaFolha dados={dados} folha={folha ?? null} pessoaId={pessoaId} podeEditar={podeEditar} />
         ) : (
-          <AbaPonto dados={dados} pessoaId={pessoaId} />
+          <AbaPonto dados={dados} folha={folha ?? null} pessoaId={pessoaId} podeEditar={podeEditar} />
         )}
       </div>
     </div>
   );
 }
 
-function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | null }) {
+function AbaPonto({ dados, folha, pessoaId, podeEditar }: { dados: DadosPonto; folha: Folha | null; pessoaId: string | null; podeEditar: boolean }) {
   const { mes } = dados;
   const pessoa = new Map<string, PessoaPonto>(dados.pessoas.map((p) => [p.id, p]));
   const resumos = dados.resumos;
@@ -197,7 +144,6 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
     { minutos: 0, dias: 0, presencial: 0, homeOffice: 0, pendencias: 0 },
   );
   const comBatida = resumos.filter((r) => r.diasComBatida > 0).length;
-  const dias = pessoaId ? dados.dias.filter((d) => d.pessoaId === pessoaId) : dados.dias;
   const selecionada = pessoaId ? pessoa.get(pessoaId) : null;
   const resumoDela = pessoaId ? resumos.find((r) => r.pessoaId === pessoaId) : undefined;
   const diasDaEquipe = dados.porDia.map((d) => d.dia);
@@ -211,7 +157,6 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
   return (
     <>
       <NavegacaoDoMes
-        aba="ponto"
         mes={mes}
         meses={dados.meses}
         pessoaId={pessoaId}
@@ -221,6 +166,8 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
       {selecionada ? (
         <FichaDaPessoa
           dados={dados}
+          folha={folha}
+          podeEditar={podeEditar}
           pessoa={selecionada}
           resumo={resumoDela}
           mediaEquipe={comBatida ? total.minutos / comBatida : 0}
@@ -265,7 +212,7 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
                 {resumos.map((r) => {
                   const p = pessoa.get(r.pessoaId);
                   const ativa = r.pessoaId === pessoaId;
-                  const link = endereco("ponto", mes, ativa ? null : r.pessoaId);
+                  const link = endereco(mes, ativa ? null : r.pessoaId);
                   return (
                     <tr key={r.pessoaId} className={ativa ? "bg-zinc-50 dark:bg-zinc-800/60" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"}>
                       <td className="px-4 py-2">
@@ -308,73 +255,24 @@ function AbaPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | n
         )}
       </section>
 
-      <section className={cartao}>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
-          <h2 className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">Dia a dia</h2>
-          {selecionada && (
-            <Link
-              href={endereco("ponto", mes)}
-              className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-0.5 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              {selecionada.nome}
-              <X className="size-3" aria-label="mostrar todas as pessoas" />
-            </Link>
-          )}
-        </div>
-        {dias.length === 0 ? (
-          <p className="px-4 py-6 text-[13px] text-zinc-500 dark:text-zinc-400">Nenhum registro neste mês.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-[13px]">
-              <thead className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Dia</th>
-                  {!pessoaId && <th className="px-3 py-2 font-medium">Pessoa</th>}
-                  <th className="px-3 py-2 font-medium">Modalidade</th>
-                  <th className="px-3 py-2 font-medium">Batidas</th>
-                  <th className="px-3 py-2 text-right font-medium">Horas</th>
-                  <th className="px-4 py-2 text-right font-medium">Situação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {dias.map((d) => (
-                  <tr key={`${d.pessoaId}|${d.dia}`}>
-                    <td className="whitespace-nowrap px-4 py-2 tabular-nums text-zinc-700 dark:text-zinc-300">{nomeDoDia(d.dia)}</td>
-                    {!pessoaId && (
-                      <td className="whitespace-nowrap px-3 py-2 text-zinc-900 dark:text-zinc-100">
-                        <Link href={endereco("ponto", mes, d.pessoaId)} className="hover:underline">
-                          {pessoa.get(d.pessoaId)?.nome ?? "Cadastro removido"}
-                        </Link>
-                      </td>
-                    )}
-                    <td className="whitespace-nowrap px-3 py-2 text-zinc-600 dark:text-zinc-400">{d.modalidade ? MODALIDADE[d.modalidade] : "—"}</td>
-                    <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300">
-                      <Batidas dia={d} />
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium tabular-nums text-zinc-900 dark:text-zinc-100">{d.minutos ? horas(d.minutos) : "—"}</td>
-                    <td className="px-4 py-2 text-right">
-                      <span className={`${selo} ${SITUACAO[d.situacao].classe}`}>{SITUACAO[d.situacao].rotulo}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <FolhaDoMes dados={dados} folha={folha} pessoaId={pessoaId} podeEditar={podeEditar} />
     </>
   );
 }
 
-/** O andamento de um colaborador no mês: os números dele contra a média da equipe e os dois gráficos. */
+/** O andamento de um colaborador no mês: os números dele contra a média da equipe, o pagamento dele e os dois gráficos. */
 function FichaDaPessoa({
   dados,
+  folha,
+  podeEditar,
   pessoa,
   resumo,
   mediaEquipe,
   mediaDiaEquipe,
 }: {
   dados: DadosPonto;
+  folha: Folha | null;
+  podeEditar: boolean;
   pessoa: PessoaPonto;
   resumo: ResumoPonto | undefined;
   mediaEquipe: number;
@@ -390,6 +288,9 @@ function FichaDaPessoa({
     const pct = Math.round(((valor - referencia) / referencia) * 100);
     return pct === 0 ? "igual à média da equipe" : `${pct > 0 ? "+" : ""}${pct}% da média da equipe (${horas(referencia)})`;
   };
+  const setores = folha
+    ? [...new Set([...folha.cadastros.values()].map((c) => c.setor).filter((s): s is string => Boolean(s)))].sort((a, b) => a.localeCompare(b, "pt-BR"))
+    : [];
 
   return (
     <section className="flex flex-col gap-4">
@@ -401,26 +302,17 @@ function FichaDaPessoa({
           </h2>
           <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{pessoa.email}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={endereco("folha", dados.mes, pessoa.id)}
-            className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-1 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            <BadgeDollarSign className="size-3" aria-hidden="true" />
-            Ver na folha
-          </Link>
-          <Link
-            href={endereco("ponto", dados.mes)}
-            className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-1 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            <X className="size-3" aria-hidden="true" />
-            Ver a equipe
-          </Link>
-        </div>
+        <Link
+          href={endereco(dados.mes)}
+          className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-1 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          <X className="size-3" aria-hidden="true" />
+          Ver a equipe
+        </Link>
       </header>
 
       {!r ? (
-        <p className={`${cartao} px-4 py-3 text-[13px] text-zinc-600 dark:text-zinc-400`}>Sem nenhum registro neste mês.</p>
+        <p className={`${cartao} px-4 py-3 text-[13px] text-zinc-600 dark:text-zinc-400`}>Sem nenhum registro de ponto neste mês.</p>
       ) : (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
           <Indicador rotulo="Horas no mês" valor={horas(r.minutos)} detalhe={diferenca(r.minutos, mediaEquipe)} />
@@ -430,6 +322,21 @@ function FichaDaPessoa({
           <Indicador rotulo="Presencial · home office" valor={`${r.presencial} · ${r.homeOffice}`} detalhe="dias no mês" />
           <Indicador rotulo="Pendências" valor={String(r.pendencias)} detalhe="falta saída, irregular ou sem batida" />
         </div>
+      )}
+
+      {folha && (
+        <EditarFolha
+          key={`${pessoa.id}|${dados.mes}`}
+          mes={dados.mes}
+          mesNome={nomeDoMes(dados.mes)}
+          pessoaId={pessoa.id}
+          minutos={r?.minutos ?? 0}
+          horasTexto={horas(r?.minutos ?? 0)}
+          cadastro={folha.cadastros.get(pessoa.id) ?? null}
+          lancamento={folha.lancamentos.get(pessoa.id) ?? SEM_LANCAMENTO}
+          setores={setores}
+          podeEditar={podeEditar}
+        />
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">

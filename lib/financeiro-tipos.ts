@@ -46,6 +46,24 @@ function centavos(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
+/** 25.5 → "25,50" (o valor no campo de digitar). */
+export function paraCampo(v: number | null): string {
+  return v === null ? "" : v.toFixed(2).replace(".", ",");
+}
+
+/**
+ * O valor digitado em reais, como se escreve no Brasil ("1.500,00", "25,5" ou
+ * "25.50"): número, null (vazio) ou undefined (não é um valor).
+ */
+export function lerReais(texto: string): number | null | undefined {
+  const s = texto.replace(/[R$\s]/g, "");
+  if (!s) return null;
+  // Com vírgula, ela é o decimal e os pontos são milhar; sem vírgula, um ponto com até dois dígitos depois é decimal.
+  const normal = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : /^\d+\.\d{1,2}$/.test(s) ? s : s.replace(/\./g, "");
+  const n = Number(normal);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : undefined;
+}
+
 const REAIS = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 /** 1234.5 → "R$ 1.234,50". */

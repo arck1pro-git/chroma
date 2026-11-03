@@ -1,7 +1,7 @@
 "use server";
 
-// Mutações do Financeiro. Hoje uma: gravar a linha do colaborador na Folha (o
-// cadastro de pagamento e o adicional e os descontos do mês), pela aba Folha.
+// Mutações do Financeiro. Hoje uma: gravar o pagamento do colaborador (o
+// cadastro e o adicional e os descontos do mês), pela ficha dele na aba Ponto.
 //
 // Quem grava precisa do módulo E da permissão de editar nele. O colaborador
 // tem que existir no app de ponto: nada vindo do navegador decide quem é.
@@ -11,6 +11,8 @@ import { podeOperar } from "@/lib/auth/permissoes";
 import { conferirFolha, salvarFolha } from "@/lib/financeiro-pagamentos";
 import { ehMes, existeColaborador } from "@/lib/ponto";
 import { comoResultado, Recusa, type ResultadoAcao } from "@/lib/resultado-acao";
+
+const SEM_TABELA = "As tabelas da folha ainda não existem neste banco: rode a migration-financeiro-colaboradores.sql.";
 
 export async function salvarLinhaDaFolha(dados: {
   mes: unknown;
@@ -33,9 +35,7 @@ export async function salvarLinhaDaFolha(dados: {
   return comoResultado(async () => {
     const { cadastro, lancamento } = conferirFolha(dados);
     if (!(await existeColaborador(cadastro.pessoaId))) throw new Recusa("Este colaborador não está no app de ponto.");
-    if (!(await salvarFolha(cadastro, mes, lancamento))) {
-      throw new Recusa("As tabelas da folha ainda não existem neste banco: rode a migration-financeiro-colaboradores.sql.");
-    }
+    if (!(await salvarFolha(cadastro, mes, lancamento))) throw new Recusa(SEM_TABELA);
     revalidatePath("/financeiro");
   });
 }

@@ -1,36 +1,31 @@
 "use client";
 
-// A linha de um colaborador na Folha, para editar: o cadastro de pagamento
-// (setor, atividade principal, tipo, valor hora, valor mês, PIX) e o adicional
-// e os descontos do mês aberto. A conta ao lado muda enquanto se digita, pela
-// mesma `contaDoMes` que o servidor usa (lib/financeiro-tipos.ts).
+// O pagamento de um colaborador, na ficha dele (aba Ponto, ?pessoa=<id>): o
+// cadastro (setor, atividade principal, por hora ou fixo, valor hora, valor
+// mês, PIX) e o adicional e os descontos do mês aberto. A conta ao lado muda
+// enquanto se digita, pela mesma `contaDoMes` que o servidor usa
+// (lib/financeiro-tipos.ts). Sem a permissão de editar, os campos ficam só
+// para ler.
 //
-// Valores em reais como se escreve no Brasil: "1.500,00", "25,5" ou "25.50".
+// Valores em reais como se escreve no Brasil ("1.500,00", "25,5" ou "25.50"),
+// lidos por lerReais (lib/financeiro-tipos.ts).
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { contaDoMes, reais, type CadastroPagamento, type LancamentoMes, type TipoPagamento } from "@/lib/financeiro-tipos";
-import { Check, Copy, Loader2, X } from "@/app/components/icones";
+import {
+  contaDoMes,
+  lerReais,
+  paraCampo,
+  reais,
+  type CadastroPagamento,
+  type LancamentoMes,
+  type TipoPagamento,
+} from "@/lib/financeiro-tipos";
+import { Check, Copy, Loader2 } from "@/app/components/icones";
 import { salvarLinhaDaFolha } from "./acoes";
 
 const campo =
   "w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus-visible:ring-zinc-100/10";
 const rotulo = "mb-1 block text-[12px] font-medium text-zinc-600 dark:text-zinc-400";
-
-/** 25.5 → "25,50" (para o campo). */
-function paraCampo(v: number | null): string {
-  return v === null ? "" : v.toFixed(2).replace(".", ",");
-}
-
-/** O valor digitado em reais: número, null (vazio) ou undefined (não é um valor). */
-function lerReais(texto: string): number | null | undefined {
-  const s = texto.replace(/[R$\s]/g, "");
-  if (!s) return null;
-  // Com vírgula, ela é o decimal e os pontos são milhar; sem vírgula, um ponto com até dois dígitos depois é decimal.
-  const normal = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : /^\d+\.\d{1,2}$/.test(s) ? s : s.replace(/\./g, "");
-  const n = Number(normal);
-  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : undefined;
-}
 
 /** O PIX com o botão de copiar, para quem vai pagar. */
 export function CopiarPix({ pix }: { pix: string }) {
@@ -56,27 +51,28 @@ export function CopiarPix({ pix }: { pix: string }) {
 export default function EditarFolha({
   mes,
   mesNome,
-  pessoa,
+  pessoaId,
   minutos,
   horasTexto,
   cadastro,
   lancamento,
   setores,
-  fecharHref,
+  podeEditar,
 }: {
   mes: string;
   mesNome: string;
-  pessoa: { id: string; nome: string; email: string };
+  pessoaId: string;
   minutos: number;
   horasTexto: string;
   cadastro: CadastroPagamento | null;
   lancamento: LancamentoMes;
   setores: string[];
-  fecharHref: string;
+  podeEditar: boolean;
 }) {
   const router = useRouter();
   const [salvando, iniciar] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
+  const [salvo, setSalvo] = useState(false);
   const [setor, setSetor] = useState(cadastro?.setor ?? "");
   const [atividade, setAtividade] = useState(cadastro?.atividade ?? "");
   const [tipo, setTipo] = useState<TipoPagamento>(cadastro?.tipo ?? "hora");
@@ -95,11 +91,12 @@ export default function EditarFolha({
 
   function salvar() {
     setErro(null);
+    setSalvo(false);
     if (invalido) return setErro("Algum valor não é um número em reais (ex.: 1.500,00).");
     iniciar(async () => {
       const r = await salvarLinhaDaFolha({
         mes,
-        pessoaId: pessoa.id,
+        pessoaId,
         setor,
         atividade,
         tipo,
@@ -110,7 +107,7 @@ export default function EditarFolha({
         descontos: de,
       });
       if (!r.ok) return setErro(r.erro);
-      router.push(fecharHref);
+      setSalvo(true);
       router.refresh();
     });
   }
@@ -120,6 +117,7 @@ export default function EditarFolha({
       type="button"
       role="radio"
       aria-checked={tipo === valor}
+      disabled={!podeEditar}
       onClick={() => setTipo(valor)}
       className={`flex-1 rounded-[7px] px-3 py-1.5 text-[12px] font-medium transition ${
         tipo === valor
@@ -132,16 +130,12 @@ export default function EditarFolha({
   );
 
   return (
-    <section className="rounded-2xl border border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
-      <header className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">{pessoa.nome}</h2>
-          <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{pessoa.email}</p>
-        </div>
-        <Link href={fecharHref} className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" aria-label="Fechar">
-          <X className="size-4" aria-hidden="true" />
-        </Link>
-      </header>
+    <section className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <h2 className="mb-4 text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">
+        Pagamento
+        {!podeEditar && <span className="font-normal text-zinc-400 dark:text-zinc-500"> · só para ver (editar pede a permissão no módulo)</span>}
+      </h2>
+      <fieldset disabled={!podeEditar} className="contents">
 
       <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -215,25 +209,28 @@ export default function EditarFolha({
               {erro}
             </p>
           )}
-          <div className="mt-auto flex gap-2 pt-3">
-            <button
-              type="button"
-              onClick={salvar}
-              disabled={salvando}
-              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-            >
-              {salvando && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
-              Salvar
-            </button>
-            <Link
-              href={fecharHref}
-              className="inline-flex items-center rounded-lg border border-zinc-300 px-3 py-1.5 text-[12px] font-medium text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              Cancelar
-            </Link>
-          </div>
+          {podeEditar && (
+            <div className="mt-auto flex items-center gap-2 pt-3">
+              <button
+                type="button"
+                onClick={salvar}
+                disabled={salvando}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              >
+                {salvando && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+                Salvar
+              </button>
+              {salvo && !salvando && (
+                <span className="inline-flex items-center gap-1 text-[12px] text-emerald-600 dark:text-emerald-400">
+                  <Check className="size-3" aria-hidden="true" />
+                  Salvo
+                </span>
+              )}
+            </div>
+          )}
         </aside>
       </div>
+      </fieldset>
     </section>
   );
 }

@@ -1,9 +1,7 @@
-// O que as abas do Financeiro (Ponto e Folha) usam igual: o endereço com aba,
-// mês e pessoa na URL, a navegação de mês, os cartões e os formatos.
+// O que as partes do Financeiro usam igual: o endereço com o mês e a pessoa na
+// URL, a navegação de mês, os cartões e os formatos.
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "@/app/components/icones";
-
-export type Aba = "ponto" | "folha";
 
 export const cartao = "rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900";
 
@@ -25,11 +23,9 @@ function somarMes(mes: string, n: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-/** /financeiro?aba=…&mes=…&pessoa=… — o Ponto é a aba sem `aba` na URL. */
-export function endereco(aba: Aba, mes: string, pessoaId: string | null = null): string {
-  const q = new URLSearchParams();
-  if (aba !== "ponto") q.set("aba", aba);
-  q.set("mes", mes);
+/** /financeiro?mes=…&pessoa=… */
+export function endereco(mes: string, pessoaId: string | null = null): string {
+  const q = new URLSearchParams({ mes });
   if (pessoaId) q.set("pessoa", pessoaId);
   return `/financeiro?${q}`;
 }
@@ -64,16 +60,16 @@ function SetaDoMes({ href, rotulo, Icone }: { href: string | null; rotulo: strin
  * ‹ Mês › com o limite dos meses que têm batida (`meses`, do mais novo para o
  * mais velho): não deixa ir para antes do primeiro nem para depois do último.
  */
-export function NavegacaoDoMes({ aba, mes, meses, pessoaId, legenda }: { aba: Aba; mes: string; meses: string[]; pessoaId: string | null; legenda: string }) {
+export function NavegacaoDoMes({ mes, meses, pessoaId, legenda }: { mes: string; meses: string[]; pessoaId: string | null; legenda: string }) {
   const maisVelho = meses[meses.length - 1] ?? mes;
   const anterior = mes > maisVelho ? somarMes(mes, -1) : null;
   const seguinte = meses[0] && mes < meses[0] ? somarMes(mes, 1) : null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-2">
-        <SetaDoMes href={anterior && endereco(aba, anterior, pessoaId)} rotulo="Mês anterior" Icone={ChevronLeft} />
+        <SetaDoMes href={anterior && endereco(anterior, pessoaId)} rotulo="Mês anterior" Icone={ChevronLeft} />
         <p className="min-w-40 text-center text-[14px] font-medium text-zinc-900 dark:text-zinc-50">{nomeDoMes(mes)}</p>
-        <SetaDoMes href={seguinte && endereco(aba, seguinte, pessoaId)} rotulo="Mês seguinte" Icone={ChevronRight} />
+        <SetaDoMes href={seguinte && endereco(seguinte, pessoaId)} rotulo="Mês seguinte" Icone={ChevronRight} />
       </div>
       <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{legenda}</p>
     </div>

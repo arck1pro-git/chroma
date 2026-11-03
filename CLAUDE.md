@@ -63,10 +63,10 @@ public/               só ícones e o que o app serve; nada de material interno
 Módulos (chave, rota): inicio `/`, chat, contatos, agenda, demandas, metricas, emails, automacoes, campanhas,
 templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, financeiro, infra, configuracoes. A rota é
 `/<chave>`, exceto inicio. Quem vê cada um é decidido no banco (`departamento_modulos`), não no código. O `infra`
-(`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem. O `financeiro` tem a aba
-Ponto (`lib/ponto.ts`), lida da base do app de ponto da equipe (outro sistema, só leitura, `lib/ponto-db.ts`), e a aba
-Folha (`lib/financeiro-pagamentos.ts`, conta em `lib/financeiro-tipos.ts`): cadastro de pagamento por colaborador e
-adicional e descontos por mês, no banco do CRM, que a IA (`chroma_ia`) não lê.
+(`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem. O `financeiro` reúne o
+ponto (`lib/ponto.ts`), lido da base do app de ponto da equipe (outro sistema, só leitura, `lib/ponto-db.ts`), e a folha
+do mês embaixo dele (`lib/financeiro-pagamentos.ts`, conta em `lib/financeiro-tipos.ts`): cadastro de pagamento por
+colaborador, editado na ficha dele, e adicional e descontos por mês, no banco do CRM, que a IA (`chroma_ia`) não lê.
 
 ## 2. Fluxo de execução e pontos de entrada
 

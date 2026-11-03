@@ -1,24 +1,24 @@
-// A aba Folha do Financeiro: o que pagar a cada profissional no mês, agrupado
-// por setor, com o total do setor e o total dos pagamentos do pessoal.
+// A folha do mês, embaixo do Ponto, no lugar do antigo "Dia a dia" (pedido
+// dele, 2026-11-03): o que pagar a cada profissional, agrupado por setor, com o
+// total do setor e o total dos pagamentos do pessoal.
 //
 // Em cada linha: o profissional com a atividade principal e o PIX embaixo (em
 // coluna própria, a atividade empurrava o valor total para fora da tela), o
-// tipo, valor hora, valor mês, a REFERÊNCIA (as horas do mês, do ponto), o
-// adicional e os descontos lançados
-// no mês e o total do profissional (lib/financeiro-tipos.ts, contaDoMes). Quem
-// não tem cadastro de pagamento aparece sem total e fica fora das somas.
+// setor no agrupamento, o tipo, valor hora, valor mês, a REFERÊNCIA (as horas
+// do mês, do ponto), o adicional e os descontos lançados no mês e o total do
+// profissional (lib/financeiro-tipos.ts, contaDoMes). Quem não tem cadastro de
+// pagamento aparece sem total e fica fora das somas.
 //
 // Aparece quem bateu ponto no mês OU tem cadastro na folha (o fixo recebe mesmo
-// sem batida). Os demais cadastros do app de ponto ficam numa linha embaixo,
-// para cadastrar. Editar (clicar no nome, ?pessoa=<id>) pede a permissão de
-// editar no Financeiro.
+// sem batida). Os demais cadastros do app de ponto ficam numa linha embaixo.
+// Clicar no profissional abre a ficha dele (?pessoa=<id>), onde se edita.
 import Link from "next/link";
 import type { Folha } from "@/lib/financeiro-pagamentos";
 import { contaDoMes, reais, SEM_LANCAMENTO, type CadastroPagamento, type LancamentoMes } from "@/lib/financeiro-tipos";
 import type { DadosPonto, PessoaPonto } from "@/lib/ponto";
 import { AlertTriangle, Pencil } from "@/app/components/icones";
-import { cartao, endereco, horas, Indicador, NavegacaoDoMes, nomeDoMes } from "./comum";
-import EditarFolha, { CopiarPix } from "./editar-folha";
+import { cartao, endereco, horas, Indicador, nomeDoMes } from "./comum";
+import { CopiarPix } from "./editar-folha";
 
 const SEM_SETOR = "Sem setor";
 
@@ -35,30 +35,25 @@ const valorOuTraco = (v: number | null, apagado = false) => (
   <span className={apagado ? "text-zinc-400 dark:text-zinc-500" : undefined}>{v === null || v === 0 ? "—" : reais(v)}</span>
 );
 
-export default function AbaFolha({
+export default function FolhaDoMes({
   dados,
   folha,
   pessoaId,
   podeEditar,
 }: {
   dados: DadosPonto;
+  /** null = as tabelas da folha ainda não existem neste banco. */
   folha: Folha | null;
   pessoaId: string | null;
   podeEditar: boolean;
 }) {
   const { mes } = dados;
-  const navegacao = (
-    <NavegacaoDoMes aba="folha" mes={mes} meses={dados.meses} pessoaId={null} legenda="Referência: as horas do app de ponto · valores guardados no CRM" />
-  );
   if (!folha) {
     return (
-      <>
-        {navegacao}
-        <p className={`${cartao} flex items-start gap-2 px-4 py-3 text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-300`}>
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
-          As tabelas da folha ainda não existem neste banco: rode a migration-financeiro-colaboradores.sql.
-        </p>
-      </>
+      <p className={`${cartao} flex items-start gap-2 px-4 py-3 text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-300`}>
+        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
+        A folha ainda não está disponível neste banco: falta rodar a migration-financeiro-colaboradores.sql.
+      </p>
     );
   }
 
@@ -84,32 +79,10 @@ export default function AbaFolha({
   const comTotal = linhas.filter((l) => l.conta.total !== null);
   const semValor = linhas.length - comTotal.length;
   const totalGeral = soma(comTotal, (l) => l.conta.total);
-
-  const selecionada = pessoaId ? dados.pessoas.find((p) => p.id === pessoaId) : undefined;
-  const nomesDeSetor = [...new Set([...folha.cadastros.values()].map((c) => c.setor).filter((s): s is string => Boolean(s)))].sort((a, b) =>
-    a.localeCompare(b, "pt-BR"),
-  );
   const colunas = 8;
 
   return (
     <>
-      {navegacao}
-
-      {selecionada && podeEditar && (
-        <EditarFolha
-          key={`${selecionada.id}|${mes}`}
-          mes={mes}
-          mesNome={nomeDoMes(mes)}
-          pessoa={{ id: selecionada.id, nome: selecionada.nome, email: selecionada.email }}
-          minutos={resumo.get(selecionada.id)?.minutos ?? 0}
-          horasTexto={horas(resumo.get(selecionada.id)?.minutos ?? 0)}
-          cadastro={folha.cadastros.get(selecionada.id) ?? null}
-          lancamento={folha.lancamentos.get(selecionada.id) ?? SEM_LANCAMENTO}
-          setores={nomesDeSetor}
-          fecharHref={endereco("folha", mes)}
-        />
-      )}
-
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Indicador
           rotulo="Total dos pagamentos do pessoal"
@@ -124,7 +97,9 @@ export default function AbaFolha({
       <section className={cartao}>
         <h2 className="border-b border-zinc-100 px-4 py-3 text-[13px] font-semibold text-zinc-900 dark:border-zinc-800 dark:text-zinc-50">
           Folha de {nomeDoMes(mes).toLowerCase()}
-          {podeEditar && <span className="font-normal text-zinc-400 dark:text-zinc-500"> · clique no profissional para editar</span>}
+          <span className="font-normal text-zinc-400 dark:text-zinc-500">
+            {podeEditar ? " · clique no profissional para configurar o pagamento" : " · clique no profissional para ver o andamento"}
+          </span>
         </h2>
         {linhas.length === 0 ? (
           <p className="px-4 py-6 text-[13px] text-zinc-500 dark:text-zinc-400">Ninguém bateu ponto nem tem cadastro na folha neste mês.</p>
@@ -158,22 +133,13 @@ export default function AbaFolha({
                     </tr>
                     {doSetor.map((l) => {
                       const c = l.cadastro;
-                      const nome = (
-                        <>
-                          <span className="font-medium text-zinc-900 dark:text-zinc-100">{l.pessoa.nome}</span>
-                          {podeEditar && <Pencil className="ml-1.5 inline size-2.5 text-zinc-400" aria-hidden="true" />}
-                        </>
-                      );
                       return (
                         <tr key={l.pessoa.id} className={l.pessoa.id === pessoaId ? "bg-zinc-50 dark:bg-zinc-800/60" : undefined}>
                           <td className="max-w-56 px-4 py-2">
-                            {podeEditar ? (
-                              <Link href={endereco("folha", mes, l.pessoa.id)} className="block hover:underline">
-                                {nome}
-                              </Link>
-                            ) : (
-                              <span className="block">{nome}</span>
-                            )}
+                            <Link href={endereco(mes, l.pessoa.id)} className="block hover:underline">
+                              <span className="font-medium text-zinc-900 dark:text-zinc-100">{l.pessoa.nome}</span>
+                              {podeEditar && <Pencil className="ml-1.5 inline size-2.5 text-zinc-400" aria-hidden="true" />}
+                            </Link>
                             {c?.atividade && <span className="block text-[12px] text-zinc-600 dark:text-zinc-400">{c.atividade}</span>}
                             {c?.pix ? <CopiarPix pix={c.pix} /> : <span className="block text-[11px] text-zinc-400 dark:text-zinc-500">sem PIX</span>}
                           </td>
@@ -224,13 +190,9 @@ export default function AbaFolha({
             {fora.map((p, i) => (
               <span key={p.id}>
                 {i > 0 && ", "}
-                {podeEditar ? (
-                  <Link href={endereco("folha", mes, p.id)} className="text-zinc-700 underline-offset-2 hover:underline dark:text-zinc-300">
-                    {p.nome}
-                  </Link>
-                ) : (
-                  p.nome
-                )}
+                <Link href={endereco(mes, p.id)} className="text-zinc-700 underline-offset-2 hover:underline dark:text-zinc-300">
+                  {p.nome}
+                </Link>
               </span>
             ))}
           </p>

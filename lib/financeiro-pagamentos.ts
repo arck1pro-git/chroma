@@ -1,5 +1,6 @@
 // A folha do pessoal no banco do CRM (migration-financeiro-colaboradores.sql),
-// para a aba Folha do Financeiro. Pedido dele, 2026-11-03.
+// para o Financeiro (a folha embaixo do Ponto e o pagamento na ficha de cada
+// colaborador). Pedido dele, 2026-11-03.
 //
 //   · financeiro_colaboradores: o cadastro de pagamento de cada pessoa (setor,
 //     atividade, tipo, valor hora, valor mês, PIX), para todos os meses;
@@ -76,11 +77,8 @@ function lerTexto(bruto: unknown, rotulo: string, teto: number): string | null {
   return t || null;
 }
 
-/**
- * Confere e normaliza o que veio da tela: o cadastro e o lançamento do mês.
- * Lança Recusa com a frase para a pessoa ler (a ação devolve como `erro`).
- */
-export function conferirFolha(dados: Record<string, unknown>): { cadastro: CadastroPagamento; lancamento: LancamentoMes } {
+/** Tipo, valor hora, valor mês e PIX: a parte do cadastro que decide a conta. */
+function conferirPagamento(dados: Record<string, unknown>): Pick<CadastroPagamento, "pessoaId" | "tipo" | "valorHora" | "valorMes" | "pix"> {
   const { pessoaId, tipo } = dados;
   if (typeof pessoaId !== "string" || !pessoaId || pessoaId.length > 64) throw new Recusa("Colaborador inválido.");
   if (tipo !== "hora" && tipo !== "fixo") throw new Recusa("Escolha se a pessoa recebe por hora ou fixo.");
@@ -88,19 +86,25 @@ export function conferirFolha(dados: Record<string, unknown>): { cadastro: Cadas
   const valorMes = lerValor(dados.valorMes, "Valor mês");
   if (tipo === "hora" && valorHora === null) throw new Recusa("Quem recebe por hora precisa do valor hora.");
   if (tipo === "fixo" && valorMes === null) throw new Recusa("Quem recebe fixo precisa do valor mês.");
+  return { pessoaId, tipo, valorHora, valorMes, pix: lerTexto(dados.pix, "Chave PIX", TETO.pix) };
+}
+
+/**
+ * Confere e normaliza o que veio da tela: o cadastro inteiro (com setor e
+ * atividade) e o lançamento do mês. Lança Recusa com a frase para a pessoa ler
+ * (a ação devolve como `erro`).
+ */
+export function conferirFolha(dados: Record<string, unknown>): { cadastro: CadastroPagamento; lancamento: LancamentoMes } {
   return {
     cadastro: {
-      pessoaId,
+      ...conferirPagamento(dados),
       setor: lerTexto(dados.setor, "Setor", TETO.setor),
       atividade: lerTexto(dados.atividade, "Atividade principal", TETO.atividade),
-      tipo,
-      valorHora,
-      valorMes,
-      pix: lerTexto(dados.pix, "Chave PIX", TETO.pix),
     },
     lancamento: { adicional: lerValor(dados.adicional, "Adicional") ?? 0, descontos: lerValor(dados.descontos, "Descontos") ?? 0 },
   };
 }
+
 
 /** Grava o cadastro e o lançamento do mês juntos. false = a migration ainda não rodou. */
 export async function salvarFolha(c: CadastroPagamento, mes: string, l: LancamentoMes): Promise<boolean> {
