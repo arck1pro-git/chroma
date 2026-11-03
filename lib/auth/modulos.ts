@@ -33,6 +33,7 @@ export type ChaveModulo =
   | "videos"
   | "meta"
   | "integracoes"
+  | "financeiro"
   | "infra"
   | "configuracoes";
 
@@ -222,6 +223,15 @@ export const MODULOS: readonly Modulo[] = [
     escopavel: false,
     naBarra: false,
     descricao: "Conexões com sistemas de fora.",
+  },
+  {
+    chave: "financeiro",
+    rotulo: "Financeiro",
+    href: "/financeiro",
+    escopavel: false,
+    naBarra: true,
+    descricao:
+      "O ponto da equipe, lido do app de ponto: horas trabalhadas por pessoa no mês, presencial e home office, as batidas de cada dia e as que faltam. Quem tem o módulo vê o ponto de todos.",
   },
   {
     chave: "infra",

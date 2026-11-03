@@ -73,6 +73,7 @@ import {
   Server,
   Settings,
   UsersRound,
+  Wallet,
   Webhook,
   Workflow,
   type TipoIcone,
@@ -106,6 +107,7 @@ const ICONES: Record<ChaveModulo, TipoIcone> = {
   videos: Clapperboard,
   meta: Grid2x2,
   integracoes: Link2,
+  financeiro: Wallet,
   infra: Server,
   configuracoes: Settings,
 };
@@ -114,6 +116,7 @@ const GRUPOS: Array<{ titulo: string | null; chaves: ChaveModulo[] }> = [
   { titulo: null, chaves: ["inicio", "chat", "contatos", "agenda", "demandas", "metricas"] },
   { titulo: "Marketing", chaves: ["campanhas", "automacoes", "templates", "formularios", "webhooks", "emails"] },
   { titulo: "Conteúdo", chaves: ["blog", "videos", "documentos"] },
+  { titulo: "Gestão", chaves: ["financeiro"] },
   { titulo: "Sistema", chaves: ["infra"] },
 ];
 

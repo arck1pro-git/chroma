@@ -61,9 +61,10 @@ public/               só ícones e o que o app serve; nada de material interno
 ```
 
 Módulos (chave, rota): inicio `/`, chat, contatos, agenda, demandas, metricas, emails, automacoes, campanhas,
-templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, infra, configuracoes. A rota é
+templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, financeiro, infra, configuracoes. A rota é
 `/<chave>`, exceto inicio. Quem vê cada um é decidido no banco (`departamento_modulos`), não no código. O `infra`
-(`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem.
+(`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem. O `financeiro` tem hoje
+a aba Ponto (`lib/ponto.ts`), lida da base do app de ponto da equipe (outro sistema, só leitura, `lib/ponto-db.ts`).
 
 ## 2. Fluxo de execução e pontos de entrada
 
@@ -144,7 +145,9 @@ segredo ou banco importa `server-only`.
 - Lote: `jsonb_to_recordset(${sql.json(linhas)}) AS x(col tipo, ...)`.
 - Atomicidade: `ON CONFLICT`, guarda `NOT EXISTS` na mesma instrução, ou transação.
 - Nunca carregar a base inteira de contatos (dezenas de milhares): busca com `LIMIT` via `lib/contatos-busca.ts`.
-- A IA lê por `lib/ia/db.ts` (role sem escrita). Não criar outra conexão `postgres()`.
+- A IA lê por `lib/ia/db.ts` (role sem escrita). Não criar outra conexão `postgres()`. A exceção é `lib/ponto-db.ts`, a
+  base de outro sistema (o app de ponto), lida só em transação READ ONLY por `lerPonto`; a coluna `senha` de lá nunca
+  é lida.
 
 **Erros.**
 - Erro esperado em server action (validação, regra de negócio, nome repetido, serviço externo recusou): devolver
@@ -200,6 +203,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   fim: quando a secundária assume, onde a mensagem fica, a volta à principal e as travas do banco),
   `testar-ia-retorno.ts` (pelo runner, contra o DEV com a Anthropic falsa num servidor local e marca apagada no fim: o
   retorno combinado da IA, a rodada que retoma no horário e a retomada por silêncio que o respeita),
+  `testar-ponto.ts` (pelo runner: as regras das horas do ponto; com `PONTO_DATABASE_URL`, lê dois meses da base do app
+  de ponto e confere que a conexão recusa escrita, sem gravar nada lá),
   `scripts/testar-extensao-reunioes.mjs` (direto com `node`: o service worker da extensão com um `chrome` falso; o áudio
   de verdade só no Chrome, ver `extensao-reunioes/LEIAME.md`) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
@@ -299,6 +304,7 @@ Neon, só em `lib/armazenamento.ts`), `@xyflow/react` (editor de fluxos), `@dnd-
 | Anthropic | IAs de atendimento e de interface, copiloto de reuniões da extensão (`lib/ia/reuniao.ts`) | `lib/ia/` | prompt com dado de cliente sanitizado; a mesma chave e o mesmo limite de uso servem às três |
 | Groq, Magnific | transcrição de áudio (chat e reuniões da extensão), voz da IA | `lib/transcricao.ts`, `lib/voz.ts` | número por extenso antes da voz; a extensão divide a chave da Groq com o chat |
 | Claude (MCP) | conector de leitura e posts | `app/api/mcp/[segredo]`, `lib/mcp/` | telefone e e-mail mascarados |
+| App de ponto (Neon à parte) | horas da equipe na aba Ponto do Financeiro | `lib/ponto-db.ts`, `lib/ponto.ts` | outro sistema: só leitura (transação READ ONLY), nunca a coluna `senha` |
 
 ## 9. Regras permanentes de qualidade
 
