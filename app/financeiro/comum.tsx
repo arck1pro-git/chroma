@@ -1,5 +1,6 @@
 // O que as partes do Financeiro usam igual: o endereço com o mês e a pessoa na
-// URL, a navegação de mês, os cartões e os formatos.
+// URL, o cabeçalho do topo, a navegação de mês, os cartões e os formatos.
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "@/app/components/icones";
 
@@ -22,6 +23,9 @@ function somarMes(mes: string, n: number): string {
   const d = new Date(Date.UTC(a, m - 1 + n, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
+
+/** Quando o Financeiro não deixa editar: o que fazer para liberar. */
+export const SO_PARA_VER = "Só para ver. Para editar, o TI marca a operação “Editar” do Financeiro em Configurações › Acessos.";
 
 /** /financeiro?mes=…&pessoa=… */
 export function endereco(mes: string, pessoaId: string | null = null): string {
@@ -56,22 +60,44 @@ function SetaDoMes({ href, rotulo, Icone }: { href: string | null; rotulo: strin
   );
 }
 
+
 /**
  * ‹ Mês › com o limite dos meses que têm batida (`meses`, do mais novo para o
  * mais velho): não deixa ir para antes do primeiro nem para depois do último.
  */
-export function NavegacaoDoMes({ mes, meses, pessoaId, legenda }: { mes: string; meses: string[]; pessoaId: string | null; legenda: string }) {
+export function NavegacaoDoMes({ mes, meses, pessoaId }: { mes: string; meses: string[]; pessoaId: string | null }) {
   const maisVelho = meses[meses.length - 1] ?? mes;
   const anterior = mes > maisVelho ? somarMes(mes, -1) : null;
   const seguinte = meses[0] && mes < meses[0] ? somarMes(mes, 1) : null;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <SetaDoMes href={anterior && endereco(anterior, pessoaId)} rotulo="Mês anterior" Icone={ChevronLeft} />
-        <p className="min-w-40 text-center text-[14px] font-medium text-zinc-900 dark:text-zinc-50">{nomeDoMes(mes)}</p>
-        <SetaDoMes href={seguinte && endereco(seguinte, pessoaId)} rotulo="Mês seguinte" Icone={ChevronRight} />
-      </div>
-      <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{legenda}</p>
+    <div className="flex items-center gap-2">
+      <SetaDoMes href={anterior && endereco(anterior, pessoaId)} rotulo="Mês anterior" Icone={ChevronLeft} />
+      <p className="min-w-40 text-center text-[14px] font-medium text-zinc-900 dark:text-zinc-50">{nomeDoMes(mes)}</p>
+      <SetaDoMes href={seguinte && endereco(seguinte, pessoaId)} rotulo="Mês seguinte" Icone={ChevronRight} />
     </div>
+  );
+}
+
+/** A largura da página (2026-11-04, "essa página deve ser mais larga"). */
+export const PAGINA = "mx-auto flex w-full max-w-[100rem] flex-col gap-6";
+
+/**
+ * O cabeçalho do topo da página: o nome do módulo e a legenda à esquerda; à
+ * direita o mês e as ações (o "Adicionar colaborador").
+ */
+export function CabecalhoFinanceiro({ legenda, navegacao, acoes }: { legenda?: ReactNode; navegacao?: ReactNode; acoes?: ReactNode }) {
+  return (
+    <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
+      <div className="min-w-0">
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Financeiro</h1>
+        {legenda && <div className="mt-0.5 text-[12px] text-zinc-500 dark:text-zinc-400">{legenda}</div>}
+      </div>
+      {(navegacao || acoes) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {navegacao}
+          {acoes}
+        </div>
+      )}
+    </header>
   );
 }

@@ -1,24 +1,22 @@
-// A tela do Financeiro: a aba Ponto, que reúne o ponto e a folha do mês.
-//   · Na visão da equipe: os números do mês, as horas por dia, a tabela por
-//     pessoa com o mês de cada um em barrinhas e, embaixo, a folha do mês por
-//     setor (./folha.tsx), no lugar do antigo "Dia a dia" (pedido dele,
-//     2026-11-03).
-//   · Na de um colaborador (?pessoa=<id>): os números dele contra a média da
-//     equipe, o pagamento dele para configurar (./editar-folha.tsx), os
-//     gráficos com a média ao lado e as mesmas tabelas embaixo.
-// A folha teve aba própria por algumas horas em 2026-11-03; juntou-se aqui para
-// a mesma tabela não morar em dois lugares.
-// Componente de servidor: os filtros são links, sem estado no navegador; só os
-// gráficos e o formulário de pagamento são do cliente.
+// A tela do Financeiro, de cima para baixo (2026-11-04, "essa página deve ser
+// mais larga... um header no topo com o botão de adicionar colaborador e essa
+// aba de ponto para baixo"):
+//   · o cabeçalho, com o mês e o "Adicionar colaborador", e a folha do mês por
+//     setor (./folha.tsx); editar abre a gaveta do pagamento por cima;
+//   · o Ponto (#ponto). Na visão da equipe: os números do mês, as horas por dia
+//     e a tabela por pessoa com o mês de cada um em barrinhas. Na de um
+//     colaborador (?pessoa=<id>): os números dele contra a média da equipe e os
+//     gráficos com a média ao lado. Os links do Ponto levam a âncora #ponto,
+//     para a página abrir nele e não no topo.
+// Componente de servidor: os filtros são links; a folha, a gaveta e os
+// gráficos são do cliente.
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Folha } from "@/lib/financeiro-pagamentos";
-import { SEM_LANCAMENTO, valoresDoMes } from "@/lib/financeiro-tipos";
 import { horaCurta } from "@/lib/formato";
 import { mesAtual, type DadosPonto, type DiaPonto, type PessoaPonto, type ResumoPonto, type SituacaoDia } from "@/lib/ponto";
-import { AlertTriangle, Clock, X } from "@/app/components/icones";
-import { cartao, endereco, horas, Indicador, NavegacaoDoMes, nomeDoMes } from "./comum";
-import EditarFolha from "./editar-folha";
+import { AlertTriangle, X } from "@/app/components/icones";
+import { CabecalhoFinanceiro, cartao, endereco, horas, Indicador, NavegacaoDoMes, PAGINA } from "./comum";
 import FolhaDoMes from "./folha";
 import { EquipePorDia, PessoaPorDia, PessoaPorMes } from "./graficos";
 
@@ -75,7 +73,7 @@ function BarrasDoMes({ diasDaEquipe, diasDaPessoa }: { diasDaEquipe: string[]; d
 function CartaoGrafico({ titulo, children }: { titulo: string; children: ReactNode }) {
   return (
     <section className={`${cartao} px-4 pb-3 pt-3.5`}>
-      <h2 className="mb-3 text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">{titulo}</h2>
+      <h3 className="mb-3 text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">{titulo}</h3>
       {children}
     </section>
   );
@@ -98,38 +96,36 @@ export default function PainelFinanceiro({
   problema?: Problema;
 }) {
   return (
-    <div className="flex-1 overflow-y-auto bg-conteudo px-4 py-6 sm:px-6 xl:px-10">
-      <div className="mx-auto flex max-w-6xl flex-col gap-5">
-        <header>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Financeiro</h1>
-          <nav className="mt-3 flex gap-1 border-b border-zinc-200 dark:border-zinc-800" aria-label="Abas do Financeiro">
-            <Link
-              href={endereco(mes)}
-              aria-current="page"
-              className="-mb-px flex items-center gap-1.5 border-b-2 border-zinc-900 px-3 py-2 text-[13px] font-medium text-zinc-900 dark:border-zinc-100 dark:text-zinc-50"
-            >
-              <Clock className="size-3.5" aria-hidden="true" />
-              Ponto
-            </Link>
-          </nav>
-        </header>
-
+    <div className="flex-1 overflow-y-auto bg-conteudo px-4 py-6 sm:px-6 xl:px-8">
+      <div className={PAGINA}>
         {problema || !dados ? (
-          <p className={`${cartao} flex items-start gap-2 px-4 py-3 text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-300`}>
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
-            {problema === "sem_base"
-              ? "A base do app de ponto não está configurada neste ambiente (PONTO_DATABASE_URL)."
-              : "A base do app de ponto não respondeu agora. Tente de novo em instantes."}
-          </p>
+          <>
+            <CabecalhoFinanceiro />
+            <p className={`${cartao} flex items-start gap-2 px-4 py-3 text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-300`}>
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
+              {problema === "sem_base"
+                ? "A base do app de ponto não está configurada neste ambiente (PONTO_DATABASE_URL)."
+                : "A base do app de ponto não respondeu agora. Tente de novo em instantes."}
+            </p>
+          </>
         ) : (
-          <AbaPonto dados={dados} folha={folha ?? null} pessoaId={pessoaId} podeEditar={podeEditar} />
+          <>
+            <FolhaDoMes
+              dados={dados}
+              folha={folha ?? null}
+              podeEditar={podeEditar}
+              legenda={`Folha e ponto da equipe · lido do app de ponto às ${horaCurta(dados.lidoEm)}, ${dados.pessoas.length} cadastros, ${dados.resumos.length} com registro no mês`}
+              navegacao={<NavegacaoDoMes mes={mes} meses={dados.meses} pessoaId={pessoaId} />}
+            />
+            <SecaoPonto dados={dados} pessoaId={pessoaId} />
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function AbaPonto({ dados, folha, pessoaId, podeEditar }: { dados: DadosPonto; folha: Folha | null; pessoaId: string | null; podeEditar: boolean }) {
+function SecaoPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | null }) {
   const { mes } = dados;
   const pessoa = new Map<string, PessoaPonto>(dados.pessoas.map((p) => [p.id, p]));
   const resumos = dados.resumos;
@@ -155,19 +151,14 @@ function AbaPonto({ dados, folha, pessoaId, podeEditar }: { dados: DadosPonto; f
   const maiorMes = Math.max(1, ...resumos.map((r) => r.minutos));
 
   return (
-    <>
-      <NavegacaoDoMes
-        mes={mes}
-        meses={dados.meses}
-        pessoaId={pessoaId}
-        legenda={`Lido do app de ponto às ${horaCurta(dados.lidoEm)} · ${dados.pessoas.length} cadastros, ${resumos.length} com registro no mês`}
-      />
+    <section id="ponto" aria-labelledby="titulo-ponto" className="flex scroll-mt-6 flex-col gap-4 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+      <h2 id="titulo-ponto" className="text-[16px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+        Ponto <span className="text-[12.5px] font-normal text-zinc-500 dark:text-zinc-400">· as horas da equipe no mês, lidas do app de ponto</span>
+      </h2>
 
       {selecionada ? (
         <FichaDaPessoa
           dados={dados}
-          folha={folha}
-          podeEditar={podeEditar}
           pessoa={selecionada}
           resumo={resumoDela}
           mediaEquipe={comBatida ? total.minutos / comBatida : 0}
@@ -188,9 +179,9 @@ function AbaPonto({ dados, folha, pessoaId, podeEditar }: { dados: DadosPonto; f
       )}
 
       <section className={cartao}>
-        <h2 className="border-b border-zinc-100 px-4 py-3 text-[13px] font-semibold text-zinc-900 dark:border-zinc-800 dark:text-zinc-50">
+        <h3 className="border-b border-zinc-100 px-4 py-3 text-[13px] font-semibold text-zinc-900 dark:border-zinc-800 dark:text-zinc-50">
           Por colaborador <span className="font-normal text-zinc-400 dark:text-zinc-500">· clique para ver o andamento de cada um</span>
-        </h2>
+        </h3>
         {resumos.length === 0 ? (
           <p className="px-4 py-6 text-[13px] text-zinc-500 dark:text-zinc-400">Ninguém bateu ponto neste mês.</p>
         ) : (
@@ -212,7 +203,7 @@ function AbaPonto({ dados, folha, pessoaId, podeEditar }: { dados: DadosPonto; f
                 {resumos.map((r) => {
                   const p = pessoa.get(r.pessoaId);
                   const ativa = r.pessoaId === pessoaId;
-                  const link = endereco(mes, ativa ? null : r.pessoaId);
+                  const link = `${endereco(mes, ativa ? null : r.pessoaId)}#ponto`;
                   return (
                     <tr key={r.pessoaId} className={ativa ? "bg-zinc-50 dark:bg-zinc-800/60" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"}>
                       <td className="px-4 py-2">
@@ -254,25 +245,19 @@ function AbaPonto({ dados, folha, pessoaId, podeEditar }: { dados: DadosPonto; f
           </div>
         )}
       </section>
-
-      <FolhaDoMes dados={dados} folha={folha} pessoaId={pessoaId} podeEditar={podeEditar} />
-    </>
+    </section>
   );
 }
 
-/** O andamento de um colaborador no mês: os números dele contra a média da equipe, o pagamento dele e os dois gráficos. */
+/** O andamento de um colaborador no mês: os números dele contra a média da equipe e os dois gráficos. */
 function FichaDaPessoa({
   dados,
-  folha,
-  podeEditar,
   pessoa,
   resumo,
   mediaEquipe,
   mediaDiaEquipe,
 }: {
   dados: DadosPonto;
-  folha: Folha | null;
-  podeEditar: boolean;
   pessoa: PessoaPonto;
   resumo: ResumoPonto | undefined;
   mediaEquipe: number;
@@ -288,22 +273,19 @@ function FichaDaPessoa({
     const pct = Math.round(((valor - referencia) / referencia) * 100);
     return pct === 0 ? "igual à média da equipe" : `${pct > 0 ? "+" : ""}${pct}% da média da equipe (${horas(referencia)})`;
   };
-  const setores = folha
-    ? [...new Set([...folha.cadastros.values()].map((c) => c.setor).filter((s): s is string => Boolean(s)))].sort((a, b) => a.localeCompare(b, "pt-BR"))
-    : [];
 
   return (
-    <section className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[16px] font-semibold text-zinc-900 dark:text-zinc-50">
+          <h3 className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-50">
             {pessoa.nome}
             {pessoa.admin && <span className="ml-1.5 text-[12px] font-normal text-zinc-400 dark:text-zinc-500">admin</span>}
-          </h2>
+          </h3>
           <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{pessoa.email}</p>
         </div>
         <Link
-          href={endereco(dados.mes)}
+          href={`${endereco(dados.mes)}#ponto`}
           className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2.5 py-1 text-[12px] text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
         >
           <X className="size-3" aria-hidden="true" />
@@ -324,24 +306,6 @@ function FichaDaPessoa({
         </div>
       )}
 
-      {folha && (
-        <EditarFolha
-          key={`${pessoa.id}|${dados.mes}`}
-          mes={dados.mes}
-          mesNome={nomeDoMes(dados.mes)}
-          pessoaId={pessoa.id}
-          minutos={r?.minutos ?? 0}
-          horasTexto={horas(r?.minutos ?? 0)}
-          presencial={r?.presencial ?? 0}
-          cadastro={folha.cadastros.get(pessoa.id) ?? null}
-          valores={valoresDoMes(folha.cadastros.get(pessoa.id), folha.lancamentos.get(pessoa.id))}
-          daFoto={Boolean(folha.lancamentos.get(pessoa.id)?.valores)}
-          lancamento={folha.lancamentos.get(pessoa.id) ?? SEM_LANCAMENTO}
-          setores={setores}
-          podeEditar={podeEditar}
-        />
-      )}
-
       <div className="grid gap-4 lg:grid-cols-2">
         <CartaoGrafico titulo="Horas por dia">
           <PessoaPorDia nome={pessoa.nome.split(" ")[0]} dados={porDia} />
@@ -350,6 +314,6 @@ function FichaDaPessoa({
           <PessoaPorMes nome={pessoa.nome.split(" ")[0]} atual={`${mesAtual()}-01`} dados={porMes} />
         </CartaoGrafico>
       </div>
-    </section>
+    </div>
   );
 }

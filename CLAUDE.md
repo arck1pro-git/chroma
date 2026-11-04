@@ -65,11 +65,14 @@ templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, f
 `/<chave>`, exceto inicio. Quem vê cada um é decidido no banco (`departamento_modulos`), não no código. O `infra`
 (`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem. O `financeiro` reúne o
 ponto (`lib/ponto.ts`, base guardada 1 minuto na memória), lido da base do app de ponto da equipe (outro sistema, só
-leitura, `lib/ponto-db.ts`), e a folha do mês embaixo dele (`lib/financeiro-pagamentos.ts`, conta em
-`lib/financeiro-tipos.ts`), no banco do CRM, que a IA (`chroma_ia`) não lê. Tipo, valor hora, valor mês e taxa diária de
+leitura, `lib/ponto-db.ts`), e a folha do mês (`lib/financeiro-pagamentos.ts`, conta em `lib/financeiro-tipos.ts`), no
+banco do CRM, que a IA (`chroma_ia`) não lê. A página tem o cabeçalho com o mês e o "Adicionar colaborador", a folha logo
+abaixo e o Ponto embaixo dela (`#ponto`). Tipo, valor hora, valor mês e taxa diária de
 deslocamento ficam gravados no mês lançado (a "foto" em `financeiro_lancamentos`); o cadastro do colaborador guarda o
-padrão dos meses ainda não lançados. Deslocamento = taxa × dias presenciais no ponto. Os formulários salvam sozinhos
-(`app/financeiro/campos.tsx`).
+padrão dos meses ainda não lançados. Deslocamento = taxa × dias presenciais no ponto. A folha só mostra; o Editar de
+cada linha e o "Adicionar colaborador" abrem a gaveta do pagamento por cima (`app/financeiro/gaveta-pagamento.tsx`),
+inclusive em mês já lançado. "Adicionar colaborador" só oferece quem está no app de ponto, porque a folha se liga pelo id
+de lá e não guarda nome.
 
 ## 2. Fluxo de execução e pontos de entrada
 

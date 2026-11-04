@@ -1,6 +1,6 @@
 // A folha do pessoal no banco do CRM (migration-financeiro-colaboradores.sql e
-// migration-financeiro-mes.sql), para o Financeiro: a folha embaixo do Ponto e
-// o pagamento na ficha de cada colaborador. Pedido dele, 2026-11-03.
+// migration-financeiro-mes.sql), para o Financeiro: a folha do mês e o
+// pagamento de cada colaborador, editado numa gaveta. Pedido dele, 2026-11-03.
 //
 //   · financeiro_colaboradores: o cadastro de cada pessoa. Setor, atividade e
 //     PIX valem para todos os meses; tipo, valor hora, valor mês e taxa de
@@ -111,19 +111,22 @@ function conferirValores(dados: Record<string, unknown>): ValoresPagamento {
   return { tipo, valorHora, valorMes, taxaDeslocamento: lerValor(dados.taxaDeslocamento, "Taxa de deslocamento") };
 }
 
-/** O que a linha da folha manda: os valores do mês e o PIX. */
-export type DadosDaLinha = { pessoaId: string; valores: ValoresPagamento; pix: string | null };
-
-export function conferirLinha(dados: Record<string, unknown>): DadosDaLinha {
-  return { pessoaId: lerPessoa(dados.pessoaId), valores: conferirValores(dados), pix: lerTexto(dados.pix, "Chave PIX", TETO.pix) };
-}
-
-/** O que a ficha manda: tudo da linha, mais setor, atividade, adicional e descontos do mês. */
-export type DadosDaFicha = DadosDaLinha & { setor: string | null; atividade: string | null; adicional: number; descontos: number };
+/** O que a gaveta do pagamento manda: o cadastro, os valores do mês, o adicional e os descontos do mês. */
+export type DadosDaFicha = {
+  pessoaId: string;
+  valores: ValoresPagamento;
+  pix: string | null;
+  setor: string | null;
+  atividade: string | null;
+  adicional: number;
+  descontos: number;
+};
 
 export function conferirFicha(dados: Record<string, unknown>): DadosDaFicha {
   return {
-    ...conferirLinha(dados),
+    pessoaId: lerPessoa(dados.pessoaId),
+    valores: conferirValores(dados),
+    pix: lerTexto(dados.pix, "Chave PIX", TETO.pix),
     setor: lerTexto(dados.setor, "Setor", TETO.setor),
     atividade: lerTexto(dados.atividade, "Atividade principal", TETO.atividade),
     adicional: lerValor(dados.adicional, "Adicional") ?? 0,
@@ -132,39 +135,7 @@ export function conferirFicha(dados: Record<string, unknown>): DadosDaFicha {
 }
 
 /**
- * Grava pela linha da folha: o PIX no cadastro, a foto dos valores no mês e, se
- * `padrao` (mês corrente ou futuro), também o padrão do cadastro. Adicional,
- * descontos, setor e atividade ficam como estavam. false = falta migration.
- */
-export async function salvarLinha(mes: string, d: DadosDaLinha, padrao: boolean): Promise<boolean> {
-  const v = d.valores;
-  try {
-    await sql.begin(async (t: typeof sql) => {
-      await t`
-        INSERT INTO financeiro_colaboradores (pessoa_id, tipo, valor_hora, valor_mes, taxa_deslocamento, pix)
-        VALUES (${d.pessoaId}, ${v.tipo}, ${v.valorHora}, ${v.valorMes}, ${v.taxaDeslocamento}, ${d.pix})
-        ON CONFLICT (pessoa_id) DO UPDATE SET
-          pix = EXCLUDED.pix,
-          tipo = CASE WHEN ${padrao}::boolean THEN EXCLUDED.tipo ELSE financeiro_colaboradores.tipo END,
-          valor_hora = CASE WHEN ${padrao}::boolean THEN EXCLUDED.valor_hora ELSE financeiro_colaboradores.valor_hora END,
-          valor_mes = CASE WHEN ${padrao}::boolean THEN EXCLUDED.valor_mes ELSE financeiro_colaboradores.valor_mes END,
-          taxa_deslocamento = CASE WHEN ${padrao}::boolean THEN EXCLUDED.taxa_deslocamento ELSE financeiro_colaboradores.taxa_deslocamento END`;
-      await t`
-        INSERT INTO financeiro_lancamentos (pessoa_id, mes, tipo, valor_hora, valor_mes, taxa_deslocamento)
-        VALUES (${d.pessoaId}, ${mes}, ${v.tipo}, ${v.valorHora}, ${v.valorMes}, ${v.taxaDeslocamento})
-        ON CONFLICT (pessoa_id, mes) DO UPDATE SET
-          tipo = EXCLUDED.tipo, valor_hora = EXCLUDED.valor_hora,
-          valor_mes = EXCLUDED.valor_mes, taxa_deslocamento = EXCLUDED.taxa_deslocamento`;
-    });
-    return true;
-  } catch (e) {
-    if (faltaMigration(e)) return false;
-    throw e;
-  }
-}
-
-/**
- * Grava pela ficha: setor, atividade e PIX no cadastro; a foto dos valores, o
+ * Grava pela gaveta do pagamento: setor, atividade e PIX no cadastro; a foto dos valores, o
  * adicional e os descontos no mês; e o padrão do cadastro se `padrao` (mês
  * corrente ou futuro). false = falta migration.
  */
