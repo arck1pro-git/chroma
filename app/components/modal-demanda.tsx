@@ -9,9 +9,13 @@
 //   · "Editar demanda", em /demandas — abre preenchido (`inicial`) e sem "Para":
 //     editar não muda o destino.
 //
-// O CHECKLIST entra só na criação, atrás de um "+ Checklist" para não pesar o
-// formulário de quem não precisa. Depois de criada, o checklist se monta no
-// próprio cartão (app/demandas/checklist.tsx).
+// O CHECKLIST fica atrás de um "+ Checklist" para não pesar o formulário de
+// quem não precisa. Na criação vai como a lista de passos; no editar
+// (2026-11-04, "se eu quiser editar a demanda depois eu não consigo mais
+// criar") ele abre com os passos que a demanda tem, e dá para renomear, tirar e
+// acrescentar: vai como `checklist`, com o id dos que já existiam, e o servidor
+// aplica a diferença (lib/demandas.ts). A gaveta continua montando também
+// (app/demandas/checklist.tsx).
 //
 // Os ANEXOS também (2026-10-15): escolhidos aqui, sobem para o Storage quando a
 // pessoa envia — a foto já comprimida em WebP — e só então a demanda é criada
@@ -46,6 +50,7 @@ import {
   TETO_ITENS,
   TETO_TEXTO_ITEM,
   type DadosDemanda,
+  type PassoEditado,
   type Prioridade,
   type ResultadoDemanda,
 } from "@/lib/demandas-tipos";
@@ -120,9 +125,10 @@ export default function ModalDemanda({
   const [prazo, setPrazo] = useState(inicial?.prazo ?? "");
   const [prioridade, setPrioridade] = useState<Prioridade>(inicial?.prioridade ?? "normal");
   const [para, setPara] = useState(destinoInicial);
-  const [itens, setItens] = useState<string[]>([]);
+  const [itens, setItens] = useState<PassoEditado[]>(inicial?.checklist ?? []);
   const [novoItem, setNovoItem] = useState("");
   const [comChecklist, setComChecklist] = useState(false);
+  const editando = inicial !== undefined;
   const [arquivos, setArquivos] = useState<File[]>([]);
   // "Enviando anexos 2 de 3…" no botão enquanto os arquivos sobem.
   const [subindo, setSubindo] = useState<string | null>(null);
@@ -159,7 +165,7 @@ export default function ModalDemanda({
   function acrescentarItem() {
     const t = novoItem.trim();
     if (!t || itens.length >= TETO_ITENS) return;
-    setItens((atuais) => [...atuais, t]);
+    setItens((atuais) => [...atuais, { id: null, texto: t }]);
     setNovoItem("");
   }
 
@@ -167,8 +173,12 @@ export default function ModalDemanda({
     if (!podeEnviar) return;
     setErro(null);
     // O passo digitado e ainda sem Enter vai junto: quem clicou em criar quis
-    // que ele entrasse.
-    const passos = [...itens, novoItem.trim()].filter(Boolean).slice(0, TETO_ITENS);
+    // que ele entrasse. Passo esvaziado sai.
+    const novo = novoItem.trim();
+    const passos = [...itens, ...(novo ? [{ id: null, texto: novo }] : [])]
+      .map((p) => ({ ...p, texto: p.texto.trim() }))
+      .filter((p) => p.texto)
+      .slice(0, TETO_ITENS);
     iniciar(async () => {
       // Os arquivos sobem antes: a demanda só nasce com eles já no Storage.
       const anexos: AnexoDemanda[] = [];
@@ -189,7 +199,8 @@ export default function ModalDemanda({
         prazo,
         prioridade,
         ...(destinos ? { para } : {}),
-        ...(passos.length ? { itens: passos } : {}),
+        // Editar manda sempre o checklist como ficou (vazio = tirar todos); criar, só os textos.
+        ...(editando ? { checklist: passos } : passos.length ? { itens: passos.map((p) => p.texto) } : {}),
         ...(anexos.length ? { anexos } : {}),
       });
       if (!r.ok) {
@@ -336,8 +347,7 @@ export default function ModalDemanda({
                 <EscolherAnexos arquivos={arquivos} aoMudar={setArquivos} aoRecusar={setErro} desligado={enviando} />
               )}
 
-              {inicial === undefined &&
-                (comChecklist || itens.length > 0 ? (
+              {comChecklist || itens.length > 0 ? (
                   <div className="flex flex-col gap-1.5">
                     <span className={`${rotulo} flex items-center gap-1.5`}>
                       <ListChecks className="size-3.5" aria-hidden="true" />
@@ -345,14 +355,26 @@ export default function ModalDemanda({
                     </span>
                     {itens.length > 0 && (
                       <ul className="flex flex-col gap-1">
-                        {itens.map((t, i) => (
-                          <li key={`${i}-${t}`} className="group flex items-center gap-2 rounded-lg px-1 py-0.5">
+                        {itens.map((p, i) => (
+                          // Chave pelo id, não pelo texto, que muda enquanto se digita; o passo novo, pela posição.
+                          <li key={p.id ?? `novo-${i}`} className="group flex items-center gap-2 rounded-lg px-1 py-0.5">
                             <span className="size-3.5 shrink-0 rounded-[4px] border border-zinc-300 dark:border-zinc-600" aria-hidden="true" />
-                            <span className="min-w-0 flex-1 break-words text-[13px] text-zinc-800 dark:text-zinc-200">{t}</span>
+                            {/* O texto do passo é o próprio campo: clicar e digitar renomeia. */}
+                            <input
+                              value={p.texto}
+                              maxLength={TETO_TEXTO_ITEM}
+                              onChange={(e) => setItens((atuais) => atuais.map((x, j) => (j === i ? { ...x, texto: e.target.value } : x)))}
+                              onKeyDown={(e) => {
+                                // Enter não envia o formulário de dentro de um passo.
+                                if (e.key === "Enter") e.preventDefault();
+                              }}
+                              aria-label={`Passo ${i + 1}`}
+                              className="min-w-0 flex-1 rounded bg-transparent px-1 py-0.5 text-[13px] text-zinc-800 outline-none transition hover:bg-zinc-100 focus:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:focus:bg-zinc-800"
+                            />
                             <button
                               type="button"
                               onClick={() => setItens((atuais) => atuais.filter((_, j) => j !== i))}
-                              aria-label={`Tirar “${t}”`}
+                              aria-label={`Tirar “${p.texto}”`}
                               className="shrink-0 rounded p-0.5 text-zinc-300 opacity-0 transition hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:text-zinc-600"
                             >
                               <X className="size-3.5" aria-hidden="true" />
@@ -383,9 +405,11 @@ export default function ModalDemanda({
                       </div>
                     )}
                     <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
-                      {destinos && para !== PARA_O_TI
-                        ? "Quem receber marca cada passo; mudar os passos depois é com você."
-                        : "O TI marca cada passo; mudar os passos depois é com você."}
+                      {editando
+                        ? "Clique num passo para renomear. Os já feitos continuam feitos; o que você tirar sai para quem recebeu."
+                        : destinos && para !== PARA_O_TI
+                          ? "Quem receber marca cada passo; mudar os passos depois é com você."
+                          : "O TI marca cada passo; mudar os passos depois é com você."}
                     </span>
                   </div>
                 ) : (
@@ -397,7 +421,7 @@ export default function ModalDemanda({
                     <Plus className="size-3.5" aria-hidden="true" />
                     Checklist
                   </button>
-                ))}
+                )}
 
               <div className="flex flex-wrap gap-4">
                 <label className="flex flex-col gap-1">

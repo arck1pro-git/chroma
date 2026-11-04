@@ -27,6 +27,9 @@ export type ItemDemanda = {
   feitoPor: string | null;
 };
 
+/** Um passo no formulário de editar: id = já existia; null = novo. */
+export type PassoEditado = { id: string | null; texto: string };
+
 /** Tetos do checklist: um item é uma linha, não um texto; uma demanda não é um projeto. */
 export const TETO_ITENS = 50;
 export const TETO_TEXTO_ITEM = 200;
@@ -94,8 +97,14 @@ export type DadosDemanda = {
   prioridade: Prioridade;
   /** Id da pessoa, PARA_TODOS ou PARA_O_TI. */
   para?: string;
-  /** Os passos do checklist, na ordem — só na criação; depois, cada item tem a sua ação. */
+  /** Os passos do checklist, na ordem — só na criação. */
   itens?: string[];
+  /**
+   * Só na edição (2026-11-04): o checklist como ficou no formulário. Passo com
+   * id é um que já existia (o texto pode ter mudado); sem id, um novo; o que
+   * existia e não veio, sai. Ausente = o checklist não muda.
+   */
+  checklist?: PassoEditado[];
   /**
    * Os arquivos já enviados ao Storage antes de criar (o id é o que
    * prepararAnexoDemanda sorteou) — só na criação; depois, pela gaveta.

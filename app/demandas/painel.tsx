@@ -553,6 +553,8 @@ export default function PainelDemandas({
         descricao: d.descricao ?? "",
         prazo: d.prazo ?? "",
         prioridade: d.prioridade,
+        // Os passos desta cópia: na demanda "para todos", o que muda vale para todas (lib/demandas.ts).
+        checklist: d.itens.map((i) => ({ id: i.id, texto: i.texto })),
       },
     });
   }

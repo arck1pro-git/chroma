@@ -23,6 +23,7 @@ import {
   PARA_TODOS,
   type Demanda,
   type ItemDemanda,
+  type PassoEditado,
   type Prioridade,
   type SituacaoDemandas,
 } from "@/lib/demandas-tipos";
@@ -414,6 +415,57 @@ export async function removerItem(itemId: string, usuario: UsuarioLogado): Promi
     DELETE FROM demanda_itens
      WHERE ordem = ${alvo.ordem}
        AND demanda_id = ANY(string_to_array(${listaUuid(alvo.ids)}, ',')::uuid[])`;
+  return true;
+}
+
+/** O que salvar o checklist no formulário de editar muda: tirar, renomear e acrescentar. */
+export type PlanoChecklist = {
+  base: string;
+  tirar: string[];
+  renomear: Array<{ id: string; texto: string }>;
+  acrescentar: string[];
+};
+
+/**
+ * Compara o checklist do formulário de editar (2026-11-04, "se eu quiser editar
+ * a demanda depois eu não consigo mais criar") com o que está no banco.
+ * `ids` são as cópias que o formulário edita; a base é a cópia dona dos passos
+ * que vieram com id (a que o formulário mostrou), ou a primeira, quando não
+ * havia passo nenhum. Passo com id que não é dessa cópia é ignorado: nada vindo
+ * da tela tira passo de outra demanda. null = a base não está entre `ids`.
+ */
+export async function planoDoChecklist(ids: string[], passos: PassoEditado[]): Promise<PlanoChecklist | null> {
+  const comId = passos.filter((p): p is { id: string; texto: string } => p.id !== null);
+  let base = ids[0];
+  if (comId.length) {
+    const [dono] = await sql`SELECT demanda_id FROM demanda_itens WHERE id = ${comId[0].id}`;
+    if (dono) base = dono.demanda_id as string;
+  }
+  if (!base || !ids.includes(base)) return null;
+
+  const atuais = await sql`SELECT id, texto FROM demanda_itens WHERE demanda_id = ${base} ORDER BY ordem`;
+  const vieram = new Map(comId.map((p) => [p.id, p.texto]));
+  return {
+    base,
+    tirar: atuais.filter((a) => !vieram.has(a.id as string)).map((a) => a.id as string),
+    renomear: atuais
+      .filter((a) => vieram.has(a.id as string) && vieram.get(a.id as string) !== a.texto)
+      .map((a) => ({ id: a.id as string, texto: vieram.get(a.id as string)! })),
+    acrescentar: passos.filter((p) => p.id === null).map((p) => p.texto),
+  };
+}
+
+/**
+ * Aplica o plano com as mesmas funções da gaveta (cada uma confere quem criou e
+ * vale para todas as cópias): primeiro tira, depois renomeia, por fim
+ * acrescenta no fim, na ordem do formulário. false = quem pede não criou.
+ */
+export async function aplicarChecklist(plano: PlanoChecklist, usuario: UsuarioLogado): Promise<boolean> {
+  const copias = await copiasDe(plano.base);
+  if (!copias || copias.criadoPor !== usuario.id) return false;
+  for (const id of plano.tirar) await removerItem(id, usuario);
+  for (const r of plano.renomear) await renomearItem(r.id, r.texto, usuario);
+  for (const texto of plano.acrescentar) await adicionarItem(plano.base, texto, usuario);
   return true;
 }
 

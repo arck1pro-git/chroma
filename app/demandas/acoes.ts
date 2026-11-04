@@ -6,6 +6,7 @@
 // consulta.
 import { revalidatePath } from "next/cache";
 import { exigirLogin, exigirModulo } from "@/lib/auth/dal";
+import { podeOperar } from "@/lib/auth/permissoes";
 import {
   anexarDepois,
   anexoPorId,
@@ -18,6 +19,7 @@ import {
 import {
   adicionarItem,
   apagarDemandas,
+  aplicarChecklist,
   atualizarDemandas,
   copiasDe,
   inserirChamado,
@@ -27,6 +29,7 @@ import {
   marcarFeita,
   marcarItem,
   mudarPrazo,
+  planoDoChecklist,
   podeCriarPara,
   removerItem,
   renomearItem,
@@ -39,6 +42,7 @@ import {
   TETO_TEXTO_ITEM,
   type AnexoDemanda,
   type DadosDemanda,
+  type PassoEditado,
   type Prioridade,
   type ResultadoDemanda,
 } from "@/lib/demandas-tipos";
@@ -64,6 +68,19 @@ function idsValidos(ids: unknown): string[] | null {
 function itensDe(dados: DadosDemanda): string[] {
   if (!Array.isArray(dados?.itens)) return [];
   return dados.itens.map((i) => texto(i, TETO_TEXTO_ITEM)).filter(Boolean).slice(0, TETO_ITENS);
+}
+
+/**
+ * O checklist do formulário de editar: id só se for uuid (senão o passo conta
+ * como novo), texto aparado; passo esvaziado sai. null = o formulário não mandou
+ * checklist, e ele não muda.
+ */
+function passosDe(dados: DadosDemanda): PassoEditado[] | null {
+  if (!Array.isArray(dados?.checklist)) return null;
+  return dados.checklist
+    .map((p) => ({ id: idValido(p?.id) ? p.id : null, texto: texto(p?.texto, TETO_TEXTO_ITEM) }))
+    .filter((p) => p.texto)
+    .slice(0, TETO_ITENS);
 }
 
 function texto(v: unknown, max: number): string {
@@ -271,7 +288,13 @@ export async function andamentoDemanda(id: string, sim: boolean): Promise<Result
   return { ok: true, mensagem: sim ? "Em andamento." : "Voltou para a fila." };
 }
 
-/** Editar não muda PARA QUEM: isso é outra demanda. */
+/**
+ * Editar não muda PARA QUEM: isso é outra demanda. Desde 2026-11-04 o
+ * formulário também traz o checklist (`dados.checklist`): o plano (tirar,
+ * renomear, acrescentar) sai antes de gravar, para a permissão de cada parte
+ * ser conferida primeiro — acrescentar passo pede "criar" e tirar pede
+ * "excluir", como na gaveta.
+ */
 export async function editarDemanda(ids: string[], dados: DadosDemanda): Promise<ResultadoDemanda> {
   const { usuario } = await exigirModulo("demandas", "editar");
   const validos = idsValidos(ids);
@@ -279,6 +302,16 @@ export async function editarDemanda(ids: string[], dados: DadosDemanda): Promise
 
   const campos = camposDe(dados);
   if ("erro" in campos) return { ok: false, mensagem: campos.erro };
+
+  const passos = passosDe(dados);
+  const plano = passos ? await planoDoChecklist(validos, passos) : null;
+  if (passos && !plano) return { ok: false, mensagem: "O checklist não é desta demanda." };
+  if (plano?.acrescentar.length && !podeOperar(usuario, "demandas", "criar")) {
+    return { ok: false, mensagem: "Você não tem permissão para acrescentar passos." };
+  }
+  if (plano?.tirar.length && !podeOperar(usuario, "demandas", "excluir")) {
+    return { ok: false, mensagem: "Você não tem permissão para tirar passos." };
+  }
 
   let mudaram: number;
   try {
@@ -292,6 +325,7 @@ export async function editarDemanda(ids: string[], dados: DadosDemanda): Promise
       mensagem: "Só quem criou a demanda pode editá-la.",
     };
   }
+  if (plano && !(await aplicarChecklist(plano, usuario))) return { ok: false, mensagem: SO_QUEM_CRIOU };
 
   revalidatePath("/demandas");
   return { ok: true, mensagem: "Demanda salva." };
