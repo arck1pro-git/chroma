@@ -17,7 +17,7 @@
 // ponto ela entra com as horas.
 import type { ReactNode } from "react";
 import type { Folha } from "@/lib/financeiro-pagamentos";
-import { origemDe, SEM_LANCAMENTO, valoresDoMes } from "@/lib/financeiro-tipos";
+import { origemDe, SEM_CHECKS, SEM_LANCAMENTO, valoresDoMes } from "@/lib/financeiro-tipos";
 import { mesAtual, type DadosPonto } from "@/lib/ponto";
 import { AlertTriangle } from "@/app/components/icones";
 import AreaDaFolha from "./area-da-folha";
@@ -69,6 +69,7 @@ export default function FolhaDoMes({
       minutos: r?.minutos ?? 0,
       presencial: r?.presencial ?? 0,
       pendencias: r?.pendencias ?? 0,
+      checks: folha.checks.get(p.id) ?? SEM_CHECKS,
     };
   };
   const naFolha = (p: { id: string }) => resumo.has(p.id) || folha.cadastros.has(p.id);

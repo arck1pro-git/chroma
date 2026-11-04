@@ -62,6 +62,56 @@ export type LancamentoMes = { adicional: number; descontos: number; valores: Val
 
 export const SEM_LANCAMENTO: LancamentoMes = { adicional: 0, descontos: 0, valores: null };
 
+// OS TRÊS CHECKS DO MÊS (2026-11-04): a Patricia validou, o prestador enviou a
+// NF, o pagamento foi enviado. Em sequência (decisão dele): marca-se na ordem e
+// desmarca-se do último para o primeiro. A tela e o servidor
+// (lib/financeiro-pagamentos.ts, marcarCheck) seguem a mesma regra.
+export const CHECKS_DA_FOLHA = ["validado", "nf", "pago"] as const;
+export type CheckDaFolha = (typeof CHECKS_DA_FOLHA)[number];
+
+export const ROTULO_CHECK: Record<CheckDaFolha, { curto: string; longo: string }> = {
+  validado: { curto: "Validado", longo: "Validado pela Patricia" },
+  nf: { curto: "NF", longo: "NF enviada pelo prestador" },
+  pago: { curto: "Pago", longo: "Pagamento enviado" },
+};
+
+/** Quando foi marcado (instante ISO) e por quem (o nome da conta; null se a conta sumiu). */
+export type MarcaDoCheck = { em: string; por: string | null };
+export type ChecksDoMes = Record<CheckDaFolha, MarcaDoCheck | null>;
+
+export const SEM_CHECKS: ChecksDoMes = { validado: null, nf: null, pago: null };
+
+/**
+ * O check pode mudar agora? Marcar pede o anterior marcado; desmarcar pede o
+ * seguinte desmarcado. Devolve null (pode) ou a frase do motivo.
+ */
+export function motivoParaNaoMudar(checks: ChecksDoMes, check: CheckDaFolha): string | null {
+  const i = CHECKS_DA_FOLHA.indexOf(check);
+  const anterior = CHECKS_DA_FOLHA[i - 1];
+  const seguinte = CHECKS_DA_FOLHA[i + 1];
+  if (checks[check]) return seguinte && checks[seguinte] ? `Desmarque antes: ${ROTULO_CHECK[seguinte].longo.toLowerCase()}.` : null;
+  return anterior && !checks[anterior] ? `Falta antes: ${ROTULO_CHECK[anterior].longo.toLowerCase()}.` : null;
+}
+
+/**
+ * Setor da casa da Pati (2026-11-04, "deixar o pessoal dos setores da casa da
+ * Pati por último"): o que tem a palavra "casa" no nome, sem olhar acento nem
+ * maiúscula. Vai para o fim da folha e da lista de horas do Ponto.
+ */
+export function ehSetorDaCasa(setor: string | null | undefined): boolean {
+  if (!setor) return false;
+  return /\bcasa\b/.test(setor.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase());
+}
+
+/** O grupo de quem está sem setor na folha. */
+export const SEM_SETOR = "Sem setor";
+
+/** A ordem dos setores na folha: os demais em ordem alfabética, depois "Sem setor" e, por último, os da casa. */
+export function compararSetores(a: string, b: string): number {
+  const peso = (setor: string) => (ehSetorDaCasa(setor) ? 2 : setor === SEM_SETOR ? 1 : 0);
+  return peso(a) - peso(b) || a.localeCompare(b, "pt-BR");
+}
+
 /** Os valores que valem no mês: a foto dele, ou o padrão do cadastro. null = sem cadastro. */
 export function valoresDoMes(cadastro: CadastroPagamento | null | undefined, lancamento: LancamentoMes | null | undefined): ValoresPagamento | null {
   if (lancamento?.valores) return lancamento.valores;

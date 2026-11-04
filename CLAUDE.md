@@ -78,7 +78,10 @@ inclusive em mês já lançado. O colaborador da folha vem do app de ponto (o id
 ponto (`amaanoffice:<id do usuário>`) ou de um cadastro feito à mão no "Cadastrar alguém novo" (`manual:<uuid>`, id
 sorteado no servidor, nome na coluna `financeiro_colaboradores.nome`), `origemDe` em `lib/financeiro-tipos.ts`. Do ponto
 e do AmaanOffice o nome sai da fonte, e a conta com o mesmo e-mail de alguém do ponto não aparece no "Adicionar
-colaborador".
+colaborador". Cada linha tem três checks do mês (Patricia validou, prestador enviou a NF, pagamento enviado), com
+quando e quem em `financeiro_lancamentos` (`validado_*`, `nf_*`, `pago_*`): quem tem Editar marca, em sequência
+(`motivoParaNaoMudar` na tela, a mesma ordem no UPDATE de `marcarCheck`). Setor com "Casa" no nome (a casa da Pati,
+`ehSetorDaCasa`) vai para o fim da folha e da lista de horas do Ponto.
 
 ## 2. Fluxo de execução e pontos de entrada
 
@@ -117,6 +120,12 @@ workflow, `lib/automacoes/motores/n8n/adaptador.ts` publica no n8n, e o n8n cham
 WhatsApp oficial: a tela desenha os blocos (contrato em `lib/campanhas-fluxo.ts`, entrada conferida por
 `lib/campanhas-fluxo-entrada.ts`), o motor `lib/campanhas-whatsapp.ts` executa no tique do n8n em
 `/api/meta/whatsapp/processar`, e a IA do construtor (`lib/ia/campanhas-construtor.ts`) só desenha na tela, nunca grava.
+
+Mudar a oportunidade de etapa, por qualquer caminho (arraste, lote, IA, cadência, campanha), passa por
+`moverEtapaRegistrandoLote` em `lib/historico.ts`. A etapa com `etapas.pede_retorno` (a "interesse futuro") só aceita
+quem traz o dia de retomar o contato (`oportunidades.retomar_em`, conferido por `conferirRetomarEm` em
+`lib/mover-etapa.ts`); a tela pede o dia em `app/funil/escolher-retorno.tsx`. Sair para outra etapa apaga o dia; no dia,
+o card mostra "Retomar contato" e sobe na coluna. Card novo não nasce nessa etapa, e remover etapa não despeja leads nela.
 
 ## 3. Onde fica cada coisa
 
@@ -220,7 +229,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   `testar-ponto.ts` (pelo runner: as regras das horas do ponto; com `PONTO_DATABASE_URL`, lê dois meses da base do app
   de ponto e confere que a conexão recusa escrita, sem gravar nada lá), `testar-folha.ts` (pelo runner: a conta da folha
   com deslocamento e as recusas; contra o DEV, a foto do mês e o padrão do cadastro, com marca apagada no fim, e a IA sem
-  leitura),
+  leitura), `testar-interesse-futuro.ts` (pelo runner, contra o DEV com um funil de teste apagado no fim: a etapa que
+  pede o dia de retomar, a trava do mover, o lote, o quadro e a remoção de etapa),
   `scripts/testar-extensao-reunioes.mjs` (direto com `node`: o service worker da extensão com um `chrome` falso; o áudio
   de verdade só no Chrome, ver `extensao-reunioes/LEIAME.md`) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`

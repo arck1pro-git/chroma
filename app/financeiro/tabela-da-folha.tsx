@@ -6,8 +6,12 @@
 // linha abre a gaveta do pagamento por cima (./area-da-folha.tsx), e salvar
 // lá recarrega a folha com os números novos. A conta é a mesma do servidor
 // (lib/financeiro-tipos.ts).
+//
+// A coluna de checks (validação · NF · pagamento) se marca direto na linha
+// (./checks-da-folha.tsx). Os setores da casa da Pati vão no fim
+// (compararSetores, 2026-11-04).
 import { useMemo } from "react";
-import { contaDoMes, reais, type OrigemColaborador, type ValoresPagamento } from "@/lib/financeiro-tipos";
+import { compararSetores, contaDoMes, reais, SEM_SETOR, type ChecksDoMes, type OrigemColaborador, type ValoresPagamento } from "@/lib/financeiro-tipos";
 import { cartao, SO_PARA_VER } from "./comum";
 import LinhaDaFolha from "./linha-da-folha";
 
@@ -29,16 +33,20 @@ export type LinhaFolha = {
   minutos: number;
   presencial: number;
   pendencias: number;
+  /** Os três checks do mês (validação, NF, pagamento). */
+  checks: ChecksDoMes;
 };
 
-const SEM_SETOR = "Sem setor";
-
-/** As linhas por setor, na ordem da folha: setores em ordem alfabética ("Sem setor" por último), e as pessoas pelo nome. A tabela e o CSV usam a mesma. */
+/**
+ * As linhas por setor, na ordem da folha: setores em ordem alfabética, depois
+ * "Sem setor" e, por último, os da casa da Pati (com "Casa" no nome,
+ * 2026-11-04); as pessoas pelo nome. A tabela e o CSV usam a mesma.
+ */
 export function agruparPorSetor(linhas: LinhaFolha[]): Array<[string, LinhaFolha[]]> {
   const grupos = new Map<string, LinhaFolha[]>();
   for (const l of linhas) grupos.set(l.setor ?? SEM_SETOR, [...(grupos.get(l.setor ?? SEM_SETOR) ?? []), l]);
   for (const g of grupos.values()) g.sort((a, b) => a.pessoa.nome.localeCompare(b.pessoa.nome, "pt-BR"));
-  return [...grupos.entries()].sort(([a], [b]) => (a === SEM_SETOR ? 1 : b === SEM_SETOR ? -1 : a.localeCompare(b, "pt-BR")));
+  return [...grupos.entries()].sort(([a], [b]) => compararSetores(a, b));
 }
 
 function Resumo({ rotulo, valor, destaque = false }: { rotulo: string; valor: string; destaque?: boolean }) {
@@ -73,7 +81,7 @@ export default function TabelaDaFolha({
   const soma = (ls: LinhaFolha[], campo: "total" | "base" | "deslocamento" | "adicional" | "descontos") =>
     ls.reduce((s, l) => s + (contas.get(l.pessoa.id)?.[campo] ?? 0), 0);
   const semValor = linhas.length - comTotal.length;
-  const colunas = podeEditar ? 9 : 8;
+  const colunas = podeEditar ? 10 : 9;
 
   return (
     <section className={cartao}>
@@ -108,6 +116,7 @@ export default function TabelaDaFolha({
                 <th className="px-2 py-2 text-right font-medium">Adicionais</th>
                 <th className="px-2 py-2 text-right font-medium">Descontos</th>
                 <th className="py-2 pl-2 pr-3 text-right font-medium">Valor total</th>
+                <th className="px-2 py-2 text-center font-medium">Validação · NF · Pagamento</th>
                 {podeEditar && (
                   <th className="py-2 pl-1 pr-4">
                     <span className="sr-only">Editar</span>
@@ -121,10 +130,12 @@ export default function TabelaDaFolha({
                   <th colSpan={7} scope="rowgroup" className="px-4 py-1.5 text-[12px] font-semibold text-zinc-900 dark:text-zinc-50">
                     {setor} <span className="font-normal text-zinc-400 dark:text-zinc-500">· {doSetor.length}</span>
                   </th>
-                  <td colSpan={colunas - 7} className="whitespace-nowrap px-4 py-1.5 text-right text-[12px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                  {/* O total fica sob "Valor total"; os checks e o Editar, à direita, ficam vazios. */}
+                  <td className="whitespace-nowrap py-1.5 pl-2 pr-3 text-right text-[12px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                     <span className="mr-1.5 font-normal text-zinc-400 dark:text-zinc-500">total do setor</span>
                     {reais(soma(doSetor, "total"))}
                   </td>
+                  <td colSpan={colunas - 8} />
                 </tr>
                 {doSetor.map((l) => (
                   <LinhaDaFolha
@@ -145,9 +156,10 @@ export default function TabelaDaFolha({
                 <th colSpan={7} scope="row" className="px-4 py-3 text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">
                   Valor total dos pagamentos do pessoal
                 </th>
-                <td colSpan={colunas - 7} className="whitespace-nowrap px-4 py-3 text-right text-[14px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+                <td className="whitespace-nowrap py-3 pl-2 pr-3 text-right text-[14px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                   {reais(soma(comTotal, "total"))}
                 </td>
+                <td colSpan={colunas - 8} />
               </tr>
             </tfoot>
           </table>

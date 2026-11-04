@@ -13,9 +13,14 @@
 // "seed-folha-" e saem no fim.
 import assert from "node:assert/strict";
 import { sql } from "@/lib/db";
-import { carregarFolha, colaboradorExiste, conferirFicha, resolverColaborador, salvarFicha } from "@/lib/financeiro-pagamentos";
+import { carregarFolha, colaboradorExiste, conferirFicha, marcarCheck, resolverColaborador, salvarFicha } from "@/lib/financeiro-pagamentos";
 import {
   contaDoMes,
+  compararSetores,
+  ehSetorDaCasa,
+  motivoParaNaoMudar,
+  SEM_CHECKS,
+  SEM_SETOR,
   NOVO_MANUAL,
   origemDe,
   PREFIXO_AMAANOFFICE,
@@ -94,6 +99,23 @@ assert.equal(conferirFicha({ ...base, deslocamento: false }).valores.taxaDesloca
 assert.equal(conferirFicha({ ...base, taxaDeslocamento: 99 }).valores.taxaDeslocamento, 15, "a tela não escolhe o valor do dia: é a regra");
 passo("recusas com a frase para ler, texto aparado e sem controle, PIX vazio vira null, adicional vazio vira zero, deslocamento é um check (marcado = R$ 15, desmarcado = 0)");
 
+// ── A casa da Pati e os três checks (regras puras) ────────────────────────────
+assert.deepEqual(["Casa Pati", "CASA - limpeza", "Cása", "casa"].map(ehSetorDaCasa), [true, true, true, true]);
+assert.deepEqual(["Casamento", "Marketing", null, ""].map(ehSetorDaCasa), [false, false, false, false]);
+assert.deepEqual(
+  ["Casa Pati", SEM_SETOR, "Marketing", "Comercial", "Casa - jardim"].sort(compararSetores),
+  ["Comercial", "Marketing", "Sem setor", "Casa - jardim", "Casa Pati"],
+);
+passo("setores com “Casa” no nome (sem olhar acento nem maiúscula) vão para o fim da folha, depois de “Sem setor”");
+const marcado = { em: "2026-11-04T12:00:00Z", por: null };
+assert.equal(motivoParaNaoMudar(SEM_CHECKS, "validado"), null);
+assert.match(String(motivoParaNaoMudar(SEM_CHECKS, "nf")), /validado pela patricia/);
+assert.match(String(motivoParaNaoMudar({ ...SEM_CHECKS, validado: marcado }, "pago")), /nf enviada/);
+assert.equal(motivoParaNaoMudar({ ...SEM_CHECKS, validado: marcado }, "nf"), null);
+assert.match(String(motivoParaNaoMudar({ validado: marcado, nf: marcado, pago: null }, "validado")), /Desmarque antes: nf/);
+assert.equal(motivoParaNaoMudar({ validado: marcado, nf: marcado, pago: marcado }, "pago"), null);
+passo("checks em sequência: marca o próximo e desmarca o último; o resto diz o motivo");
+
 // ── O banco DEV ───────────────────────────────────────────────────────────────
 async function noBanco() {
   if ((process.env.DATABASE_URL ?? "").includes("ep-noisy-pond")) throw new Error("RECUSADO: DATABASE_URL aponta para PRODUÇÃO");
@@ -166,6 +188,32 @@ async function noBanco() {
     assert.equal(manual?.nome, `${nomeManual} Silva`, "o nome se corrige pela gaveta");
     assert.equal(out.cadastros.get(idConta)?.nome, null, "a conta do AmaanOffice não grava nome: vem da conta");
     passo("cadastrado à mão: id manual:<uuid> sorteado no servidor, nome obrigatório gravado na folha e corrigível; id inventado é recusado");
+
+    // Os três checks no banco: em sequência, com quem e quando; dezembro nasce sem lançamento.
+    const [quemMarca] = await sql`SELECT id, nome FROM usuarios WHERE ativo LIMIT 1`;
+    const recusaDoBanco = async (f: () => Promise<unknown>) => {
+      try {
+        await f();
+        return null;
+      } catch (e) {
+        assert.ok(e instanceof Recusa, `esperava Recusa, veio ${e}`);
+        return e.message;
+      }
+    };
+    assert.match(String(await recusaDoBanco(() => marcarCheck("2026-12", id, "nf", true, quemMarca.id))), /Falta antes: validado/);
+    assert.equal((await carregarFolha("2026-12"))!.lancamentos.has(id), false, "a recusa não deixa lançamento vazio para trás");
+    assert.equal(await marcarCheck("2026-12", id, "validado", true, quemMarca.id), true);
+    assert.equal(await marcarCheck("2026-12", id, "validado", true, quemMarca.id), true, "clique repetido é sucesso");
+    assert.equal(await marcarCheck("2026-12", id, "nf", true, quemMarca.id), true);
+    assert.match(String(await recusaDoBanco(() => marcarCheck("2026-12", id, "validado", false, quemMarca.id))), /Desmarque antes: nf/);
+    let dez = (await carregarFolha("2026-12"))!;
+    assert.equal(dez.checks.get(id)?.validado?.por, quemMarca.nome, "quem marcou vem com o nome da conta");
+    assert.ok(dez.checks.get(id)?.nf?.em && !dez.checks.get(id)?.pago, "NF marcada, pagamento não");
+    assert.equal(dez.lancamentos.get(id)?.valores, null, "o check cria o lançamento sem foto: os valores seguem o padrão");
+    assert.equal(await marcarCheck("2026-12", id, "nf", false, quemMarca.id), true);
+    dez = (await carregarFolha("2026-12"))!;
+    assert.deepEqual([Boolean(dez.checks.get(id)?.validado), dez.checks.get(id)?.nf], [true, null], "desmarcar a NF apaga quando e quem");
+    passo("checks no banco: fora da ordem recusa (sem deixar lançamento vazio), clique repetido passa, grava quem e quando, desmarcar apaga");
 
     const ia = await sql`SELECT table_name FROM information_schema.role_table_grants WHERE grantee = 'chroma_ia' AND table_name LIKE 'financeiro_%'`;
     assert.equal(ia.length, 0, "a IA não tem permissão nas tabelas da folha");

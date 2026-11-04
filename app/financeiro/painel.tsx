@@ -13,6 +13,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Folha } from "@/lib/financeiro-pagamentos";
+import { ehSetorDaCasa } from "@/lib/financeiro-tipos";
 import { horaCurta } from "@/lib/formato";
 import { mesAtual, type DadosPonto, type DiaPonto, type PessoaPonto, type ResumoPonto, type SituacaoDia } from "@/lib/ponto";
 import { AlertTriangle, X } from "@/app/components/icones";
@@ -117,7 +118,11 @@ export default function PainelFinanceiro({
               legenda={`Folha e ponto da equipe · lido do app de ponto às ${horaCurta(dados.lidoEm)}, ${dados.pessoas.length} cadastros, ${dados.resumos.length} com registro no mês`}
               navegacao={<NavegacaoDoMes mes={mes} meses={dados.meses} pessoaId={pessoaId} />}
             />
-            <SecaoPonto dados={dados} pessoaId={pessoaId} />
+            <SecaoPonto
+              dados={dados}
+              pessoaId={pessoaId}
+              daCasa={new Set([...(folha?.cadastros.values() ?? [])].filter((c) => ehSetorDaCasa(c.setor)).map((c) => c.pessoaId))}
+            />
           </>
         )}
       </div>
@@ -125,10 +130,16 @@ export default function PainelFinanceiro({
   );
 }
 
-function SecaoPonto({ dados, pessoaId }: { dados: DadosPonto; pessoaId: string | null }) {
+/**
+ * O ponto do mês. A lista "Por colaborador" vem por horas, da mais para a
+ * menos, com o pessoal dos setores da casa da Pati (`daCasa`, com "Casa" no
+ * nome do setor da folha) no fim, também por horas (2026-11-04).
+ */
+function SecaoPonto({ dados, pessoaId, daCasa }: { dados: DadosPonto; pessoaId: string | null; daCasa: Set<string> }) {
   const { mes } = dados;
   const pessoa = new Map<string, PessoaPonto>(dados.pessoas.map((p) => [p.id, p]));
-  const resumos = dados.resumos;
+  // sort é estável: dentro de cada grupo segue a ordem por horas do lib/ponto.ts.
+  const resumos = [...dados.resumos].sort((a, b) => Number(daCasa.has(a.pessoaId)) - Number(daCasa.has(b.pessoaId)));
   const total = resumos.reduce(
     (s, r) => ({
       minutos: s.minutos + r.minutos,

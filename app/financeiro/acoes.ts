@@ -16,7 +16,8 @@
 import { revalidatePath } from "next/cache";
 import { exigirModulo } from "@/lib/auth/dal";
 import { podeOperar } from "@/lib/auth/permissoes";
-import { conferirFicha, resolverColaborador, salvarFicha } from "@/lib/financeiro-pagamentos";
+import { colaboradorExiste, conferirFicha, marcarCheck, resolverColaborador, salvarFicha } from "@/lib/financeiro-pagamentos";
+import { CHECKS_DA_FOLHA, type CheckDaFolha } from "@/lib/financeiro-tipos";
 import { ehMes, mesAtual } from "@/lib/ponto";
 import { comoResultado, Recusa, type ResultadoAcao } from "@/lib/resultado-acao";
 
@@ -48,5 +49,25 @@ export async function salvarLinhaDaFolha(dados: {
     if (!(await salvarFicha(mes, { ...ficha, pessoaId }, mes >= mesAtual()))) throw new Recusa(SEM_TABELA);
     revalidatePath("/financeiro");
     return { pessoaId };
+  });
+}
+
+/**
+ * Marca ou desmarca um dos três checks do mês (validação da Patricia, NF do
+ * prestador, pagamento enviado; 2026-11-04). Quem tem Editar no Financeiro
+ * marca; a ordem é conferida no servidor (marcarCheck). Quem marcou é a conta
+ * da sessão, nunca o que o navegador diz.
+ */
+export async function marcarCheckDaFolha(dados: { mes: unknown; pessoaId: unknown; check: unknown; marcar: unknown }): Promise<ResultadoAcao> {
+  const { usuario } = await exigirModulo("financeiro");
+  if (!podeOperar(usuario, "financeiro", "editar")) return { ok: false, erro: SEM_PERMISSAO };
+  const { mes, pessoaId, check, marcar } = dados;
+  if (!ehMes(mes)) return { ok: false, erro: "Mês inválido." };
+  if (!CHECKS_DA_FOLHA.includes(check as CheckDaFolha) || typeof marcar !== "boolean") return { ok: false, erro: "Check inválido." };
+  if (typeof pessoaId !== "string" || !pessoaId || pessoaId.length > 64) return { ok: false, erro: "Colaborador inválido." };
+  return comoResultado(async () => {
+    if (!(await colaboradorExiste(pessoaId))) throw new Recusa("Este colaborador não está no app de ponto, no AmaanOffice nem na folha.");
+    if (!(await marcarCheck(mes, pessoaId, check as CheckDaFolha, marcar, usuario.id))) throw new Recusa(SEM_TABELA);
+    revalidatePath("/financeiro");
   });
 }

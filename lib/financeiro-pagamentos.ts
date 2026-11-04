@@ -5,8 +5,9 @@
 //   · financeiro_colaboradores: o cadastro de cada pessoa. Setor, atividade e
 //     PIX valem para todos os meses; tipo, valor hora, valor mês e taxa de
 //     deslocamento são o PADRÃO dos meses ainda não lançados;
-//   · financeiro_lancamentos: por pessoa e mês, o adicional, os descontos e a
-//     FOTO dos valores com que o mês foi lançado.
+//   · financeiro_lancamentos: por pessoa e mês, o adicional, os descontos, a
+//     FOTO dos valores com que o mês foi lançado e os três checks do pagamento
+//     (validação, NF, pagamento; `marcarCheck`, lá embaixo).
 //
 // A FOTO DO MÊS (2026-11-04, "se já foi lançado um mês no passado não é
 // dinâmico, fica naquele mês"): salvar num mês grava a foto daquele mês. O
@@ -31,9 +32,13 @@ import {
   origemDe,
   PREFIXO_AMAANOFFICE,
   PREFIXO_MANUAL,
+  motivoParaNaoMudar,
   TAXA_PRESENCIAL,
   type CadastroPagamento,
+  type CheckDaFolha,
+  type ChecksDoMes,
   type LancamentoMes,
+  type MarcaDoCheck,
   type ValoresPagamento,
 } from "@/lib/financeiro-tipos";
 import { existeColaborador } from "@/lib/ponto";
@@ -66,6 +71,8 @@ export type ContaAmaanOffice = { id: string; nome: string; email: string | null;
 export type Folha = {
   cadastros: Map<string, CadastroPagamento>;
   lancamentos: Map<string, LancamentoMes>;
+  /** Os três checks do mês de quem tem algum marcado (quem não está aqui não tem nenhum). */
+  checks: Map<string, ChecksDoMes>;
   /** As contas do AmaanOffice: o nome de quem entrou na folha por elas e as que dá para adicionar. */
   contas: ContaAmaanOffice[];
 };
@@ -75,10 +82,24 @@ export async function carregarFolha(mes: string): Promise<Folha | null> {
   try {
     const [cadastros, lancamentos, contas] = await Promise.all([
       sql`SELECT pessoa_id, nome, setor, atividade, tipo, valor_hora, valor_mes, taxa_deslocamento, pix FROM financeiro_colaboradores`,
-      sql`SELECT pessoa_id, adicional, descontos, tipo, valor_hora, valor_mes, taxa_deslocamento FROM financeiro_lancamentos WHERE mes = ${mes}`,
+      sql`
+        SELECT pessoa_id, adicional, descontos, tipo, valor_hora, valor_mes, taxa_deslocamento,
+               validado_em, validado_por, nf_em, nf_por, pago_em, pago_por
+          FROM financeiro_lancamentos WHERE mes = ${mes}`,
       sql`SELECT id, nome, email, ativo FROM usuarios ORDER BY nome`,
     ]);
+    const nomeDaConta = new Map(contas.map((c) => [c.id as string, c.nome as string]));
+    const marca = (em: unknown, por: unknown): MarcaDoCheck | null =>
+      em ? { em: new Date(em as string | Date).toISOString(), por: (typeof por === "string" && nomeDaConta.get(por)) || null } : null;
     return {
+      checks: new Map(
+        lancamentos
+          .filter((l) => l.validado_em || l.nf_em || l.pago_em)
+          .map((l) => [
+            l.pessoa_id as string,
+            { validado: marca(l.validado_em, l.validado_por), nf: marca(l.nf_em, l.nf_por), pago: marca(l.pago_em, l.pago_por) } satisfies ChecksDoMes,
+          ]),
+      ),
       contas: contas.map((c) => ({
         id: `${PREFIXO_AMAANOFFICE}${c.id as string}`,
         nome: c.nome as string,
@@ -231,6 +252,64 @@ export async function salvarFicha(mes: string, d: DadosDaFicha, padrao: boolean)
           adicional = EXCLUDED.adicional, descontos = EXCLUDED.descontos,
           tipo = EXCLUDED.tipo, valor_hora = EXCLUDED.valor_hora,
           valor_mes = EXCLUDED.valor_mes, taxa_deslocamento = EXCLUDED.taxa_deslocamento`;
+    });
+    return true;
+  } catch (e) {
+    if (faltaMigration(e)) return false;
+    throw e;
+  }
+}
+
+/**
+ * Marca (ou desmarca) um dos três checks do mês: a validação da Patricia, a NF
+ * do prestador ou o pagamento (2026-11-04). Grava quando e quem; desmarcar
+ * apaga os dois.
+ *
+ * A SEQUÊNCIA MORA NO UPDATE (decisão dele: "em sequência"): marcar pede o
+ * check anterior marcado, desmarcar pede o seguinte desmarcado. Dois cliques
+ * cruzados não furam a ordem. O lançamento do mês nasce vazio se ainda não
+ * existia (sem foto: os valores seguem o padrão do cadastro).
+ *
+ * Já no estado pedido (clique repetido) é sucesso. Fora da ordem, lança Recusa
+ * com o motivo. false = falta a migration dos checks.
+ */
+export async function marcarCheck(
+  mes: string,
+  pessoaId: string,
+  check: CheckDaFolha,
+  marcar: boolean,
+  usuarioId: string,
+): Promise<boolean> {
+  const quem = `${check}:${marcar}`;
+  try {
+    await sql.begin(async (t: typeof sql) => {
+      await t`INSERT INTO financeiro_lancamentos (pessoa_id, mes) VALUES (${pessoaId}, ${mes}) ON CONFLICT (pessoa_id, mes) DO NOTHING`;
+      const [mudou] = await t`
+        UPDATE financeiro_lancamentos l SET
+          validado_em  = CASE WHEN ${check}::text = 'validado' THEN CASE WHEN ${marcar}::boolean THEN now() END ELSE l.validado_em END,
+          validado_por = CASE WHEN ${check}::text = 'validado' THEN CASE WHEN ${marcar}::boolean THEN ${usuarioId}::uuid END ELSE l.validado_por END,
+          nf_em        = CASE WHEN ${check}::text = 'nf' THEN CASE WHEN ${marcar}::boolean THEN now() END ELSE l.nf_em END,
+          nf_por       = CASE WHEN ${check}::text = 'nf' THEN CASE WHEN ${marcar}::boolean THEN ${usuarioId}::uuid END ELSE l.nf_por END,
+          pago_em      = CASE WHEN ${check}::text = 'pago' THEN CASE WHEN ${marcar}::boolean THEN now() END ELSE l.pago_em END,
+          pago_por     = CASE WHEN ${check}::text = 'pago' THEN CASE WHEN ${marcar}::boolean THEN ${usuarioId}::uuid END ELSE l.pago_por END
+         WHERE l.pessoa_id = ${pessoaId} AND l.mes = ${mes}
+           AND CASE ${quem}::text
+                 WHEN 'validado:true'  THEN l.validado_em IS NULL
+                 WHEN 'nf:true'        THEN l.nf_em IS NULL AND l.validado_em IS NOT NULL
+                 WHEN 'pago:true'      THEN l.pago_em IS NULL AND l.nf_em IS NOT NULL
+                 WHEN 'validado:false' THEN l.validado_em IS NOT NULL AND l.nf_em IS NULL
+                 WHEN 'nf:false'       THEN l.nf_em IS NOT NULL AND l.pago_em IS NULL
+                 WHEN 'pago:false'     THEN l.pago_em IS NOT NULL
+                 ELSE false
+               END
+        RETURNING 1`;
+      if (mudou) return;
+      // Não mudou: ou já estava assim (clique repetido), ou está fora da ordem.
+      const [agora] = await t`SELECT validado_em, nf_em, pago_em FROM financeiro_lancamentos WHERE pessoa_id = ${pessoaId} AND mes = ${mes}`;
+      const estado = { validado: agora.validado_em, nf: agora.nf_em, pago: agora.pago_em } as Record<CheckDaFolha, unknown>;
+      if (Boolean(estado[check]) === marcar) return;
+      const checks = Object.fromEntries(Object.entries(estado).map(([k, v]) => [k, v ? { em: "", por: null } : null])) as ChecksDoMes;
+      throw new Recusa(motivoParaNaoMudar(checks, check) ?? "Não deu para mudar este check. Recarregue a página.");
     });
     return true;
   } catch (e) {

@@ -13,6 +13,7 @@ import Link from "next/link";
 import { reais, taxaPresencial, type contaDoMes } from "@/lib/financeiro-tipos";
 import { Check, Lock, Pencil } from "@/app/components/icones";
 import { CopiarPix } from "./campos";
+import ChecksDaFolha from "./checks-da-folha";
 import { endereco, horas } from "./comum";
 import type { LinhaFolha } from "./tabela-da-folha";
 
@@ -111,6 +112,9 @@ export default function LinhaDaFolha({
             Salvo
           </span>
         )}
+      </td>
+      <td className="px-2 py-2 align-middle">
+        <ChecksDaFolha mes={mes} pessoaId={id} nome={nome} checks={linha.checks} podeEditar={podeEditar} />
       </td>
       {podeEditar && (
         <td className="py-2 pl-1 pr-4 text-right">

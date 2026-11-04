@@ -27,7 +27,7 @@
 // do dia é decidido no servidor (lib/financeiro-pagamentos.ts).
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
-import { contaDoMes, lerReais, NOVO_MANUAL, paraCampo, reais, TAXA_PRESENCIAL, type TipoPagamento } from "@/lib/financeiro-tipos";
+import { contaDoMes, lerReais, NOVO_MANUAL, paraCampo, reais, SEM_CHECKS, TAXA_PRESENCIAL, type TipoPagamento } from "@/lib/financeiro-tipos";
 import { AlertCircle, Check, Loader2, Lock, Search, UserPlus, X } from "@/app/components/icones";
 import { BOTAO_PRIMARIO, BOTAO_SECUNDARIO, BotaoIcone, CascaGaveta, CorpoGaveta } from "@/app/components/gaveta";
 import { salvarLinhaDaFolha } from "./acoes";
@@ -50,6 +50,7 @@ const PESSOA_NOVA: LinhaFolha = {
   minutos: 0,
   presencial: 0,
   pendencias: 0,
+  checks: SEM_CHECKS,
 };
 
 const campoTexto =
