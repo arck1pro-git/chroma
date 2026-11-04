@@ -1,131 +1,158 @@
 "use client";
 
-// Uma linha da folha do mês (./folha.tsx) com o pagamento editável ali mesmo
-// (pedido dele, 2026-11-03: "nessa aba de folha possa colocar esses dados de
-// pix, valor hora, tipo e valor referência"): o tipo, o valor hora, o valor mês
-// (a referência do fixo) e o PIX. O total da linha muda enquanto se digita,
-// pela mesma conta do servidor (lib/financeiro-tipos.ts), e o "Salvar" aparece
-// quando algo mudou. Setor, atividade, adicional e descontos continuam na ficha
-// do colaborador (clicar no nome).
+// Uma linha da folha do mês (./tabela-da-folha.tsx), com o tipo, o valor hora,
+// o valor mês (a referência do fixo) e o PIX editáveis ali mesmo (pedido dele,
+// 2026-11-03). Os campos não têm borda até passar o mouse ou focar, e o que
+// muda é salvo sozinho (./campos.tsx, useSalvarSozinho): um instante depois da
+// última tecla, ou quando o foco sai da linha. O que está digitado sobe para a
+// tabela na hora, e os totais acompanham.
 //
-// Sem a permissão de editar, a linha é só para ler. Os totais do setor e o
-// geral são do servidor: atualizam depois de salvar.
-import { useState, useTransition } from "react";
+// Grava a foto do mês aberto (lib/financeiro-pagamentos.ts, salvarLinha). A
+// taxa de deslocamento vai junto, como estava: ela se muda na ficha.
+//
+// Sem a permissão de editar, ou com a ficha da pessoa aberta em cima (para não
+// haver dois lugares editando o mesmo), a linha é só para ler.
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { contaDoMes, lerReais, paraCampo, reais, type CadastroPagamento, type LancamentoMes, type TipoPagamento } from "@/lib/financeiro-tipos";
-import { Check, Loader2 } from "@/app/components/icones";
+import { lerReais, paraCampo, reais, type TipoPagamento, type ValoresPagamento, type contaDoMes } from "@/lib/financeiro-tipos";
 import { salvarPagamentoDaLinha } from "./acoes";
+import { AlternarTipo, CampoReais, CopiarPix, IndicadorSalvamento, useSalvarSozinho } from "./campos";
 import { endereco, horas } from "./comum";
-import { CopiarPix } from "./editar-folha";
+import type { LinhaFolha } from "./tabela-da-folha";
 
-export type DadosDaLinha = {
-  pessoa: { id: string; nome: string };
-  cadastro: CadastroPagamento | null;
-  lancamento: LancamentoMes;
-  minutos: number;
-  pendencias: number;
-};
+type Campos = { tipo: TipoPagamento | ""; valorHora: string; valorMes: string; pix: string };
 
-const campo =
-  "rounded-md border border-zinc-300 bg-white px-1.5 py-1 text-[12px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus-visible:ring-zinc-100/10";
+function camposDe(l: LinhaFolha): Campos {
+  return { tipo: l.valores?.tipo ?? "", valorHora: paraCampo(l.valores?.valorHora ?? null), valorMes: paraCampo(l.valores?.valorMes ?? null), pix: l.pix ?? "" };
+}
 
-export default function LinhaDaFolha({ mes, linha, ativa, podeEditar }: { mes: string; linha: DadosDaLinha; ativa: boolean; podeEditar: boolean }) {
-  const router = useRouter();
-  const [salvando, iniciar] = useTransition();
-  const c = linha.cadastro;
-  // O "inicial" sai das props a cada render: depois de salvar, o refresh traz o cadastro novo e o Salvar apaga sozinho.
-  const inicial: { tipo: TipoPagamento | ""; valorHora: string; valorMes: string; pix: string } = {
-    tipo: c?.tipo ?? "",
-    valorHora: paraCampo(c?.valorHora ?? null),
-    valorMes: paraCampo(c?.valorMes ?? null),
-    pix: c?.pix ?? "",
-  };
-  const [tipo, setTipo] = useState<TipoPagamento | "">(inicial.tipo);
-  const [valorHora, setValorHora] = useState(inicial.valorHora);
-  const [valorMes, setValorMes] = useState(inicial.valorMes);
-  const [pix, setPix] = useState(inicial.pix);
-  const [erro, setErro] = useState<string | null>(null);
-  const [salvo, setSalvo] = useState(false);
+const apagado = "text-zinc-400 dark:text-zinc-500";
 
-  const vh = lerReais(valorHora);
-  const vm = lerReais(valorMes);
-  const mudou = tipo !== inicial.tipo || valorHora !== inicial.valorHora || valorMes !== inicial.valorMes || pix !== inicial.pix;
-  const conta = contaDoMes(tipo ? { tipo, valorHora: vh ?? null, valorMes: vm ?? null } : null, linha.minutos, linha.lancamento);
+export default function LinhaDaFolha({
+  mes,
+  linha,
+  conta,
+  ativa,
+  podeEditar,
+  aoMudar,
+}: {
+  mes: string;
+  linha: LinhaFolha;
+  conta: ReturnType<typeof contaDoMes>;
+  ativa: boolean;
+  podeEditar: boolean;
+  aoMudar: (id: string, v: ValoresPagamento | null) => void;
+}) {
+  const editavel = podeEditar && !ativa;
+  const [campos, setCampos] = useState<Campos>(() => camposDe(linha));
+  const [salvos, setSalvos] = useState<Campos>(() => camposDe(linha));
+  // Os últimos valores gravados: é o que fica na conta enquanto a linha está incompleta.
+  const [vigentes, setVigentes] = useState<ValoresPagamento | null>(linha.valores);
+  const muda = (parcial: Partial<Campos>) => setCampos((c) => ({ ...c, ...parcial }));
 
-  function salvar() {
-    setErro(null);
-    setSalvo(false);
-    if (!tipo) return setErro("Escolha por hora ou fixo.");
-    if (vh === undefined || vm === undefined) return setErro("Valor em reais inválido (ex.: 1.500,00).");
-    iniciar(async () => {
-      const r = await salvarPagamentoDaLinha({ pessoaId: linha.pessoa.id, tipo, valorHora: vh, valorMes: vm, pix });
-      if (!r.ok) return setErro(r.erro);
-      setSalvo(true);
-      router.refresh();
-    });
-  }
+  const vh = lerReais(campos.valorHora);
+  const vm = lerReais(campos.valorMes);
+  const taxa = linha.valores?.taxaDeslocamento ?? null;
+  // O que vale agora na tela, se está completo; senão, o que estava salvo continua na conta.
+  const valores = useMemo<ValoresPagamento | null>(() => {
+    if (!campos.tipo || vh === undefined || vm === undefined) return null;
+    if (campos.tipo === "hora" && vh === null) return null;
+    if (campos.tipo === "fixo" && vm === null) return null;
+    return { tipo: campos.tipo, valorHora: vh, valorMes: vm, taxaDeslocamento: taxa };
+  }, [campos.tipo, vh, vm, taxa]);
+  const falta = !campos.tipo
+    ? "escolha hora ou fixo"
+    : vh === undefined || vm === undefined
+      ? "valor inválido"
+      : campos.tipo === "hora" && vh === null
+        ? "falta o valor hora"
+        : campos.tipo === "fixo" && vm === null
+          ? "falta o valor mês"
+          : null;
+  const mudou = campos.tipo !== salvos.tipo || campos.valorHora !== salvos.valorHora || campos.valorMes !== salvos.valorMes || campos.pix !== salvos.pix;
 
-  const apagado = "text-zinc-400 dark:text-zinc-500";
-  const ler = (v: number | null, esmaecer: boolean) => <span className={esmaecer ? apagado : undefined}>{v === null || v === 0 ? "—" : reais(v)}</span>;
+  const { id } = linha.pessoa;
+  useEffect(() => {
+    if (editavel) aoMudar(id, valores ?? vigentes);
+  }, [editavel, id, valores, vigentes, aoMudar]);
+
+  const { estado, erro, agora } = useSalvarSozinho({
+    pronto: editavel && mudou && valores !== null,
+    assinatura: JSON.stringify(campos),
+    gravar: async () => {
+      const enviado = campos;
+      const valoresEnviados = valores;
+      const r = await salvarPagamentoDaLinha({ mes, pessoaId: id, tipo: enviado.tipo, valorHora: vh, valorMes: vm, taxaDeslocamento: taxa, pix: enviado.pix });
+      if (r.ok) {
+        setSalvos(enviado);
+        setVigentes(valoresEnviados);
+      }
+      return r;
+    },
+  });
+
+  const adicionais = conta.deslocamento + conta.adicional;
 
   return (
-    <tr className={`align-top ${ativa ? "bg-zinc-50 dark:bg-zinc-800/60" : ""}`}>
-      <td className="px-4 py-2">
-        <Link href={endereco(mes, linha.pessoa.id)} className="block font-medium text-zinc-900 hover:underline dark:text-zinc-100" title="Abrir a ficha: setor, atividade, adicional e descontos">
+    <tr
+      className={`align-top transition-colors ${ativa ? "bg-sky-50/60 dark:bg-sky-500/5" : "hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30"}`}
+      onBlur={(e) => {
+        // O foco saiu da linha (não só pulou de um campo para outro dela): salva já.
+        if (editavel && !e.currentTarget.contains(e.relatedTarget as Node | null)) void agora();
+      }}
+      onKeyDown={(e) => {
+        if (editavel && e.key === "Enter") void agora();
+      }}
+    >
+      <td className="max-w-44 py-2 pl-4 pr-2">
+        <Link href={endereco(mes, id)} className="font-medium text-zinc-900 hover:underline dark:text-zinc-100" title="Abrir a ficha: setor, deslocamento e lançamentos do mês">
           {linha.pessoa.nome}
         </Link>
-        {c?.atividade && <span className="block text-[12px] text-zinc-600 dark:text-zinc-400">{c.atividade}</span>}
-        {podeEditar ? (
-          <input value={pix} onChange={(e) => setPix(e.target.value)} maxLength={140} placeholder="Chave PIX" aria-label={`PIX de ${linha.pessoa.nome}`} className={`${campo} mt-1 w-36`} />
-        ) : c?.pix ? (
-          <CopiarPix pix={c.pix} />
+        {linha.atividade && <span className="block text-[11.5px] text-zinc-500 dark:text-zinc-400">{linha.atividade}</span>}
+        {editavel ? (
+          <input
+            value={campos.pix}
+            onChange={(e) => muda({ pix: e.target.value })}
+            maxLength={140}
+            placeholder="+ chave PIX"
+            aria-label={`PIX de ${linha.pessoa.nome}`}
+            className="-ml-1.5 mt-0.5 block w-32 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-[11.5px] text-zinc-600 outline-none transition placeholder:text-zinc-400 hover:border-zinc-200 hover:bg-white focus:border-zinc-300 focus:bg-white dark:text-zinc-300 dark:placeholder:text-zinc-600 dark:hover:border-zinc-700 dark:hover:bg-zinc-950 dark:focus:border-zinc-600 dark:focus:bg-zinc-950"
+          />
+        ) : linha.pix ? (
+          <CopiarPix pix={linha.pix} />
         ) : (
           <span className={`block text-[11px] ${apagado}`}>sem PIX</span>
         )}
+        {ativa && podeEditar && <span className="mt-0.5 block text-[11px] text-sky-700 dark:text-sky-400">editando na ficha acima</span>}
       </td>
       <td className="px-1.5 py-2">
-        {podeEditar ? (
-          <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoPagamento | "")} aria-label={`Tipo de ${linha.pessoa.nome}`} className={`${campo} w-20`}>
-            <option value="">—</option>
-            <option value="hora">Por hora</option>
-            <option value="fixo">Fixo</option>
-          </select>
+        {editavel ? (
+          <AlternarTipo compacto valor={campos.tipo} aoMudar={(t) => muda({ tipo: t })} rotulo={`Tipo de ${linha.pessoa.nome}`} />
         ) : (
           <span className="whitespace-nowrap text-zinc-700 dark:text-zinc-300">
-            {c ? (c.tipo === "hora" ? "Por hora" : "Fixo") : <span className="text-amber-700 dark:text-amber-400">Sem cadastro</span>}
+            {linha.valores ? (linha.valores.tipo === "hora" ? "Por hora" : "Fixo") : <span className="text-amber-700 dark:text-amber-400">Sem cadastro</span>}
           </span>
         )}
       </td>
       <td className="px-1.5 py-2 text-right">
-        {podeEditar ? (
-          <input
-            value={valorHora}
-            onChange={(e) => setValorHora(e.target.value)}
-            inputMode="decimal"
-            placeholder="0,00"
-            aria-label={`Valor hora de ${linha.pessoa.nome}`}
-            className={`${campo} w-[4.5rem] text-right tabular-nums ${tipo === "fixo" ? apagado : ""}`}
-          />
+        {editavel ? (
+          <CampoReais fantasma largura="w-20" valor={campos.valorHora} aoMudar={(v) => muda({ valorHora: v })} rotulo={`Valor hora de ${linha.pessoa.nome}`} apagado={campos.tipo === "fixo"} />
         ) : (
-          <span className="whitespace-nowrap tabular-nums text-zinc-700 dark:text-zinc-300">{ler(c?.valorHora ?? null, c?.tipo === "fixo")}</span>
+          <span className={`whitespace-nowrap tabular-nums ${linha.valores?.tipo === "fixo" ? apagado : "text-zinc-700 dark:text-zinc-300"}`}>
+            {linha.valores?.valorHora ? reais(linha.valores.valorHora) : "—"}
+          </span>
         )}
       </td>
       <td className="px-1.5 py-2 text-right">
-        {podeEditar ? (
-          <input
-            value={valorMes}
-            onChange={(e) => setValorMes(e.target.value)}
-            inputMode="decimal"
-            placeholder="0,00"
-            aria-label={`Valor mês de ${linha.pessoa.nome}`}
-            className={`${campo} w-20 text-right tabular-nums ${tipo === "hora" ? apagado : ""}`}
-          />
+        {editavel ? (
+          <CampoReais fantasma largura="w-[5.5rem]" valor={campos.valorMes} aoMudar={(v) => muda({ valorMes: v })} rotulo={`Valor mês de ${linha.pessoa.nome}`} apagado={campos.tipo === "hora"} />
         ) : (
-          <span className="whitespace-nowrap tabular-nums text-zinc-700 dark:text-zinc-300">{ler(c?.valorMes ?? null, c?.tipo === "hora")}</span>
+          <span className={`whitespace-nowrap tabular-nums ${linha.valores?.tipo === "hora" ? apagado : "text-zinc-700 dark:text-zinc-300"}`}>
+            {linha.valores?.valorMes ? reais(linha.valores.valorMes) : "—"}
+          </span>
         )}
       </td>
-      <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+      <td className="whitespace-nowrap px-1.5 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
         {horas(linha.minutos)}
         {linha.pendencias > 0 && (
           <span className="block text-[11px] text-amber-700 dark:text-amber-400" title="Dias com batida faltando: as horas deles não entram">
@@ -133,34 +160,18 @@ export default function LinhaDaFolha({ mes, linha, ativa, podeEditar }: { mes: s
           </span>
         )}
       </td>
-      <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">{ler(linha.lancamento.adicional, false)}</td>
-      <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
-        {linha.lancamento.descontos ? `− ${reais(linha.lancamento.descontos)}` : "—"}
+      <td className="whitespace-nowrap px-1.5 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+        {adicionais ? reais(adicionais) : "—"}
+        {conta.deslocamento > 0 && (
+          <span className={`block text-[11px] ${apagado}`} title={`Deslocamento: ${linha.presencial} dias presenciais × ${reais(taxa ?? 0)}`}>
+            desloc. {reais(conta.deslocamento)}
+          </span>
+        )}
       </td>
-      <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">
+      <td className="whitespace-nowrap px-1.5 py-2 text-right tabular-nums text-zinc-700 dark:text-zinc-300">{linha.descontos ? `− ${reais(linha.descontos)}` : "—"}</td>
+      <td className="whitespace-nowrap py-2 pl-1.5 pr-4 text-right tabular-nums">
         <span className="block font-semibold text-zinc-900 dark:text-zinc-50">{conta.total === null ? <span className={`font-normal ${apagado}`}>sem valor</span> : reais(conta.total)}</span>
-        {podeEditar && mudou && (
-          <button
-            type="button"
-            onClick={salvar}
-            disabled={salvando}
-            className="mt-1 inline-flex items-center gap-1 rounded-md bg-zinc-900 px-2 py-0.5 text-[11px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-          >
-            {salvando && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
-            Salvar
-          </button>
-        )}
-        {salvo && !mudou && (
-          <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
-            <Check className="size-3" aria-hidden="true" />
-            Salvo
-          </span>
-        )}
-        {erro && (
-          <span role="alert" className="mt-1 block max-w-40 whitespace-normal text-[11px] text-red-600 dark:text-red-400">
-            {erro}
-          </span>
-        )}
+        {editavel && <IndicadorSalvamento estado={estado} erro={erro} falta={mudou ? falta : null} />}
       </td>
     </tr>
   );

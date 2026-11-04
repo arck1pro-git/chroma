@@ -1,45 +1,64 @@
-// A folha do pessoal, sem nada de servidor: a tela (a prévia que muda enquanto
-// se digita) e o servidor (lib/financeiro-pagamentos.ts) fazem a MESMA conta
-// por aqui.
+// A folha do pessoal, sem nada de servidor: a tela (a prévia e os totais que
+// mudam enquanto se digita) e o servidor (lib/financeiro-pagamentos.ts) fazem a
+// MESMA conta por aqui.
+//
+// OS VALORES SÃO DO MÊS (2026-11-04): o tipo, o valor hora, o valor mês e a
+// taxa de deslocamento com que um mês foi lançado ficam nele (a "foto" em
+// LancamentoMes.valores). Mês sem foto usa o padrão do cadastro do colaborador.
 
 export type TipoPagamento = "hora" | "fixo";
 
-/** Como a pessoa recebe: vale para todos os meses. */
-export type CadastroPagamento = {
+/** O que decide a conta: o tipo, os dois valores e a taxa diária de deslocamento (null = não recebe). */
+export type ValoresPagamento = {
+  tipo: TipoPagamento;
+  valorHora: number | null;
+  valorMes: number | null;
+  taxaDeslocamento: number | null;
+};
+
+/** O cadastro do colaborador: os valores PADRÃO (os dos meses ainda não lançados) e o que não muda por mês. */
+export type CadastroPagamento = ValoresPagamento & {
   /** O id do cadastro no app de ponto. */
   pessoaId: string;
   setor: string | null;
   atividade: string | null;
-  tipo: TipoPagamento;
-  valorHora: number | null;
-  valorMes: number | null;
   pix: string | null;
 };
 
-/** O que é lançado em cada mês. Mês sem lançamento é zero. */
-export type LancamentoMes = { adicional: number; descontos: number };
+/** O que é lançado em cada mês. `valores`: a foto do mês (null = mês ainda não lançado, vale o padrão). */
+export type LancamentoMes = { adicional: number; descontos: number; valores: ValoresPagamento | null };
 
-export const SEM_LANCAMENTO: LancamentoMes = { adicional: 0, descontos: 0 };
+export const SEM_LANCAMENTO: LancamentoMes = { adicional: 0, descontos: 0, valores: null };
+
+/** Os valores que valem no mês: a foto dele, ou o padrão do cadastro. null = sem cadastro. */
+export function valoresDoMes(cadastro: CadastroPagamento | null | undefined, lancamento: LancamentoMes | null | undefined): ValoresPagamento | null {
+  if (lancamento?.valores) return lancamento.valores;
+  if (!cadastro) return null;
+  return { tipo: cadastro.tipo, valorHora: cadastro.valorHora, valorMes: cadastro.valorMes, taxaDeslocamento: cadastro.taxaDeslocamento };
+}
 
 /**
  * A conta do profissional no mês: a base (por hora, horas × valor hora; fixo, o
- * valor mês, trabalhe quanto trabalhar), mais o adicional, menos os descontos.
- * `base` e `total` são null quando falta o cadastro ou o valor do tipo.
+ * valor mês, trabalhe quanto trabalhar), mais o deslocamento (taxa diária × dias
+ * presenciais no ponto), mais o adicional, menos os descontos. `base` e `total`
+ * são null quando falta o cadastro ou o valor do tipo.
  */
 export function contaDoMes(
-  cadastro: Pick<CadastroPagamento, "tipo" | "valorHora" | "valorMes"> | null | undefined,
+  valores: ValoresPagamento | null | undefined,
   minutos: number,
-  lancamento: LancamentoMes = SEM_LANCAMENTO,
-): { base: number | null; adicional: number; descontos: number; total: number | null } {
-  const base = !cadastro
+  diasPresenciais: number,
+  lancamento: Pick<LancamentoMes, "adicional" | "descontos"> = SEM_LANCAMENTO,
+): { base: number | null; deslocamento: number; adicional: number; descontos: number; total: number | null } {
+  const base = !valores
     ? null
-    : cadastro.tipo === "fixo"
-      ? cadastro.valorMes
-      : cadastro.valorHora === null
+    : valores.tipo === "fixo"
+      ? valores.valorMes
+      : valores.valorHora === null
         ? null
-        : centavos((minutos / 60) * cadastro.valorHora);
+        : centavos((minutos / 60) * valores.valorHora);
+  const deslocamento = valores?.taxaDeslocamento ? centavos(valores.taxaDeslocamento * diasPresenciais) : 0;
   const { adicional, descontos } = lancamento;
-  return { base, adicional, descontos, total: base === null ? null : centavos(base + adicional - descontos) };
+  return { base, deslocamento, adicional, descontos, total: base === null ? null : centavos(base + deslocamento + adicional - descontos) };
 }
 
 function centavos(v: number): number {

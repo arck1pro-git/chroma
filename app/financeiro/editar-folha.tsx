@@ -1,50 +1,56 @@
 "use client";
 
-// O pagamento de um colaborador, na ficha dele (aba Ponto, ?pessoa=<id>): o
-// cadastro (setor, atividade principal, por hora ou fixo, valor hora, valor
-// mês, PIX) e o adicional e os descontos do mês aberto. A conta ao lado muda
-// enquanto se digita, pela mesma `contaDoMes` que o servidor usa
-// (lib/financeiro-tipos.ts). Sem a permissão de editar, os campos ficam só
-// para ler.
+// O pagamento de um colaborador, na ficha dele (?pessoa=<id>), em três blocos:
+// quem ele é na folha (setor, atividade, PIX), como recebe no mês aberto (tipo,
+// valor hora, valor mês, taxa diária de deslocamento) e os lançamentos do mês
+// (adicional e descontos). Ao lado, a conta do mês, que acompanha o que se
+// digita pela mesma `contaDoMes` do servidor (lib/financeiro-tipos.ts).
 //
-// Valores em reais como se escreve no Brasil ("1.500,00", "25,5" ou "25.50"),
-// lidos por lerReais (lib/financeiro-tipos.ts).
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import {
-  contaDoMes,
-  lerReais,
-  paraCampo,
-  reais,
-  type CadastroPagamento,
-  type LancamentoMes,
-  type TipoPagamento,
-} from "@/lib/financeiro-tipos";
-import { Check, Copy, Loader2 } from "@/app/components/icones";
+// Salva sozinho (./campos.tsx), sem botão (2026-11-04). Grava a foto do mês
+// aberto; o padrão do colaborador só muda quando o mês é o corrente ou um
+// futuro (lib/financeiro-pagamentos.ts), e o aviso no bloco do meio diz isso.
+//
+// O DESLOCAMENTO é a taxa diária × os dias presenciais do mês no ponto. Taxa
+// vazia = não recebe.
+//
+// Sem a permissão de editar, os campos ficam só para ler.
+import { useMemo, useState, type ReactNode } from "react";
+import { contaDoMes, lerReais, paraCampo, reais, type CadastroPagamento, type LancamentoMes, type TipoPagamento, type ValoresPagamento } from "@/lib/financeiro-tipos";
 import { salvarLinhaDaFolha } from "./acoes";
+import { AlternarTipo, CampoReais, IndicadorSalvamento, useSalvarSozinho } from "./campos";
 
-const campo =
-  "w-full rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/10 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50 dark:focus-visible:ring-zinc-100/10";
-const rotulo = "mb-1 block text-[12px] font-medium text-zinc-600 dark:text-zinc-400";
+const campoTexto =
+  "w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-2 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:ring-4 focus:ring-zinc-900/5 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:placeholder:text-zinc-600 dark:focus:border-zinc-500 dark:focus:ring-white/5";
 
-/** O PIX com o botão de copiar, para quem vai pagar. */
-export function CopiarPix({ pix }: { pix: string }) {
-  const [copiado, setCopiado] = useState(false);
+function Campo({ rotulo, dica, children }: { rotulo: string; dica?: string; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={() => {
-        void navigator.clipboard.writeText(pix).then(() => {
-          setCopiado(true);
-          setTimeout(() => setCopiado(false), 1500);
-        });
-      }}
-      className="inline-flex max-w-full items-center gap-1 truncate text-[11px] text-zinc-500 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-      title="Copiar a chave PIX"
-    >
-      {copiado ? <Check className="size-3 shrink-0 text-emerald-500" aria-hidden="true" /> : <Copy className="size-3 shrink-0" aria-hidden="true" />}
-      <span className="truncate">PIX {pix}</span>
-    </button>
+    <div className="min-w-0">
+      <span className="mb-1 block text-[12px] font-medium text-zinc-600 dark:text-zinc-400">{rotulo}</span>
+      {children}
+      {dica && <span className="mt-1 block text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">{dica}</span>}
+    </div>
+  );
+}
+
+function Bloco({ titulo, nota, children }: { titulo: string; nota?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="border-t border-zinc-100 pt-4 first:border-t-0 first:pt-0 dark:border-zinc-800">
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{titulo}</p>
+      {nota && <p className="mt-0.5 text-[11.5px] leading-snug text-zinc-500 dark:text-zinc-400">{nota}</p>}
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">{children}</div>
+    </div>
+  );
+}
+
+function LinhaDaConta({ rotulo, valor, detalhe, forte = false }: { rotulo: string; valor: string; detalhe?: string; forte?: boolean }) {
+  return (
+    <div className={`flex items-baseline justify-between gap-3 ${forte ? "border-t border-zinc-200 pt-3 dark:border-zinc-800" : ""}`}>
+      <span className={forte ? "text-[13px] font-semibold text-zinc-900 dark:text-zinc-50" : "text-[12.5px] text-zinc-600 dark:text-zinc-400"}>
+        {rotulo}
+        {detalhe && <span className="block text-[11px] font-normal text-zinc-400 dark:text-zinc-500">{detalhe}</span>}
+      </span>
+      <span className={`tabular-nums ${forte ? "text-[20px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-50" : "text-[13px] text-zinc-800 dark:text-zinc-200"}`}>{valor}</span>
+    </div>
   );
 }
 
@@ -54,7 +60,10 @@ export default function EditarFolha({
   pessoaId,
   minutos,
   horasTexto,
+  presencial,
   cadastro,
+  valores,
+  daFoto,
   lancamento,
   setores,
   podeEditar,
@@ -64,173 +73,167 @@ export default function EditarFolha({
   pessoaId: string;
   minutos: number;
   horasTexto: string;
+  /** Dias presenciais do mês no ponto: a base do deslocamento. */
+  presencial: number;
   cadastro: CadastroPagamento | null;
+  /** Os valores que valem no mês (a foto do mês ou o padrão do colaborador). */
+  valores: ValoresPagamento | null;
+  /** O mês já foi lançado (tem foto). */
+  daFoto: boolean;
   lancamento: LancamentoMes;
   setores: string[];
   podeEditar: boolean;
 }) {
-  const router = useRouter();
-  const [salvando, iniciar] = useTransition();
-  const [erro, setErro] = useState<string | null>(null);
-  const [salvo, setSalvo] = useState(false);
-  const [setor, setSetor] = useState(cadastro?.setor ?? "");
-  const [atividade, setAtividade] = useState(cadastro?.atividade ?? "");
-  const [tipo, setTipo] = useState<TipoPagamento>(cadastro?.tipo ?? "hora");
-  const [valorHora, setValorHora] = useState(paraCampo(cadastro?.valorHora ?? null));
-  const [valorMes, setValorMes] = useState(paraCampo(cadastro?.valorMes ?? null));
-  const [pix, setPix] = useState(cadastro?.pix ?? "");
-  const [adicional, setAdicional] = useState(lancamento.adicional ? paraCampo(lancamento.adicional) : "");
-  const [descontos, setDescontos] = useState(lancamento.descontos ? paraCampo(lancamento.descontos) : "");
+  const inicial = {
+    setor: cadastro?.setor ?? "",
+    atividade: cadastro?.atividade ?? "",
+    pix: cadastro?.pix ?? "",
+    tipo: (valores?.tipo ?? "hora") as TipoPagamento,
+    valorHora: paraCampo(valores?.valorHora ?? null),
+    valorMes: paraCampo(valores?.valorMes ?? null),
+    taxa: paraCampo(valores?.taxaDeslocamento ?? null),
+    adicional: lancamento.adicional ? paraCampo(lancamento.adicional) : "",
+    descontos: lancamento.descontos ? paraCampo(lancamento.descontos) : "",
+  };
+  const [f, setF] = useState(inicial);
+  const [salvo, setSalvo] = useState(inicial);
+  const [lancado, setLancado] = useState(daFoto);
+  const muda = (parcial: Partial<typeof inicial>) => setF((a) => ({ ...a, ...parcial }));
 
-  const vh = lerReais(valorHora);
-  const vm = lerReais(valorMes);
-  const ad = lerReais(adicional);
-  const de = lerReais(descontos);
-  const invalido = [vh, vm, ad, de].some((v) => v === undefined);
-  const conta = contaDoMes({ tipo, valorHora: vh ?? null, valorMes: vm ?? null }, minutos, { adicional: ad ?? 0, descontos: de ?? 0 });
+  const vh = lerReais(f.valorHora);
+  const vm = lerReais(f.valorMes);
+  const tx = lerReais(f.taxa);
+  const ad = lerReais(f.adicional);
+  const de = lerReais(f.descontos);
+  const invalido = [vh, vm, tx, ad, de].some((v) => v === undefined);
+  const falta = invalido
+    ? "Algum valor não é um número em reais (ex.: 1.500,00)."
+    : f.tipo === "hora" && vh === null
+      ? "Falta o valor hora para salvar."
+      : f.tipo === "fixo" && vm === null
+        ? "Falta o valor mês para salvar."
+        : null;
+  const mudou = (Object.keys(f) as Array<keyof typeof f>).some((k) => f[k] !== salvo[k]);
+  const conta = useMemo(
+    () => contaDoMes({ tipo: f.tipo, valorHora: vh ?? null, valorMes: vm ?? null, taxaDeslocamento: tx ?? null }, minutos, presencial, { adicional: ad ?? 0, descontos: de ?? 0 }),
+    [f.tipo, vh, vm, tx, ad, de, minutos, presencial],
+  );
 
-  function salvar() {
-    setErro(null);
-    setSalvo(false);
-    if (invalido) return setErro("Algum valor não é um número em reais (ex.: 1.500,00).");
-    iniciar(async () => {
+  const { estado, erro, agora } = useSalvarSozinho({
+    pronto: podeEditar && mudou && !falta,
+    assinatura: JSON.stringify(f),
+    espera: 1100,
+    gravar: async () => {
+      const enviado = f;
       const r = await salvarLinhaDaFolha({
         mes,
         pessoaId,
-        setor,
-        atividade,
-        tipo,
+        setor: enviado.setor,
+        atividade: enviado.atividade,
+        tipo: enviado.tipo,
         valorHora: vh,
         valorMes: vm,
-        pix,
+        taxaDeslocamento: tx,
+        pix: enviado.pix,
         adicional: ad,
         descontos: de,
       });
-      if (!r.ok) return setErro(r.erro);
-      setSalvo(true);
-      router.refresh();
-    });
-  }
+      if (r.ok) {
+        setSalvo(enviado);
+        setLancado(true);
+      }
+      return r;
+    },
+  });
 
-  const botaoTipo = (valor: TipoPagamento, texto: string) => (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={tipo === valor}
-      disabled={!podeEditar}
-      onClick={() => setTipo(valor)}
-      className={`flex-1 rounded-[7px] px-3 py-1.5 text-[12px] font-medium transition ${
-        tipo === valor
-          ? "bg-white text-zinc-900 shadow-[0_1px_2px_rgba(0,0,0,0.08)] dark:bg-zinc-800 dark:text-zinc-50 dark:shadow-none"
-          : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-      }`}
-    >
-      {texto}
-    </button>
-  );
+  const mesMinusculo = mesNome.toLowerCase();
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="mb-4 text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">
-        Pagamento
-        {!podeEditar && <span className="font-normal text-zinc-400 dark:text-zinc-500"> · só para ver (editar pede a permissão no módulo)</span>}
-      </h2>
-      <fieldset disabled={!podeEditar} className="contents">
+    <section
+      className="rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+      onBlur={(e) => {
+        if (podeEditar && !e.currentTarget.contains(e.relatedTarget as Node | null)) void agora();
+      }}
+    >
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-5 py-3 dark:border-zinc-800">
+        <h2 className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">Pagamento de {mesMinusculo}</h2>
+        {podeEditar ? (
+          <IndicadorSalvamento estado={estado} erro={erro} falta={mudou ? falta : null} />
+        ) : (
+          <span className="text-[11px] text-zinc-400 dark:text-zinc-500">só para ver: editar pede a permissão no módulo</span>
+        )}
+      </header>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label>
-            <span className={rotulo}>Setor</span>
-            <input value={setor} onChange={(e) => setSetor(e.target.value)} list="setores-folha" maxLength={80} placeholder="Ex.: Marketing" className={campo} />
-            <datalist id="setores-folha">
-              {setores.map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
-          </label>
-          <label>
-            <span className={rotulo}>Atividade principal</span>
-            <input value={atividade} onChange={(e) => setAtividade(e.target.value)} maxLength={120} placeholder="Ex.: Editor de vídeo" className={campo} />
-          </label>
-          <div className="sm:col-span-2">
-            <span className={rotulo}>Como recebe</span>
-            <div role="radiogroup" aria-label="Como recebe" className="flex max-w-xs gap-0.5 rounded-[10px] bg-zinc-100 p-[3px] ring-1 ring-inset ring-zinc-200/80 dark:bg-zinc-950 dark:ring-zinc-800">
-              {botaoTipo("hora", "Por hora")}
-              {botaoTipo("fixo", "Fixo")}
+      <div className="grid gap-6 p-5 lg:grid-cols-[1fr_300px]">
+        <fieldset disabled={!podeEditar} className="flex min-w-0 flex-col gap-5">
+          <Bloco titulo="Colaborador">
+            <Campo rotulo="Setor">
+              <input value={f.setor} onChange={(e) => muda({ setor: e.target.value })} list="setores-folha" maxLength={80} placeholder="Ex.: Marketing" className={campoTexto} />
+              <datalist id="setores-folha">
+                {setores.map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+            </Campo>
+            <Campo rotulo="Atividade principal">
+              <input value={f.atividade} onChange={(e) => muda({ atividade: e.target.value })} maxLength={120} placeholder="Ex.: Editor de vídeo" className={campoTexto} />
+            </Campo>
+            <div className="sm:col-span-2">
+              <Campo rotulo="Chave PIX">
+                <input value={f.pix} onChange={(e) => muda({ pix: e.target.value })} maxLength={140} placeholder="CPF, e-mail, celular ou chave aleatória" className={campoTexto} />
+              </Campo>
             </div>
-          </div>
-          <label>
-            <span className={rotulo}>Valor hora {tipo === "hora" && <span className="font-normal text-zinc-400">· usado na conta</span>}</span>
-            <input value={valorHora} onChange={(e) => setValorHora(e.target.value)} inputMode="decimal" placeholder="0,00" className={`${campo} tabular-nums`} />
-          </label>
-          <label>
-            <span className={rotulo}>Valor mês {tipo === "fixo" && <span className="font-normal text-zinc-400">· usado na conta</span>}</span>
-            <input value={valorMes} onChange={(e) => setValorMes(e.target.value)} inputMode="decimal" placeholder="0,00" className={`${campo} tabular-nums`} />
-          </label>
-          <label className="sm:col-span-2">
-            <span className={rotulo}>Chave PIX</span>
-            <input value={pix} onChange={(e) => setPix(e.target.value)} maxLength={140} placeholder="CPF, e-mail, celular ou chave aleatória" className={campo} />
-          </label>
-          <p className="text-[12px] font-semibold text-zinc-900 sm:col-span-2 dark:text-zinc-50">Lançamentos de {mesNome.toLowerCase()}</p>
-          <label>
-            <span className={rotulo}>Adicional (deslocamento ou ajuda de custo)</span>
-            <input value={adicional} onChange={(e) => setAdicional(e.target.value)} inputMode="decimal" placeholder="0,00" className={`${campo} tabular-nums`} />
-          </label>
-          <label>
-            <span className={rotulo}>Descontos</span>
-            <input value={descontos} onChange={(e) => setDescontos(e.target.value)} inputMode="decimal" placeholder="0,00" className={`${campo} tabular-nums`} />
-          </label>
-        </div>
+          </Bloco>
 
-        <aside className="flex flex-col gap-1.5 rounded-xl bg-zinc-50 p-4 text-[13px] dark:bg-zinc-950">
-          <p className="mb-1 text-[12px] font-semibold text-zinc-900 dark:text-zinc-50">A conta de {mesNome.toLowerCase()}</p>
-          <p className="flex justify-between gap-2 text-zinc-600 dark:text-zinc-400">
-            <span>Referência</span>
-            <span className="tabular-nums">{horasTexto}</span>
-          </p>
-          <p className="flex justify-between gap-2 text-zinc-600 dark:text-zinc-400">
-            <span>{tipo === "hora" ? "Horas × valor hora" : "Valor fixo do mês"}</span>
-            <span className="tabular-nums">{conta.base === null ? "—" : reais(conta.base)}</span>
-          </p>
-          <p className="flex justify-between gap-2 text-zinc-600 dark:text-zinc-400">
-            <span>+ Adicional</span>
-            <span className="tabular-nums">{reais(conta.adicional)}</span>
-          </p>
-          <p className="flex justify-between gap-2 text-zinc-600 dark:text-zinc-400">
-            <span>− Descontos</span>
-            <span className="tabular-nums">{reais(conta.descontos)}</span>
-          </p>
-          <p className="mt-1 flex justify-between gap-2 border-t border-zinc-200 pt-2 font-semibold text-zinc-900 dark:border-zinc-800 dark:text-zinc-50">
-            <span>Total do profissional</span>
-            <span className="tabular-nums">{conta.total === null ? "—" : reais(conta.total)}</span>
-          </p>
-          {erro && (
-            <p role="alert" className="mt-2 text-[12px] text-red-600 dark:text-red-400">
-              {erro}
-            </p>
-          )}
-          {podeEditar && (
-            <div className="mt-auto flex items-center gap-2 pt-3">
-              <button
-                type="button"
-                onClick={salvar}
-                disabled={salvando}
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-1.5 text-[12px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-              >
-                {salvando && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
-                Salvar
-              </button>
-              {salvo && !salvando && (
-                <span className="inline-flex items-center gap-1 text-[12px] text-emerald-600 dark:text-emerald-400">
-                  <Check className="size-3" aria-hidden="true" />
-                  Salvo
-                </span>
-              )}
+          <Bloco
+            titulo={`Como recebe em ${mesMinusculo}`}
+            nota={
+              lancado
+                ? `Valores gravados em ${mesMinusculo}: mudar outro mês não altera este.`
+                : `${mesNome} ainda não foi lançado: vale o padrão do colaborador. Ao salvar, os valores ficam gravados neste mês.`
+            }
+          >
+            <div className="sm:col-span-2">
+              <AlternarTipo valor={f.tipo} aoMudar={(t) => muda({ tipo: t })} rotulo="Como recebe" />
             </div>
-          )}
+            <Campo rotulo="Valor hora" dica={f.tipo === "hora" ? "Entra na conta: horas do mês × valor hora." : "Guardado, mas fora da conta (recebe fixo)."}>
+              <CampoReais valor={f.valorHora} aoMudar={(v) => muda({ valorHora: v })} rotulo="Valor hora" apagado={f.tipo === "fixo"} />
+            </Campo>
+            <Campo rotulo="Valor mês" dica={f.tipo === "fixo" ? "Entra na conta, trabalhe quanto trabalhar." : "Guardado, mas fora da conta (recebe por hora)."}>
+              <CampoReais valor={f.valorMes} aoMudar={(v) => muda({ valorMes: v })} rotulo="Valor mês" apagado={f.tipo === "hora"} />
+            </Campo>
+            <Campo rotulo="Deslocamento por dia" dica={`Taxa diária × dias presenciais (${presencial} em ${mesMinusculo}). Vazio: não recebe.`}>
+              <CampoReais valor={f.taxa} aoMudar={(v) => muda({ taxa: v })} rotulo="Deslocamento por dia" />
+            </Campo>
+          </Bloco>
+
+          <Bloco titulo={`Lançamentos de ${mesMinusculo}`}>
+            <Campo rotulo="Adicional" dica="Ajuda de custo e outros valores do mês.">
+              <CampoReais valor={f.adicional} aoMudar={(v) => muda({ adicional: v })} rotulo="Adicional" />
+            </Campo>
+            <Campo rotulo="Descontos">
+              <CampoReais valor={f.descontos} aoMudar={(v) => muda({ descontos: v })} rotulo="Descontos" />
+            </Campo>
+          </Bloco>
+        </fieldset>
+
+        <aside className="flex h-fit flex-col gap-2.5 rounded-xl bg-zinc-50 p-4 lg:sticky lg:top-4 dark:bg-zinc-950/60">
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">A conta de {mesMinusculo}</p>
+          <LinhaDaConta rotulo="Referência" valor={horasTexto} detalhe="horas do mês no ponto" />
+          <LinhaDaConta
+            rotulo={f.tipo === "hora" ? "Horas × valor hora" : "Valor fixo do mês"}
+            valor={conta.base === null ? "—" : reais(conta.base)}
+          />
+          <LinhaDaConta
+            rotulo="+ Deslocamento"
+            valor={reais(conta.deslocamento)}
+            detalhe={tx ? `${presencial} dias presenciais × ${reais(tx)}` : "não recebe"}
+          />
+          <LinhaDaConta rotulo="+ Adicional" valor={reais(conta.adicional)} />
+          <LinhaDaConta rotulo="− Descontos" valor={reais(conta.descontos)} />
+          <LinhaDaConta rotulo="Total do profissional" valor={conta.total === null ? "—" : reais(conta.total)} forte />
         </aside>
       </div>
-      </fieldset>
     </section>
   );
 }

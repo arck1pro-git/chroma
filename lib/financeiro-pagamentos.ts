@@ -1,41 +1,58 @@
-// A folha do pessoal no banco do CRM (migration-financeiro-colaboradores.sql),
-// para o Financeiro (a folha embaixo do Ponto e o pagamento na ficha de cada
-// colaborador). Pedido dele, 2026-11-03.
+// A folha do pessoal no banco do CRM (migration-financeiro-colaboradores.sql e
+// migration-financeiro-mes.sql), para o Financeiro: a folha embaixo do Ponto e
+// o pagamento na ficha de cada colaborador. Pedido dele, 2026-11-03.
 //
-//   · financeiro_colaboradores: o cadastro de pagamento de cada pessoa (setor,
-//     atividade, tipo, valor hora, valor mês, PIX), para todos os meses;
-//   · financeiro_lancamentos: adicional e descontos de cada pessoa em cada mês.
+//   · financeiro_colaboradores: o cadastro de cada pessoa. Setor, atividade e
+//     PIX valem para todos os meses; tipo, valor hora, valor mês e taxa de
+//     deslocamento são o PADRÃO dos meses ainda não lançados;
+//   · financeiro_lancamentos: por pessoa e mês, o adicional, os descontos e a
+//     FOTO dos valores com que o mês foi lançado.
 //
-// A conta (referência, total do profissional, do setor e geral) é feita em
-// lib/financeiro-tipos.ts, com as horas do ponto (lib/ponto.ts). É uma previsão
-// do que pagar: dia com batida faltando não vira hora, e a tela mostra as
-// pendências do ponto ao lado.
+// A FOTO DO MÊS (2026-11-04, "se já foi lançado um mês no passado não é
+// dinâmico, fica naquele mês"): salvar num mês grava a foto daquele mês. O
+// padrão do cadastro só muda quando se salva o mês corrente ou um futuro:
+// corrigir outubro não mexe no que vale para dezembro. Quem ainda não tinha
+// cadastro nasce com os valores salvos, de qualquer mês.
+//
+// A conta (referência, deslocamento, total do profissional, do setor e geral)
+// é feita em lib/financeiro-tipos.ts, com as horas e os dias presenciais do
+// ponto (lib/ponto.ts).
 //
 // O colaborador é o cadastro do app de ponto (users.id de lá); quem confere que
 // ele existe é a ação, antes de gravar.
 import "server-only";
 import { sql } from "@/lib/db";
-import type { CadastroPagamento, LancamentoMes } from "@/lib/financeiro-tipos";
+import type { CadastroPagamento, LancamentoMes, ValoresPagamento } from "@/lib/financeiro-tipos";
 import { Recusa } from "@/lib/resultado-acao";
 
 const TETO_VALOR = 1_000_000;
 const TETO = { setor: 80, atividade: 120, pix: 140 };
 
-/** 42P01 = a tabela ainda não existe (a migration não rodou neste banco). */
-function faltaTabela(e: unknown): boolean {
-  return typeof e === "object" && e !== null && (e as { code?: string }).code === "42P01";
+/** 42P01 = falta a tabela; 42703 = falta a coluna (uma das migrations da folha não rodou neste banco). */
+function faltaMigration(e: unknown): boolean {
+  const codigo = typeof e === "object" && e !== null ? (e as { code?: string }).code : undefined;
+  return codigo === "42P01" || codigo === "42703";
 }
 
 const numero = (v: unknown) => (v === null || v === undefined ? null : Number(v)); // numeric chega como texto
 
+function valoresDaLinha(l: Record<string, unknown>): ValoresPagamento {
+  return {
+    tipo: l.tipo === "fixo" ? "fixo" : "hora",
+    valorHora: numero(l.valor_hora),
+    valorMes: numero(l.valor_mes),
+    taxaDeslocamento: numero(l.taxa_deslocamento),
+  };
+}
+
 export type Folha = { cadastros: Map<string, CadastroPagamento>; lancamentos: Map<string, LancamentoMes> };
 
-/** Os cadastros de todos e os lançamentos do mês. null = a migration ainda não rodou neste banco. */
+/** Os cadastros de todos e os lançamentos do mês. null = falta rodar as migrations da folha neste banco. */
 export async function carregarFolha(mes: string): Promise<Folha | null> {
   try {
     const [cadastros, lancamentos] = await Promise.all([
-      sql`SELECT pessoa_id, setor, atividade, tipo, valor_hora, valor_mes, pix FROM financeiro_colaboradores`,
-      sql`SELECT pessoa_id, adicional, descontos FROM financeiro_lancamentos WHERE mes = ${mes}`,
+      sql`SELECT pessoa_id, setor, atividade, tipo, valor_hora, valor_mes, taxa_deslocamento, pix FROM financeiro_colaboradores`,
+      sql`SELECT pessoa_id, adicional, descontos, tipo, valor_hora, valor_mes, taxa_deslocamento FROM financeiro_lancamentos WHERE mes = ${mes}`,
     ]);
     return {
       cadastros: new Map(
@@ -45,19 +62,20 @@ export async function carregarFolha(mes: string): Promise<Folha | null> {
             pessoaId: l.pessoa_id as string,
             setor: (l.setor as string | null) ?? null,
             atividade: (l.atividade as string | null) ?? null,
-            tipo: l.tipo === "fixo" ? "fixo" : "hora",
-            valorHora: numero(l.valor_hora),
-            valorMes: numero(l.valor_mes),
             pix: (l.pix as string | null) ?? null,
+            ...valoresDaLinha(l),
           } satisfies CadastroPagamento,
         ]),
       ),
       lancamentos: new Map(
-        lancamentos.map((l) => [l.pessoa_id as string, { adicional: Number(l.adicional), descontos: Number(l.descontos) }]),
+        lancamentos.map((l) => [
+          l.pessoa_id as string,
+          { adicional: Number(l.adicional), descontos: Number(l.descontos), valores: l.tipo ? valoresDaLinha(l) : null } satisfies LancamentoMes,
+        ]),
       ),
     };
   } catch (e) {
-    if (faltaTabela(e)) return null;
+    if (faltaMigration(e)) return null;
     throw e;
   }
 }
@@ -77,76 +95,103 @@ function lerTexto(bruto: unknown, rotulo: string, teto: number): string | null {
   return t || null;
 }
 
-/** Tipo, valor hora, valor mês e PIX: a parte do cadastro que decide a conta, e a que se edita na linha da folha. */
-export type PagamentoDaLinha = Pick<CadastroPagamento, "pessoaId" | "tipo" | "valorHora" | "valorMes" | "pix">;
+function lerPessoa(bruto: unknown): string {
+  if (typeof bruto !== "string" || !bruto || bruto.length > 64) throw new Recusa("Colaborador inválido.");
+  return bruto;
+}
 
-/** Confere tipo, valores e PIX vindos da tela. Lança Recusa com a frase para a pessoa ler. */
-export function conferirPagamento(dados: Record<string, unknown>): PagamentoDaLinha {
-  const { pessoaId, tipo } = dados;
-  if (typeof pessoaId !== "string" || !pessoaId || pessoaId.length > 64) throw new Recusa("Colaborador inválido.");
+/** Tipo, valor hora, valor mês e taxa de deslocamento vindos da tela. Lança Recusa com a frase para a pessoa ler. */
+function conferirValores(dados: Record<string, unknown>): ValoresPagamento {
+  const { tipo } = dados;
   if (tipo !== "hora" && tipo !== "fixo") throw new Recusa("Escolha se a pessoa recebe por hora ou fixo.");
   const valorHora = lerValor(dados.valorHora, "Valor hora");
   const valorMes = lerValor(dados.valorMes, "Valor mês");
   if (tipo === "hora" && valorHora === null) throw new Recusa("Quem recebe por hora precisa do valor hora.");
   if (tipo === "fixo" && valorMes === null) throw new Recusa("Quem recebe fixo precisa do valor mês.");
-  return { pessoaId, tipo, valorHora, valorMes, pix: lerTexto(dados.pix, "Chave PIX", TETO.pix) };
+  return { tipo, valorHora, valorMes, taxaDeslocamento: lerValor(dados.taxaDeslocamento, "Taxa de deslocamento") };
 }
 
-/**
- * Confere e normaliza o que veio da tela: o cadastro inteiro (com setor e
- * atividade) e o lançamento do mês. Lança Recusa com a frase para a pessoa ler
- * (a ação devolve como `erro`).
- */
-export function conferirFolha(dados: Record<string, unknown>): { cadastro: CadastroPagamento; lancamento: LancamentoMes } {
+/** O que a linha da folha manda: os valores do mês e o PIX. */
+export type DadosDaLinha = { pessoaId: string; valores: ValoresPagamento; pix: string | null };
+
+export function conferirLinha(dados: Record<string, unknown>): DadosDaLinha {
+  return { pessoaId: lerPessoa(dados.pessoaId), valores: conferirValores(dados), pix: lerTexto(dados.pix, "Chave PIX", TETO.pix) };
+}
+
+/** O que a ficha manda: tudo da linha, mais setor, atividade, adicional e descontos do mês. */
+export type DadosDaFicha = DadosDaLinha & { setor: string | null; atividade: string | null; adicional: number; descontos: number };
+
+export function conferirFicha(dados: Record<string, unknown>): DadosDaFicha {
   return {
-    cadastro: {
-      ...conferirPagamento(dados),
-      setor: lerTexto(dados.setor, "Setor", TETO.setor),
-      atividade: lerTexto(dados.atividade, "Atividade principal", TETO.atividade),
-    },
-    lancamento: { adicional: lerValor(dados.adicional, "Adicional") ?? 0, descontos: lerValor(dados.descontos, "Descontos") ?? 0 },
+    ...conferirLinha(dados),
+    setor: lerTexto(dados.setor, "Setor", TETO.setor),
+    atividade: lerTexto(dados.atividade, "Atividade principal", TETO.atividade),
+    adicional: lerValor(dados.adicional, "Adicional") ?? 0,
+    descontos: lerValor(dados.descontos, "Descontos") ?? 0,
   };
 }
 
-
-/** Grava o cadastro e o lançamento do mês juntos. false = a migration ainda não rodou. */
-export async function salvarFolha(c: CadastroPagamento, mes: string, l: LancamentoMes): Promise<boolean> {
+/**
+ * Grava pela linha da folha: o PIX no cadastro, a foto dos valores no mês e, se
+ * `padrao` (mês corrente ou futuro), também o padrão do cadastro. Adicional,
+ * descontos, setor e atividade ficam como estavam. false = falta migration.
+ */
+export async function salvarLinha(mes: string, d: DadosDaLinha, padrao: boolean): Promise<boolean> {
+  const v = d.valores;
   try {
     await sql.begin(async (t: typeof sql) => {
       await t`
-        INSERT INTO financeiro_colaboradores (pessoa_id, setor, atividade, tipo, valor_hora, valor_mes, pix)
-        VALUES (${c.pessoaId}, ${c.setor}, ${c.atividade}, ${c.tipo}, ${c.valorHora}, ${c.valorMes}, ${c.pix})
-        ON CONFLICT (pessoa_id) DO UPDATE
-           SET setor = EXCLUDED.setor, atividade = EXCLUDED.atividade, tipo = EXCLUDED.tipo,
-               valor_hora = EXCLUDED.valor_hora, valor_mes = EXCLUDED.valor_mes, pix = EXCLUDED.pix`;
+        INSERT INTO financeiro_colaboradores (pessoa_id, tipo, valor_hora, valor_mes, taxa_deslocamento, pix)
+        VALUES (${d.pessoaId}, ${v.tipo}, ${v.valorHora}, ${v.valorMes}, ${v.taxaDeslocamento}, ${d.pix})
+        ON CONFLICT (pessoa_id) DO UPDATE SET
+          pix = EXCLUDED.pix,
+          tipo = CASE WHEN ${padrao}::boolean THEN EXCLUDED.tipo ELSE financeiro_colaboradores.tipo END,
+          valor_hora = CASE WHEN ${padrao}::boolean THEN EXCLUDED.valor_hora ELSE financeiro_colaboradores.valor_hora END,
+          valor_mes = CASE WHEN ${padrao}::boolean THEN EXCLUDED.valor_mes ELSE financeiro_colaboradores.valor_mes END,
+          taxa_deslocamento = CASE WHEN ${padrao}::boolean THEN EXCLUDED.taxa_deslocamento ELSE financeiro_colaboradores.taxa_deslocamento END`;
       await t`
-        INSERT INTO financeiro_lancamentos (pessoa_id, mes, adicional, descontos)
-        VALUES (${c.pessoaId}, ${mes}, ${l.adicional}, ${l.descontos})
-        ON CONFLICT (pessoa_id, mes) DO UPDATE
-           SET adicional = EXCLUDED.adicional, descontos = EXCLUDED.descontos`;
+        INSERT INTO financeiro_lancamentos (pessoa_id, mes, tipo, valor_hora, valor_mes, taxa_deslocamento)
+        VALUES (${d.pessoaId}, ${mes}, ${v.tipo}, ${v.valorHora}, ${v.valorMes}, ${v.taxaDeslocamento})
+        ON CONFLICT (pessoa_id, mes) DO UPDATE SET
+          tipo = EXCLUDED.tipo, valor_hora = EXCLUDED.valor_hora,
+          valor_mes = EXCLUDED.valor_mes, taxa_deslocamento = EXCLUDED.taxa_deslocamento`;
     });
     return true;
   } catch (e) {
-    if (faltaTabela(e)) return false;
+    if (faltaMigration(e)) return false;
     throw e;
   }
 }
 
 /**
- * Grava só tipo, valores e PIX (o que se edita na linha da folha). Setor,
- * atividade e os lançamentos de quem já tinha cadastro ficam como estavam.
- * false = a migration ainda não rodou.
+ * Grava pela ficha: setor, atividade e PIX no cadastro; a foto dos valores, o
+ * adicional e os descontos no mês; e o padrão do cadastro se `padrao` (mês
+ * corrente ou futuro). false = falta migration.
  */
-export async function salvarPagamento(p: PagamentoDaLinha): Promise<boolean> {
+export async function salvarFicha(mes: string, d: DadosDaFicha, padrao: boolean): Promise<boolean> {
+  const v = d.valores;
   try {
-    await sql`
-      INSERT INTO financeiro_colaboradores (pessoa_id, tipo, valor_hora, valor_mes, pix)
-      VALUES (${p.pessoaId}, ${p.tipo}, ${p.valorHora}, ${p.valorMes}, ${p.pix})
-      ON CONFLICT (pessoa_id) DO UPDATE
-         SET tipo = EXCLUDED.tipo, valor_hora = EXCLUDED.valor_hora, valor_mes = EXCLUDED.valor_mes, pix = EXCLUDED.pix`;
+    await sql.begin(async (t: typeof sql) => {
+      await t`
+        INSERT INTO financeiro_colaboradores (pessoa_id, setor, atividade, tipo, valor_hora, valor_mes, taxa_deslocamento, pix)
+        VALUES (${d.pessoaId}, ${d.setor}, ${d.atividade}, ${v.tipo}, ${v.valorHora}, ${v.valorMes}, ${v.taxaDeslocamento}, ${d.pix})
+        ON CONFLICT (pessoa_id) DO UPDATE SET
+          setor = EXCLUDED.setor, atividade = EXCLUDED.atividade, pix = EXCLUDED.pix,
+          tipo = CASE WHEN ${padrao}::boolean THEN EXCLUDED.tipo ELSE financeiro_colaboradores.tipo END,
+          valor_hora = CASE WHEN ${padrao}::boolean THEN EXCLUDED.valor_hora ELSE financeiro_colaboradores.valor_hora END,
+          valor_mes = CASE WHEN ${padrao}::boolean THEN EXCLUDED.valor_mes ELSE financeiro_colaboradores.valor_mes END,
+          taxa_deslocamento = CASE WHEN ${padrao}::boolean THEN EXCLUDED.taxa_deslocamento ELSE financeiro_colaboradores.taxa_deslocamento END`;
+      await t`
+        INSERT INTO financeiro_lancamentos (pessoa_id, mes, adicional, descontos, tipo, valor_hora, valor_mes, taxa_deslocamento)
+        VALUES (${d.pessoaId}, ${mes}, ${d.adicional}, ${d.descontos}, ${v.tipo}, ${v.valorHora}, ${v.valorMes}, ${v.taxaDeslocamento})
+        ON CONFLICT (pessoa_id, mes) DO UPDATE SET
+          adicional = EXCLUDED.adicional, descontos = EXCLUDED.descontos,
+          tipo = EXCLUDED.tipo, valor_hora = EXCLUDED.valor_hora,
+          valor_mes = EXCLUDED.valor_mes, taxa_deslocamento = EXCLUDED.taxa_deslocamento`;
+    });
     return true;
   } catch (e) {
-    if (faltaTabela(e)) return false;
+    if (faltaMigration(e)) return false;
     throw e;
   }
 }

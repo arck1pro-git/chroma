@@ -10,8 +10,13 @@
 // "falta saída". Se o dia é hoje, ele está "em andamento" e a entrada aberta
 // conta até agora, para quem está trabalhando não aparecer com 0h. A entrada
 // repetida antes da saída, ou a saída sem entrada, deixa o dia "irregular",
-// contando só os pares que fecham. Nada é corrigido aqui: a tela mostra para alguém conferir no app
-// de ponto.
+// contando só os pares que fecham. Nada é corrigido aqui: a tela mostra para
+// alguém conferir no app de ponto.
+//
+// A BASE FICA GUARDADA UM MINUTO (`lerBase`), na memória da instância. Ela mora
+// em outro projeto do Neon, e cada leitura custava ~1 s (2026-11-04: "ta muito
+// travada"); trocar de mês ou de pessoa relia tudo. Um minuto de atraso nas
+// batidas novas é o preço, e a tela diz a hora da leitura.
 import "server-only";
 import { lerPonto } from "@/lib/ponto-db";
 
@@ -117,10 +122,46 @@ export function calcularDia(
   return { minutos, situacao: irregular ? "irregular" : "completo" };
 }
 
+type Linha = Record<string, unknown>;
+type Base = { pessoas: Linha[]; batidas: Linha[]; modalidades: Linha[]; lidaEm: Date };
+
+const VALIDADE_MS = 60_000;
+let guardada: { em: number; base: Promise<Base> } | null = null;
+
+/**
+ * A base inteira do ponto, guardada por um minuto. As três consultas vão juntas
+ * na mesma transação (o postgres.js as manda em sequência sem esperar cada
+ * resposta). Dois pedidos ao mesmo tempo esperam a mesma leitura; leitura que
+ * falha não fica guardada.
+ */
+function lerBase(): Promise<Base> {
+  if (guardada && Date.now() - guardada.em < VALIDADE_MS) return guardada.base;
+  const base = lerPonto(async (sql) => {
+    const [pessoas, batidas, modalidades] = await Promise.all([
+      // A senha e o token do celular ficam de fora de propósito.
+      sql`SELECT id, name, email, role, timezone FROM users ORDER BY name`,
+      sql`
+        SELECT r.user_id, r.tipo, r.timestamp AS instante,
+               to_char(r.timestamp AT TIME ZONE u.timezone, 'YYYY-MM-DD') AS dia,
+               to_char(r.timestamp AT TIME ZONE u.timezone, 'HH24:MI') AS hora
+          FROM registros r
+          JOIN users u ON u.id = r.user_id
+         ORDER BY r.user_id, r.timestamp`,
+      sql`SELECT user_id, to_char(dia, 'YYYY-MM-DD') AS dia, tipo FROM modalidade`,
+    ]);
+    return { pessoas: [...pessoas], batidas: [...batidas], modalidades: [...modalidades], lidaEm: new Date() };
+  });
+  const atual = { em: Date.now(), base };
+  guardada = atual;
+  base.catch(() => {
+    if (guardada === atual) guardada = null;
+  });
+  return base;
+}
+
 /** O cadastro existe no app de ponto? É o que a ação confere antes de gravar o pagamento de alguém. */
 export async function existeColaborador(id: string): Promise<boolean> {
-  const linhas = await lerPonto((sql) => sql`SELECT 1 FROM users WHERE id = ${id} LIMIT 1`);
-  return linhas.length > 0;
+  return (await lerBase()).pessoas.some((p) => p.id === id);
 }
 
 /** "08:42" → 522. */
@@ -128,24 +169,12 @@ const minutosDoDia = (hora: string) => Number(hora.slice(0, 2)) * 60 + Number(ho
 
 /**
  * O ponto de todo mundo: o mês pedido em detalhe e todos os meses resumidos,
- * para os gráficos. Lê a base inteira de uma vez: são umas 500 batidas por mês,
- * e o resumo por mês precisa do mesmo cálculo de pares do dia a dia.
+ * para os gráficos. Parte da base inteira (`lerBase`): são umas 500 batidas por
+ * mês, e o resumo por mês precisa do mesmo cálculo de pares do dia a dia.
  */
 export async function carregarPonto(mes: string): Promise<DadosPonto> {
   if (!ehMes(mes)) throw new Error(`mês inválido: ${mes}`);
-  const { pessoas, batidas, modalidades } = await lerPonto(async (sql) => {
-    // A senha e o token do celular ficam de fora de propósito.
-    const pessoas = await sql`SELECT id, name, email, role, timezone FROM users ORDER BY name`;
-    const batidas = await sql`
-      SELECT r.user_id, r.tipo, r.timestamp AS instante,
-             to_char(r.timestamp AT TIME ZONE u.timezone, 'YYYY-MM-DD') AS dia,
-             to_char(r.timestamp AT TIME ZONE u.timezone, 'HH24:MI') AS hora
-        FROM registros r
-        JOIN users u ON u.id = r.user_id
-       ORDER BY r.user_id, r.timestamp`;
-    const modalidades = await sql`SELECT user_id, to_char(dia, 'YYYY-MM-DD') AS dia, tipo FROM modalidade`;
-    return { pessoas, batidas, modalidades };
-  });
+  const { pessoas, batidas, modalidades, lidaEm } = await lerBase();
 
   const lista: PessoaPonto[] = pessoas.map((p) => ({
     id: p.id as string,
@@ -243,6 +272,6 @@ export async function carregarPonto(mes: string): Promise<DadosPonto> {
     dias,
     porDia: [...equipe.values()].sort((a, b) => a.dia.localeCompare(b.dia)),
     porMes,
-    lidoEm: agora.toISOString(),
+    lidoEm: lidaEm.toISOString(),
   };
 }

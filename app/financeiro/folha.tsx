@@ -1,36 +1,22 @@
-// A folha do mês, embaixo do Ponto, no lugar do antigo "Dia a dia" (pedido
-// dele, 2026-11-03): o que pagar a cada profissional, agrupado por setor, com o
-// total do setor e o total dos pagamentos do pessoal.
+// A folha do mês, embaixo do Ponto (pedido dele, 2026-11-03): o que pagar a
+// cada profissional, agrupado por setor, com o total do setor e o total dos
+// pagamentos do pessoal. Aqui, no servidor, só se montam as linhas; a tabela
+// (./tabela-da-folha.tsx) é do navegador, para os totais acompanharem o que se
+// digita sem recarregar a página.
 //
-// Em cada linha (./linha-da-folha.tsx): o profissional com a atividade
-// principal e o PIX embaixo (em coluna própria, a atividade empurrava o valor
-// total para fora da tela), o setor no agrupamento, o tipo, valor hora, valor
-// mês, a REFERÊNCIA (as horas do mês, do ponto), o adicional e os descontos
-// lançados no mês e o total do profissional (lib/financeiro-tipos.ts,
-// contaDoMes). Tipo, valores e PIX se editam ali mesmo; o resto, na ficha
-// (clicar no nome). Quem não tem cadastro de pagamento aparece sem total e fica
-// fora das somas.
+// Cada linha leva os valores QUE VALEM NO MÊS (a foto do mês, ou o padrão do
+// colaborador se o mês ainda não foi lançado, lib/financeiro-tipos.ts), as
+// horas e os dias presenciais do ponto, o adicional e os descontos do mês.
 //
 // Aparece quem bateu ponto no mês OU tem cadastro na folha (o fixo recebe mesmo
 // sem batida). Os demais cadastros do app de ponto ficam numa linha embaixo.
-import Link from "next/link";
+import { createHash } from "node:crypto";
 import type { Folha } from "@/lib/financeiro-pagamentos";
-import { contaDoMes, reais, SEM_LANCAMENTO, type CadastroPagamento, type LancamentoMes } from "@/lib/financeiro-tipos";
-import type { DadosPonto, PessoaPonto } from "@/lib/ponto";
+import { SEM_LANCAMENTO, valoresDoMes } from "@/lib/financeiro-tipos";
+import type { DadosPonto } from "@/lib/ponto";
 import { AlertTriangle } from "@/app/components/icones";
-import { cartao, endereco, Indicador, nomeDoMes } from "./comum";
-import LinhaDaFolha from "./linha-da-folha";
-
-const SEM_SETOR = "Sem setor";
-
-type Linha = {
-  pessoa: PessoaPonto;
-  cadastro: CadastroPagamento | null;
-  lancamento: LancamentoMes;
-  minutos: number;
-  pendencias: number;
-  conta: ReturnType<typeof contaDoMes>;
-};
+import { cartao, nomeDoMes } from "./comum";
+import TabelaDaFolha, { type LinhaFolha } from "./tabela-da-folha";
 
 export default function FolhaDoMes({
   dados,
@@ -39,134 +25,54 @@ export default function FolhaDoMes({
   podeEditar,
 }: {
   dados: DadosPonto;
-  /** null = as tabelas da folha ainda não existem neste banco. */
+  /** null = falta rodar as migrations da folha neste banco. */
   folha: Folha | null;
   pessoaId: string | null;
   podeEditar: boolean;
 }) {
-  const { mes } = dados;
   if (!folha) {
     return (
       <p className={`${cartao} flex items-start gap-2 px-4 py-3 text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-300`}>
         <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
-        A folha ainda não está disponível neste banco: falta rodar a migration-financeiro-colaboradores.sql.
+        A folha ainda não está disponível neste banco: falta rodar as migrations do Financeiro.
       </p>
     );
   }
 
   const resumo = new Map(dados.resumos.map((r) => [r.pessoaId, r]));
-  const linhas: Linha[] = dados.pessoas
+  const linhas: LinhaFolha[] = dados.pessoas
     .filter((p) => resumo.has(p.id) || folha.cadastros.has(p.id))
     .map((p) => {
       const cadastro = folha.cadastros.get(p.id) ?? null;
       const lancamento = folha.lancamentos.get(p.id) ?? SEM_LANCAMENTO;
-      const minutos = resumo.get(p.id)?.minutos ?? 0;
-      return { pessoa: p, cadastro, lancamento, minutos, pendencias: resumo.get(p.id)?.pendencias ?? 0, conta: contaDoMes(cadastro, minutos, lancamento) };
+      const r = resumo.get(p.id);
+      return {
+        pessoa: { id: p.id, nome: p.nome },
+        setor: cadastro?.setor ?? null,
+        atividade: cadastro?.atividade ?? null,
+        pix: cadastro?.pix ?? null,
+        valores: valoresDoMes(cadastro, lancamento),
+        daFoto: Boolean(lancamento.valores),
+        adicional: lancamento.adicional,
+        descontos: lancamento.descontos,
+        minutos: r?.minutos ?? 0,
+        presencial: r?.presencial ?? 0,
+        pendencias: r?.pendencias ?? 0,
+      };
     });
-  const fora = dados.pessoas.filter((p) => !resumo.has(p.id) && !folha.cadastros.has(p.id));
-
-  // Por setor, em ordem alfabética, com o "Sem setor" por último.
-  const porSetor = new Map<string, Linha[]>();
-  for (const l of linhas) {
-    const s = l.cadastro?.setor ?? SEM_SETOR;
-    porSetor.set(s, [...(porSetor.get(s) ?? []), l]);
-  }
-  const setores = [...porSetor.keys()].sort((a, b) => (a === SEM_SETOR ? 1 : b === SEM_SETOR ? -1 : a.localeCompare(b, "pt-BR")));
-  const soma = (ls: Linha[], f: (l: Linha) => number | null) => ls.reduce((s, l) => s + (f(l) ?? 0), 0);
-  const comTotal = linhas.filter((l) => l.conta.total !== null);
-  const semValor = linhas.length - comTotal.length;
-  const totalGeral = soma(comTotal, (l) => l.conta.total);
-  const colunas = 8;
+  const fora = dados.pessoas.filter((p) => !resumo.has(p.id) && !folha.cadastros.has(p.id)).map((p) => ({ id: p.id, nome: p.nome }));
+  // O que veio do servidor, resumido: quando muda (a ficha salvou, outro mês), a tabela recomeça dele.
+  const versao = createHash("sha1").update(JSON.stringify([dados.mes, linhas])).digest("hex").slice(0, 12);
 
   return (
-    <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Indicador
-          rotulo="Total dos pagamentos do pessoal"
-          valor={reais(totalGeral)}
-          detalhe={semValor ? `${semValor} sem valor cadastrado, fora da soma` : `${comTotal.length} profissionais`}
-        />
-        <Indicador rotulo="Base (horas e fixos)" valor={reais(soma(comTotal, (l) => l.conta.base))} />
-        <Indicador rotulo="Adicionais" valor={reais(soma(comTotal, (l) => l.conta.adicional))} detalhe="deslocamento e ajuda de custo" />
-        <Indicador rotulo="Descontos" valor={reais(soma(comTotal, (l) => l.conta.descontos))} />
-      </div>
-
-      <section className={cartao}>
-        <h2 className="border-b border-zinc-100 px-4 py-3 text-[13px] font-semibold text-zinc-900 dark:border-zinc-800 dark:text-zinc-50">
-          Folha de {nomeDoMes(mes).toLowerCase()}
-          <span className="font-normal text-zinc-400 dark:text-zinc-500">
-            {podeEditar
-              ? " · tipo, valores e PIX direto na linha; clique no nome para setor, atividade, adicional e descontos"
-              : " · clique no profissional para ver o andamento"}
-          </span>
-        </h2>
-        {linhas.length === 0 ? (
-          <p className="px-4 py-6 text-[13px] text-zinc-500 dark:text-zinc-400">Ninguém bateu ponto nem tem cadastro na folha neste mês.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-[12.5px]">
-              <thead className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Profissional · atividade principal</th>
-                  <th className="px-1.5 py-2 font-medium">Tipo</th>
-                  <th className="px-1.5 py-2 text-right font-medium">Valor hora</th>
-                  <th className="px-1.5 py-2 text-right font-medium">Valor mês</th>
-                  <th className="px-2 py-2 text-right font-medium">Referência</th>
-                  <th className="px-2 py-2 text-right font-medium">Adicional</th>
-                  <th className="px-2 py-2 text-right font-medium">Descontos</th>
-                  <th className="px-4 py-2 text-right font-medium">Valor total</th>
-                </tr>
-              </thead>
-              {setores.map((setor) => {
-                const doSetor = porSetor.get(setor)!.sort((a, b) => a.pessoa.nome.localeCompare(b.pessoa.nome, "pt-BR"));
-                return (
-                  <tbody key={setor} className="divide-y divide-zinc-100 border-t border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-                    <tr className="bg-zinc-50 dark:bg-zinc-800/50">
-                      <th colSpan={colunas - 1} scope="rowgroup" className="px-4 py-2 text-[12px] font-semibold text-zinc-900 dark:text-zinc-50">
-                        {setor} <span className="font-normal text-zinc-400 dark:text-zinc-500">· {doSetor.length}</span>
-                      </th>
-                      <td className="whitespace-nowrap px-4 py-2 text-right text-[12px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-                        <span className="mr-1.5 font-normal text-zinc-400 dark:text-zinc-500">total do setor</span>
-                        {reais(soma(doSetor.filter((l) => l.conta.total !== null), (l) => l.conta.total))}
-                      </td>
-                    </tr>
-                    {doSetor.map((l) => (
-                      <LinhaDaFolha
-                        key={l.pessoa.id}
-                        mes={mes}
-                        ativa={l.pessoa.id === pessoaId}
-                        podeEditar={podeEditar}
-                        linha={{ pessoa: { id: l.pessoa.id, nome: l.pessoa.nome }, cadastro: l.cadastro, lancamento: l.lancamento, minutos: l.minutos, pendencias: l.pendencias }}
-                      />
-                    ))}
-                  </tbody>
-                );
-              })}
-              <tfoot className="border-t-2 border-zinc-200 dark:border-zinc-700">
-                <tr>
-                  <th colSpan={colunas - 1} scope="row" className="px-4 py-3 text-[13px] font-semibold text-zinc-900 dark:text-zinc-50">
-                    Valor total dos pagamentos do pessoal
-                  </th>
-                  <td className="whitespace-nowrap px-4 py-3 text-right text-[14px] font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{reais(totalGeral)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-        {fora.length > 0 && (
-          <p className="border-t border-zinc-100 px-4 py-3 text-[12px] leading-relaxed text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-            Sem ponto no mês e sem cadastro na folha:{" "}
-            {fora.map((p, i) => (
-              <span key={p.id}>
-                {i > 0 && ", "}
-                <Link href={endereco(mes, p.id)} className="text-zinc-700 underline-offset-2 hover:underline dark:text-zinc-300">
-                  {p.nome}
-                </Link>
-              </span>
-            ))}
-          </p>
-        )}
-      </section>
-    </>
+    <TabelaDaFolha
+      key={versao}
+      mes={dados.mes}
+      mesNome={nomeDoMes(dados.mes)}
+      linhas={linhas}
+      fora={fora}
+      pessoaId={pessoaId}
+      podeEditar={podeEditar}
+    />
   );
 }

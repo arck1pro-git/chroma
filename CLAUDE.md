@@ -64,10 +64,12 @@ Módulos (chave, rota): inicio `/`, chat, contatos, agenda, demandas, metricas, 
 templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, financeiro, infra, configuracoes. A rota é
 `/<chave>`, exceto inicio. Quem vê cada um é decidido no banco (`departamento_modulos`), não no código. O `infra`
 (`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem. O `financeiro` reúne o
-ponto (`lib/ponto.ts`), lido da base do app de ponto da equipe (outro sistema, só leitura, `lib/ponto-db.ts`), e a folha
-do mês embaixo dele (`lib/financeiro-pagamentos.ts`, conta em `lib/financeiro-tipos.ts`): cadastro de pagamento por
-colaborador (tipo, valores e PIX direto na linha da folha; setor, atividade, adicional e descontos na ficha dele),
-no banco do CRM, que a IA (`chroma_ia`) não lê.
+ponto (`lib/ponto.ts`, base guardada 1 minuto na memória), lido da base do app de ponto da equipe (outro sistema, só
+leitura, `lib/ponto-db.ts`), e a folha do mês embaixo dele (`lib/financeiro-pagamentos.ts`, conta em
+`lib/financeiro-tipos.ts`), no banco do CRM, que a IA (`chroma_ia`) não lê. Tipo, valor hora, valor mês e taxa diária de
+deslocamento ficam gravados no mês lançado (a "foto" em `financeiro_lancamentos`); o cadastro do colaborador guarda o
+padrão dos meses ainda não lançados. Deslocamento = taxa × dias presenciais no ponto. Os formulários salvam sozinhos
+(`app/financeiro/campos.tsx`).
 
 ## 2. Fluxo de execução e pontos de entrada
 
@@ -208,7 +210,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   retorno combinado da IA, a rodada que retoma no horário e a retomada por silêncio que o respeita),
   `testar-ponto.ts` (pelo runner: as regras das horas do ponto; com `PONTO_DATABASE_URL`, lê dois meses da base do app
   de ponto e confere que a conexão recusa escrita, sem gravar nada lá), `testar-folha.ts` (pelo runner: a conta da folha
-  e as recusas; contra o DEV, grava e lê cadastro e lançamento com marca apagada no fim e confere que a IA não lê),
+  com deslocamento e as recusas; contra o DEV, a foto do mês e o padrão do cadastro, com marca apagada no fim, e a IA sem
+  leitura),
   `scripts/testar-extensao-reunioes.mjs` (direto com `node`: o service worker da extensão com um `chrome` falso; o áudio
   de verdade só no Chrome, ver `extensao-reunioes/LEIAME.md`) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`

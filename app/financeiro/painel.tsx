@@ -13,7 +13,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Folha } from "@/lib/financeiro-pagamentos";
-import { SEM_LANCAMENTO } from "@/lib/financeiro-tipos";
+import { SEM_LANCAMENTO, valoresDoMes } from "@/lib/financeiro-tipos";
 import { horaCurta } from "@/lib/formato";
 import { mesAtual, type DadosPonto, type DiaPonto, type PessoaPonto, type ResumoPonto, type SituacaoDia } from "@/lib/ponto";
 import { AlertTriangle, Clock, X } from "@/app/components/icones";
@@ -332,7 +332,10 @@ function FichaDaPessoa({
           pessoaId={pessoa.id}
           minutos={r?.minutos ?? 0}
           horasTexto={horas(r?.minutos ?? 0)}
+          presencial={r?.presencial ?? 0}
           cadastro={folha.cadastros.get(pessoa.id) ?? null}
+          valores={valoresDoMes(folha.cadastros.get(pessoa.id), folha.lancamentos.get(pessoa.id))}
+          daFoto={Boolean(folha.lancamentos.get(pessoa.id)?.valores)}
           lancamento={folha.lancamentos.get(pessoa.id) ?? SEM_LANCAMENTO}
           setores={setores}
           podeEditar={podeEditar}

@@ -2,16 +2,17 @@
 //
 //   node --env-file=.env scripts/jiti.mjs scripts/testar-folha.ts
 //
-// A conta do profissional (por hora, fixo, sem cadastro, adicional e
-// descontos, centavos), as recusas da validação e, contra o banco DEV, gravar
-// e ler o cadastro e o lançamento do mês (o lançamento é por mês: mexer em um
-// não muda o outro), a gravação pela linha da folha (só tipo, valores e PIX) e
-// conferir que a IA (papel chroma_ia) não lê as tabelas.
-// As linhas de teste levam a marca "seed-folha-" e saem no fim.
+// A conta do profissional (por hora, fixo, deslocamento, sem cadastro,
+// adicional e descontos, centavos), os valores do mês (a foto ou o padrão), as
+// recusas da validação e, contra o banco DEV: a foto do mês (o mês lançado não
+// muda quando o padrão muda; salvar um mês passado não mexe no padrão; salvar
+// o mês corrente mexe), a linha da folha (não toca em setor, atividade nem
+// lançamentos) e a IA (papel chroma_ia) sem leitura das tabelas. As linhas de
+// teste levam a marca "seed-folha-" e saem no fim.
 import assert from "node:assert/strict";
 import { sql } from "@/lib/db";
-import { carregarFolha, conferirFolha, conferirPagamento, salvarFolha, salvarPagamento } from "@/lib/financeiro-pagamentos";
-import { contaDoMes, reais } from "@/lib/financeiro-tipos";
+import { carregarFolha, conferirFicha, conferirLinha, salvarFicha, salvarLinha } from "@/lib/financeiro-pagamentos";
+import { contaDoMes, reais, SEM_LANCAMENTO, valoresDoMes, type CadastroPagamento } from "@/lib/financeiro-tipos";
 import { Recusa } from "@/lib/resultado-acao";
 
 const MARCA = "seed-folha-";
@@ -22,43 +23,51 @@ const passo = (t: string) => {
 };
 
 // ── A conta ───────────────────────────────────────────────────────────────────
-const porHora = { tipo: "hora" as const, valorHora: 25, valorMes: 3000 };
-assert.deepEqual(contaDoMes(porHora, 160 * 60), { base: 4000, adicional: 0, descontos: 0, total: 4000 });
-passo("por hora: 160 h × R$ 25 = R$ 4.000, e o valor mês guardado não entra");
-assert.deepEqual(contaDoMes({ ...porHora, tipo: "fixo" }, 10 * 60, { adicional: 300, descontos: 150 }), { base: 3000, adicional: 300, descontos: 150, total: 3150 });
+const porHora = { tipo: "hora" as const, valorHora: 25, valorMes: 3000, taxaDeslocamento: null };
+assert.deepEqual(contaDoMes(porHora, 160 * 60, 18), { base: 4000, deslocamento: 0, adicional: 0, descontos: 0, total: 4000 });
+passo("por hora: 160 h × R$ 25 = R$ 4.000; sem taxa, sem deslocamento; o valor mês guardado não entra");
+assert.deepEqual(contaDoMes({ ...porHora, taxaDeslocamento: 22.5 }, 160 * 60, 18), { base: 4000, deslocamento: 405, adicional: 0, descontos: 0, total: 4405 });
+passo("deslocamento: 18 dias presenciais × R$ 22,50 = R$ 405, somado ao total");
+assert.deepEqual(contaDoMes({ ...porHora, tipo: "fixo" }, 10 * 60, 0, { adicional: 300, descontos: 150 }), { base: 3000, deslocamento: 0, adicional: 300, descontos: 150, total: 3150 });
 passo("fixo: o valor mês, trabalhe quanto trabalhar, + adicional − descontos");
-assert.equal(contaDoMes(porHora, 100, { adicional: 0, descontos: 0 }).total, 41.67);
+assert.equal(contaDoMes(porHora, 100, 0).total, 41.67);
 passo("1h40 × R$ 25 = R$ 41,67 (centavos arredondados)");
-assert.deepEqual(contaDoMes(null, 600, { adicional: 50, descontos: 0 }), { base: null, adicional: 50, descontos: 0, total: null });
-passo("sem cadastro não tem total (fica fora das somas)");
-assert.equal(contaDoMes({ tipo: "hora", valorHora: null, valorMes: 2000 }, 600).total, null);
-passo("por hora sem valor hora não tem total");
+assert.deepEqual(contaDoMes(null, 600, 5, { adicional: 50, descontos: 0 }), { base: null, deslocamento: 0, adicional: 50, descontos: 0, total: null });
+assert.equal(contaDoMes({ tipo: "hora", valorHora: null, valorMes: 2000, taxaDeslocamento: 10 }, 600, 5).total, null);
+passo("sem cadastro, ou por hora sem valor hora, não tem total (fica fora das somas)");
 assert.equal(reais(1234.5).replace(/\s/g, " "), "R$ 1.234,50");
 passo("reais com centavos e milhar");
 
+const cadastro: CadastroPagamento = { pessoaId: "x", setor: null, atividade: null, pix: null, tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 10 };
+const foto = { tipo: "fixo" as const, valorHora: null, valorMes: 2800, taxaDeslocamento: null };
+assert.deepEqual(valoresDoMes(cadastro, { adicional: 0, descontos: 0, valores: foto }), foto);
+assert.deepEqual(valoresDoMes(cadastro, SEM_LANCAMENTO), { tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 10 });
+assert.equal(valoresDoMes(null, SEM_LANCAMENTO), null);
+passo("valores do mês: a foto do mês quando há; o padrão do cadastro quando o mês não foi lançado");
+
 // ── A validação ───────────────────────────────────────────────────────────────
-const recusa = (dados: Record<string, unknown>) => {
+const recusa = (f: () => unknown) => {
   try {
-    conferirFolha(dados);
+    f();
     return null;
   } catch (e) {
     assert.ok(e instanceof Recusa, `esperava Recusa, veio ${e}`);
     return e.message;
   }
 };
-const base = { pessoaId: "x", tipo: "hora", valorHora: 25, valorMes: null, setor: "Marketing", atividade: "Edição", pix: "a@b.com", adicional: null, descontos: null };
-assert.match(String(recusa({ ...base, tipo: "mensal" })), /por hora ou fixo/);
-assert.match(String(recusa({ ...base, valorHora: null })), /precisa do valor hora/);
-assert.match(String(recusa({ ...base, tipo: "fixo" })), /precisa do valor mês/);
-assert.match(String(recusa({ ...base, valorHora: -1 })), /Valor hora inválido/);
-assert.match(String(recusa({ ...base, valorHora: "25" })), /Valor hora inválido/);
-assert.match(String(recusa({ ...base, descontos: 2_000_000 })), /Descontos inválido/);
-assert.match(String(recusa({ ...base, setor: "x".repeat(81) })), /Setor: no máximo 80/);
-assert.match(String(recusa({ ...base, pessoaId: "" })), /Colaborador inválido/);
-const limpo = conferirFolha({ ...base, setor: "  Marketing \u0007", pix: "", adicional: 120.456 });
-assert.equal(limpo.cadastro.setor, "Marketing");
-assert.equal(limpo.cadastro.pix, null);
-assert.deepEqual(limpo.lancamento, { adicional: 120.46, descontos: 0 });
+const base = { pessoaId: "x", tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: null, setor: "Marketing", atividade: "Edição", pix: "a@b.com", adicional: null, descontos: null };
+assert.match(String(recusa(() => conferirLinha({ ...base, tipo: "mensal" }))), /por hora ou fixo/);
+assert.match(String(recusa(() => conferirLinha({ ...base, valorHora: null }))), /precisa do valor hora/);
+assert.match(String(recusa(() => conferirLinha({ ...base, tipo: "fixo" }))), /precisa do valor mês/);
+assert.match(String(recusa(() => conferirLinha({ ...base, valorHora: -1 }))), /Valor hora inválido/);
+assert.match(String(recusa(() => conferirLinha({ ...base, taxaDeslocamento: "10" }))), /Taxa de deslocamento inválido/);
+assert.match(String(recusa(() => conferirFicha({ ...base, descontos: 2_000_000 }))), /Descontos inválido/);
+assert.match(String(recusa(() => conferirFicha({ ...base, setor: "x".repeat(81) }))), /Setor: no máximo 80/);
+assert.match(String(recusa(() => conferirLinha({ ...base, pessoaId: "" }))), /Colaborador inválido/);
+const limpo = conferirFicha({ ...base, setor: "  Marketing \u0007", pix: "", adicional: 120.456 });
+assert.equal(limpo.setor, "Marketing");
+assert.equal(limpo.pix, null);
+assert.deepEqual([limpo.adicional, limpo.descontos], [120.46, 0]);
 passo("recusas com a frase para ler, texto aparado e sem controle, PIX vazio vira null, adicional vazio vira zero");
 
 // ── O banco DEV ───────────────────────────────────────────────────────────────
@@ -66,33 +75,33 @@ async function noBanco() {
   if ((process.env.DATABASE_URL ?? "").includes("ep-noisy-pond")) throw new Error("RECUSADO: DATABASE_URL aponta para PRODUÇÃO");
   const id = `${MARCA}${Date.now()}`;
   try {
-    const { cadastro, lancamento } = conferirFolha({ ...base, pessoaId: id, adicional: 200, descontos: 50 });
-    assert.equal(await salvarFolha(cadastro, "2026-10", lancamento), true);
-    let f = (await carregarFolha("2026-10"))!;
-    assert.deepEqual(f.cadastros.get(id), cadastro);
-    assert.deepEqual(f.lancamentos.get(id), { adicional: 200, descontos: 50 });
-    passo("grava e lê o cadastro e o lançamento de outubro (numeric volta como número)");
+    // Outubro lançado pela ficha (mês passado; a pessoa não tinha cadastro e nasce com estes valores).
+    await salvarFicha("2026-10", conferirFicha({ ...base, pessoaId: id, taxaDeslocamento: 20, adicional: 200, descontos: 50 }), false);
+    let out = (await carregarFolha("2026-10"))!;
+    assert.deepEqual(out.lancamentos.get(id), { adicional: 200, descontos: 50, valores: { tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 20 } });
+    assert.equal(out.cadastros.get(id)?.valorHora, 25, "quem não tinha cadastro nasce com os valores salvos");
+    passo("outubro lançado pela ficha: foto do mês com valores e taxa, adicional e descontos; o cadastro nasce com eles");
 
-    const novembro = conferirFolha({ ...base, pessoaId: id, tipo: "fixo", valorMes: 3500, descontos: 80 });
-    await salvarFolha(novembro.cadastro, "2026-11", novembro.lancamento);
-    f = (await carregarFolha("2026-10"))!;
-    assert.equal(f.cadastros.get(id)?.tipo, "fixo", "o cadastro vale para todos os meses");
-    assert.deepEqual(f.lancamentos.get(id), { adicional: 200, descontos: 50 }, "outubro continua com o lançamento dele");
-    assert.deepEqual((await carregarFolha("2026-11"))!.lancamentos.get(id), { adicional: 0, descontos: 80 });
-    assert.equal((await carregarFolha("2026-09"))!.lancamentos.has(id), false, "mês sem lançamento não tem linha (é zero)");
-    passo("o cadastro troca para todos os meses; o lançamento de novembro não mexe no de outubro");
+    // Novembro (mês corrente) pela linha: muda o padrão e grava a foto de novembro.
+    await salvarLinha("2026-11", conferirLinha({ ...base, pessoaId: id, tipo: "fixo", valorMes: 3500, taxaDeslocamento: 20, pix: "chave-nova" }), true);
+    out = (await carregarFolha("2026-10"))!;
+    const nov = (await carregarFolha("2026-11"))!;
+    assert.equal(out.cadastros.get(id)?.tipo, "fixo", "salvar o mês corrente muda o padrão");
+    assert.deepEqual(valoresDoMes(out.cadastros.get(id), out.lancamentos.get(id)), { tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 20 }, "outubro segue com os valores dele");
+    assert.deepEqual(nov.lancamentos.get(id), { adicional: 0, descontos: 0, valores: { tipo: "fixo", valorHora: 25, valorMes: 3500, taxaDeslocamento: 20 } });
+    assert.deepEqual([out.cadastros.get(id)?.setor, out.cadastros.get(id)?.atividade, out.cadastros.get(id)?.pix], ["Marketing", "Edição", "chave-nova"], "a linha troca o PIX e não toca em setor nem atividade");
+    passo("novembro pela linha: muda o padrão e grava a foto de novembro; outubro, já lançado, não muda");
 
-    // A linha da folha grava só tipo, valores e PIX: setor, atividade e lançamentos ficam.
-    assert.equal(await salvarPagamento(conferirPagamento({ pessoaId: id, tipo: "hora", valorHora: 42.5, valorMes: null, pix: "chave-nova" })), true);
-    f = (await carregarFolha("2026-10"))!;
-    const depois = f.cadastros.get(id)!;
-    assert.deepEqual([depois.tipo, depois.valorHora, depois.valorMes, depois.pix], ["hora", 42.5, null, "chave-nova"]);
-    assert.deepEqual([depois.setor, depois.atividade], ["Marketing", "Edição"], "setor e atividade não mudam pela linha");
-    assert.deepEqual(f.lancamentos.get(id), { adicional: 200, descontos: 50 }, "o lançamento do mês não muda pela linha");
-    const novo = `${MARCA}novo-${Date.now()}`;
-    assert.equal(await salvarPagamento(conferirPagamento({ pessoaId: novo, tipo: "fixo", valorHora: null, valorMes: 2800, pix: "" })), true);
-    assert.deepEqual((await carregarFolha("2026-10"))!.cadastros.get(novo), { pessoaId: novo, setor: null, atividade: null, tipo: "fixo", valorHora: null, valorMes: 2800, pix: null });
-    passo("pela linha da folha: troca tipo, valores e PIX sem tocar em setor, atividade e lançamentos; quem não tinha cadastro nasce sem setor");
+    // Corrigir outubro (mês passado) não mexe no padrão; setembro, nunca lançado, segue o padrão.
+    await salvarLinha("2026-10", conferirLinha({ ...base, pessoaId: id, valorHora: 27, taxaDeslocamento: 20, pix: "chave-nova" }), false);
+    out = (await carregarFolha("2026-10"))!;
+    assert.equal(out.lancamentos.get(id)?.valores?.valorHora, 27, "a foto de outubro foi corrigida");
+    assert.deepEqual(out.lancamentos.get(id) && [out.lancamentos.get(id)!.adicional, out.lancamentos.get(id)!.descontos], [200, 50], "a linha não mexe nos lançamentos");
+    assert.equal(out.cadastros.get(id)?.tipo, "fixo", "corrigir um mês passado não mexe no padrão");
+    const set = (await carregarFolha("2026-09"))!;
+    assert.equal(set.lancamentos.has(id), false);
+    assert.deepEqual(valoresDoMes(set.cadastros.get(id), set.lancamentos.get(id))?.tipo, "fixo", "mês nunca lançado segue o padrão");
+    passo("corrigir outubro grava só a foto de outubro; o padrão fica; setembro, nunca lançado, segue o padrão");
 
     const ia = await sql`SELECT table_name FROM information_schema.role_table_grants WHERE grantee = 'chroma_ia' AND table_name LIKE 'financeiro_%'`;
     assert.equal(ia.length, 0, "a IA não tem permissão nas tabelas da folha");
