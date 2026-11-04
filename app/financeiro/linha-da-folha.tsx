@@ -1,8 +1,8 @@
 "use client";
 
 // Uma linha da folha do mês (./tabela-da-folha.tsx), só para ler: tipo, valor
-// hora, valor mês, referência (horas do ponto), adicionais (deslocamento +
-// adicional), descontos e o total. Editar não mexe na linha: abre a gaveta do
+// hora, valor mês, referência (horas do ponto), adicionais (deslocamento, os
+// dias presenciais × a taxa, + adicional), descontos e o total. Editar não mexe na linha: abre a gaveta do
 // pagamento por cima (./gaveta-pagamento.tsx, 2026-11-04, "onde for para
 // editar algo ao clicar abre toggle por cima"). O nome também abre a gaveta.
 //
@@ -10,7 +10,7 @@
 // Quem entrou por uma conta do AmaanOffice leva o selo e "sem ponto" na
 // referência (2026-11-04).
 import Link from "next/link";
-import { reais, type contaDoMes } from "@/lib/financeiro-tipos";
+import { reais, taxaPresencial, type contaDoMes } from "@/lib/financeiro-tipos";
 import { Check, Lock, Pencil } from "@/app/components/icones";
 import { CopiarPix } from "./campos";
 import { endereco, horas } from "./comum";
@@ -96,9 +96,9 @@ export default function LinhaDaFolha({
       </td>
       <td className={celula}>
         {adicionais ? reais(adicionais) : "—"}
-        {conta.deslocamento > 0 && (
-          <span className={`block text-[11px] ${apagado}`} title={`Deslocamento: ${linha.presencial} dias presenciais × ${reais(v?.taxaDeslocamento ?? 0)}`}>
-            desloc. {reais(conta.deslocamento)}
+        {conta.deslocamento > 0 && v && (
+          <span className={`block text-[11px] ${apagado}`} title={`Deslocamento ${reais(conta.deslocamento)}: dias com modalidade presencial no ponto × ${reais(taxaPresencial(v))}`}>
+            {linha.presencial} {linha.presencial === 1 ? "presencial" : "presenciais"} × {reais(taxaPresencial(v))}
           </span>
         )}
       </td>

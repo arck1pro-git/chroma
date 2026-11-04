@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { sql } from "@/lib/db";
 import { carregarFolha, colaboradorExiste, conferirFicha, salvarFicha } from "@/lib/financeiro-pagamentos";
-import { contaDoMes, origemDe, PREFIXO_AMAANOFFICE, reais, SEM_LANCAMENTO, valoresDoMes, type CadastroPagamento } from "@/lib/financeiro-tipos";
+import { contaDoMes, origemDe, PREFIXO_AMAANOFFICE, reais, SEM_LANCAMENTO, TAXA_PRESENCIAL, valoresDoMes, type CadastroPagamento } from "@/lib/financeiro-tipos";
 import { Recusa } from "@/lib/resultado-acao";
 
 const MARCA = "seed-folha-";
@@ -24,11 +24,14 @@ const passo = (t: string) => {
 };
 
 // ── A conta ───────────────────────────────────────────────────────────────────
-const porHora = { tipo: "hora" as const, valorHora: 25, valorMes: 3000, taxaDeslocamento: null };
+const porHora = { tipo: "hora" as const, valorHora: 25, valorMes: 3000, taxaDeslocamento: 0 };
 assert.deepEqual(contaDoMes(porHora, 160 * 60, 18), { base: 4000, deslocamento: 0, adicional: 0, descontos: 0, total: 4000 });
-passo("por hora: 160 h × R$ 25 = R$ 4.000; sem taxa, sem deslocamento; o valor mês guardado não entra");
+passo("por hora: 160 h × R$ 25 = R$ 4.000; taxa 0, sem deslocamento; o valor mês guardado não entra");
+assert.equal(TAXA_PRESENCIAL, 15);
+assert.deepEqual(contaDoMes({ ...porHora, taxaDeslocamento: null }, 160 * 60, 18), { base: 4000, deslocamento: 270, adicional: 0, descontos: 0, total: 4270 });
+passo("sem taxa gravada vale a regra: 18 dias presenciais × R$ 15 = R$ 270, somado ao total");
 assert.deepEqual(contaDoMes({ ...porHora, taxaDeslocamento: 22.5 }, 160 * 60, 18), { base: 4000, deslocamento: 405, adicional: 0, descontos: 0, total: 4405 });
-passo("deslocamento: 18 dias presenciais × R$ 22,50 = R$ 405, somado ao total");
+passo("taxa gravada: 18 dias presenciais × R$ 22,50 = R$ 405");
 assert.deepEqual(contaDoMes({ ...porHora, tipo: "fixo" }, 10 * 60, 0, { adicional: 300, descontos: 150 }), { base: 3000, deslocamento: 0, adicional: 300, descontos: 150, total: 3150 });
 passo("fixo: o valor mês, trabalhe quanto trabalhar, + adicional − descontos");
 assert.equal(contaDoMes(porHora, 100, 0).total, 41.67);
@@ -69,7 +72,9 @@ const limpo = conferirFicha({ ...base, setor: "  Marketing \u0007", pix: "", adi
 assert.equal(limpo.setor, "Marketing");
 assert.equal(limpo.pix, null);
 assert.deepEqual([limpo.adicional, limpo.descontos], [120.46, 0]);
-passo("recusas com a frase para ler, texto aparado e sem controle, PIX vazio vira null, adicional vazio vira zero");
+assert.equal(limpo.valores.taxaDeslocamento, 15, "taxa vazia grava a da regra, com o número");
+assert.equal(conferirFicha({ ...base, taxaDeslocamento: 0 }).valores.taxaDeslocamento, 0, "0 fica 0: não recebe");
+passo("recusas com a frase para ler, texto aparado e sem controle, PIX vazio vira null, adicional vazio vira zero, taxa vazia grava R$ 15");
 
 // ── O banco DEV ───────────────────────────────────────────────────────────────
 async function noBanco() {

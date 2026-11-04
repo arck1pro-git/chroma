@@ -21,7 +21,15 @@ export function origemDe(pessoaId: string): OrigemColaborador {
   return pessoaId.startsWith(PREFIXO_AMAANOFFICE) ? "amaanoffice" : "ponto";
 }
 
-/** O que decide a conta: o tipo, os dois valores e a taxa diária de deslocamento (null = não recebe). */
+// O DIA PRESENCIAL VALE R$ 15 A MAIS (2026-11-04, "tem que usar a modalidade
+// para calcular o adicional. cada presencial é 15 a mais"): o deslocamento do
+// mês é a taxa × os dias com modalidade presencial no ponto, e a taxa de quem
+// não tem uma gravada (os cadastros e meses de antes da regra) é esta. Taxa 0 =
+// não recebe. Salvar grava a taxa que valeu, para o mês lançado não mudar se a
+// regra mudar (lib/financeiro-pagamentos.ts).
+export const TAXA_PRESENCIAL = 15;
+
+/** O que decide a conta: o tipo, os dois valores e a taxa por dia presencial (null = `TAXA_PRESENCIAL`; 0 = não recebe). */
 export type ValoresPagamento = {
   tipo: TipoPagamento;
   valorHora: number | null;
@@ -50,11 +58,16 @@ export function valoresDoMes(cadastro: CadastroPagamento | null | undefined, lan
   return { tipo: cadastro.tipo, valorHora: cadastro.valorHora, valorMes: cadastro.valorMes, taxaDeslocamento: cadastro.taxaDeslocamento };
 }
 
+/** O valor de cada dia presencial: a taxa gravada, ou a da regra (`TAXA_PRESENCIAL`). */
+export function taxaPresencial(valores: Pick<ValoresPagamento, "taxaDeslocamento">): number {
+  return valores.taxaDeslocamento ?? TAXA_PRESENCIAL;
+}
+
 /**
  * A conta do profissional no mês: a base (por hora, horas × valor hora; fixo, o
- * valor mês, trabalhe quanto trabalhar), mais o deslocamento (taxa diária × dias
- * presenciais no ponto), mais o adicional, menos os descontos. `base` e `total`
- * são null quando falta o cadastro ou o valor do tipo.
+ * valor mês, trabalhe quanto trabalhar), mais o deslocamento (taxa × dias com
+ * modalidade presencial no ponto), mais o adicional, menos os descontos. `base`
+ * e `total` são null quando falta o cadastro ou o valor do tipo.
  */
 export function contaDoMes(
   valores: ValoresPagamento | null | undefined,
@@ -69,7 +82,7 @@ export function contaDoMes(
       : valores.valorHora === null
         ? null
         : centavos((minutos / 60) * valores.valorHora);
-  const deslocamento = valores?.taxaDeslocamento ? centavos(valores.taxaDeslocamento * diasPresenciais) : 0;
+  const deslocamento = valores ? centavos(taxaPresencial(valores) * diasPresenciais) : 0;
   const { adicional, descontos } = lancamento;
   return { base, deslocamento, adicional, descontos, total: base === null ? null : centavos(base + deslocamento + adicional - descontos) };
 }

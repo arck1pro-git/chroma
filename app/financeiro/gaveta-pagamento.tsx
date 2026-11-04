@@ -17,11 +17,12 @@
 // aviso); o padrão do colaborador só muda quando o mês é o corrente ou um
 // futuro (`mudaPadrao`, lib/financeiro-pagamentos.ts). Enter salva, Esc fecha.
 //
-// O DESLOCAMENTO é a taxa diária × os dias presenciais do mês no ponto. Taxa
-// vazia = não recebe.
+// O DESLOCAMENTO é a taxa × os dias com modalidade presencial no ponto. A taxa
+// já vem com os R$ 15 da regra (`TAXA_PRESENCIAL`, 2026-11-04); vazia também é
+// a da regra, e 0 = não recebe.
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
-import { contaDoMes, lerReais, paraCampo, reais, type TipoPagamento } from "@/lib/financeiro-tipos";
+import { contaDoMes, lerReais, paraCampo, reais, TAXA_PRESENCIAL, type TipoPagamento } from "@/lib/financeiro-tipos";
 import { AlertCircle, Check, Loader2, Lock, Search, X } from "@/app/components/icones";
 import { BOTAO_PRIMARIO, BOTAO_SECUNDARIO, BotaoIcone, CascaGaveta, CorpoGaveta } from "@/app/components/gaveta";
 import { salvarLinhaDaFolha } from "./acoes";
@@ -236,7 +237,7 @@ function FormularioPagamento({
     tipo: (v?.tipo ?? (linha.origem === "amaanoffice" ? "fixo" : "hora")) as TipoPagamento,
     valorHora: paraCampo(v?.valorHora ?? null),
     valorMes: paraCampo(v?.valorMes ?? null),
-    taxa: paraCampo(v?.taxaDeslocamento ?? null),
+    taxa: paraCampo(v?.taxaDeslocamento ?? TAXA_PRESENCIAL),
     adicional: linha.adicional ? paraCampo(linha.adicional) : "",
     descontos: linha.descontos ? paraCampo(linha.descontos) : "",
   });
@@ -248,6 +249,7 @@ function FormularioPagamento({
   const vh = lerReais(f.valorHora);
   const vm = lerReais(f.valorMes);
   const tx = lerReais(f.taxa);
+  const taxa = tx ?? TAXA_PRESENCIAL;
   const ad = lerReais(f.adicional);
   const de = lerReais(f.descontos);
   const falta = [vh, vm, tx, ad, de].some((x) => x === undefined)
@@ -340,8 +342,15 @@ function FormularioPagamento({
             <Campo rotulo="Valor mês" dica={f.tipo === "fixo" ? "Entra na conta, trabalhe quanto trabalhar." : "Guardado, mas fora da conta (recebe por hora)."}>
               <CampoReais valor={f.valorMes} aoMudar={(x) => muda({ valorMes: x })} rotulo="Valor mês" apagado={f.tipo === "hora"} />
             </Campo>
-            <Campo rotulo="Deslocamento por dia" dica={linha.origem === "amaanoffice" ? "Sem ponto não há dias presenciais: o deslocamento dá zero. Use o adicional." : `Taxa diária × dias presenciais (${linha.presencial} em ${mesMinusculo}). Vazio: não recebe.`}>
-              <CampoReais valor={f.taxa} aoMudar={(x) => muda({ taxa: x })} rotulo="Deslocamento por dia" />
+            <Campo
+              rotulo="Por dia presencial"
+              dica={
+                linha.origem === "amaanoffice"
+                  ? "Sem ponto não há dias presenciais: o deslocamento dá zero. Use o adicional."
+                  : `Cada dia presencial no ponto soma este valor (${linha.presencial} em ${mesMinusculo}). Padrão ${reais(TAXA_PRESENCIAL)}; 0: não recebe.`
+              }
+            >
+              <CampoReais valor={f.taxa} aoMudar={(x) => muda({ taxa: x })} rotulo="Por dia presencial" />
             </Campo>
           </Bloco>
 
@@ -362,7 +371,7 @@ function FormularioPagamento({
               <LinhaDaConta rotulo="Referência" valor={horas(linha.minutos)} detalhe="horas do mês no ponto" />
             )}
             <LinhaDaConta rotulo={f.tipo === "hora" ? "Horas × valor hora" : "Valor fixo do mês"} valor={conta.base === null ? "—" : reais(conta.base)} />
-            <LinhaDaConta rotulo="+ Deslocamento" valor={reais(conta.deslocamento)} detalhe={tx ? `${linha.presencial} dias × ${reais(tx)}` : "não recebe"} />
+            <LinhaDaConta rotulo="+ Deslocamento" valor={reais(conta.deslocamento)} detalhe={taxa ? `${linha.presencial} ${linha.presencial === 1 ? "dia presencial" : "dias presenciais"} × ${reais(taxa)}` : "não recebe"} />
             <LinhaDaConta rotulo="+ Adicional" valor={reais(conta.adicional)} />
             <LinhaDaConta rotulo="− Descontos" valor={reais(conta.descontos)} />
           </div>

@@ -23,7 +23,7 @@
 // ele existe (`colaboradorExiste`) antes de gravar.
 import "server-only";
 import { sql } from "@/lib/db";
-import { origemDe, PREFIXO_AMAANOFFICE, type CadastroPagamento, type LancamentoMes, type ValoresPagamento } from "@/lib/financeiro-tipos";
+import { origemDe, PREFIXO_AMAANOFFICE, TAXA_PRESENCIAL, type CadastroPagamento, type LancamentoMes, type ValoresPagamento } from "@/lib/financeiro-tipos";
 import { existeColaborador } from "@/lib/ponto";
 import { Recusa } from "@/lib/resultado-acao";
 import { ehUuid } from "@/lib/validacao";
@@ -139,7 +139,8 @@ function conferirValores(dados: Record<string, unknown>): ValoresPagamento {
   const valorMes = lerValor(dados.valorMes, "Valor mês");
   if (tipo === "hora" && valorHora === null) throw new Recusa("Quem recebe por hora precisa do valor hora.");
   if (tipo === "fixo" && valorMes === null) throw new Recusa("Quem recebe fixo precisa do valor mês.");
-  return { tipo, valorHora, valorMes, taxaDeslocamento: lerValor(dados.taxaDeslocamento, "Taxa de deslocamento") };
+  // Taxa vazia é a da regra, gravada com o número: o mês lançado guarda o que valeu.
+  return { tipo, valorHora, valorMes, taxaDeslocamento: lerValor(dados.taxaDeslocamento, "Taxa de deslocamento") ?? TAXA_PRESENCIAL };
 }
 
 /** O que a gaveta do pagamento manda: o cadastro, os valores do mês, o adicional e os descontos do mês. */

@@ -69,7 +69,8 @@ leitura, `lib/ponto-db.ts`), e a folha do mês (`lib/financeiro-pagamentos.ts`, 
 banco do CRM, que a IA (`chroma_ia`) não lê. A página tem o cabeçalho com o mês e o "Adicionar colaborador", a folha logo
 abaixo e o Ponto embaixo dela (`#ponto`). Tipo, valor hora, valor mês e taxa diária de
 deslocamento ficam gravados no mês lançado (a "foto" em `financeiro_lancamentos`); o cadastro do colaborador guarda o
-padrão dos meses ainda não lançados. Deslocamento = taxa × dias presenciais no ponto. A folha só mostra; o Editar de
+padrão dos meses ainda não lançados. Deslocamento = taxa × dias com modalidade presencial no ponto; a taxa
+padrão é R$ 15 (`TAXA_PRESENCIAL` em `lib/financeiro-tipos.ts`), 0 = não recebe. A folha só mostra; o Editar de
 cada linha e o "Adicionar colaborador" abrem a gaveta do pagamento por cima (`app/financeiro/gaveta-pagamento.tsx`),
 inclusive em mês já lançado. O colaborador da folha vem do app de ponto (o id de lá) ou de uma conta do AmaanOffice sem
 ponto (`amaanoffice:<id do usuário>`, `origemDe` em `lib/financeiro-tipos.ts`); o nome sai da fonte, e a conta com o
