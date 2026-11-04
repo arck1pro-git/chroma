@@ -18,12 +18,15 @@
 // é feita em lib/financeiro-tipos.ts, com as horas e os dias presenciais do
 // ponto (lib/ponto.ts).
 //
-// O colaborador é o cadastro do app de ponto (users.id de lá); quem confere que
-// ele existe é a ação, antes de gravar.
+// O colaborador é o cadastro do app de ponto (users.id de lá) ou uma conta do
+// AmaanOffice ("amaanoffice:<id>", lib/financeiro-tipos.ts); a ação confere que
+// ele existe (`colaboradorExiste`) antes de gravar.
 import "server-only";
 import { sql } from "@/lib/db";
-import type { CadastroPagamento, LancamentoMes, ValoresPagamento } from "@/lib/financeiro-tipos";
+import { origemDe, PREFIXO_AMAANOFFICE, type CadastroPagamento, type LancamentoMes, type ValoresPagamento } from "@/lib/financeiro-tipos";
+import { existeColaborador } from "@/lib/ponto";
 import { Recusa } from "@/lib/resultado-acao";
+import { ehUuid } from "@/lib/validacao";
 
 const TETO_VALOR = 1_000_000;
 const TETO = { setor: 80, atividade: 120, pix: 140 };
@@ -45,16 +48,31 @@ function valoresDaLinha(l: Record<string, unknown>): ValoresPagamento {
   };
 }
 
-export type Folha = { cadastros: Map<string, CadastroPagamento>; lancamentos: Map<string, LancamentoMes> };
+/** Uma conta do AmaanOffice, com o id já no formato da folha ("amaanoffice:<id>"). */
+export type ContaAmaanOffice = { id: string; nome: string; email: string | null; ativo: boolean };
 
-/** Os cadastros de todos e os lançamentos do mês. null = falta rodar as migrations da folha neste banco. */
+export type Folha = {
+  cadastros: Map<string, CadastroPagamento>;
+  lancamentos: Map<string, LancamentoMes>;
+  /** As contas do AmaanOffice: o nome de quem entrou na folha por elas e as que dá para adicionar. */
+  contas: ContaAmaanOffice[];
+};
+
+/** Os cadastros de todos, os lançamentos do mês e as contas do AmaanOffice. null = falta rodar as migrations da folha neste banco. */
 export async function carregarFolha(mes: string): Promise<Folha | null> {
   try {
-    const [cadastros, lancamentos] = await Promise.all([
+    const [cadastros, lancamentos, contas] = await Promise.all([
       sql`SELECT pessoa_id, setor, atividade, tipo, valor_hora, valor_mes, taxa_deslocamento, pix FROM financeiro_colaboradores`,
       sql`SELECT pessoa_id, adicional, descontos, tipo, valor_hora, valor_mes, taxa_deslocamento FROM financeiro_lancamentos WHERE mes = ${mes}`,
+      sql`SELECT id, nome, email, ativo FROM usuarios ORDER BY nome`,
     ]);
     return {
+      contas: contas.map((c) => ({
+        id: `${PREFIXO_AMAANOFFICE}${c.id as string}`,
+        nome: c.nome as string,
+        email: (c.email as string | null) ?? null,
+        ativo: Boolean(c.ativo),
+      })),
       cadastros: new Map(
         cadastros.map((l) => [
           l.pessoa_id as string,
@@ -78,6 +96,19 @@ export async function carregarFolha(mes: string): Promise<Folha | null> {
     if (faltaMigration(e)) return null;
     throw e;
   }
+}
+
+/**
+ * A pessoa pode estar na folha? Do app de ponto, o cadastro de lá tem que
+ * existir; do AmaanOffice, a conta. Uma conta desativada continua valendo, para
+ * corrigir os meses em que ela trabalhou.
+ */
+export async function colaboradorExiste(pessoaId: string): Promise<boolean> {
+  if (origemDe(pessoaId) === "ponto") return existeColaborador(pessoaId);
+  const id = pessoaId.slice(PREFIXO_AMAANOFFICE.length);
+  if (!ehUuid(id)) return false;
+  const [conta] = await sql`SELECT 1 FROM usuarios WHERE id = ${id}`;
+  return Boolean(conta);
 }
 
 /** Valor em reais vindo do navegador: número ≥ 0 até o teto, com até dois decimais, ou vazio. */

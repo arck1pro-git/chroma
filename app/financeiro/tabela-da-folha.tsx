@@ -7,12 +7,14 @@
 // lá recarrega a folha com os números novos. A conta é a mesma do servidor
 // (lib/financeiro-tipos.ts).
 import { useMemo } from "react";
-import { contaDoMes, reais, type ValoresPagamento } from "@/lib/financeiro-tipos";
+import { contaDoMes, reais, type OrigemColaborador, type ValoresPagamento } from "@/lib/financeiro-tipos";
 import { cartao, SO_PARA_VER } from "./comum";
 import LinhaDaFolha from "./linha-da-folha";
 
 export type LinhaFolha = {
   pessoa: { id: string; nome: string };
+  /** Do app de ponto (tem horas) ou só uma conta do AmaanOffice (sem ponto). */
+  origem: OrigemColaborador;
   /** Tem cadastro na folha (setor, PIX, valores padrão). */
   temCadastro: boolean;
   setor: string | null;

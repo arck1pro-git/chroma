@@ -6,13 +6,14 @@
 // adicional e descontos, centavos), os valores do mês (a foto ou o padrão), as
 // recusas da validação e, contra o banco DEV: a foto do mês (o mês lançado não
 // muda quando o padrão muda; salvar um mês passado não mexe no padrão; salvar
-// o mês corrente mexe; corrigir o lançamento de um mês passado) e a IA (papel
+// o mês corrente mexe; corrigir o lançamento de um mês passado), a conta do
+// AmaanOffice como colaborador (amaanoffice:<id>) e a IA (papel
 // chroma_ia) sem leitura das tabelas. As linhas de teste levam a marca
 // "seed-folha-" e saem no fim.
 import assert from "node:assert/strict";
 import { sql } from "@/lib/db";
-import { carregarFolha, conferirFicha, salvarFicha } from "@/lib/financeiro-pagamentos";
-import { contaDoMes, reais, SEM_LANCAMENTO, valoresDoMes, type CadastroPagamento } from "@/lib/financeiro-tipos";
+import { carregarFolha, colaboradorExiste, conferirFicha, salvarFicha } from "@/lib/financeiro-pagamentos";
+import { contaDoMes, origemDe, PREFIXO_AMAANOFFICE, reais, SEM_LANCAMENTO, valoresDoMes, type CadastroPagamento } from "@/lib/financeiro-tipos";
 import { Recusa } from "@/lib/resultado-acao";
 
 const MARCA = "seed-folha-";
@@ -74,6 +75,8 @@ passo("recusas com a frase para ler, texto aparado e sem controle, PIX vazio vir
 async function noBanco() {
   if ((process.env.DATABASE_URL ?? "").includes("ep-noisy-pond")) throw new Error("RECUSADO: DATABASE_URL aponta para PRODUÇÃO");
   const id = `${MARCA}${Date.now()}`;
+  // A conta do AmaanOffice usada no teste (só é apagada a que o teste gravou: escolhida sem cadastro).
+  let idConta = "";
   try {
     // Outubro lançado pela ficha (mês passado; a pessoa não tinha cadastro e nasce com estes valores).
     await salvarFicha("2026-10", conferirFicha({ ...base, pessoaId: id, taxaDeslocamento: 20, adicional: 200, descontos: 50 }), false);
@@ -103,12 +106,30 @@ async function noBanco() {
     assert.deepEqual(valoresDoMes(set.cadastros.get(id), set.lancamentos.get(id))?.tipo, "fixo", "mês nunca lançado segue o padrão");
     passo("corrigir outubro grava só a foto de outubro; o padrão fica; setembro, nunca lançado, segue o padrão");
 
+    // Conta do AmaanOffice (sem ponto): entra na folha como "amaanoffice:<id>", com o nome da conta.
+    const [conta] = await sql`
+      SELECT u.id, u.nome FROM usuarios u
+       WHERE u.ativo AND NOT EXISTS (SELECT 1 FROM financeiro_colaboradores c WHERE c.pessoa_id = ${PREFIXO_AMAANOFFICE} || u.id::text)
+       LIMIT 1`;
+    assert.ok(conta, "o DEV precisa de uma conta ativa sem cadastro na folha");
+    idConta = `${PREFIXO_AMAANOFFICE}${conta.id}`;
+    assert.equal(await colaboradorExiste(idConta), true);
+    assert.equal(await colaboradorExiste(`${PREFIXO_AMAANOFFICE}00000000-0000-4000-8000-000000000000`), false);
+    assert.equal(await colaboradorExiste(`${PREFIXO_AMAANOFFICE}nao-e-uuid`), false);
+    assert.equal(await colaboradorExiste("id-que-nao-existe-no-ponto"), false);
+    await salvarFicha("2026-10", conferirFicha({ ...base, pessoaId: idConta, tipo: "fixo", valorMes: 2000 }), false);
+    out = (await carregarFolha("2026-10"))!;
+    assert.equal(out.cadastros.get(idConta)?.valorMes, 2000);
+    assert.equal(out.contas.find((c) => c.id === idConta)?.nome, conta.nome, "o nome vem da conta do AmaanOffice");
+    assert.equal(origemDe(idConta), "amaanoffice");
+    passo("conta do AmaanOffice: confere que existe, grava como amaanoffice:<id> e o nome vem da conta; id inexistente é recusado");
+
     const ia = await sql`SELECT table_name FROM information_schema.role_table_grants WHERE grantee = 'chroma_ia' AND table_name LIKE 'financeiro_%'`;
     assert.equal(ia.length, 0, "a IA não tem permissão nas tabelas da folha");
     passo("a IA das telas (chroma_ia) não lê as tabelas da folha");
   } finally {
-    await sql`DELETE FROM financeiro_lancamentos WHERE pessoa_id LIKE ${MARCA + "%"}`;
-    await sql`DELETE FROM financeiro_colaboradores WHERE pessoa_id LIKE ${MARCA + "%"}`;
+    await sql`DELETE FROM financeiro_lancamentos WHERE pessoa_id LIKE ${MARCA + "%"} OR pessoa_id = ${idConta}`;
+    await sql`DELETE FROM financeiro_colaboradores WHERE pessoa_id LIKE ${MARCA + "%"} OR pessoa_id = ${idConta}`;
   }
 }
 

@@ -5,9 +5,10 @@
 // no "Adicionar colaborador" do topo. Usa a casca das gavetas do CRM
 // (app/components/gaveta.tsx).
 //
-//   · Adicionar: primeiro a lista de quem está no app de ponto e ainda não tem
-//     cadastro na folha; escolhida a pessoa, o formulário. Só entra quem está no
-//     app de ponto: a folha se liga pelo id de lá e não guarda nome.
+//   · Adicionar: primeiro a lista de quem ainda não está na folha, do app de
+//     ponto ou das contas do AmaanOffice (2026-11-04, "sendo ele do ponto ou do
+//     amaanoffice"); escolhida a pessoa, o formulário. Quem vem do AmaanOffice
+//     não tem horas: começa no fixo e a referência diz "sem ponto".
 //   · Editar: o formulário direto, em três blocos (quem ele é na folha, como
 //     recebe no mês, os lançamentos do mês) e a conta do mês embaixo, que
 //     acompanha o que se digita pela mesma `contaDoMes` do servidor.
@@ -113,7 +114,11 @@ export default function GavetaPagamento({
           <BotaoIcone Icone={X} rotulo="Fechar" onClick={aoFechar} className="-mr-2 ml-auto" />
         </div>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[12px] text-zinc-500 dark:text-zinc-400">
-          {escolhida ? (
+          {!escolhida ? (
+            "Do app de ponto ou do AmaanOffice, quem ainda não está na folha."
+          ) : escolhida.origem === "amaanoffice" ? (
+            <span>Pagamento de {mesMinusculo} · conta do AmaanOffice, sem ponto</span>
+          ) : (
             <>
               <span>
                 Pagamento de {mesMinusculo} · {horas(escolhida.minutos)} no ponto
@@ -122,8 +127,6 @@ export default function GavetaPagamento({
                 Ver o ponto
               </Link>
             </>
-          ) : (
-            "Quem está no app de ponto e ainda não tem cadastro na folha."
           )}
         </p>
       </header>
@@ -147,18 +150,25 @@ export default function GavetaPagamento({
   );
 }
 
-/** "Adicionar colaborador": a busca na lista de quem ainda não está na folha. */
+/**
+ * "Adicionar colaborador": a busca na lista de quem ainda não está na folha,
+ * em dois grupos, o app de ponto e as contas do AmaanOffice.
+ */
 function EscolherColaborador({ candidatos, aoEscolher }: { candidatos: LinhaFolha[]; aoEscolher: (l: LinhaFolha) => void }) {
   const [busca, setBusca] = useState("");
   const termo = busca.trim().toLocaleLowerCase("pt-BR");
   const lista = candidatos.filter((c) => !termo || c.pessoa.nome.toLocaleLowerCase("pt-BR").includes(termo));
+  const grupos: Array<{ titulo: string; pessoas: LinhaFolha[] }> = [
+    { titulo: "Do app de ponto", pessoas: lista.filter((c) => c.origem === "ponto") },
+    { titulo: "Do AmaanOffice (sem ponto)", pessoas: lista.filter((c) => c.origem === "amaanoffice") },
+  ];
 
   return (
     <CorpoGaveta>
       <div className="px-5 pt-4">
         {candidatos.length === 0 ? (
           <p className="text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-            Todos do app de ponto já têm cadastro na folha. Gente nova é cadastrada no app de ponto e aparece aqui.
+            Todos do app de ponto e do AmaanOffice já estão na folha. Gente nova entra pelo app de ponto ou por uma conta nova em Configurações › Usuários.
           </p>
         ) : (
           <>
@@ -166,21 +176,31 @@ function EscolherColaborador({ candidatos, aoEscolher }: { candidatos: LinhaFolh
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" aria-hidden="true" />
               <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar pelo nome" aria-label="Buscar colaborador" autoFocus className={`${campoTexto} pl-8`} />
             </label>
-            <ul className="mt-3 flex flex-col">
-              {lista.map((c) => (
-                <li key={c.pessoa.id}>
-                  <button
-                    type="button"
-                    onClick={() => aoEscolher(c)}
-                    className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-900"
-                  >
-                    <span className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{c.pessoa.nome}</span>
-                    <span className="shrink-0 text-[11.5px] tabular-nums text-zinc-400 dark:text-zinc-500">{c.minutos ? `${horas(c.minutos)} no mês` : "sem ponto no mês"}</span>
-                  </button>
-                </li>
-              ))}
-              {lista.length === 0 && <li className="px-2.5 py-2 text-[13px] text-zinc-500 dark:text-zinc-400">Ninguém com esse nome.</li>}
-            </ul>
+            {grupos.map(
+              ({ titulo, pessoas }) =>
+                pessoas.length > 0 && (
+                  <div key={titulo} className="mt-4">
+                    <p className="px-2.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{titulo}</p>
+                    <ul className="mt-1 flex flex-col">
+                      {pessoas.map((c) => (
+                        <li key={c.pessoa.id}>
+                          <button
+                            type="button"
+                            onClick={() => aoEscolher(c)}
+                            className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left transition hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                          >
+                            <span className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-100">{c.pessoa.nome}</span>
+                            <span className="shrink-0 text-[11.5px] tabular-nums text-zinc-400 dark:text-zinc-500">
+                              {c.origem === "amaanoffice" ? "conta do AmaanOffice" : c.minutos ? `${horas(c.minutos)} no mês` : "sem ponto no mês"}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ),
+            )}
+            {lista.length === 0 && <p className="mt-3 px-2.5 py-2 text-[13px] text-zinc-500 dark:text-zinc-400">Ninguém com esse nome.</p>}
           </>
         )}
       </div>
@@ -212,7 +232,8 @@ function FormularioPagamento({
     setor: linha.setor ?? "",
     atividade: linha.atividade ?? "",
     pix: linha.pix ?? "",
-    tipo: (v?.tipo ?? "hora") as TipoPagamento,
+    // Sem valores ainda: quem não bate ponto (conta do AmaanOffice) começa no fixo, porque por hora daria zero.
+    tipo: (v?.tipo ?? (linha.origem === "amaanoffice" ? "fixo" : "hora")) as TipoPagamento,
     valorHora: paraCampo(v?.valorHora ?? null),
     valorMes: paraCampo(v?.valorMes ?? null),
     taxa: paraCampo(v?.taxaDeslocamento ?? null),
@@ -319,7 +340,7 @@ function FormularioPagamento({
             <Campo rotulo="Valor mês" dica={f.tipo === "fixo" ? "Entra na conta, trabalhe quanto trabalhar." : "Guardado, mas fora da conta (recebe por hora)."}>
               <CampoReais valor={f.valorMes} aoMudar={(x) => muda({ valorMes: x })} rotulo="Valor mês" apagado={f.tipo === "hora"} />
             </Campo>
-            <Campo rotulo="Deslocamento por dia" dica={`Taxa diária × dias presenciais (${linha.presencial} em ${mesMinusculo}). Vazio: não recebe.`}>
+            <Campo rotulo="Deslocamento por dia" dica={linha.origem === "amaanoffice" ? "Sem ponto não há dias presenciais: o deslocamento dá zero. Use o adicional." : `Taxa diária × dias presenciais (${linha.presencial} em ${mesMinusculo}). Vazio: não recebe.`}>
               <CampoReais valor={f.taxa} aoMudar={(x) => muda({ taxa: x })} rotulo="Deslocamento por dia" />
             </Campo>
           </Bloco>
@@ -335,7 +356,11 @@ function FormularioPagamento({
 
           <div className="flex flex-col gap-2 rounded-xl bg-zinc-50 p-4 dark:bg-zinc-900/60">
             <p className="text-[11.5px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">A conta de {mesMinusculo}</p>
-            <LinhaDaConta rotulo="Referência" valor={horas(linha.minutos)} detalhe="horas do mês no ponto" />
+            {linha.origem === "amaanoffice" ? (
+              <LinhaDaConta rotulo="Referência" valor="—" detalhe="sem ponto: por hora não soma" />
+            ) : (
+              <LinhaDaConta rotulo="Referência" valor={horas(linha.minutos)} detalhe="horas do mês no ponto" />
+            )}
             <LinhaDaConta rotulo={f.tipo === "hora" ? "Horas × valor hora" : "Valor fixo do mês"} valor={conta.base === null ? "—" : reais(conta.base)} />
             <LinhaDaConta rotulo="+ Deslocamento" valor={reais(conta.deslocamento)} detalhe={tx ? `${linha.presencial} dias × ${reais(tx)}` : "não recebe"} />
             <LinhaDaConta rotulo="+ Adicional" valor={reais(conta.adicional)} />

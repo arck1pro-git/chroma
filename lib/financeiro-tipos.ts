@@ -8,6 +8,19 @@
 
 export type TipoPagamento = "hora" | "fixo";
 
+// O COLABORADOR DA FOLHA vem de um de dois lugares (2026-11-04, "sendo ele do
+// ponto ou do amaanoffice"): o app de ponto (o id do cadastro de lá, como
+// sempre) ou uma conta do AmaanOffice que não bate ponto, gravada como
+// "amaanoffice:<id do usuário>". Assim o pessoa_id diz de onde a pessoa vem e
+// o nome sai da fonte, sem coluna nova.
+export const PREFIXO_AMAANOFFICE = "amaanoffice:";
+
+export type OrigemColaborador = "ponto" | "amaanoffice";
+
+export function origemDe(pessoaId: string): OrigemColaborador {
+  return pessoaId.startsWith(PREFIXO_AMAANOFFICE) ? "amaanoffice" : "ponto";
+}
+
 /** O que decide a conta: o tipo, os dois valores e a taxa diária de deslocamento (null = não recebe). */
 export type ValoresPagamento = {
   tipo: TipoPagamento;
@@ -18,7 +31,7 @@ export type ValoresPagamento = {
 
 /** O cadastro do colaborador: os valores PADRÃO (os dos meses ainda não lançados) e o que não muda por mês. */
 export type CadastroPagamento = ValoresPagamento & {
-  /** O id do cadastro no app de ponto. */
+  /** O id do cadastro no app de ponto, ou "amaanoffice:<id do usuário>" (`origemDe`). */
   pessoaId: string;
   setor: string | null;
   atividade: string | null;

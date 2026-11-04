@@ -9,11 +9,14 @@
 // horas e os dias presenciais do ponto, o adicional e os descontos do mês.
 //
 // Aparece quem bateu ponto no mês OU tem cadastro na folha (o fixo recebe mesmo
-// sem batida). Os demais cadastros do app de ponto só aparecem no "Adicionar
-// colaborador".
+// sem batida), venha do app de ponto ou de uma conta do AmaanOffice. O
+// "Adicionar colaborador" oferece os demais cadastros do app de ponto e as
+// contas ativas do AmaanOffice que ainda não estão na folha; a conta com o
+// mesmo e-mail de alguém do ponto fica de fora, porque é a mesma pessoa e pelo
+// ponto ela entra com as horas.
 import type { ReactNode } from "react";
 import type { Folha } from "@/lib/financeiro-pagamentos";
-import { SEM_LANCAMENTO, valoresDoMes } from "@/lib/financeiro-tipos";
+import { origemDe, SEM_LANCAMENTO, valoresDoMes } from "@/lib/financeiro-tipos";
 import { mesAtual, type DadosPonto } from "@/lib/ponto";
 import { AlertTriangle } from "@/app/components/icones";
 import AreaDaFolha from "./area-da-folha";
@@ -53,6 +56,7 @@ export default function FolhaDoMes({
     const r = resumo.get(p.id);
     return {
       pessoa: { id: p.id, nome: p.nome },
+      origem: origemDe(p.id),
       temCadastro: Boolean(cadastro),
       setor: cadastro?.setor ?? null,
       atividade: cadastro?.atividade ?? null,
@@ -67,14 +71,17 @@ export default function FolhaDoMes({
     };
   };
   const naFolha = (p: { id: string }) => resumo.has(p.id) || folha.cadastros.has(p.id);
+  const emailsDoPonto = new Set(dados.pessoas.map((p) => p.email?.trim().toLowerCase()).filter(Boolean));
+  const contaParaAdicionar = (c: Folha["contas"][number]) =>
+    c.ativo && !folha.cadastros.has(c.id) && !(c.email && emailsDoPonto.has(c.email.trim().toLowerCase()));
   const setores = [...new Set([...folha.cadastros.values()].map((c) => c.setor).filter((s): s is string => Boolean(s)))].sort((a, b) => a.localeCompare(b, "pt-BR"));
 
   return (
     <AreaDaFolha
       mes={dados.mes}
       mesNome={nomeDoMes(dados.mes)}
-      linhas={dados.pessoas.filter(naFolha).map(linhaDe)}
-      fora={dados.pessoas.filter((p) => !naFolha(p)).map(linhaDe)}
+      linhas={[...dados.pessoas.filter(naFolha), ...folha.contas.filter((c) => folha.cadastros.has(c.id))].map(linhaDe)}
+      fora={[...dados.pessoas.filter((p) => !naFolha(p)), ...folha.contas.filter(contaParaAdicionar)].map(linhaDe)}
       setores={setores}
       mudaPadrao={dados.mes >= mesAtual()}
       podeEditar={podeEditar}
