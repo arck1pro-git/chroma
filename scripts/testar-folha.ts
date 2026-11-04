@@ -72,12 +72,13 @@ const recusa = (f: () => unknown) => {
     return e.message;
   }
 };
-const base = { pessoaId: "x", tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: null, setor: "Marketing", atividade: "Edição", pix: "a@b.com", adicional: null, descontos: null };
+const base = { pessoaId: "x", tipo: "hora", valorHora: 25, valorMes: null, deslocamento: true, setor: "Marketing", atividade: "Edição", pix: "a@b.com", adicional: null, descontos: null };
 assert.match(String(recusa(() => conferirFicha({ ...base, tipo: "mensal" }))), /por hora ou fixo/);
 assert.match(String(recusa(() => conferirFicha({ ...base, valorHora: null }))), /precisa do valor hora/);
 assert.match(String(recusa(() => conferirFicha({ ...base, tipo: "fixo" }))), /precisa do valor mês/);
 assert.match(String(recusa(() => conferirFicha({ ...base, valorHora: -1 }))), /Valor hora inválido/);
-assert.match(String(recusa(() => conferirFicha({ ...base, taxaDeslocamento: "10" }))), /Taxa de deslocamento inválido/);
+assert.match(String(recusa(() => conferirFicha({ ...base, deslocamento: "sim" }))), /deslocamento entra na conta/);
+assert.match(String(recusa(() => conferirFicha({ ...base, deslocamento: undefined }))), /deslocamento entra na conta/);
 assert.match(String(recusa(() => conferirFicha({ ...base, descontos: 2_000_000 }))), /Descontos inválido/);
 assert.match(String(recusa(() => conferirFicha({ ...base, setor: "x".repeat(81) }))), /Setor: no máximo 80/);
 assert.match(String(recusa(() => conferirFicha({ ...base, pessoaId: "" }))), /Colaborador inválido/);
@@ -88,9 +89,10 @@ const limpo = conferirFicha({ ...base, setor: "  Marketing \u0007", pix: "", adi
 assert.equal(limpo.setor, "Marketing");
 assert.equal(limpo.pix, null);
 assert.deepEqual([limpo.adicional, limpo.descontos], [120.46, 0]);
-assert.equal(limpo.valores.taxaDeslocamento, 15, "taxa vazia grava a da regra, com o número");
-assert.equal(conferirFicha({ ...base, taxaDeslocamento: 0 }).valores.taxaDeslocamento, 0, "0 fica 0: não recebe");
-passo("recusas com a frase para ler, texto aparado e sem controle, PIX vazio vira null, adicional vazio vira zero, taxa vazia grava R$ 15");
+assert.equal(limpo.valores.taxaDeslocamento, 15, "check marcado grava a taxa da regra, com o número");
+assert.equal(conferirFicha({ ...base, deslocamento: false }).valores.taxaDeslocamento, 0, "check desmarcado grava 0: não recebe");
+assert.equal(conferirFicha({ ...base, taxaDeslocamento: 99 }).valores.taxaDeslocamento, 15, "a tela não escolhe o valor do dia: é a regra");
+passo("recusas com a frase para ler, texto aparado e sem controle, PIX vazio vira null, adicional vazio vira zero, deslocamento é um check (marcado = R$ 15, desmarcado = 0)");
 
 // ── O banco DEV ───────────────────────────────────────────────────────────────
 async function noBanco() {
@@ -101,24 +103,25 @@ async function noBanco() {
   let idManual = "";
   try {
     // Outubro lançado pela ficha (mês passado; a pessoa não tinha cadastro e nasce com estes valores).
-    await salvarFicha("2026-10", conferirFicha({ ...base, pessoaId: id, taxaDeslocamento: 20, adicional: 200, descontos: 50 }), false);
+    await salvarFicha("2026-10", conferirFicha({ ...base, pessoaId: id, deslocamento: false, adicional: 200, descontos: 50 }), false);
     let out = (await carregarFolha("2026-10"))!;
-    assert.deepEqual(out.lancamentos.get(id), { adicional: 200, descontos: 50, valores: { tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 20 } });
+    assert.deepEqual(out.lancamentos.get(id), { adicional: 200, descontos: 50, valores: { tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 0 } });
     assert.equal(out.cadastros.get(id)?.valorHora, 25, "quem não tinha cadastro nasce com os valores salvos");
     passo("outubro lançado pela ficha: foto do mês com valores e taxa, adicional e descontos; o cadastro nasce com eles");
 
     // Novembro (mês corrente): muda o padrão e grava a foto de novembro.
-    await salvarFicha("2026-11", conferirFicha({ ...base, pessoaId: id, tipo: "fixo", valorMes: 3500, taxaDeslocamento: 20, pix: "chave-nova" }), true);
+    await salvarFicha("2026-11", conferirFicha({ ...base, pessoaId: id, tipo: "fixo", valorMes: 3500, pix: "chave-nova" }), true);
     out = (await carregarFolha("2026-10"))!;
     const nov = (await carregarFolha("2026-11"))!;
     assert.equal(out.cadastros.get(id)?.tipo, "fixo", "salvar o mês corrente muda o padrão");
-    assert.deepEqual(valoresDoMes(out.cadastros.get(id), out.lancamentos.get(id)), { tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 20 }, "outubro segue com os valores dele");
-    assert.deepEqual(nov.lancamentos.get(id), { adicional: 0, descontos: 0, valores: { tipo: "fixo", valorHora: 25, valorMes: 3500, taxaDeslocamento: 20 } });
+    assert.deepEqual(valoresDoMes(out.cadastros.get(id), out.lancamentos.get(id)), { tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 0 }, "outubro segue com os valores dele (sem deslocamento)");
+    assert.deepEqual(nov.lancamentos.get(id), { adicional: 0, descontos: 0, valores: { tipo: "fixo", valorHora: 25, valorMes: 3500, taxaDeslocamento: TAXA_PRESENCIAL } });
+    assert.equal(out.cadastros.get(id)?.taxaDeslocamento, TAXA_PRESENCIAL, "marcar o check no mês corrente vale para o padrão");
     assert.deepEqual([out.cadastros.get(id)?.setor, out.cadastros.get(id)?.atividade, out.cadastros.get(id)?.pix], ["Marketing", "Edição", "chave-nova"], "o PIX novo vale para o cadastro");
     passo("novembro (mês corrente): muda o padrão e grava a foto de novembro; outubro, já lançado, não muda");
 
     // Corrigir outubro (mês passado, já lançado) não mexe no padrão; setembro, nunca lançado, segue o padrão.
-    await salvarFicha("2026-10", conferirFicha({ ...base, pessoaId: id, valorHora: 27, taxaDeslocamento: 20, pix: "chave-nova", adicional: 250, descontos: 50 }), false);
+    await salvarFicha("2026-10", conferirFicha({ ...base, pessoaId: id, valorHora: 27, deslocamento: false, pix: "chave-nova", adicional: 250, descontos: 50 }), false);
     out = (await carregarFolha("2026-10"))!;
     assert.equal(out.lancamentos.get(id)?.valores?.valorHora, 27, "a foto de outubro foi corrigida");
     assert.deepEqual(out.lancamentos.get(id) && [out.lancamentos.get(id)!.adicional, out.lancamentos.get(id)!.descontos], [250, 50], "o adicional de outubro foi corrigido");

@@ -32,8 +32,10 @@ export function origemDe(pessoaId: string): OrigemColaborador {
 // para calcular o adicional. cada presencial é 15 a mais"): o deslocamento do
 // mês é a taxa × os dias com modalidade presencial no ponto, e a taxa de quem
 // não tem uma gravada (os cadastros e meses de antes da regra) é esta. Taxa 0 =
-// não recebe. Salvar grava a taxa que valeu, para o mês lançado não mudar se a
-// regra mudar (lib/financeiro-pagamentos.ts).
+// não recebe. Desde 2026-11-04 quem decide é o check "Contabilizar
+// deslocamento" do cadastro: marcado grava esta taxa, desmarcado grava 0. Salvar
+// grava a taxa que valeu, para o mês lançado não mudar se a regra mudar
+// (lib/financeiro-pagamentos.ts).
 export const TAXA_PRESENCIAL = 15;
 
 /** O que decide a conta: o tipo, os dois valores e a taxa por dia presencial (null = `TAXA_PRESENCIAL`; 0 = não recebe). */

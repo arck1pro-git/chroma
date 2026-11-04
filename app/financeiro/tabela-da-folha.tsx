@@ -33,6 +33,14 @@ export type LinhaFolha = {
 
 const SEM_SETOR = "Sem setor";
 
+/** As linhas por setor, na ordem da folha: setores em ordem alfabética ("Sem setor" por último), e as pessoas pelo nome. A tabela e o CSV usam a mesma. */
+export function agruparPorSetor(linhas: LinhaFolha[]): Array<[string, LinhaFolha[]]> {
+  const grupos = new Map<string, LinhaFolha[]>();
+  for (const l of linhas) grupos.set(l.setor ?? SEM_SETOR, [...(grupos.get(l.setor ?? SEM_SETOR) ?? []), l]);
+  for (const g of grupos.values()) g.sort((a, b) => a.pessoa.nome.localeCompare(b.pessoa.nome, "pt-BR"));
+  return [...grupos.entries()].sort(([a], [b]) => (a === SEM_SETOR ? 1 : b === SEM_SETOR ? -1 : a.localeCompare(b, "pt-BR")));
+}
+
 function Resumo({ rotulo, valor, destaque = false }: { rotulo: string; valor: string; destaque?: boolean }) {
   return (
     <div className="min-w-0">
@@ -59,12 +67,7 @@ export default function TabelaDaFolha({
   aoEditar: (pessoaId: string) => void;
 }) {
   const contas = useMemo(() => new Map(linhas.map((l) => [l.pessoa.id, contaDoMes(l.valores, l.minutos, l.presencial, l)])), [linhas]);
-  const porSetor = useMemo(() => {
-    const grupos = new Map<string, LinhaFolha[]>();
-    for (const l of linhas) grupos.set(l.setor ?? SEM_SETOR, [...(grupos.get(l.setor ?? SEM_SETOR) ?? []), l]);
-    for (const g of grupos.values()) g.sort((a, b) => a.pessoa.nome.localeCompare(b.pessoa.nome, "pt-BR"));
-    return [...grupos.entries()].sort(([a], [b]) => (a === SEM_SETOR ? 1 : b === SEM_SETOR ? -1 : a.localeCompare(b, "pt-BR")));
-  }, [linhas]);
+  const porSetor = useMemo(() => agruparPorSetor(linhas), [linhas]);
 
   const comTotal = linhas.filter((l) => contas.get(l.pessoa.id)?.total !== null);
   const soma = (ls: LinhaFolha[], campo: "total" | "base" | "deslocamento" | "adicional" | "descontos") =>

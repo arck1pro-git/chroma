@@ -3,8 +3,9 @@
 // Mutação do Financeiro: salvarLinhaDaFolha, chamada pela gaveta do pagamento
 // (./gaveta-pagamento.tsx), que abre por cima da folha no Editar e no
 // "Adicionar colaborador" (2026-11-04). Grava nome (de quem é cadastrado à
-// mão), setor, atividade, PIX, tipo, valor hora, valor mês, taxa de
-// deslocamento, adicional e descontos do mês. Recarrega a página, porque o
+// mão), setor, atividade, PIX, tipo, valor hora, valor mês, se o deslocamento
+// conta (o check; o valor do dia é a regra do servidor), adicional e descontos
+// do mês. Recarrega a página, porque o
 // setor muda o agrupamento da folha. Grava a foto do mês aberto; o padrão do
 // cadastro só muda no mês corrente ou num futuro (lib/financeiro-pagamentos.ts).
 //
@@ -31,7 +32,7 @@ export async function salvarLinhaDaFolha(dados: {
   tipo: unknown;
   valorHora: unknown;
   valorMes: unknown;
-  taxaDeslocamento: unknown;
+  deslocamento: unknown;
   pix: unknown;
   adicional: unknown;
   descontos: unknown;

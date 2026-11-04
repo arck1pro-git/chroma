@@ -9,9 +9,14 @@
 // Salvar na gaveta recarrega a página pelo servidor (revalidatePath). A gaveta
 // fica em "Salvando…" até a folha nova chegar; aí fecha, e a linha salva mostra
 // "Salvo" um instante, já com os números novos.
+//
+// O "Exportar CSV" (2026-11-04) baixa a folha do mês aberto, montada aqui no
+// navegador com as mesmas linhas da tabela (./exportar-folha.ts). Aparece para
+// quem vê a folha, mesmo sem a permissão de editar.
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { UserPlus } from "@/app/components/icones";
+import { Download, UserPlus } from "@/app/components/icones";
 import { CabecalhoFinanceiro } from "./comum";
+import { baixarCsvDaFolha } from "./exportar-folha";
 import GavetaPagamento from "./gaveta-pagamento";
 import TabelaDaFolha, { type LinhaFolha } from "./tabela-da-folha";
 
@@ -89,16 +94,28 @@ export default function AreaDaFolha({
         legenda={legenda}
         navegacao={navegacao}
         acoes={
-          podeEditar && (
+          <>
             <button
               type="button"
-              onClick={() => setAberta(NOVO)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              onClick={() => baixarCsvDaFolha(linhas, mes)}
+              disabled={linhas.length === 0}
+              title={`Baixar a folha de ${mesNome.toLowerCase()} em CSV`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-2 text-[13px] font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
-              <UserPlus className="size-3.5" aria-hidden="true" />
-              Adicionar colaborador
+              <Download className="size-3.5" aria-hidden="true" />
+              Exportar CSV
             </button>
-          )
+            {podeEditar && (
+              <button
+                type="button"
+                onClick={() => setAberta(NOVO)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-3 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                <UserPlus className="size-3.5" aria-hidden="true" />
+                Adicionar colaborador
+              </button>
+            )}
+          </>
         }
       />
 

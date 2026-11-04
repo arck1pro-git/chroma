@@ -160,16 +160,20 @@ function lerPessoa(bruto: unknown): string {
   return bruto;
 }
 
-/** Tipo, valor hora, valor mês e taxa de deslocamento vindos da tela. Lança Recusa com a frase para a pessoa ler. */
+/** Tipo, valor hora, valor mês e se o deslocamento conta, vindos da tela. Lança Recusa com a frase para a pessoa ler. */
 function conferirValores(dados: Record<string, unknown>): ValoresPagamento {
-  const { tipo } = dados;
+  const { tipo, deslocamento } = dados;
   if (tipo !== "hora" && tipo !== "fixo") throw new Recusa("Escolha se a pessoa recebe por hora ou fixo.");
   const valorHora = lerValor(dados.valorHora, "Valor hora");
   const valorMes = lerValor(dados.valorMes, "Valor mês");
   if (tipo === "hora" && valorHora === null) throw new Recusa("Quem recebe por hora precisa do valor hora.");
   if (tipo === "fixo" && valorMes === null) throw new Recusa("Quem recebe fixo precisa do valor mês.");
-  // Taxa vazia é a da regra, gravada com o número: o mês lançado guarda o que valeu.
-  return { tipo, valorHora, valorMes, taxaDeslocamento: lerValor(dados.taxaDeslocamento, "Taxa de deslocamento") ?? TAXA_PRESENCIAL };
+  // O DESLOCAMENTO É UM CHECK NO CADASTRO (2026-11-04, "é definido ali se o
+  // sistema vai contabilizar isso ou não"): a tela diz só se conta, e o valor
+  // do dia é o da regra, decidido aqui. Marcado grava a taxa com o número (o
+  // mês lançado guarda o que valeu, mesmo que a regra mude); desmarcado grava 0.
+  if (typeof deslocamento !== "boolean") throw new Recusa("Marque se o deslocamento entra na conta.");
+  return { tipo, valorHora, valorMes, taxaDeslocamento: deslocamento ? TAXA_PRESENCIAL : 0 };
 }
 
 /** O que a gaveta do pagamento manda: o cadastro, os valores do mês, o adicional e os descontos do mês. */

@@ -20,9 +20,11 @@
 // aviso); o padrão do colaborador só muda quando o mês é o corrente ou um
 // futuro (`mudaPadrao`, lib/financeiro-pagamentos.ts). Enter salva, Esc fecha.
 //
-// O DESLOCAMENTO é a taxa × os dias com modalidade presencial no ponto. A taxa
-// já vem com os R$ 15 da regra (`TAXA_PRESENCIAL`, 2026-11-04); vazia também é
-// a da regra, e 0 = não recebe.
+// O DESLOCAMENTO é a taxa × os dias com modalidade presencial no ponto. Desde
+// 2026-11-04 é um check ("o deslocamento deve ser um check que tem no cadastro
+// do colaborador"): marcado, cada dia presencial soma os R$ 15 da regra
+// (`TAXA_PRESENCIAL`); desmarcado, não recebe. A tela manda só o check; o valor
+// do dia é decidido no servidor (lib/financeiro-pagamentos.ts).
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { contaDoMes, lerReais, NOVO_MANUAL, paraCampo, reais, TAXA_PRESENCIAL, type TipoPagamento } from "@/lib/financeiro-tipos";
@@ -277,7 +279,8 @@ function FormularioPagamento({
     tipo: (v?.tipo ?? (semPonto ? "fixo" : "hora")) as TipoPagamento,
     valorHora: paraCampo(v?.valorHora ?? null),
     valorMes: paraCampo(v?.valorMes ?? null),
-    taxa: paraCampo(v?.taxaDeslocamento ?? TAXA_PRESENCIAL),
+    // Taxa vazia (cadastro de antes da regra) é a da regra: conta.
+    deslocamento: (v?.taxaDeslocamento ?? TAXA_PRESENCIAL) > 0,
     adicional: linha.adicional ? paraCampo(linha.adicional) : "",
     descontos: linha.descontos ? paraCampo(linha.descontos) : "",
   });
@@ -288,13 +291,12 @@ function FormularioPagamento({
 
   const vh = lerReais(f.valorHora);
   const vm = lerReais(f.valorMes);
-  const tx = lerReais(f.taxa);
-  const taxa = tx ?? TAXA_PRESENCIAL;
+  const taxa = f.deslocamento ? TAXA_PRESENCIAL : 0;
   const ad = lerReais(f.adicional);
   const de = lerReais(f.descontos);
   const falta = manual && !f.nome.trim()
     ? "Escreva o nome do colaborador."
-    : [vh, vm, tx, ad, de].some((x) => x === undefined)
+    : [vh, vm, ad, de].some((x) => x === undefined)
     ? "Algum valor não é um número em reais (ex.: 1.500,00)."
     : f.tipo === "hora" && vh === null
       ? "Falta o valor hora."
@@ -302,8 +304,8 @@ function FormularioPagamento({
         ? "Falta o valor mês."
         : null;
   const conta = useMemo(
-    () => contaDoMes({ tipo: f.tipo, valorHora: vh ?? null, valorMes: vm ?? null, taxaDeslocamento: tx ?? null }, linha.minutos, linha.presencial, { adicional: ad ?? 0, descontos: de ?? 0 }),
-    [f.tipo, vh, vm, tx, ad, de, linha.minutos, linha.presencial],
+    () => contaDoMes({ tipo: f.tipo, valorHora: vh ?? null, valorMes: vm ?? null, taxaDeslocamento: taxa }, linha.minutos, linha.presencial, { adicional: ad ?? 0, descontos: de ?? 0 }),
+    [f.tipo, vh, vm, taxa, ad, de, linha.minutos, linha.presencial],
   );
 
   function salvar() {
@@ -320,7 +322,7 @@ function FormularioPagamento({
         tipo: f.tipo,
         valorHora: vh,
         valorMes: vm,
-        taxaDeslocamento: tx,
+        deslocamento: f.deslocamento,
         pix: f.pix,
         adicional: ad,
         descontos: de,
@@ -392,16 +394,22 @@ function FormularioPagamento({
             <Campo rotulo="Valor mês" dica={f.tipo === "fixo" ? "Entra na conta, trabalhe quanto trabalhar." : "Guardado, mas fora da conta (recebe por hora)."}>
               <CampoReais valor={f.valorMes} aoMudar={(x) => muda({ valorMes: x })} rotulo="Valor mês" apagado={f.tipo === "hora"} />
             </Campo>
-            <Campo
-              rotulo="Por dia presencial"
-              dica={
-                semPonto
-                  ? "Sem ponto não há dias presenciais: o deslocamento dá zero. Use o adicional."
-                  : `Cada dia presencial no ponto soma este valor (${linha.presencial} em ${mesMinusculo}). Padrão ${reais(TAXA_PRESENCIAL)}; 0: não recebe.`
-              }
-            >
-              <CampoReais valor={f.taxa} aoMudar={(x) => muda({ taxa: x })} rotulo="Por dia presencial" />
-            </Campo>
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-zinc-200 px-3 py-2.5 transition hover:border-zinc-300 sm:col-span-2 dark:border-zinc-700 dark:hover:border-zinc-600">
+              <input
+                type="checkbox"
+                checked={f.deslocamento}
+                onChange={(e) => muda({ deslocamento: e.target.checked })}
+                className="mt-0.5 size-4 shrink-0 cursor-pointer accent-zinc-900 dark:accent-zinc-100"
+              />
+              <span className="min-w-0">
+                <span className="block text-[13px] font-medium text-zinc-900 dark:text-zinc-100">Contabilizar deslocamento</span>
+                <span className="mt-0.5 block text-[11.5px] leading-snug text-zinc-500 dark:text-zinc-400">
+                  {semPonto
+                    ? "Sem ponto não há dias presenciais: o deslocamento dá zero. Use o adicional."
+                    : `${reais(TAXA_PRESENCIAL)} por dia com modalidade presencial no ponto (${linha.presencial} em ${mesMinusculo}). Desmarcado, não recebe.`}
+                </span>
+              </span>
+            </label>
           </Bloco>
 
           <Bloco titulo={`Lançamentos de ${mesMinusculo}`}>
