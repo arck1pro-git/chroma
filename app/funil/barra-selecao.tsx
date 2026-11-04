@@ -20,11 +20,12 @@ import {
   moverParaEtapa,
   moverParaResponsavel,
 } from "./actions";
+import EscolherRetorno from "./escolher-retorno";
 
 export type FluxoDisponivel = { id: string; nome: string };
 
-/** Uma etapa do funil aberto, destino do "Mover para a etapa". */
-export type EtapaDestino = { id: string; nome: string };
+/** Uma etapa do funil aberto, destino do "Mover para a etapa". `pedeRetorno`: só entra com o dia de retomar. */
+export type EtapaDestino = { id: string; nome: string; pedeRetorno: boolean };
 
 type Painel = "etapa" | "responsavel" | "segmento" | "fluxo" | null;
 
@@ -50,7 +51,11 @@ export default function BarraSelecao({
   // Etapa com cadência à espera do "Mover": mover é desfazível, a mensagem que
   // a cadência manda não é. Quem diz que precisa confirmar, e quantas recebem,
   // é o servidor (moverParaEtapa) — só o botão "Mover" daqui confirma.
-  const [confirmando, setConfirmando] = useState<{ etapa: EtapaDestino; quantas: number } | null>(null);
+  const [confirmando, setConfirmando] = useState<{ etapa: EtapaDestino; quantas: number; retomarEm: string | null } | null>(null);
+  // Etapa que pede retorno (a "interesse futuro"): antes de mover, o dia de
+  // retomar, o mesmo para a seleção inteira (./escolher-retorno.tsx).
+  const [pedindoRetorno, setPedindoRetorno] = useState<EtapaDestino | null>(null);
+  const [erroRetorno, setErroRetorno] = useState<string | null>(null);
   const [ocupado, comecar] = useTransition();
 
   if (selecionados.length === 0) return null;
@@ -64,18 +69,31 @@ export default function BarraSelecao({
     setPainel((atual) => (atual === qual ? null : qual));
   }
 
-  function moverPara(etapa: EtapaDestino, confirmado = false) {
+  function moverPara(etapa: EtapaDestino, confirmado = false, retomarEm: string | null = null) {
+    if (etapa.pedeRetorno && !retomarEm) {
+      setErroRetorno(null);
+      setPedindoRetorno(etapa);
+      return;
+    }
     comecar(async () => {
-      const r = await moverParaEtapa(selecionados, etapa.id, confirmado);
+      const r = await moverParaEtapa(selecionados, etapa.id, confirmado, retomarEm);
       if (r.confirmar) {
         setAviso(null);
-        setConfirmando({ etapa, quantas: r.confirmar });
+        setPedindoRetorno(null);
+        setConfirmando({ etapa, quantas: r.confirmar, retomarEm });
         return;
       }
+      // Recusa do dia de retomar: fica na janela, com a frase.
+      if (!r.ok && pedindoRetornoAberta(etapa)) return setErroRetorno(r.mensagem);
+      setPedindoRetorno(null);
       setConfirmando(null);
       setAviso({ ok: r.ok, texto: r.mensagem });
       setPainel(null);
     });
+  }
+
+  function pedindoRetornoAberta(etapa: EtapaDestino) {
+    return etapa.pedeRetorno && pedindoRetorno?.id === etapa.id;
   }
 
   /**
@@ -223,7 +241,7 @@ export default function BarraSelecao({
             </p>
             <button
               type="button"
-              onClick={() => moverPara(confirmando.etapa, true)}
+              onClick={() => moverPara(confirmando.etapa, true, confirmando.retomarEm)}
               disabled={ocupado}
               className="rounded-lg bg-zinc-900 px-2.5 py-1 text-[12px] font-medium text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
             >
@@ -285,6 +303,19 @@ export default function BarraSelecao({
           </p>
         )}
       </div>
+
+      {pedindoRetorno && (
+        <div className="pointer-events-auto">
+          <EscolherRetorno
+            etapaNome={pedindoRetorno.nome}
+            quantas={n}
+            ocupado={ocupado}
+            erro={erroRetorno}
+            aoConfirmar={(retomarEm) => moverPara(pedindoRetorno, false, retomarEm)}
+            aoCancelar={() => setPedindoRetorno(null)}
+          />
+        </div>
+      )}
     </div>
   );
 }

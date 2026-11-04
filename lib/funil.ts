@@ -127,7 +127,7 @@ export async function carregarFunil(
     sql`SELECT id, nome, descricao, cor FROM funis ORDER BY data_criacao`,
     // Sem `cor`: ela é derivada abaixo, a partir da cor do FUNIL e da posição
     // da etapa. Ver lib/cores-funil.ts.
-    sql`SELECT id, nome, funil_id, ordem, ia_id, ocultar_leads FROM etapas ORDER BY funil_id, ordem`,
+    sql`SELECT id, nome, funil_id, ordem, ia_id, ocultar_leads, pede_retorno FROM etapas ORDER BY funil_id, ordem`,
     // dias_na_etapa é aproximado por now()-data_criacao (não há registro de quando
     // entrou na etapa). Ver comentário no migration-front.sql.
     // O filtro do escopo 'proprio' entra AQUI, na cláusula, e não numa segunda
@@ -135,6 +135,7 @@ export async function carregarFunil(
     // a mesma para quem vê tudo e para quem vê só o seu.
     sql`
       SELECT id, nome, contato_id, valor::float8 AS valor, responsavel_id, status, funil_id, etapa_id, campos,
+             to_char(retomar_em, 'YYYY-MM-DD') AS retomar_em,
              to_char(data_criacao AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS data_criacao,
              (CURRENT_DATE - data_criacao::date) AS dias_na_etapa
       FROM oportunidades

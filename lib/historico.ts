@@ -83,32 +83,45 @@ export async function moverEtapaRegistrando(
   etapaId: string,
   funilId: string,
   complemento = "",
+  retomarEm: string | null = null,
 ): Promise<boolean> {
-  return (await moverEtapaRegistrandoLote([oportunidadeId], etapaId, funilId, complemento)).length > 0;
+  return (await moverEtapaRegistrandoLote([oportunidadeId], etapaId, funilId, complemento, retomarEm)).length > 0;
 }
 
 /**
  * O mesmo para uma lista — a seleção do quadro movida de uma vez (2026-10-26):
  * um UPDATE e todas as linhas de histórico na mesma consulta, pela mesma razão
  * de cima. Devolve as que mudaram de etapa.
+ *
+ * ETAPA QUE PEDE RETORNO (a "interesse futuro", 2026-11-04: "só dá pra mover
+ * pra essa etapa se fizer isso"): sem `retomarEm`, o UPDATE não pega ninguém,
+ * venha de onde vier (arraste, lote, IA, cadência, campanha). Com ela, grava o
+ * dia; saindo para uma etapa que não pede, o dia é apagado. A trava mora aqui,
+ * na consulta, para nenhum caminho novo de mover escapar dela.
  */
 export async function moverEtapaRegistrandoLote(
   oportunidadeIds: string[],
   etapaId: string,
   funilId: string,
   complemento = "",
+  retomarEm: string | null = null,
 ): Promise<string[]> {
   if (oportunidadeIds.length === 0) return [];
   const ids = listaUuid(oportunidadeIds);
   const registradas = await sql`
-    WITH antes AS (
+    WITH destino AS (
+      SELECT pede_retorno FROM etapas WHERE id = ${etapaId}
+    ),
+    antes AS (
       SELECT id, contato_id, etapa_id FROM oportunidades
        WHERE id = ANY(string_to_array(${ids}, ',')::uuid[])
     ),
     movida AS (
       UPDATE oportunidades
-      SET etapa_id = ${etapaId}, funil_id = ${funilId}
+      SET etapa_id = ${etapaId}, funil_id = ${funilId},
+          retomar_em = CASE WHEN (SELECT pede_retorno FROM destino) THEN ${retomarEm}::date END
       WHERE id = ANY(string_to_array(${ids}, ',')::uuid[])
+        AND (NOT coalesce((SELECT pede_retorno FROM destino), false) OR ${retomarEm}::date IS NOT NULL)
       RETURNING id
     )
     INSERT INTO historico (contato_id, oportunidade_id, descricao)
@@ -117,6 +130,7 @@ export async function moverEtapaRegistrandoLote(
            ' para ' || coalesce(para.nome, 'etapa desconhecida') ||
            ${complemento.slice(0, 500)}::text
     FROM antes a
+    JOIN movida m ON m.id = a.id
     LEFT JOIN etapas de   ON de.id = a.etapa_id
     LEFT JOIN etapas para ON para.id = ${etapaId}
     WHERE a.etapa_id IS DISTINCT FROM ${etapaId}::uuid

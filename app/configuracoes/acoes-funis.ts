@@ -143,6 +143,20 @@ export async function definirEventoMetaDaEtapa(
   return { ok: true };
 }
 
+/**
+ * A etapa só aceita a oportunidade com o dia de retomar o contato (a "interesse
+ * futuro", 2026-11-04; a trava está em lib/historico.ts). Ligar não mexe em
+ * quem já está nela: esses ficam sem dia até alguém movê-los de novo.
+ */
+export async function definirPedeRetorno(id: string, pede: boolean): Promise<ResultadoAcao> {
+  await exigirModulo("configuracoes", "editar");
+  if (!ehUuid(id)) return { ok: false, erro: "Etapa inválida." };
+  await sql`UPDATE etapas SET pede_retorno = ${pede === true} WHERE id = ${id}`;
+  revalidatePath("/configuracoes", "layout");
+  revalidatePath("/");
+  return { ok: true };
+}
+
 // Recebe os ids na ordem final (é o que o drag-and-drop já resolveu na tela)
 // e regrava 1..N. Em transação: uma reordenação pela metade deixaria duas
 // etapas com o mesmo `ordem` e o quadro empilharia colunas.

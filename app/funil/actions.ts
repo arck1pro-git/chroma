@@ -24,7 +24,8 @@ import {
   ehDuplicadaNoFunil,
   jaTemAberta,
 } from "@/lib/oportunidades";
-import { entrarNaCadencia, moverOportunidadeDeEtapa, moverOportunidadesDeEtapa } from "@/lib/mover-etapa";
+import { dataCurta } from "@/lib/formato";
+import { conferirRetomarEm, entrarNaCadencia, moverOportunidadeDeEtapa, moverOportunidadesDeEtapa } from "@/lib/mover-etapa";
 import type { ResultadoAcao } from "@/lib/resultado-acao";
 import {
   registrarOportunidadeCriada,
@@ -47,15 +48,35 @@ export async function moverOportunidade(
   id: string,
   etapaId: string,
   funilId: string,
+  retomarEm: unknown = null,
 ): Promise<ResultadoAcao> {
   // No escopo "próprio", só a oportunidade de que a pessoa é responsável
   // (lib/auth/escopo-oportunidades.ts).
   if (!(await podeTocarOportunidade(id, "editar"))) return { ok: false, erro: FORA_DO_ESCOPO };
+  if (!ehUuid(etapaId)) return { ok: false, erro: "Etapa inválida." };
+  const retorno = await retornoParaEtapa(etapaId, retomarEm);
+  if ("erro" in retorno) return { ok: false, erro: retorno.erro };
   // Histórico, cadência da etapa e evento da Meta: o mesmo caminho da IA que
   // move oportunidade pelo WhatsApp (lib/mover-etapa.ts).
-  await moverOportunidadeDeEtapa(id, etapaId, funilId);
+  await moverOportunidadeDeEtapa(id, etapaId, funilId, retorno.complemento, retorno.retomarEm);
   revalidatePath("/");
   return { ok: true };
+}
+
+/**
+ * A etapa pede o dia de retomar o contato (a "interesse futuro", 2026-11-04)?
+ * Então ele tem que vir, válido, e vai para o histórico ("… · retomar o contato
+ * em 12 mar 2027"). Etapa que não pede ignora o que vier.
+ */
+async function retornoParaEtapa(
+  etapaId: string,
+  bruto: unknown,
+): Promise<{ retomarEm: string | null; complemento: string } | { erro: string }> {
+  const [etapa] = await sql`SELECT pede_retorno FROM etapas WHERE id = ${etapaId}`;
+  if (!etapa?.pede_retorno) return { retomarEm: null, complemento: "" };
+  const r = conferirRetomarEm(bruto);
+  if ("erro" in r) return r;
+  return { retomarEm: r.data, complemento: ` · retomar o contato em ${dataCurta(r.data)}` };
 }
 
 // ── Status da oportunidade ──────────────────────────────────────────────────
@@ -317,6 +338,14 @@ export async function criarOportunidade(
   // contato_id é NOT NULL no schema (oportunidade é sempre de um contato).
   if (!dados.contato_id) return { ok: false, erro: "Selecione um contato" };
 
+  // Etapa que pede o dia de retomar (a "interesse futuro") não recebe card novo:
+  // ele nasce em outra e é arrastado para lá, escolhendo o dia.
+  if (!ehUuid(etapaId)) return { ok: false, erro: "Etapa inválida." };
+  const [destino] = await sql`SELECT nome, pede_retorno FROM etapas WHERE id = ${etapaId}`;
+  if (destino?.pede_retorno) {
+    return { ok: false, erro: `Crie em outra etapa e arraste para “${destino.nome}”, escolhendo quando retomar o contato.` };
+  }
+
   // Uma aberta por contato em cada funil (migration-oportunidade-unica.sql).
   // A consulta aqui é pela MENSAGEM — quem garante a regra é o índice, e é por
   // isso que o INSERT abaixo também trata a violação: entre esta linha e ele
@@ -482,6 +511,7 @@ export async function moverParaEtapa(
   oportunidadeIds: string[],
   etapaId: string,
   confirmado = false,
+  retomarEm: unknown = null,
 ): Promise<ResultadoLote> {
   const { ids } = await oportunidadesNoEscopo(idsValidos(oportunidadeIds), "editar");
   if (ids.length === 0) return { ok: false, mensagem: "Nada selecionado (ou nada seu na seleção)." };
@@ -489,6 +519,9 @@ export async function moverParaEtapa(
 
   const [etapa] = await sql`SELECT id, funil_id, nome FROM etapas WHERE id = ${etapaId}`;
   if (!etapa) return { ok: false, mensagem: "Etapa não encontrada." };
+  // Etapa que pede retorno: o mesmo dia para a seleção inteira.
+  const retorno = await retornoParaEtapa(etapaId, retomarEm);
+  if ("erro" in retorno) return { ok: false, mensagem: retorno.erro };
 
   const doFunil = (await sql`
     SELECT id FROM oportunidades
@@ -505,11 +538,13 @@ export async function moverParaEtapa(
   }
   if (entrariam > 0 && !confirmado) return { ok: false, mensagem: "", confirmar: entrariam };
 
-  const mudaram = await moverOportunidadesDeEtapa(doFunil, etapaId, etapa.funil_id as string);
+  const mudaram = await moverOportunidadesDeEtapa(doFunil, etapaId, etapa.funil_id as string, retorno.complemento, retorno.retomarEm);
   revalidatePath("/");
 
   const partes = [
-    `${mudaram.length} ${mudaram.length === 1 ? "oportunidade movida" : "oportunidades movidas"} para “${etapa.nome}”.`,
+    `${mudaram.length} ${mudaram.length === 1 ? "oportunidade movida" : "oportunidades movidas"} para “${etapa.nome}”${
+      retorno.retomarEm ? `, retomar o contato em ${dataCurta(retorno.retomarEm)}` : ""
+    }.`,
   ];
   const jaEstavam = doFunil.length - mudaram.length;
   if (jaEstavam > 0) partes.push(`${jaEstavam} já ${jaEstavam === 1 ? "estava" : "estavam"} nela.`);

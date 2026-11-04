@@ -55,6 +55,7 @@ import { corValida, tomEscuro } from "@/lib/cores-funil";
 import FichaOportunidade from "../funil/ficha-oportunidade";
 import FormOportunidade, { type DadosOportunidade } from "../funil/form-oportunidade";
 import { criarOportunidade, moverOportunidade } from "../funil/actions";
+import EscolherRetorno from "../funil/escolher-retorno";
 import { SeletorMenu } from "../components/filtros-ui";
 import PainelFiltros from "../funil/painel-filtros";
 import DashboardMetaAds from "./dashboard-meta-ads";
@@ -106,6 +107,13 @@ function quadroDe(oportunidades: Oportunidade[], etapas: Etapa[]): Quadro {
   return mapa;
 }
 
+// A ordem da coluna que pede retorno: pelo dia de retomar, o mais cedo (e o já
+// vencido) em cima; sem dia (de antes da etapa pedir), no fim.
+function porDiaDeRetomar(a: Oportunidade, b: Oportunidade) {
+  if (!a.retomar_em || !b.retomar_em) return a.retomar_em ? -1 : b.retomar_em ? 1 : 0;
+  return a.retomar_em.localeCompare(b.retomar_em);
+}
+
 function etapaDe(id: UniqueIdentifier, mapa: Quadro) {
   const chave = String(id);
   if (chave in mapa) return chave;
@@ -148,6 +156,7 @@ function CartaoArrastavel({
   tags,
   ia,
   pediuAtendimento,
+  retomarEm,
   aoAbrir,
   selecionado,
   modoSelecao,
@@ -161,6 +170,8 @@ function CartaoArrastavel({
   tags: Tag[];
   ia: string | null;
   pediuAtendimento: boolean;
+  /** O dia de retomar, só na etapa que pede retorno (ver CartaoOportunidade). */
+  retomarEm: string | null;
   aoAbrir: (id: string) => void;
   selecionado: boolean;
   // há algum cartão marcado no quadro: as caixas de todos aparecem
@@ -234,6 +245,7 @@ function CartaoArrastavel({
         tags={tags}
         ia={ia}
         pediuAtendimento={pediuAtendimento}
+        retomarEm={retomarEm}
       />
     </article>
   );
@@ -350,8 +362,10 @@ function ColunaResumo({
     });
   }
   // O que a coluna DESENHA. Com a etapa oculta, nada: nem card, nem caixa de
-  // marcar a etapa (marcar o que não se vê mandaria lote às cegas).
-  const mostradas = esconder ? [] : oportunidades;
+  // marcar a etapa (marcar o que não se vê mandaria lote às cegas). Na etapa
+  // que pede retorno (a "interesse futuro"), pelo dia de retomar: quem já
+  // venceu fica no topo, e depois quem vence antes.
+  const mostradas = esconder ? [] : etapa.pede_retorno ? [...oportunidades].sort(porDiaDeRetomar) : oportunidades;
 
   // Quantas da coluna estão marcadas. `mostradas` é o que a coluna MOSTRA
   // (já passou pelos filtros), então marcar a etapa com filtro ligado marca só
@@ -555,6 +569,9 @@ function ColunaResumo({
             cortavam "tentando contato" e "reunião agendada". Assim a linha de
             cima fica com o que a etapa É (nome, quantas, quanto) e a de baixo
             com o que se FAZ nela. */}
+        {/* Na etapa que pede retorno o card não nasce: entra arrastado, com o
+            dia de retomar (o servidor recusa criar nela, app/funil/actions.ts). */}
+        {!etapa.pede_retorno && (
         <button
           type="button"
           onClick={() => aoAdicionar(etapa.id)}
@@ -564,6 +581,7 @@ function ColunaResumo({
         >
           <Plus className="size-3.5" aria-hidden="true" />
         </button>
+        )}
         </div>
       </div>
 
@@ -624,6 +642,7 @@ function ColunaResumo({
                   tags={contato ? (tagsDoContato.get(contato.id) ?? []) : []}
                   ia={corDoRobo(contato, etapa)}
                   pediuAtendimento={contato ? pediramAtendimento.has(contato.id) : false}
+                  retomarEm={etapa.pede_retorno ? (o.retomar_em ?? null) : null}
                   aoAbrir={aoAbrir}
                   selecionado={selecionados.has(o.id)}
                   modoSelecao={selecionados.size > 0}
@@ -958,6 +977,28 @@ export default function Inicio({
   const [idArrastando, setIdArrastando] = useState<UniqueIdentifier | null>(null);
   // etapa de origem, pra saber no fim se o card realmente mudou de coluna
   const etapaInicialRef = useRef<string | undefined>(undefined);
+  // O card solto numa etapa que pede retorno, à espera do dia de retomar.
+  const [retornoPendente, setRetornoPendente] = useState<{ id: string; etapaId: string; funilId: string } | null>(null);
+  const [erroRetorno, setErroRetorno] = useState<string | null>(null);
+  const [gravandoRetorno, iniciarRetorno] = useTransition();
+
+  function confirmarRetorno(retomarEm: string) {
+    if (!retornoPendente) return;
+    const { id, etapaId, funilId } = retornoPendente;
+    setErroRetorno(null);
+    iniciarRetorno(async () => {
+      const r = await moverOportunidade(id, etapaId, funilId, retomarEm);
+      if (!r.ok) return setErroRetorno(r.erro);
+      setRetornoPendente(null);
+    });
+  }
+
+  // Desistiu: o card volta para onde estava (o quadro do banco, que não mudou).
+  function cancelarRetorno() {
+    setRetornoPendente(null);
+    setErroRetorno(null);
+    setQuadro(quadroDe(oportunidades, etapas));
+  }
 
   const emArraste = idArrastando
     ? (oportunidadePorId.get(String(idArrastando)) ?? null)
@@ -1011,7 +1052,11 @@ export default function Inicio({
       etapaDe(active.id, quadro);
     const mudouEtapa =
       destinoFinal && destinoFinal !== etapaInicialRef.current;
-    if (mudouEtapa && funil) {
+    // Etapa que pede retorno: o card fica na coluna nova, mas só grava depois
+    // de escolher quando retomar (EscolherRetorno, lá embaixo).
+    if (mudouEtapa && funil && dados.etapaPorId.get(destinoFinal)?.pede_retorno) {
+      setRetornoPendente({ id: String(active.id), etapaId: destinoFinal, funilId: funil.id });
+    } else if (mudouEtapa && funil) {
       startTransition(async () => {
         try {
           const r = await moverOportunidade(String(active.id), destinoFinal, funil.id);
@@ -1336,6 +1381,7 @@ export default function Inicio({
                             }
                             ia={corDoRobo(contatoEmArraste, dados.etapaPorId.get(emArraste.etapa_id))}
                             pediuAtendimento={contatoEmArraste ? pediramAtendimento.has(contatoEmArraste.id) : false}
+                            retomarEm={dados.etapaPorId.get(emArraste.etapa_id)?.pede_retorno ? (emArraste.retomar_em ?? null) : null}
                             arrastando
                           />
                         </div>
@@ -1363,7 +1409,7 @@ export default function Inicio({
         selecionados={[...selecionados]}
         // Etapas do funil aberto. Se a escolhida tem cadência, quem pede
         // confirmação é o servidor (moverParaEtapa), com a conta real.
-        etapas={etapasDoFunil.map((e) => ({ id: e.id, nome: e.nome }))}
+        etapas={etapasDoFunil.map((e) => ({ id: e.id, nome: e.nome, pedeRetorno: Boolean(e.pede_retorno) }))}
         usuarios={usuarios}
         segmentos={segmentos}
         fluxos={fluxosParaInscricao}
@@ -1484,6 +1530,16 @@ export default function Inicio({
           todosSegmentos={dados.segmentos}
           aoAbrirOportunidade={abrirOportunidade}
           aoFechar={() => setOpAbertaId(null)}
+        />
+      )}
+
+      {retornoPendente && (
+        <EscolherRetorno
+          etapaNome={dados.etapaPorId.get(retornoPendente.etapaId)?.nome ?? ""}
+          ocupado={gravandoRetorno}
+          erro={erroRetorno}
+          aoConfirmar={confirmarRetorno}
+          aoCancelar={cancelarRetorno}
         />
       )}
 

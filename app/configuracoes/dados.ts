@@ -58,7 +58,7 @@ export type VinculosDaEtapa = {
 export async function carregarFunis(): Promise<DadosFunis> {
   const [funis, etapas, contagens, webhooks, cadencias] = await Promise.all([
     sql`SELECT id, nome, descricao, cor FROM funis ORDER BY data_criacao`,
-    sql`SELECT id, nome, funil_id, ordem, cor, meta_evento FROM etapas ORDER BY funil_id, ordem`,
+    sql`SELECT id, nome, funil_id, ordem, cor, meta_evento, pede_retorno FROM etapas ORDER BY funil_id, ordem`,
     // Quantas oportunidades em cada etapa. É o número que diz se renomear ou
     // reordenar uma etapa mexe com alguém — e a tela não tinha nenhum.
     sql`SELECT etapa_id, count(*)::int AS n FROM oportunidades GROUP BY etapa_id`,

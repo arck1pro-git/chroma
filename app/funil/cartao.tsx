@@ -1,6 +1,6 @@
 import type { Contato, Oportunidade, Tag, Usuario } from "@/lib/entidades";
-import { brl, localizacao } from "@/lib/formato";
-import { Bot, Clock, Hand, User } from "@/app/components/icones";
+import { brl, dataCurta, hojeEmBrasilia, localizacao } from "@/lib/formato";
+import { BellRing, Bot, CalendarClock, Clock, Hand, User } from "@/app/components/icones";
 
 // Cartão de oportunidade do kanban. Arquivo próprio porque dois lugares montam
 // o mesmo cartão — o quadro da tela inicial e as colunas do painel de
@@ -16,6 +16,7 @@ export default function CartaoOportunidade({
   arrastando = false,
   ia = null,
   pediuAtendimento = false,
+  retomarEm = null,
 }: {
   oportunidade: Oportunidade;
   contato?: Contato;
@@ -26,7 +27,13 @@ export default function CartaoOportunidade({
   ia?: string | null;
   /** O lead foi para o atendimento humano e ninguém da equipe respondeu ainda (lib/funil.ts). */
   pediuAtendimento?: boolean;
+  /**
+   * O dia de retomar o contato, só na etapa que pede retorno (a "interesse
+   * futuro"); null nas outras. Chegado o dia, vira a pill "Retomar contato".
+   */
+  retomarEm?: string | null;
 }) {
+  const retomarHoje = Boolean(retomarEm && retomarEm <= hojeEmBrasilia());
   // tela-baixa: (app/globals.css) — no tablet deitado o cartão perde respiro,
   // não conteúdo. Com p-3 e os vãos menores cabe quase um cartão a mais por
   // coluna, e é isso que a tela baixa precisa.
@@ -67,6 +74,27 @@ export default function CartaoOportunidade({
             <Hand className="size-3" aria-hidden="true" />
             Atendimento humano
           </span>
+        </p>
+      )}
+
+      {/* O dia de retomar (interesse futuro, 2026-11-04): a data enquanto não
+          chega; chegado o dia, a pill âmbar, e a coluna põe o card no topo. */}
+      {retomarEm && (
+        <p className="mt-1.5">
+          {retomarHoje ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30"
+              title={`Era para retomar o contato em ${dataCurta(retomarEm)}`}
+            >
+              <BellRing className="size-3" aria-hidden="true" />
+              Retomar contato
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400" title="Dia de retomar o contato">
+              <CalendarClock className="size-3 shrink-0" aria-hidden="true" />
+              Retomar em {dataCurta(retomarEm)}
+            </span>
+          )}
         </p>
       )}
 

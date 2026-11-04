@@ -57,8 +57,13 @@ export async function removerEtapaNoBanco(
     if (movidas + webhooks > 0) {
       if (!destinoId) return { erro: "Escolha para qual etapa vão as oportunidades desta." };
       const [destino] = await tx`
-        SELECT id, nome FROM etapas WHERE id = ${destinoId} AND funil_id = ${etapa.funil_id}`;
+        SELECT id, nome, pede_retorno FROM etapas WHERE id = ${destinoId} AND funil_id = ${etapa.funil_id}`;
       if (!destino) return { erro: "A etapa de destino precisa ser deste mesmo funil." };
+      // A etapa que pede retorno só aceita lead com o dia de retomar, um a um
+      // (lib/historico.ts); despejar a etapa inteira lá furaria a regra.
+      if (destino.pede_retorno) {
+        return { erro: `“${destino.nome}” pede o dia de retomar o contato de cada lead. Escolha outra etapa como destino.` };
+      }
 
       // O histórico ANTES do UPDATE: depois dele não há mais como achar quem
       // estava na etapa removida.
@@ -68,7 +73,8 @@ export async function removerEtapaNoBanco(
                ${`Movida de ${etapa.nome} para ${destino.nome} — a etapa ${etapa.nome} foi removida do funil`}
           FROM oportunidades o
          WHERE o.etapa_id = ${etapaId}`;
-      await tx`UPDATE oportunidades SET etapa_id = ${destinoId} WHERE etapa_id = ${etapaId}`;
+      // O dia de retomar só vale na etapa que pede retorno, e o destino não pede.
+      await tx`UPDATE oportunidades SET etapa_id = ${destinoId}, retomar_em = NULL WHERE etapa_id = ${etapaId}`;
       await tx`UPDATE webhook_acoes SET etapa_id = ${destinoId} WHERE etapa_id = ${etapaId}`;
     }
 

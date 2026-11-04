@@ -40,6 +40,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { Etapa, Funil } from "@/lib/entidades";
 import {
+  CalendarClock,
   Check,
   ChevronDown,
   Columns3,
@@ -59,6 +60,7 @@ import {
   criarEtapa,
   criarFunil,
   definirEventoMetaDaEtapa,
+  definirPedeRetorno,
   editarCorDoFunil,
   editarEtapa,
   editarFunil,
@@ -699,6 +701,7 @@ function EtapaLinha({
             <div className="hidden w-52 shrink-0 @2xl:block">
               <EventoMetaDaEtapa key={etapa.meta_evento ?? ""} etapa={etapa} />
             </div>
+            <PedeRetornoDaEtapa key={String(etapa.pede_retorno ?? false)} etapa={etapa} aoErrar={setErro} />
             <BotaoIcone
               rotulo={`Renomear ${etapa.nome}`}
               onClick={() => setEditando(true)}
@@ -726,7 +729,8 @@ function EtapaLinha({
           etapa={etapa}
           oportunidades={oportunidades}
           vinculos={vinculos}
-          outras={outras}
+          // A etapa que pede retorno não serve de destino (lib/etapas.ts recusa).
+          outras={outras.filter((o) => !o.pede_retorno)}
           aoCancelar={() => setRemovendo(false)}
         />
       )}
@@ -864,6 +868,49 @@ function RemoverEtapa({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * O relógio da linha: ligado, a etapa só aceita a oportunidade com o dia de
+ * retomar o contato (a "interesse futuro", 2026-11-04). Grava no clique.
+ */
+function PedeRetornoDaEtapa({ etapa, aoErrar }: { etapa: Etapa; aoErrar: (erro: string | null) => void }) {
+  const [ligado, setLigado] = useState(etapa.pede_retorno ?? false);
+  const [salvando, iniciar] = useTransition();
+
+  function alternar() {
+    const novo = !ligado;
+    aoErrar(null);
+    setLigado(novo);
+    iniciar(async () => {
+      const r = await definirPedeRetorno(etapa.id, novo);
+      if (!r.ok) {
+        setLigado(!novo);
+        aoErrar(r.erro);
+      }
+    });
+  }
+
+  const rotulo = ligado
+    ? `${etapa.nome} pede o dia de retomar o contato para receber o lead. Clique para desligar.`
+    : `Fazer ${etapa.nome} pedir o dia de retomar o contato para receber o lead`;
+  return (
+    <button
+      type="button"
+      onClick={alternar}
+      disabled={salvando}
+      aria-pressed={ligado}
+      aria-label={rotulo}
+      title={rotulo}
+      className={`flex size-8 shrink-0 items-center justify-center rounded-lg transition disabled:opacity-60 ${
+        ligado
+          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+          : "text-zinc-400 opacity-0 hover:bg-zinc-100 hover:text-zinc-900 focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+      }`}
+    >
+      <CalendarClock className="size-3.5" aria-hidden="true" />
+    </button>
   );
 }
 

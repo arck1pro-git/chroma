@@ -59,6 +59,10 @@ export type Etapa = {
   // coluna; migration-etapa-ocultar-leads.sql). A coluna segue com contagem e
   // valor; desmarcar o olho mostra de novo.
   ocultar_leads?: boolean;
+  // A etapa só aceita a oportunidade com o dia de retomar o contato (a
+  // "interesse futuro", migration-interesse-futuro.sql). Liga em
+  // Configurações › Funis.
+  pede_retorno?: boolean;
   // A cor do FUNIL (o nome do tom, 'blue'), para o robô dos cards sair nela.
   // Derivada no carregamento, como `cor`.
   tom_funil?: string;
@@ -77,6 +81,9 @@ export type Oportunidade = {
   // Derivado: aproximado por hoje − data_criacao, porque não há registro de
   // quando a oportunidade entrou na etapa atual.
   dias_na_etapa: number;
+  // O dia de retomar o contato ('AAAA-MM-DD'), gravado ao entrar numa etapa
+  // que pede retorno; null fora dela. Opcional pelo mesmo motivo de `campos`.
+  retomar_em?: string | null;
   // Valores dos campos personalizados, indexados pela `chave` da definição
   // (ver migration-campos-personalizados.sql). OPCIONAL porque nem toda
   // Oportunidade nasce do banco: as derivadas (subetapas) não carregam o jsonb.

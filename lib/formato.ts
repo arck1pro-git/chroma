@@ -54,6 +54,34 @@ const anoEmBrasilia = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Sao_Paulo",
 });
 
+const diaEmBrasilia = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+
+/**
+ * Hoje em Brasília, 'AAAA-MM-DD'. O mesmo no servidor (UTC na Vercel) e no
+ * navegador: comparar com o fuso de cada um daria um dia de diferença perto da
+ * meia-noite, e a hidratação reclamaria.
+ */
+export function hojeEmBrasilia(agora = new Date()): string {
+  return diaEmBrasilia.format(agora);
+}
+
+/**
+ * 'AAAA-MM-DD' + n meses, na mesma conta de calendário: 31 jan + 1 mês = 28
+ * (ou 29) fev, não 3 mar. Data pura, sem fuso.
+ */
+export function somarMeses(data: string, meses: number): string {
+  const [ano, mes, dia] = data.slice(0, 10).split("-").map(Number);
+  const alvo = new Date(Date.UTC(ano, mes - 1 + meses, 1));
+  const ultimo = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate();
+  alvo.setUTCDate(Math.min(dia, ultimo));
+  return alvo.toISOString().slice(0, 10);
+}
+
 /**
  * "05 out", e "05 out 2025" quando não é o ano corrente. Recebe um INSTANTE
  * (timestamptz) e converte para Brasília; para uma data pura, use dataCurta.
