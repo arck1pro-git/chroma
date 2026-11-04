@@ -7,8 +7,8 @@
 // editar algo ao clicar abre toggle por cima"). O nome também abre a gaveta.
 //
 // Sem a permissão de editar, não há o botão, e o nome leva ao ponto da pessoa.
-// Quem entrou por uma conta do AmaanOffice leva o selo e "sem ponto" na
-// referência (2026-11-04).
+// Quem entrou por uma conta do AmaanOffice leva o selo; ela e quem foi
+// cadastrado à mão mostram "sem ponto" na referência (2026-11-04).
 import Link from "next/link";
 import { reais, taxaPresencial, type contaDoMes } from "@/lib/financeiro-tipos";
 import { Check, Lock, Pencil } from "@/app/components/icones";
@@ -49,7 +49,7 @@ export default function LinhaDaFolha({
   const { id, nome } = linha.pessoa;
   const v = linha.valores;
   const adicionais = conta.deslocamento + conta.adicional;
-  const doAmaanOffice = linha.origem === "amaanoffice";
+  const semPonto = linha.origem !== "ponto";
 
   return (
     <tr className="align-top transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-800/30">
@@ -58,14 +58,14 @@ export default function LinhaDaFolha({
           <button type="button" onClick={() => aoEditar(id)} className="text-left font-medium text-zinc-900 hover:underline dark:text-zinc-100" title="Editar o pagamento">
             {nome}
           </button>
-        ) : doAmaanOffice ? (
+        ) : semPonto ? (
           <span className="font-medium text-zinc-900 dark:text-zinc-100">{nome}</span>
         ) : (
           <Link href={`${endereco(mes, id)}#ponto`} className="font-medium text-zinc-900 hover:underline dark:text-zinc-100" title="Ver o ponto">
             {nome}
           </Link>
         )}
-        {doAmaanOffice && <SeloAmaanOffice />}
+        {linha.origem === "amaanoffice" && <SeloAmaanOffice />}
         {linha.atividade && <span className="block text-[11.5px] text-zinc-500 dark:text-zinc-400">{linha.atividade}</span>}
         {linha.pix ? (
           <span className="block">
@@ -87,7 +87,7 @@ export default function LinhaDaFolha({
       <td className={`${celula} ${v?.tipo === "fixo" ? apagado : ""}`}>{v?.valorHora ? reais(v.valorHora) : "—"}</td>
       <td className={`${celula} ${v?.tipo === "hora" ? apagado : ""}`}>{v?.valorMes ? reais(v.valorMes) : "—"}</td>
       <td className={celula}>
-        {doAmaanOffice ? <span className={apagado}>sem ponto</span> : horas(linha.minutos)}
+        {semPonto ? <span className={apagado}>sem ponto</span> : horas(linha.minutos)}
         {linha.pendencias > 0 && (
           <span className="block text-[11px] text-amber-700 dark:text-amber-400" title="Dias com batida faltando: as horas deles não entram">
             {linha.pendencias} {linha.pendencias === 1 ? "pendência" : "pendências"}

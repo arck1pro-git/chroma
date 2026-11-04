@@ -15,10 +15,17 @@ export type TipoPagamento = "hora" | "fixo";
 // o nome sai da fonte, sem coluna nova.
 export const PREFIXO_AMAANOFFICE = "amaanoffice:";
 
-export type OrigemColaborador = "ponto" | "amaanoffice";
+// OU CADASTRADO À MÃO (2026-11-04, "para poder cadastrar um também"): quem não
+// está em nenhum dos dois ganha o id "manual:<uuid>", sorteado pelo servidor, e
+// o nome fica no cadastro da folha (migration-financeiro-nome.sql). A gaveta
+// manda `NOVO_MANUAL` para pedir um id novo.
+export const PREFIXO_MANUAL = "manual:";
+export const NOVO_MANUAL = `${PREFIXO_MANUAL}novo`;
+
+export type OrigemColaborador = "ponto" | "amaanoffice" | "manual";
 
 export function origemDe(pessoaId: string): OrigemColaborador {
-  return pessoaId.startsWith(PREFIXO_AMAANOFFICE) ? "amaanoffice" : "ponto";
+  return pessoaId.startsWith(PREFIXO_AMAANOFFICE) ? "amaanoffice" : pessoaId.startsWith(PREFIXO_MANUAL) ? "manual" : "ponto";
 }
 
 // O DIA PRESENCIAL VALE R$ 15 A MAIS (2026-11-04, "tem que usar a modalidade
@@ -39,8 +46,10 @@ export type ValoresPagamento = {
 
 /** O cadastro do colaborador: os valores PADRÃO (os dos meses ainda não lançados) e o que não muda por mês. */
 export type CadastroPagamento = ValoresPagamento & {
-  /** O id do cadastro no app de ponto, ou "amaanoffice:<id do usuário>" (`origemDe`). */
+  /** O id do cadastro no app de ponto, "amaanoffice:<id do usuário>" ou "manual:<uuid>" (`origemDe`). */
   pessoaId: string;
+  /** Só de quem foi cadastrado à mão; do ponto e do AmaanOffice o nome vem da fonte (null). */
+  nome: string | null;
   setor: string | null;
   atividade: string | null;
   pix: string | null;

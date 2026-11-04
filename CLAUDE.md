@@ -72,9 +72,11 @@ deslocamento ficam gravados no mês lançado (a "foto" em `financeiro_lancamento
 padrão dos meses ainda não lançados. Deslocamento = taxa × dias com modalidade presencial no ponto; a taxa
 padrão é R$ 15 (`TAXA_PRESENCIAL` em `lib/financeiro-tipos.ts`), 0 = não recebe. A folha só mostra; o Editar de
 cada linha e o "Adicionar colaborador" abrem a gaveta do pagamento por cima (`app/financeiro/gaveta-pagamento.tsx`),
-inclusive em mês já lançado. O colaborador da folha vem do app de ponto (o id de lá) ou de uma conta do AmaanOffice sem
-ponto (`amaanoffice:<id do usuário>`, `origemDe` em `lib/financeiro-tipos.ts`); o nome sai da fonte, e a conta com o
-mesmo e-mail de alguém do ponto não aparece no "Adicionar colaborador".
+inclusive em mês já lançado. O colaborador da folha vem do app de ponto (o id de lá), de uma conta do AmaanOffice sem
+ponto (`amaanoffice:<id do usuário>`) ou de um cadastro feito à mão no "Cadastrar alguém novo" (`manual:<uuid>`, id
+sorteado no servidor, nome na coluna `financeiro_colaboradores.nome`), `origemDe` em `lib/financeiro-tipos.ts`. Do ponto
+e do AmaanOffice o nome sai da fonte, e a conta com o mesmo e-mail de alguém do ponto não aparece no "Adicionar
+colaborador".
 
 ## 2. Fluxo de execução e pontos de entrada
 

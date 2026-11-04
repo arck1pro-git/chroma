@@ -7,13 +7,26 @@
 // recusas da validação e, contra o banco DEV: a foto do mês (o mês lançado não
 // muda quando o padrão muda; salvar um mês passado não mexe no padrão; salvar
 // o mês corrente mexe; corrigir o lançamento de um mês passado), a conta do
-// AmaanOffice como colaborador (amaanoffice:<id>) e a IA (papel
+// AmaanOffice como colaborador (amaanoffice:<id>), o cadastrado à mão
+// (manual:<uuid>, com o nome na folha) e a IA (papel
 // chroma_ia) sem leitura das tabelas. As linhas de teste levam a marca
 // "seed-folha-" e saem no fim.
 import assert from "node:assert/strict";
 import { sql } from "@/lib/db";
-import { carregarFolha, colaboradorExiste, conferirFicha, salvarFicha } from "@/lib/financeiro-pagamentos";
-import { contaDoMes, origemDe, PREFIXO_AMAANOFFICE, reais, SEM_LANCAMENTO, TAXA_PRESENCIAL, valoresDoMes, type CadastroPagamento } from "@/lib/financeiro-tipos";
+import { carregarFolha, colaboradorExiste, conferirFicha, resolverColaborador, salvarFicha } from "@/lib/financeiro-pagamentos";
+import {
+  contaDoMes,
+  NOVO_MANUAL,
+  origemDe,
+  PREFIXO_AMAANOFFICE,
+  PREFIXO_MANUAL,
+  reais,
+  SEM_LANCAMENTO,
+  TAXA_PRESENCIAL,
+  valoresDoMes,
+  type CadastroPagamento,
+} from "@/lib/financeiro-tipos";
+import { ehUuid } from "@/lib/validacao";
 import { Recusa } from "@/lib/resultado-acao";
 
 const MARCA = "seed-folha-";
@@ -42,7 +55,7 @@ passo("sem cadastro, ou por hora sem valor hora, não tem total (fica fora das s
 assert.equal(reais(1234.5).replace(/\s/g, " "), "R$ 1.234,50");
 passo("reais com centavos e milhar");
 
-const cadastro: CadastroPagamento = { pessoaId: "x", setor: null, atividade: null, pix: null, tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 10 };
+const cadastro: CadastroPagamento = { pessoaId: "x", nome: null, setor: null, atividade: null, pix: null, tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 10 };
 const foto = { tipo: "fixo" as const, valorHora: null, valorMes: 2800, taxaDeslocamento: null };
 assert.deepEqual(valoresDoMes(cadastro, { adicional: 0, descontos: 0, valores: foto }), foto);
 assert.deepEqual(valoresDoMes(cadastro, SEM_LANCAMENTO), { tipo: "hora", valorHora: 25, valorMes: null, taxaDeslocamento: 10 });
@@ -68,6 +81,9 @@ assert.match(String(recusa(() => conferirFicha({ ...base, taxaDeslocamento: "10"
 assert.match(String(recusa(() => conferirFicha({ ...base, descontos: 2_000_000 }))), /Descontos inválido/);
 assert.match(String(recusa(() => conferirFicha({ ...base, setor: "x".repeat(81) }))), /Setor: no máximo 80/);
 assert.match(String(recusa(() => conferirFicha({ ...base, pessoaId: "" }))), /Colaborador inválido/);
+assert.match(String(recusa(() => conferirFicha({ ...base, pessoaId: NOVO_MANUAL, nome: "   " }))), /Escreva o nome/);
+assert.match(String(recusa(() => conferirFicha({ ...base, pessoaId: NOVO_MANUAL, nome: "x".repeat(121) }))), /Nome: no máximo 120/);
+assert.equal(conferirFicha({ ...base, nome: "Quem vem do ponto" }).nome, null, "do ponto, o nome vem de lá: o que a tela mandar não grava");
 const limpo = conferirFicha({ ...base, setor: "  Marketing \u0007", pix: "", adicional: 120.456 });
 assert.equal(limpo.setor, "Marketing");
 assert.equal(limpo.pix, null);
@@ -82,6 +98,7 @@ async function noBanco() {
   const id = `${MARCA}${Date.now()}`;
   // A conta do AmaanOffice usada no teste (só é apagada a que o teste gravou: escolhida sem cadastro).
   let idConta = "";
+  let idManual = "";
   try {
     // Outubro lançado pela ficha (mês passado; a pessoa não tinha cadastro e nasce com estes valores).
     await salvarFicha("2026-10", conferirFicha({ ...base, pessoaId: id, taxaDeslocamento: 20, adicional: 200, descontos: 50 }), false);
@@ -129,12 +146,30 @@ async function noBanco() {
     assert.equal(origemDe(idConta), "amaanoffice");
     passo("conta do AmaanOffice: confere que existe, grava como amaanoffice:<id> e o nome vem da conta; id inexistente é recusado");
 
+    // Cadastrado à mão: o servidor sorteia o id, o nome fica na folha e pode ser trocado.
+    idManual = (await resolverColaborador(NOVO_MANUAL))!;
+    assert.ok(idManual.startsWith(PREFIXO_MANUAL) && ehUuid(idManual.slice(PREFIXO_MANUAL.length)), "id novo = manual:<uuid>");
+    assert.notEqual(await resolverColaborador(NOVO_MANUAL), idManual, "cada cadastro novo ganha o seu id");
+    assert.equal(await resolverColaborador(idManual), null, "id manual que não está na folha não vale (não se inventa pelo navegador)");
+    const nomeManual = `${MARCA}manual Fulano`;
+    await salvarFicha("2026-11", conferirFicha({ ...base, pessoaId: idManual, nome: `  ${nomeManual} `, tipo: "fixo", valorMes: 1800 }), true);
+    let manual = (await carregarFolha("2026-11"))!.cadastros.get(idManual);
+    assert.deepEqual([manual?.nome, manual?.valorMes, manual?.taxaDeslocamento], [nomeManual, 1800, TAXA_PRESENCIAL]);
+    assert.equal(origemDe(idManual), "manual");
+    assert.equal(await colaboradorExiste(idManual), true);
+    assert.equal(await resolverColaborador(idManual), idManual, "depois de gravado, edita-se pelo mesmo id");
+    await salvarFicha("2026-11", conferirFicha({ ...base, pessoaId: idManual, nome: `${nomeManual} Silva`, tipo: "fixo", valorMes: 1800 }), true);
+    manual = (await carregarFolha("2026-11"))!.cadastros.get(idManual);
+    assert.equal(manual?.nome, `${nomeManual} Silva`, "o nome se corrige pela gaveta");
+    assert.equal(out.cadastros.get(idConta)?.nome, null, "a conta do AmaanOffice não grava nome: vem da conta");
+    passo("cadastrado à mão: id manual:<uuid> sorteado no servidor, nome obrigatório gravado na folha e corrigível; id inventado é recusado");
+
     const ia = await sql`SELECT table_name FROM information_schema.role_table_grants WHERE grantee = 'chroma_ia' AND table_name LIKE 'financeiro_%'`;
     assert.equal(ia.length, 0, "a IA não tem permissão nas tabelas da folha");
     passo("a IA das telas (chroma_ia) não lê as tabelas da folha");
   } finally {
-    await sql`DELETE FROM financeiro_lancamentos WHERE pessoa_id LIKE ${MARCA + "%"} OR pessoa_id = ${idConta}`;
-    await sql`DELETE FROM financeiro_colaboradores WHERE pessoa_id LIKE ${MARCA + "%"} OR pessoa_id = ${idConta}`;
+    await sql`DELETE FROM financeiro_lancamentos WHERE pessoa_id LIKE ${MARCA + "%"} OR pessoa_id = ${idConta} OR pessoa_id = ${idManual}`;
+    await sql`DELETE FROM financeiro_colaboradores WHERE pessoa_id LIKE ${MARCA + "%"} OR pessoa_id = ${idConta} OR pessoa_id = ${idManual}`;
   }
 }
 

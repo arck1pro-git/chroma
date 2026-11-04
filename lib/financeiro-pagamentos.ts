@@ -18,18 +18,30 @@
 // é feita em lib/financeiro-tipos.ts, com as horas e os dias presenciais do
 // ponto (lib/ponto.ts).
 //
-// O colaborador é o cadastro do app de ponto (users.id de lá) ou uma conta do
-// AmaanOffice ("amaanoffice:<id>", lib/financeiro-tipos.ts); a ação confere que
-// ele existe (`colaboradorExiste`) antes de gravar.
+// O colaborador é o cadastro do app de ponto (users.id de lá), uma conta do
+// AmaanOffice ("amaanoffice:<id>") ou alguém cadastrado à mão ("manual:<uuid>",
+// com o nome na coluna `nome`), lib/financeiro-tipos.ts. A ação confere que ele
+// existe, ou sorteia o id do cadastrado à mão novo (`resolverColaborador`),
+// antes de gravar.
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
-import { origemDe, PREFIXO_AMAANOFFICE, TAXA_PRESENCIAL, type CadastroPagamento, type LancamentoMes, type ValoresPagamento } from "@/lib/financeiro-tipos";
+import {
+  NOVO_MANUAL,
+  origemDe,
+  PREFIXO_AMAANOFFICE,
+  PREFIXO_MANUAL,
+  TAXA_PRESENCIAL,
+  type CadastroPagamento,
+  type LancamentoMes,
+  type ValoresPagamento,
+} from "@/lib/financeiro-tipos";
 import { existeColaborador } from "@/lib/ponto";
 import { Recusa } from "@/lib/resultado-acao";
 import { ehUuid } from "@/lib/validacao";
 
 const TETO_VALOR = 1_000_000;
-const TETO = { setor: 80, atividade: 120, pix: 140 };
+const TETO = { nome: 120, setor: 80, atividade: 120, pix: 140 };
 
 /** 42P01 = falta a tabela; 42703 = falta a coluna (uma das migrations da folha não rodou neste banco). */
 function faltaMigration(e: unknown): boolean {
@@ -62,7 +74,7 @@ export type Folha = {
 export async function carregarFolha(mes: string): Promise<Folha | null> {
   try {
     const [cadastros, lancamentos, contas] = await Promise.all([
-      sql`SELECT pessoa_id, setor, atividade, tipo, valor_hora, valor_mes, taxa_deslocamento, pix FROM financeiro_colaboradores`,
+      sql`SELECT pessoa_id, nome, setor, atividade, tipo, valor_hora, valor_mes, taxa_deslocamento, pix FROM financeiro_colaboradores`,
       sql`SELECT pessoa_id, adicional, descontos, tipo, valor_hora, valor_mes, taxa_deslocamento FROM financeiro_lancamentos WHERE mes = ${mes}`,
       sql`SELECT id, nome, email, ativo FROM usuarios ORDER BY nome`,
     ]);
@@ -78,6 +90,7 @@ export async function carregarFolha(mes: string): Promise<Folha | null> {
           l.pessoa_id as string,
           {
             pessoaId: l.pessoa_id as string,
+            nome: (l.nome as string | null) ?? null,
             setor: (l.setor as string | null) ?? null,
             atividade: (l.atividade as string | null) ?? null,
             pix: (l.pix as string | null) ?? null,
@@ -100,15 +113,31 @@ export async function carregarFolha(mes: string): Promise<Folha | null> {
 
 /**
  * A pessoa pode estar na folha? Do app de ponto, o cadastro de lá tem que
- * existir; do AmaanOffice, a conta. Uma conta desativada continua valendo, para
- * corrigir os meses em que ela trabalhou.
+ * existir; do AmaanOffice, a conta; cadastrada à mão, o cadastro na folha. Uma
+ * conta desativada continua valendo, para corrigir os meses em que ela
+ * trabalhou.
  */
 export async function colaboradorExiste(pessoaId: string): Promise<boolean> {
-  if (origemDe(pessoaId) === "ponto") return existeColaborador(pessoaId);
+  const origem = origemDe(pessoaId);
+  if (origem === "ponto") return existeColaborador(pessoaId);
+  if (origem === "manual") {
+    if (!ehUuid(pessoaId.slice(PREFIXO_MANUAL.length))) return false;
+    const [cadastro] = await sql`SELECT 1 FROM financeiro_colaboradores WHERE pessoa_id = ${pessoaId}`;
+    return Boolean(cadastro);
+  }
   const id = pessoaId.slice(PREFIXO_AMAANOFFICE.length);
   if (!ehUuid(id)) return false;
   const [conta] = await sql`SELECT 1 FROM usuarios WHERE id = ${id}`;
   return Boolean(conta);
+}
+
+/**
+ * O id com que a ficha grava: o cadastrado à mão novo (`NOVO_MANUAL`) ganha um
+ * id sorteado aqui, no servidor; os demais têm que existir. null = não existe.
+ */
+export async function resolverColaborador(pessoaId: string): Promise<string | null> {
+  if (pessoaId === NOVO_MANUAL) return `${PREFIXO_MANUAL}${randomUUID()}`;
+  return (await colaboradorExiste(pessoaId)) ? pessoaId : null;
 }
 
 /** Valor em reais vindo do navegador: número ≥ 0 até o teto, com até dois decimais, ou vazio. */
@@ -146,6 +175,8 @@ function conferirValores(dados: Record<string, unknown>): ValoresPagamento {
 /** O que a gaveta do pagamento manda: o cadastro, os valores do mês, o adicional e os descontos do mês. */
 export type DadosDaFicha = {
   pessoaId: string;
+  /** Só de quem é cadastrado à mão (obrigatório); null para o ponto e o AmaanOffice. */
+  nome: string | null;
   valores: ValoresPagamento;
   pix: string | null;
   setor: string | null;
@@ -155,8 +186,12 @@ export type DadosDaFicha = {
 };
 
 export function conferirFicha(dados: Record<string, unknown>): DadosDaFicha {
+  const pessoaId = lerPessoa(dados.pessoaId);
+  const nome = origemDe(pessoaId) === "manual" ? lerTexto(dados.nome, "Nome", TETO.nome) : null;
+  if (origemDe(pessoaId) === "manual" && !nome) throw new Recusa("Escreva o nome do colaborador.");
   return {
-    pessoaId: lerPessoa(dados.pessoaId),
+    pessoaId,
+    nome,
     valores: conferirValores(dados),
     pix: lerTexto(dados.pix, "Chave PIX", TETO.pix),
     setor: lerTexto(dados.setor, "Setor", TETO.setor),
@@ -167,19 +202,20 @@ export function conferirFicha(dados: Record<string, unknown>): DadosDaFicha {
 }
 
 /**
- * Grava pela gaveta do pagamento: setor, atividade e PIX no cadastro; a foto dos valores, o
- * adicional e os descontos no mês; e o padrão do cadastro se `padrao` (mês
- * corrente ou futuro). false = falta migration.
+ * Grava pela gaveta do pagamento: nome (de quem é cadastrado à mão), setor,
+ * atividade e PIX no cadastro; a foto dos valores, o adicional e os descontos
+ * no mês; e o padrão do cadastro se `padrao` (mês corrente ou futuro). false =
+ * falta migration.
  */
 export async function salvarFicha(mes: string, d: DadosDaFicha, padrao: boolean): Promise<boolean> {
   const v = d.valores;
   try {
     await sql.begin(async (t: typeof sql) => {
       await t`
-        INSERT INTO financeiro_colaboradores (pessoa_id, setor, atividade, tipo, valor_hora, valor_mes, taxa_deslocamento, pix)
-        VALUES (${d.pessoaId}, ${d.setor}, ${d.atividade}, ${v.tipo}, ${v.valorHora}, ${v.valorMes}, ${v.taxaDeslocamento}, ${d.pix})
+        INSERT INTO financeiro_colaboradores (pessoa_id, nome, setor, atividade, tipo, valor_hora, valor_mes, taxa_deslocamento, pix)
+        VALUES (${d.pessoaId}, ${d.nome}, ${d.setor}, ${d.atividade}, ${v.tipo}, ${v.valorHora}, ${v.valorMes}, ${v.taxaDeslocamento}, ${d.pix})
         ON CONFLICT (pessoa_id) DO UPDATE SET
-          setor = EXCLUDED.setor, atividade = EXCLUDED.atividade, pix = EXCLUDED.pix,
+          nome = EXCLUDED.nome, setor = EXCLUDED.setor, atividade = EXCLUDED.atividade, pix = EXCLUDED.pix,
           tipo = CASE WHEN ${padrao}::boolean THEN EXCLUDED.tipo ELSE financeiro_colaboradores.tipo END,
           valor_hora = CASE WHEN ${padrao}::boolean THEN EXCLUDED.valor_hora ELSE financeiro_colaboradores.valor_hora END,
           valor_mes = CASE WHEN ${padrao}::boolean THEN EXCLUDED.valor_mes ELSE financeiro_colaboradores.valor_mes END,

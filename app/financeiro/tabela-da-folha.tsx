@@ -13,7 +13,7 @@ import LinhaDaFolha from "./linha-da-folha";
 
 export type LinhaFolha = {
   pessoa: { id: string; nome: string };
-  /** Do app de ponto (tem horas) ou só uma conta do AmaanOffice (sem ponto). */
+  /** Do app de ponto (tem horas), uma conta do AmaanOffice ou um cadastro feito à mão na folha (os dois sem ponto). */
   origem: OrigemColaborador;
   /** Tem cadastro na folha (setor, PIX, valores padrão). */
   temCadastro: boolean;
