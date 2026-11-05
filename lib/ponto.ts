@@ -159,6 +159,12 @@ function lerBase(): Promise<Base> {
   return base;
 }
 
+/** Os meses (AAAA-MM) com alguma batida, do mais novo para o mais velho: a escolha do mês do Financeiro. */
+export async function mesesComPonto(): Promise<string[]> {
+  const meses = new Set((await lerBase()).batidas.map((b) => String(b.dia).slice(0, 7)));
+  return [...meses].sort().reverse();
+}
+
 /** O cadastro existe no app de ponto? É o que a ação confere antes de gravar o pagamento de alguém. */
 export async function existeColaborador(id: string): Promise<boolean> {
   return (await lerBase()).pessoas.some((p) => p.id === id);

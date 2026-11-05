@@ -132,6 +132,22 @@ export async function carregarFolha(mes: string): Promise<Folha | null> {
   }
 }
 
+/** O que a escolha do mês mostra de cada competência: quantos têm o mês lançado (foto) e quantos já foram pagos. */
+export type ResumoDoMes = { lancados: number; pagos: number };
+
+/** O resumo de cada mês que tem lançamento. Vazio se faltar a migration da folha (a escolha do mês não cai por isso). */
+export async function resumoDosMeses(): Promise<Map<string, ResumoDoMes>> {
+  try {
+    const linhas = await sql`
+      SELECT mes, count(*) FILTER (WHERE tipo IS NOT NULL)::int AS lancados, count(pago_em)::int AS pagos
+        FROM financeiro_lancamentos GROUP BY mes`;
+    return new Map(linhas.map((l) => [l.mes as string, { lancados: l.lancados as number, pagos: l.pagos as number }]));
+  } catch (e) {
+    if (faltaMigration(e)) return new Map();
+    throw e;
+  }
+}
+
 /**
  * A pessoa pode estar na folha? Do app de ponto, o cadastro de lá tem que
  * existir; do AmaanOffice, a conta; cadastrada à mão, o cadastro na folha. Uma

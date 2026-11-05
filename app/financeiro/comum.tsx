@@ -64,6 +64,7 @@ function SetaDoMes({ href, rotulo, Icone }: { href: string | null; rotulo: strin
 /**
  * ‹ Mês › com o limite dos meses que têm batida (`meses`, do mais novo para o
  * mais velho): não deixa ir para antes do primeiro nem para depois do último.
+ * "Trocar mês" volta à escolha do mês de competência (./escolher-mes.tsx).
  */
 export function NavegacaoDoMes({ mes, meses, pessoaId }: { mes: string; meses: string[]; pessoaId: string | null }) {
   const maisVelho = meses[meses.length - 1] ?? mes;
@@ -72,8 +73,17 @@ export function NavegacaoDoMes({ mes, meses, pessoaId }: { mes: string; meses: s
   return (
     <div className="flex items-center gap-2">
       <SetaDoMes href={anterior && endereco(anterior, pessoaId)} rotulo="Mês anterior" Icone={ChevronLeft} />
-      <p className="min-w-40 text-center text-[14px] font-medium text-zinc-900 dark:text-zinc-50">{nomeDoMes(mes)}</p>
+      <p className="min-w-40 text-center text-[14px] font-medium text-zinc-900 dark:text-zinc-50">
+        <span className="block text-[10.5px] font-normal uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Competência</span>
+        {nomeDoMes(mes)}
+      </p>
       <SetaDoMes href={seguinte && endereco(seguinte, pessoaId)} rotulo="Mês seguinte" Icone={ChevronRight} />
+      <Link
+        href="/financeiro"
+        className="ml-1 rounded-lg px-2 py-1.5 text-[12px] font-medium text-zinc-600 underline-offset-2 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+      >
+        Trocar mês
+      </Link>
     </div>
   );
 }

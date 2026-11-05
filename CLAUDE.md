@@ -66,7 +66,10 @@ templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, f
 (`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem. O `financeiro` reúne o
 ponto (`lib/ponto.ts`, base guardada 1 minuto na memória), lido da base do app de ponto da equipe (outro sistema, só
 leitura, `lib/ponto-db.ts`), e a folha do mês (`lib/financeiro-pagamentos.ts`, conta em `lib/financeiro-tipos.ts`), no
-banco do CRM, que a IA (`chroma_ia`) não lê. A página tem o cabeçalho com o mês, o "Exportar CSV" (a folha do mês
+banco do CRM, que a IA (`chroma_ia`) não lê. Sem `?mes=`, a página abre na escolha do mês de competência
+(`app/financeiro/escolher-mes.tsx`: os meses com ponto ou lançamento, mais o corrente e o anterior, cada um dizendo se a
+folha foi lançada e quantos pagos); não entra sozinha no mês corrente, e "Trocar mês" volta a ela. Com o mês, a página
+tem o cabeçalho com o mês, o "Exportar CSV" (a folha do mês
 montada no navegador, `app/financeiro/exportar-folha.ts`: `;`, vírgula decimal, BOM, fórmula neutralizada) e o
 "Adicionar colaborador", a folha logo abaixo e o Ponto embaixo dela (`#ponto`). Tipo, valor hora, valor mês e taxa diária de
 deslocamento ficam gravados no mês lançado (a "foto" em `financeiro_lancamentos`); o cadastro do colaborador guarda o
