@@ -96,8 +96,12 @@ import {
   type HorarioLivre,
 } from "@/lib/agenda";
 
-// Escolha dele: Sonnet 5. Trocar sem mexer no código: IA_ATENDIMENTO_MODELO.
-export const MODELO = process.env.IA_ATENDIMENTO_MODELO?.trim() || "claude-sonnet-5";
+// Escolha dele: Haiku 5.5 desde 2026-11-04 (era Sonnet 5). Vale para a
+// resposta e para a retomada (lib/ia/retomada.ts). O pedido (thinking
+// adaptativo, esforço baixo, sem temperature, sem prefill, sem tool_choice
+// forçado) já é o que o Haiku 5.5 aceita. Trocar sem mexer no código:
+// IA_ATENDIMENTO_MODELO, que manda quando está definida.
+export const MODELO = process.env.IA_ATENDIMENTO_MODELO?.trim() || "claude-haiku-5-5";
 
 /** Quanto esperar por mais mensagens do contato antes de responder. */
 const ESPERA_MS = 8_000;
