@@ -1,8 +1,8 @@
 "use client";
 
-// O formulário de demanda, em modal. Serve a três lugares:
-//   · "Abrir chamado", no topo do Dashboard — sem o campo "Para": o chamado vai
-//     sempre para o TI;
+// O formulário de demanda, em modal. Serve a dois lugares (o "Abrir chamado"
+// do topo do Dashboard, sem "Para", saiu em 2026-11-05; o chamado para o TI se
+// abre aqui, pelo "Para"):
 //   · "Nova demanda", em /demandas — com "Para". Todo mundo escolhe entre si
 //     mesmo e um chamado para o TI; Admin e TI, também qualquer pessoa ou
 //     todos (quem decide é podeCriarPara, em lib/demandas.ts);

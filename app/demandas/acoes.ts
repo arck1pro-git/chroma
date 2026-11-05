@@ -203,23 +203,6 @@ export async function criarDemanda(dados: DadosDemanda): Promise<ResultadoDemand
   };
 }
 
-/**
- * O botão "Abrir chamado" do Dashboard. Basta estar logado: abrir chamado para
- * o TI não depende de módulo nenhum — quem mais precisa dele é justamente quem
- * esbarrou num acesso que não tem.
- */
-export async function abrirChamado(dados: DadosDemanda): Promise<ResultadoDemanda> {
-  await exigirModulo("demandas", "criar");
-  const usuario = await exigirLogin();
-
-  const campos = camposDe(dados);
-  if ("erro" in campos) return { ok: false, mensagem: campos.erro };
-
-  const enviados = await conferirEnviados(dados?.anexos);
-  if ("erro" in enviados) return { ok: false, mensagem: enviados.erro };
-  return gravarChamado(campos, usuario.id, itensDe(dados), enviados.anexos);
-}
-
 // ── Anexos ──────────────────────────────────────────────────────────────────
 // O arquivo vai do navegador direto para o Storage (lib/demandas-anexos.ts);
 // estas ações só assinam o envio e ligam o arquivo que chegou à demanda.
@@ -227,9 +210,8 @@ export async function abrirChamado(dados: DadosDemanda): Promise<ResultadoDemand
 export type ResultadoEnvio = { ok: true; id: string; mime: string; url: string } | { ok: false; mensagem: string };
 
 /**
- * Passo 1 do anexo: o id e a URL assinada para subir. Basta estar logado — o
- * "Abrir chamado" do Dashboard também anexa, e ele não exige módulo. O que
- * subir sem virar anexo de uma demanda não aparece para ninguém.
+ * Passo 1 do anexo: o id e a URL assinada para subir. O que subir sem virar
+ * anexo de uma demanda não aparece para ninguém.
  */
 export async function prepararAnexoDemanda(tamanho: number, mime: string): Promise<ResultadoEnvio> {
   await exigirModulo("demandas", "criar");

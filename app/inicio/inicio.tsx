@@ -38,7 +38,6 @@ import {
   EyeOff,
   Funnel,
   Layers,
-  LifeBuoy,
   ListTree,
   Minus,
   Plus,
@@ -74,8 +73,6 @@ import GavetaIas from "./gaveta-ias";
 import InterruptorIa from "./interruptor-ia";
 import { corDoRobo } from "../funil/ia";
 import ChatIa from "../components/chat-ia";
-import ModalDemanda from "../components/modal-demanda";
-import { abrirChamado } from "../demandas/acoes";
 import { metricasDoFunil, type Conversao, type MetricaEtapa } from "@/lib/metricas-funil";
 import PainelSubetapas from "./painel-subetapas";
 import type { CadenciaDaEtapa, DadosCadencias } from "./cadencias";
@@ -778,8 +775,6 @@ export default function Inicio({
   // A gaveta das IAs (botão IA do topo). Uma gaveta por vez: as duas moram no
   // mesmo canto e abrir uma fecha a outra.
   const [gavetaIasAberta, setGavetaIasAberta] = useState(false);
-  // O modal "Abrir chamado" do topo (vira uma demanda do TI).
-  const [chamadoAberto, setChamadoAberto] = useState(false);
   const [opAbertaId, setOpAbertaId] = useState<string | null>(opInicial);
   const [destacadoId, setDestacadoId] = useState<string | null>(opInicial);
   // etapa onde o botão "+" foi clicado; não-nulo abre o formulário.
@@ -1205,29 +1200,18 @@ export default function Inicio({
               </span>
             )}
 
-            {/* Abrir chamado para o TI (vira uma demanda do departamento, ver
-                app/demandas). À esquerda das IAs: o de contatos fica no canto. */}
-            <button
-              type="button"
-              onClick={() => setChamadoAberto(true)}
-              aria-haspopup="dialog"
-              title="Abrir chamado para o TI"
-              className={`ml-auto ${botaoTopo}`}
-            >
-              <LifeBuoy className="size-4" aria-hidden="true" />
-              <span className="hidden sm:inline">Abrir chamado</span>
-            </button>
-
             {/* As IAs de atendimento, ao lado dos contatos: a mesma gaveta da
                 direita, com as IAs criadas e o botão de criar. Fica À ESQUERDA
-                do de contatos para o de contatos continuar no canto. */}
+                do de contatos para o de contatos continuar no canto. O "Abrir
+                chamado" que ficava antes dela saiu em 2026-11-05 (pedido dele):
+                chamado para o TI se abre em Demandas. */}
             <button
               type="button"
               onClick={abrirGavetaIas}
               aria-expanded={gavetaIasAberta}
               aria-label={`IAs de atendimento (${dados.ias.length})`}
               title="IAs de atendimento"
-              className={botaoTopo}
+              className={`ml-auto ${botaoTopo}`}
             >
               <Bot className="size-4" aria-hidden="true" />
               <span className="hidden sm:inline">IAs</span>
@@ -1394,16 +1378,6 @@ export default function Inicio({
           )}
         </main>
       </div>
-
-      {chamadoAberto && (
-        <ModalDemanda
-          titulo="Abrir chamado"
-          subtitulo="Vai para o TI. Você acompanha em Demandas, na aba “Enviadas”."
-          botao="Abrir chamado"
-          enviar={abrirChamado}
-          aoFechar={() => setChamadoAberto(false)}
-        />
-      )}
 
       <BarraSelecao
         selecionados={[...selecionados]}
