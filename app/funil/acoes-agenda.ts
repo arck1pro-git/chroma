@@ -20,7 +20,7 @@ import {
   rotuloDoHorario,
   type ReuniaoDoCrm,
 } from "@/lib/agenda";
-import { gravacaoDaReuniao, gravacoesDoMeet, gravacoesDoNome, type Gravacao } from "@/lib/gravacoes";
+import { gravacaoDaReuniao, gravacoesDoConvidado, gravacoesDoMeet, gravacoesDoNome, type Gravacao } from "@/lib/gravacoes";
 
 export type ReunioesDaFicha = {
   conectado: boolean;
@@ -32,14 +32,19 @@ export type ReunioesDaFicha = {
 };
 
 /**
- * As gravações vêm da pasta do Meet (lib/gravacoes.ts) e são acessórias: o
+ * As gravações vêm do Drive do Meet (lib/gravacoes.ts) e são acessórias: o
  * Drive fora do ar vira "sem gravação", nunca uma seção de reuniões quebrada.
+ *
+ * Três caminhos ligam uma gravação ao lead: o horário da reunião que o CRM
+ * marcou, o nome e sobrenome do contato no título, e o e-mail do contato entre
+ * os convidados (2026-11-05: as da Agenda Fernanda não passam pelo CRM e
+ * muitas só trazem o primeiro nome).
  */
 async function gravacoesDaFicha(oportunidadeId: string, reunioes: ReuniaoDoCrm[]) {
   try {
     const [lista, [linha]] = await Promise.all([
       gravacoesDoMeet(),
-      sql`SELECT c.nome FROM oportunidades o JOIN contatos c ON c.id = o.contato_id WHERE o.id = ${oportunidadeId}`,
+      sql`SELECT c.nome, c.email FROM oportunidades o JOIN contatos c ON c.id = o.contato_id WHERE o.id = ${oportunidadeId}`,
     ]);
     const gravacaoDe: Record<string, Gravacao> = {};
     for (const r of reunioes) {
@@ -47,7 +52,11 @@ async function gravacoesDaFicha(oportunidadeId: string, reunioes: ReuniaoDoCrm[]
       if (g) gravacaoDe[r.id] = g;
     }
     const usadas = new Set(Object.values(gravacaoDe).map((g) => g.id));
-    const doContato = linha ? gravacoesDoNome(lista, linha.nome as string).filter((g) => !usadas.has(g.id)) : [];
+    const pelosConvidados = linha ? await gravacoesDoConvidado(lista, linha.email as string | null) : [];
+    const doNome = linha ? gravacoesDoNome(lista, linha.nome as string) : [];
+    // Na ordem da lista (a mais recente primeiro), sem repetir.
+    const ids = new Set([...doNome, ...pelosConvidados].map((g) => g.id));
+    const doContato = lista.filter((g) => ids.has(g.id) && !usadas.has(g.id));
     return { gravacaoDe, doContato };
   } catch (e) {
     console.error("[ficha] gravações:", e);

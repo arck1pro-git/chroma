@@ -94,7 +94,7 @@ export default function GavetaGravacoes({ aoFechar }: { aoFechar: () => void }) 
           </div>
         ) : grupos.length === 0 ? (
           <div className="px-5 pt-2">
-            <Vazio>{termo ? "Nenhuma gravação com esse nome." : "Nenhuma gravação na pasta do Meet."}</Vazio>
+            <Vazio>{termo ? "Nenhuma gravação com esse nome." : "Nenhuma gravação no Drive do Meet."}</Vazio>
           </div>
         ) : (
           grupos.map(([mes, lista]) => (

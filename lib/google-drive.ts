@@ -125,13 +125,19 @@ export async function baixarDoDrive(id: string): Promise<Response> {
 
 export type ItemDaPasta = { id: string; nome: string; mime: string; criado: string; duracaoMs: number | null };
 
-/** Tudo o que está direto numa pasta (sem descer nas subpastas), página a página. */
-export async function listarPasta(pastaId: string): Promise<ItemDaPasta[]> {
+/**
+ * Os arquivos que a conta enxerga e batem com a consulta do Drive (`q`, a
+ * sintaxe de files.list), em qualquer pasta e em todos os Drives, página a
+ * página. Quem monta `q` escapa o que vier de fora (aspas e barra invertida).
+ * `rotulo` só nomeia a busca no erro.
+ */
+export async function buscarNoDrive(q: string, rotulo = "busca"): Promise<ItemDaPasta[]> {
   const itens: ItemDaPasta[] = [];
   let pagina: string | undefined;
   do {
     const busca = new URLSearchParams({
-      q: `'${pastaId}' in parents and trashed = false`,
+      q,
+      corpora: "allDrives",
       fields: "nextPageToken,files(id,name,mimeType,createdTime,videoMediaMetadata(durationMillis))",
       pageSize: "1000",
       supportsAllDrives: "true",
@@ -143,7 +149,7 @@ export async function listarPasta(pastaId: string): Promise<ItemDaPasta[]> {
       cache: "no-store",
       signal: AbortSignal.timeout(20_000),
     });
-    if (!res.ok) return recusa(res, pastaId);
+    if (!res.ok) return recusa(res, rotulo);
     const j = (await res.json()) as {
       nextPageToken?: string;
       files: { id: string; name: string; mimeType: string; createdTime: string; videoMediaMetadata?: { durationMillis?: string } }[];

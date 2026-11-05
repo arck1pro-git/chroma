@@ -1,22 +1,32 @@
 // As gravações do Google Meet dentro do CRM (pedido dele, 2026-10-20: "onde
 // vejo no crm? quero ver o vídeo/gravação/transcrição").
 //
-// A FONTE é a pasta "Meet Recordings" do Meu Drive do meet@arck1pro.com — onde
-// o Meet guarda, para cada reunião que essa conta organiza, o vídeo
-// ("… - Recording"), as anotações do Gemini ("… - Anotações do Gemini") e o
-// chat. Ele compartilhou a pasta com a conta de serviço do CRM como Leitor
-// (2026-10-20), e é por ela que lemos (lib/google-drive.ts, drive.readonly).
-// Nada é copiado: a lista e o texto das anotações vêm do Drive na hora, e o
-// vídeo toca no player do próprio Google.
+// A FONTE são os arquivos do Meet no Meu Drive do meet@arck1pro.com: para cada
+// reunião que essa conta organiza, o vídeo ("… - Recording"), as anotações do
+// Gemini ("… - Anotações do Gemini") e o chat, compartilhados com a conta de
+// serviço do CRM como Leitor (lib/google-drive.ts, drive.readonly). Nada é
+// copiado: a lista e o texto das anotações vêm do Drive na hora, e o vídeo
+// toca no player do próprio Google.
 //
-// Transcrição completa o Meet só grava com "Transcrição" ligada na reunião;
-// hoje não há nenhuma na pasta. Se passar a haver ("… - Transcrição" /
-// "… - Transcript"), ela aparece aqui sem mudar nada.
+// QUALQUER PASTA, NÃO UMA (2026-11-05): até maio de 2026 o Meet salvava tudo na
+// pasta "Meet Recordings"; desde setembro, na pasta "Google Meet", uma
+// subpasta por reunião, e o CRM, que lia só a primeira, deixou de ver as
+// reuniões de setembro em diante. Agora busca pelo dono (meet@) e pelo padrão
+// de nome do Meet (tem "GMT"), onde quer que o arquivo esteja. Só arquivo do
+// meet@: a conta de serviço também enxerga o Drive do Marketing, e o visor não
+// pode abrir um arquivo qualquer de lá.
+//
+// Transcrição completa o Meet só grava com "Transcrição" ligada na reunião.
+// Quando houver ("… - Transcrição" / "… - Transcript"), ela aparece aqui sem
+// mudar nada.
 import "server-only";
-import { baixarDoDrive, exportarDoc, listarPasta, type ItemDaPasta } from "@/lib/google-drive";
+import { baixarDoDrive, buscarNoDrive, exportarDoc, type ItemDaPasta } from "@/lib/google-drive";
 
-/** A pasta "Meet Recordings" do meet@arck1pro.com (compartilhada com a conta de serviço). */
-export const PASTA_MEET = "1nHKus_kZ_z1iplutVEaH8MI_Fe5RJREr";
+/** A conta que organiza as reuniões e em cujo Drive o Meet salva as gravações. */
+export const CONTA_MEET = "meet@arck1pro.com";
+
+/** Os arquivos do Meet do meet@, em qualquer pasta: todo nome que o Meet dá tem o fuso ("GMT-03:00", "GMT-3"). */
+const BUSCA_MEET = `'${CONTA_MEET}' in owners and name contains 'GMT' and mimeType != 'application/vnd.google-apps.folder' and trashed = false`;
 
 export type Gravacao = {
   /** Estável: o id do vídeo, ou o das anotações quando não houve vídeo. */
@@ -128,7 +138,7 @@ let guardada: { em: number; lista: Gravacao[] } | null = null;
 
 export async function gravacoesDoMeet(): Promise<Gravacao[]> {
   if (guardada && Date.now() - guardada.em < VALIDADE_MS) return guardada.lista;
-  const itens = await listarPasta(PASTA_MEET);
+  const itens = await buscarNoDrive(BUSCA_MEET, "arquivos do Meet");
   const lista = agrupar(itens.map(pecaDo).filter((p): p is Peca => p !== null));
   guardada = { em: Date.now(), lista };
   return lista;
@@ -168,14 +178,31 @@ const normalizar = (s: string) =>
  * "da"…) tem de aparecer inteira no título.
  */
 export function gravacoesDoNome(lista: Gravacao[], nome: string): Gravacao[] {
-  const partes = normalizar(nome)
-    .split(" ")
-    .filter((p) => p.length >= 2 && !PARTICULAS.has(p));
+  // Palavras DIFERENTES (2026-11-05): "Clovis Clovis" (nome repetido no
+  // cadastro) contava como nome e sobrenome e casava com todo Clóvis da pasta.
+  const partes = [...new Set(normalizar(nome).split(" "))].filter((p) => p.length >= 2 && !PARTICULAS.has(p));
   if (partes.length < 2) return [];
   return lista.filter((g) => {
     const palavras = new Set(normalizar(g.titulo).split(" "));
     return partes.every((p) => palavras.has(p));
   });
+}
+
+const EMAIL_SEGURO = /^[^\s'"\\]+@[^\s'"\\]+\.[^\s'"\\]+$/;
+
+/**
+ * As gravações em que o e-mail do contato aparece (2026-11-05): o Gemini põe
+ * os convidados no topo das anotações, e o Drive indexa o texto dos
+ * documentos. Pega as reuniões que o CRM não marcou (a Agenda Fernanda, as do
+ * SprintHub) e cujo título não traz nome e sobrenome. Uma busca no Drive por
+ * ficha aberta; e-mail fora do formato não busca nada.
+ */
+export async function gravacoesDoConvidado(lista: Gravacao[], email: string | null | undefined): Promise<Gravacao[]> {
+  const e = email?.trim().toLowerCase();
+  if (!e || !EMAIL_SEGURO.test(e)) return [];
+  const docs = await buscarNoDrive(`'${CONTA_MEET}' in owners and fullText contains '${e}' and trashed = false`, "convidado");
+  const ids = new Set(docs.map((d) => d.id));
+  return lista.filter((g) => [g.notasId, g.transcricaoId, g.chatId].some((id) => id && ids.has(id)));
 }
 
 // ── O conteúdo ──────────────────────────────────────────────────────────────

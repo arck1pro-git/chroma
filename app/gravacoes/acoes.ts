@@ -28,14 +28,14 @@ export type ConteudoPedido = ({ ok: true } & ConteudoDaGravacao) | { ok: false; 
 
 /**
  * O texto de uma gravação (anotações do Gemini, transcrição, chat). Recebe o id
- * da GRAVAÇÃO, não o do arquivo: só sai o que está na pasta do Meet — a conta
+ * da GRAVAÇÃO, não o do arquivo: só sai o que é arquivo do Meet do meet@ (lib/gravacoes.ts) — a conta
  * de serviço enxerga outros Drives, e um id qualquer não pode virar leitura.
  */
 export async function conteudoDeGravacao(gravacaoId: string): Promise<ConteudoPedido> {
   await exigirAlgumModulo("agenda", "inicio");
   try {
     const g = (await gravacoesDoMeet()).find((x) => x.id === gravacaoId);
-    if (!g) return { ok: false, mensagem: "Essa gravação não está mais na pasta do Meet." };
+    if (!g) return { ok: false, mensagem: "Essa gravação não está mais no Drive do Meet." };
     return { ok: true, ...(await conteudoDaGravacao(g)) };
   } catch (e) {
     return { ok: false, mensagem: motivo(e) };
