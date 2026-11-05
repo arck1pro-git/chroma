@@ -33,7 +33,18 @@ function carregar(arquivo, mocks, cache = new Map()) {
 }
 
 class GoogleDesconectado extends Error {}
-const sql = async (partes) => (partes.join("?").includes("FROM contatos") ? [{ nome: "Teste", email: null, whatsapp: null }] : []);
+// A reunião da remarcação (passo 9) e o que a remarcação grava no banco.
+let reuniaoDoBanco = null;
+const atualizacoes = [];
+const sql = async (partes, ...valores) => {
+  const texto = partes.join("?");
+  if (texto.includes("FROM agenda_reunioes r JOIN contatos")) return reuniaoDoBanco ? [reuniaoDoBanco] : [];
+  if (texto.includes("UPDATE agenda_reunioes")) {
+    atualizacoes.push(valores);
+    return [];
+  }
+  return texto.includes("FROM contatos") ? [{ nome: "Teste", email: null, whatsapp: null }] : [];
+};
 // A trava da reserva roda numa transação; aqui ela só chama de volta (a fila de
 // verdade precisa de um Postgres e não é testada neste script).
 sql.begin = async (corpo) => corpo(async () => []);
@@ -96,7 +107,8 @@ let falhar = null;
 let corpoCortado = null;
 let semResposta = null;
 let postou = 0;
-const comPrazo = { GET: 0, POST: 0 };
+const comPrazo = { GET: 0, POST: 0, PATCH: 0 };
+const patches = [];
 globalThis.fetch = async (url, init = {}) => {
   if (init.signal) comPrazo[init.method ?? "GET"] = (comPrazo[init.method ?? "GET"] ?? 0) + 1;
   const u = new URL(url);
@@ -105,6 +117,12 @@ globalThis.fetch = async (url, init = {}) => {
     if (respostaDaLista) return respostaDaLista();
     const mostrarOcultas = u.searchParams.get("showHidden") === "true";
     return Response.json({ items: lista.filter((a) => mostrarOcultas || !ocultas.has(a.id)) });
+  }
+  const p = /^\/calendars\/([^/]+)\/events\/([^/]+)$/.exec(caminho);
+  if (p && init.method === "PATCH") {
+    const corpo = JSON.parse(init.body);
+    patches.push({ agenda: p[1], id: p[2], corpo, sendUpdates: u.searchParams.get("sendUpdates") });
+    return Response.json({ id: p[2], start: corpo.start, end: corpo.end, hangoutLink: "https://meet.google.com/aaa-bbbb-ccc" });
   }
   const m = /^\/calendars\/([^/]+)\/events$/.exec(caminho);
   if (m && (init.method ?? "GET") === "POST") {
@@ -214,9 +232,42 @@ try {
   );
   assert.equal(postou, 3);
   assert.equal(comPrazo.POST, 0, "criar evento espera o Google, sem prazo (POST abortado deixaria reunião sem vínculo)");
+
+  // 9. A remarcação (2026-11-05): o MESMO evento, só o horário, com a mesma
+  //    duração; o próprio evento não ocupa o horário novo; a agenda da Fernanda
+  //    barra; o banco muda junto; o convidado com e-mail recebe a atualização.
+  EVENTOS.primary.push(ev("minha", 14));
+  reuniaoDoBanco = {
+    google_evento_id: "minha",
+    inicio: ag.instanteEmBrasilia(...D, 14),
+    fim: ag.instanteEmBrasilia(...D, 15),
+    contato_id: "c",
+    oportunidade_id: "o",
+    email: "lead@exemplo.com",
+  };
+  const novo = new Date(ag.instanteEmBrasilia(...D, 14).getTime() + 30 * 60_000);
+  const r = await ag.remarcarReuniao({ reuniaoId: "r1", inicio: novo, conferirAgendasQueOcupam: true });
+  assert.equal(patches.length, 1, "o próprio evento (14h) não ocupa o horário novo (14h30)");
+  assert.deepEqual([patches[0].id, patches[0].sendUpdates], ["minha", "all"]);
+  assert.equal(patches[0].corpo.start.dateTime, novo.toISOString());
+  assert.equal(patches[0].corpo.end.dateTime, new Date(novo.getTime() + 3_600_000).toISOString(), "mesma duração da reunião (1h)");
+  assert.deepEqual(
+    [r.antes.toISOString(), r.inicio.toISOString(), r.meet, r.convidou],
+    [reuniaoDoBanco.inicio.toISOString(), novo.toISOString(), "https://meet.google.com/aaa-bbbb-ccc", true],
+  );
+  assert.equal(atualizacoes.length, 1, "agenda_reunioes muda junto (os lembretes leem a hora dali)");
+  await assert.rejects(
+    ag.remarcarReuniao({ reuniaoId: "r1", inicio: ag.instanteEmBrasilia(...D, 10), conferirAgendasQueOcupam: true }),
+    (e) => e instanceof ag.HorarioOcupado,
+    "remarcar para as 10h: ocupado na agenda da Fernanda",
+  );
+  assert.equal(patches.length, 1, "horário ocupado não chega ao Google");
+  reuniaoDoBanco = null;
+  await assert.rejects(ag.remarcarReuniao({ reuniaoId: "r2", inicio: novo }), /Reunião não encontrada/);
+  assert.equal(comPrazo.PATCH, 0, "remarcar espera o Google, sem prazo");
 } finally {
   console.error = erroOriginal;
 }
 console.log(
-  "OK: agendas que ocupam o horário (Fernanda sim, Fabricio não; na da conexão, evento com horário sempre, dia inteiro só se ocupado, recusado e local de trabalho nunca), falha fechada, prazo só na leitura, corpo cortado, cota, renomeada, repetida, escondida e reserva da IA x ficha.",
+  "OK: agendas que ocupam o horário (Fernanda sim, Fabricio não; na da conexão, evento com horário sempre, dia inteiro só se ocupado, recusado e local de trabalho nunca), falha fechada, prazo só na leitura, corpo cortado, cota, renomeada, repetida, escondida, reserva da IA x ficha e remarcação.",
 );

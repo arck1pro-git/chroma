@@ -51,6 +51,12 @@
 //     no que o cliente escolher (lib/agenda.ts). Diferente das outras ações,
 //     esta EXECUTA antes de responder: a confirmação ao cliente precisa do
 //     link do Meet, e o horário pode ter sido ocupado no meio do caminho.
+//     Com reunião já marcada (2026-11-05, lib/ia/remarcacao.ts), em vez de
+//     marcar ela REMARCA: avisar_imprevisto avisa a Fernanda quando o lead diz
+//     que não vai conseguir ir (sem encerrar o atendimento, ao contrário de
+//     avisar_equipe), e remarcar_reuniao muda o evento no Google para o
+//     horário que ele escolher, avisando a Fernanda. Na "reunião agendada"
+//     com a reunião combinada fora do CRM, a remarcação é uma reserva nova.
 //   · agendar_retorno — o cliente pede para falar em outro momento e ela anota
 //     o dia e a hora; a rodada das retomadas volta à conversa nesse horário
 //     (lib/ia/retorno.ts). Grava depois que a confirmação ao cliente saiu.
@@ -92,9 +98,12 @@ import {
   marcarReuniao,
   proximaReuniaoDoContato,
   REGRA_HORARIOS,
+  remarcarReuniao,
   rotuloDoHorario,
   type HorarioLivre,
+  type ReuniaoDoCrm,
 } from "@/lib/agenda";
+import { registrarImprevisto, registrarRemarcada, remarcacaoAberta } from "@/lib/ia/remarcacao";
 
 // Escolha dele: Haiku 5.5 desde 2026-11-04 (era Sonnet 5). Vale para a
 // resposta e para a retomada (lib/ia/retomada.ts). O pedido (thinking
@@ -428,6 +437,9 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
           console.error("[ia atendente] não anotou o retorno:", atendimentoId, e);
         }
       }
+      // O lead avisou que não vai conseguir ir: a Fernanda sabe e a remarcação
+      // abre (é ela que faz a rodada retomar se ele não responder).
+      if (saida.tipo === "texto" && saida.imprevisto) await avisarImprevisto(atendimentoId, s, saida.imprevisto);
     } else if (!saida.mover) {
       console.info(`[ia atendente] modelo não devolveu texto para ${atendimentoId}`);
       return;
@@ -711,11 +723,124 @@ const AVISAR_REUNIAO = [
   "9e937a7c-fc46-40b4-adcf-71d234799f4a", // Fernanda Datore (comercial)
 ];
 
+/** Quem recebe os avisos da remarcação (pedido dele, 2026-11-05: "notificar a Fernanda"). Por id, como AVISAR_REUNIAO. */
+const AVISAR_REMARCACAO = [
+  "9e937a7c-fc46-40b4-adcf-71d234799f4a", // Fernanda Datore (comercial)
+];
+
+/**
+ * Um aviso da remarcação no WhatsApp de quem está em AVISAR_REMARCACAO, pelo
+ * mesmo número da conversa (no Instagram, uma demanda), no formato dos outros
+ * avisos: `titulo`, os dados do lead e `linhas`. A linha do histórico diz para
+ * quem foi. Nunca lança: o que a IA fez com o lead já está feito.
+ */
+async function avisarRemarcacao(atendimentoId: string, s: Situacao, titulo: string, linhas: string[]): Promise<void> {
+  try {
+    let como: string[];
+    if (s.canal === "instagram") {
+      como = [
+        await avisarPorDemanda({
+          titulo: titulo.replace(/^\S+\s/, ""),
+          nome: s.contato_nome,
+          quando: `${fmtAgora.format(new Date())} (horário de Brasília)`,
+          atendimentoId,
+          pessoaIds: AVISAR_REMARCACAO,
+          prioridade: "alta",
+        }),
+      ];
+    } else {
+      const equipe = (await sql`
+        SELECT nome, nullif(whatsapp, '') AS whatsapp FROM usuarios
+         WHERE id = ANY(string_to_array(${AVISAR_REMARCACAO.join(",")}, ',')::uuid[]) AND ativo
+         ORDER BY nome`) as unknown as Array<{ nome: string; whatsapp: string | null }>;
+      const c = equipe.length ? await conversaDoAviso(atendimentoId, s) : null;
+      const texto = c ? [titulo, "", ...dadosDoLead(s, c, null), ...linhas].join("\n") : "";
+      como = c ? await Promise.all(equipe.map((a) => avisarNoWhatsApp(c, a, texto))) : ["ninguém da lista de aviso encontrado"];
+    }
+    await sql`
+      INSERT INTO historico (contato_id, oportunidade_id, descricao)
+      VALUES (${s.contato_id}, ${s.op_id}, ${`Aviso da remarcação à equipe: ${como.join("; ")}`.slice(0, 1000)})`;
+  } catch (e) {
+    console.error("[ia atendente] não avisou a remarcação:", atendimentoId, e);
+  }
+}
+
+/**
+ * avisar_imprevisto, depois da resposta entregue: abre a remarcação no
+ * histórico (lib/ia/remarcacao.ts) e avisa a Fernanda. Nunca lança.
+ */
+async function avisarImprevisto(atendimentoId: string, s: Situacao, motivo: string): Promise<void> {
+  try {
+    // Remarcação já aberta (o lead repetiu, ou o modelo chamou de novo): a
+    // Fernanda já sabe; não abre outra nem avisa duas vezes.
+    if (await remarcacaoAberta(s.contato_id)) return;
+    const marcada = await proximaReuniaoDoContato(s.contato_id).catch(() => null);
+    const quando = marcada ? rotuloDoHorario(new Date(marcada.inicio)) : null;
+    await registrarImprevisto(s.contato_id, s.op_id, `${motivo}${quando ? ` (reunião de ${quando})` : ""}`);
+    await avisarRemarcacao(atendimentoId, s, "⚠️ Lead avisou que não vai conseguir ir à reunião. A IA está tentando remarcar.", [
+      ...(quando ? [`*Reunião:* ${quando}`] : ["*Reunião:* combinada fora da agenda do CRM"]),
+      `*O que ele disse:* ${motivo}`,
+    ]);
+  } catch (e) {
+    console.error("[ia atendente] não registrou o imprevisto:", atendimentoId, e);
+  }
+}
+
+/**
+ * remarcar_reuniao: muda a reunião no Google (lib/agenda.ts, remarcarReuniao),
+ * fecha a remarcação no histórico e avisa a Fernanda. Devolve o resultado para
+ * o modelo e, se a remarcação deu certo, a frase de reserva da confirmação.
+ */
+async function remarcarPelaIa(
+  atendimentoId: string,
+  s: Situacao,
+  marcada: ReuniaoDoCrm,
+  horario: HorarioLivre,
+): Promise<{ resultado: string; textoReserva: string | null }> {
+  try {
+    const r = await remarcarReuniao({ reuniaoId: marcada.id, inicio: horario.inicio, conferirAgendasQueOcupam: true });
+    const de = rotuloDoHorario(r.antes);
+    const para = rotuloDoHorario(r.inicio);
+    await registrarRemarcada(s.contato_id, s.op_id, `de ${de} para ${para}.`);
+    await avisarRemarcacao(atendimentoId, s, "🔁 Reunião remarcada pela IA.", [
+      `*De:* ${de}`,
+      `*Para:* ${para}`,
+      ...(r.meet ? [`*Meet:* ${r.meet}`] : []),
+    ]);
+    return {
+      resultado:
+        `Reunião remarcada: ${para} (horário de Brasília), com o mesmo link do Meet${r.meet ? `: ${r.meet}` : ""}. ` +
+        (r.convidou ? "O convite foi atualizado no e-mail do cliente. " : "") +
+        "Confirme ao cliente o novo dia, a hora e o link.",
+      textoReserva: `Reunião remarcada para *${para}* (horário de Brasília).${r.meet ? ` Link: ${r.meet}` : ""}`,
+    };
+  } catch (e) {
+    if (e instanceof HorarioOcupado) {
+      const livres = await horariosLivres().catch(() => []);
+      return {
+        resultado: livres.length
+          ? `Não remarcado: esse horário acabou de ser ocupado. Livres agora: ${horariosPorDia(livres)}. Peça desculpas e ofereça duas opções próximas.`
+          : "Não remarcado: esse horário acabou de ser ocupado e não há outro livre nos próximos dias. Diga que a Fernanda combina o novo horário com ele.",
+        textoReserva: null,
+      };
+    }
+    console.error("[ia atendente] não remarcou:", s.contato_id, e);
+    await avisarRemarcacao(atendimentoId, s, "⚠️ A IA não conseguiu remarcar a reunião: a agenda falhou.", [`*Cliente escolheu:* ${horario.rotulo}`]);
+    return {
+      resultado: "Não remarcado: a agenda não respondeu. Diga que a Fernanda confirma o novo horário com ele em seguida, sem prometer prazo.",
+      textoReserva: null,
+    };
+  }
+}
+
 /**
  * Reunião marcada pela IA: avisa no WhatsApp quem está em AVISAR_REUNIAO
  * (usuarios.whatsapp), pelo mesmo número da conversa. Quem está sem WhatsApp
  * no cadastro aparece no histórico como "não avisado", para alguém notar e
  * cadastrar. Nunca lança: a reunião já está marcada.
+ *
+ * `remarcacao` (2026-11-05): a reunião nova substitui uma combinada fora do
+ * CRM; o aviso pede para tirar o horário antigo.
  *
  * No direct do Instagram, a mesma lista recebe uma DEMANDA (lib/ia/aviso-demanda.ts).
  */
@@ -724,11 +849,12 @@ async function avisarReuniao(
   s: Situacao,
   reuniao: { inicio: Date; meet: string | null },
   valorDito: number | null,
+  remarcacao = false,
 ): Promise<void> {
   try {
     if (s.canal === "instagram") {
       const como = await avisarPorDemanda({
-        titulo: "Reunião marcada pela IA no Instagram",
+        titulo: remarcacao ? "Reunião remarcada pela IA no Instagram (tirar o horário antigo)" : "Reunião marcada pela IA no Instagram",
         nome: s.contato_nome,
         quando: `${rotuloDoHorario(reuniao.inicio)} (horário de Brasília)`,
         atendimentoId,
@@ -747,7 +873,9 @@ async function avisarReuniao(
     const c = equipe.length ? await conversaDoAviso(atendimentoId, s) : null;
     const texto = c
       ? [
-          "📅 Reunião marcada pela IA.",
+          remarcacao
+            ? "🔁 Reunião remarcada pela IA. A anterior foi combinada fora da agenda do CRM: tire o horário antigo."
+            : "📅 Reunião marcada pela IA.",
           "",
           ...dadosDoLead(s, c, valorDito),
           `*Quando:* ${rotuloDoHorario(reuniao.inicio)}`,
@@ -807,6 +935,8 @@ type Saida = (
       marcou?: boolean;
       /** O retorno combinado (agendar_retorno), já conferido; grava depois do envio. */
       retorno?: RetornoPedido | null;
+      /** avisar_imprevisto: o lead não vai conseguir ir; avisa a Fernanda e abre a remarcação depois do envio. */
+      imprevisto?: string | null;
     }
   | { tipo: "humano"; motivo: string; mensagem: string | null; mover: Movimento | null }
 ) & { objecoes?: Objecao[] };
@@ -940,34 +1070,115 @@ function ferramentaAgendar(horarios: string[]): Anthropic.Tool {
   };
 }
 
+// A REMARCAÇÃO (2026-11-05, lib/ia/remarcacao.ts): o lead que já tem reunião
+// avisa que não vai conseguir ir. avisar_imprevisto avisa a Fernanda e NÃO
+// encerra o atendimento (avisar_equipe encerraria): a IA segue oferecendo
+// horários, e remarcar_reuniao muda a reunião no Google quando ele escolhe.
+const FERRAMENTA_IMPREVISTO: Anthropic.Tool = {
+  name: "avisar_imprevisto",
+  description:
+    "Avisa a Fernanda, da equipe, que o cliente não vai conseguir ir à reunião marcada (ou quer mudar o horário dela). Use SÓ nesse caso, junto com a sua resposta em texto, em que você oferece dois horários da lista para remarcar. NÃO encerra o seu atendimento: você continua a conversa até remarcar.",
+  input_schema: {
+    type: "object",
+    properties: {
+      motivo: { type: "string", description: "Para a Fernanda, em uma linha: o que o cliente disse (e o motivo, se ele deu)." },
+    },
+    required: ["motivo"],
+    additionalProperties: false,
+  },
+  strict: true,
+};
+
+// O `enum` são os horários livres, como em agendar_reuniao.
+function ferramentaRemarcar(horarios: string[]): Anthropic.Tool {
+  return {
+    name: "remarcar_reuniao",
+    description:
+      "Muda a reunião que o cliente já tem para um dos horários livres listados, com o mesmo link do Meet. Use SÓ quando ele escolheu ou confirmou um desses horários: nunca por conta própria, nunca com horário fora da lista; se o que ele pediu não está na lista, ofereça os livres mais próximos e espere ele escolher. O sistema remarca e devolve o novo horário; aí você confirma ao cliente.",
+    input_schema: {
+      type: "object",
+      properties: {
+        horario: { type: "string", enum: horarios, description: "O novo horário escolhido pelo cliente, exatamente como na lista." },
+      },
+      required: ["horario"],
+      additionalProperties: false,
+    },
+    strict: true,
+  };
+}
+
+/** A etapa em que o lead já tem reunião combinada (a da IA nova, desde 2026-11-05). */
+const ETAPA_DE_REUNIAO = /reuni[aã]o agendada/i;
+
 /**
- * O que a IA sabe da agenda nesta resposta: a reunião que o contato já tem, ou
- * os horários livres para oferecer. Google fora do ar não derruba a resposta —
- * ela segue sem a ferramenta e registra a preferência com avisar_equipe.
+ * O que a IA sabe da agenda nesta resposta e o que ela pode fazer com ela:
+ *   · "marcar": o contato não tem reunião; os horários livres para oferecer;
+ *   · "remarcar": tem reunião marcada pelo CRM; se ele disser que não vai
+ *     conseguir ir, avisar_imprevisto e remarcar_reuniao, com os livres;
+ *   · "remarcar_fora": está em "reunião agendada" mas a reunião foi combinada
+ *     fora do CRM (a equipe, pela agenda dela). Não oferece horário por conta
+ *     própria; se ele não puder ir, avisar_imprevisto e agendar_reuniao (a nova
+ *     reunião é a remarcação, e a Fernanda tira o horário antigo).
+ * Google fora do ar não derruba a resposta: ela segue sem a ferramenta e
+ * registra a preferência com avisar_equipe.
  */
-async function agendaParaIa(s: Situacao): Promise<{ linha: string; horarios: HorarioLivre[] }> {
+async function agendaParaIa(
+  s: Situacao,
+): Promise<{ linha: string; horarios: HorarioLivre[]; modo: "marcar" | "remarcar" | "remarcar_fora"; marcada: ReuniaoDoCrm | null }> {
   const indisponivel = {
-    linha: "Agenda: indisponível agora. Não marque horário; registre a preferência de dia e horário do cliente com avisar_equipe.",
+    linha: "Agenda: indisponível agora. Não marque nem remarque horário; registre a preferência de dia e horário do cliente com avisar_equipe.",
     horarios: [],
+    modo: "marcar" as const,
+    marcada: null,
   };
   try {
     if (!(await conexaoGoogle())) return indisponivel;
-    const marcada = await proximaReuniaoDoContato(s.contato_id);
+    const [marcada, [etapa]] = await Promise.all([
+      proximaReuniaoDoContato(s.contato_id),
+      s.op_etapa_id ? sql`SELECT nome FROM etapas WHERE id = ${s.op_etapa_id}` : Promise.resolve([]),
+    ]);
+    const horarios = await horariosLivres();
+    const livres = horarios.length
+      ? `Horários livres para remarcar (${REGRA_HORARIOS.duracaoMin} min, horário de Brasília): ${horariosPorDia(horarios)}`
+      : "Sem horário livre nos próximos dias úteis: se ele não puder ir, chame avisar_imprevisto e diga que a Fernanda vai combinar o novo horário com ele.";
     if (marcada) {
       return {
-        linha:
+        linha: [
           `Reunião já marcada com este cliente: ${rotuloDoHorario(new Date(marcada.inicio))} (horário de Brasília)` +
-          `${marcada.meet ? `, link do Meet: ${marcada.meet}` : ""}. Não marque outra; remarcar ou cancelar é com a equipe (avisar_equipe).`,
-        horarios: [],
+            `${marcada.meet ? `, link do Meet: ${marcada.meet}` : ""}. Não marque outra reunião.`,
+          "Se o cliente disser que não vai conseguir ir, pedir para mudar o horário ou desmarcar: chame avisar_imprevisto (avisa a Fernanda) e, na mesma resposta, diga que tudo bem, sem cobrar, e ofereça dois horários da lista abaixo para remarcar. Quando ele escolher um horário da lista, chame remarcar_reuniao com ele e só confirme o novo horário depois do resultado. Se ele não quiser remarcar agora, deixe a porta aberta; cancelar de vez é com a equipe.",
+          livres,
+        ].join("\n"),
+        horarios,
+        modo: "remarcar",
+        marcada,
       };
     }
-    const horarios = await horariosLivres();
+    if (etapa && ETAPA_DE_REUNIAO.test(etapa.nome as string)) {
+      return {
+        linha: [
+          "O cliente já tem reunião combinada com a equipe (fora da agenda do CRM). Não ofereça horário nem marque reunião por conta própria.",
+          "Se ele disser que não vai conseguir ir ou pedir para mudar o horário: chame avisar_imprevisto (avisa a Fernanda) e, na mesma resposta, diga que tudo bem, sem cobrar, e ofereça dois horários da lista abaixo. Quando ele escolher um, chame agendar_reuniao com ele: é a remarcação, e a Fernanda é avisada para tirar o horário antigo.",
+          livres,
+        ].join("\n"),
+        horarios,
+        modo: "remarcar_fora",
+        marcada: null,
+      };
+    }
     if (horarios.length === 0) {
-      return { linha: "Agenda: sem horário livre nos próximos dias úteis. Registre a preferência do cliente com avisar_equipe.", horarios };
+      return {
+        linha: "Agenda: sem horário livre nos próximos dias úteis. Registre a preferência do cliente com avisar_equipe.",
+        horarios,
+        modo: "marcar",
+        marcada: null,
+      };
     }
     return {
       linha: `Horários livres para a reunião (${REGRA_HORARIOS.duracaoMin} min, horário de Brasília): ${horariosPorDia(horarios)}`,
       horarios,
+      modo: "marcar",
+      marcada: null,
     };
   } catch (e) {
     console.error("[ia atendente] agenda indisponível:", e);
@@ -1051,6 +1262,8 @@ async function agendarPelaIa(
   horario: HorarioLivre,
   resumo: string,
   valor: number | null,
+  /** A reserva substitui uma reunião combinada fora do CRM (agendaParaIa, modo "remarcar_fora"). */
+  remarcacao = false,
 ): Promise<{ resultado: string; avisar: string | null; textoReserva: string | null }> {
   try {
     const r = await marcarReuniao({
@@ -1073,7 +1286,12 @@ async function agendarPelaIa(
         console.error("[ia atendente] não gravou o resumo:", s.contato_id, e);
       }
     }
-    await avisarReuniao(atendimentoId, s, { inicio: r.inicio, meet: r.meet }, valor);
+    if (remarcacao) {
+      await registrarRemarcada(s.contato_id, s.op_id, `para ${rotuloDoHorario(r.inicio)} (a anterior era fora da agenda do CRM).`).catch((e) =>
+        console.error("[ia atendente] não fechou a remarcação:", s.contato_id, e),
+      );
+    }
+    await avisarReuniao(atendimentoId, s, { inicio: r.inicio, meet: r.meet }, valor, remarcacao);
     return {
       resultado:
         `Reunião reservada: ${rotuloDoHorario(r.inicio)} (horário de Brasília), ${REGRA_HORARIOS.duracaoMin} minutos. ` +
@@ -1424,7 +1642,14 @@ async function gerarResposta(
     ...(podePassar ? [FERRAMENTA_HUMANO] : []),
     ...(destinos.size ? [ferramentaMover([...destinos.keys()])] : []),
     ...(ia.acoes.includes("registrar_objecao") ? [FERRAMENTA_OBJECAO] : []),
-    ...(horariosPorRotulo.size ? [ferramentaAgendar([...horariosPorRotulo.keys()])] : []),
+    // Com reunião marcada, remarcar em vez de marcar; na "reunião agendada" fora
+    // do CRM, marcar é a remarcação (agendaParaIa explica cada modo).
+    ...(agenda && agenda.modo !== "marcar" ? [FERRAMENTA_IMPREVISTO] : []),
+    ...(!horariosPorRotulo.size
+      ? []
+      : agenda?.modo === "remarcar"
+        ? [ferramentaRemarcar([...horariosPorRotulo.keys()])]
+        : [ferramentaAgendar([...horariosPorRotulo.keys()])]),
     ...(tabela ? [FERRAMENTA_TAXAS] : []),
     ...(ia.acoes.includes("agendar_retorno") ? [FERRAMENTA_RETORNO] : []),
   ];
@@ -1493,9 +1718,32 @@ async function gerarResposta(
         escolhido,
         typeof entrada.resumo === "string" ? entrada.resumo : "",
         Number.isFinite(valor) && valor > 0 ? valor : null,
+        // Em "reunião agendada" com a reunião fora do CRM, a reserva é a remarcação.
+        agenda?.modo === "remarcar_fora",
       );
     }
   }
+
+  // remarcar_reuniao: muda a reunião no Google ANTES de responder, pelo mesmo
+  // motivo do agendar (só o resultado diz se dá para confirmar).
+  let remarcacao: { resultado: string; textoReserva: string | null } | null = null;
+  const pedidoRemarcar = usou("remarcar_reuniao");
+  if (pedidoRemarcar && resposta.stop_reason === "tool_use" && !usou(FERRAMENTA_HUMANO.name) && agenda?.marcada) {
+    const escolhido = horariosPorRotulo.get(String((pedidoRemarcar.input as { horario?: unknown }).horario));
+    if (!escolhido) {
+      remarcacao = { resultado: "Não remarcado: horário fora da lista. Ofereça dois horários da lista.", textoReserva: null };
+    } else {
+      if (!(await aindaVale())) return { tipo: "texto", texto: "", avisar: null, mover: null };
+      remarcacao = await remarcarPelaIa(atendimentoId, s, agenda.marcada, escolhido);
+    }
+  }
+  const pedidoImprevisto = usou(FERRAMENTA_IMPREVISTO.name);
+  const motivoImprevisto = pedidoImprevisto ? (pedidoImprevisto.input as { motivo?: unknown }).motivo : null;
+  const imprevisto = pedidoImprevisto
+    ? typeof motivoImprevisto === "string" && motivoImprevisto.trim()
+      ? motivoImprevisto.trim()
+      : "O cliente avisou que não vai conseguir ir."
+    : null;
 
   // O modelo costuma chamar avisar_equipe/mover_etapa sem escrever nada antes e
   // parar esperando o resultado (stop_reason "tool_use"). Sem devolver esse
@@ -1514,7 +1762,7 @@ async function gerarResposta(
       : null;
   const pedidoRetorno = usou(FERRAMENTA_RETORNO.name);
   const retorno = pedidoRetorno && resposta.stop_reason === "tool_use" ? conferirRetorno(pedidoRetorno.input) : null;
-  if ((agendamento || taxas || retorno || (!texto && resposta.stop_reason === "tool_use")) && !usou(FERRAMENTA_HUMANO.name)) {
+  if ((agendamento || remarcacao || taxas || retorno || (!texto && resposta.stop_reason === "tool_use")) && !usou(FERRAMENTA_HUMANO.name)) {
     const resultados: Anthropic.ToolResultBlockParam[] = resposta.content
       .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
       .map((b) => ({
@@ -1525,14 +1773,20 @@ async function gerarResposta(
             ? "Equipe avisada. Seu atendimento a este contato termina aqui: esta resposta é a última, sem pergunta."
             : b.name === "agendar_reuniao" && agendamento
               ? agendamento.resultado
-              : b.name === FERRAMENTA_TAXAS.name && taxas
-                ? taxas
-                : b.name === FERRAMENTA_RETORNO.name && retorno
-                  ? resultadoDoRetorno(retorno)
-                  : "Registrado.",
+              : b.name === "remarcar_reuniao" && remarcacao
+                ? remarcacao.resultado
+                : b.name === FERRAMENTA_IMPREVISTO.name
+                  ? remarcacao
+                    ? "Registrado."
+                    : "A Fernanda vai ser avisada. Siga a conversa: ofereça dois horários da lista para remarcar."
+                  : b.name === FERRAMENTA_TAXAS.name && taxas
+                    ? taxas
+                    : b.name === FERRAMENTA_RETORNO.name && retorno
+                      ? resultadoDoRetorno(retorno)
+                      : "Registrado.",
       }));
     // O texto da primeira chamada foi escrito sem saber o resultado: não vale.
-    if (agendamento || taxas || retorno) texto = "";
+    if (agendamento || remarcacao || taxas || retorno) texto = "";
     const continuacao = await cliente.messages.create({
       ...base,
       tool_choice: { type: "none" },
@@ -1597,7 +1851,11 @@ async function gerarResposta(
   // mesmo jeito, com a frase fixa da reserva.
   return {
     tipo: "texto",
-    texto: texto || agendamento?.textoReserva || (avisar ? "Vou passar isso para alguém da equipe, que fala com você por aqui." : ""),
+    texto:
+      texto ||
+      agendamento?.textoReserva ||
+      remarcacao?.textoReserva ||
+      (avisar ? "Vou passar isso para alguém da equipe, que fala com você por aqui." : ""),
     avisar,
     valor: Number.isFinite(valorAviso) && valorAviso > 0 ? valorAviso : null,
     mover,
@@ -1605,6 +1863,9 @@ async function gerarResposta(
     // textoReserva só existe quando a reserva no Google deu certo.
     marcou: Boolean(agendamento?.textoReserva),
     retorno: retorno && !("erro" in retorno) ? retorno : null,
+    // A remarcação feita fecha o imprevisto da mesma resposta: o aviso dela já
+    // foi para a Fernanda (remarcarPelaIa).
+    imprevisto: remarcacao?.textoReserva ? null : imprevisto,
   };
 }
 
@@ -1613,3 +1874,6 @@ export const paraTesteAndamento = { avancarPelaIa, ETAPA_EM_CONTATO, ETAPA_SOLIC
 // Para o teste do aviso por demanda no Instagram (scripts/testar-instagram.ts):
 // a reunião só é marcada com o Google de verdade, e o aviso é o que importa ali.
 export const paraTesteAvisos = { avisarReuniao };
+// Para o teste da remarcação (scripts/testar-ia-remarcacao.ts): com a trava do
+// dev a resposta não sai, e o imprevisto só é registrado depois do envio.
+export const paraTesteRemarcacao = { avisarImprevisto };

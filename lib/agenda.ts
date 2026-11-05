@@ -179,7 +179,7 @@ export function rotuloDoHorario(d: Date): string {
  * marcadas), ou `agenda` quando a tela lê outra.
  */
 async function chamar<T>(
-  metodo: "GET" | "POST" | "DELETE",
+  metodo: "GET" | "POST" | "PATCH" | "DELETE",
   caminho: (calendarioId: string) => string,
   busca: Record<string, string> = {},
   corpo?: unknown,
@@ -767,6 +767,54 @@ export async function marcarReuniao(e: {
             ${e.autorId})`;
 
   return { id, eventoId: criado.id, inicio, fim, meet: criado.hangoutLink ?? null, convidou: Boolean(email) };
+}
+
+export type ReuniaoRemarcada = { antes: Date; inicio: Date; fim: Date; meet: string | null; convidou: boolean };
+
+/**
+ * Muda o horário de uma reunião que o CRM marcou (2026-11-05: a IA remarca
+ * quando o lead avisa que não vai conseguir ir). O MESMO evento no Google, com o
+ * mesmo Meet, só com o horário novo e a mesma duração; o convidado recebe a
+ * atualização por e-mail quando tem. Na mesma fila de reservas de marcarReuniao:
+ * a conferência do horário e a mudança andam juntas. O próprio evento não conta
+ * como ocupado (remarcar para um horário que encosta no antigo vale).
+ *
+ * Os lembretes da cadência leem a hora da reunião no banco antes de cada espera
+ * (HORA_DA_REUNIAO), então a linha de agenda_reunioes muda junto.
+ */
+export async function remarcarReuniao(e: {
+  reuniaoId: string;
+  inicio: Date;
+  conferirAgendasQueOcupam?: boolean;
+}): Promise<ReuniaoRemarcada> {
+  const [r] = await sql`
+    SELECT r.google_evento_id, r.inicio, r.fim, r.contato_id, r.oportunidade_id, c.email
+      FROM agenda_reunioes r JOIN contatos c ON c.id = r.contato_id
+     WHERE r.id = ${e.reuniaoId}`;
+  if (!r) throw new Error("Reunião não encontrada no CRM.");
+  const antes = new Date(r.inicio as string | Date);
+  const duracao = new Date(r.fim as string | Date).getTime() - antes.getTime();
+  const inicio = e.inicio;
+  const fim = new Date(inicio.getTime() + (duracao > 0 ? duracao : REGRA_HORARIOS.duracaoMin * 60_000));
+  const email = typeof r.email === "string" && EMAIL.test(r.email.trim()) ? r.email.trim() : null;
+  const eventoId = r.google_evento_id as string;
+
+  const atualizado = await sql.begin(async (tx: typeof sql) => {
+    await tx`SET LOCAL lock_timeout = '20s'`;
+    await tx`SELECT pg_advisory_xact_lock(hashtext('chroma:agenda-marcar-reuniao'))`;
+    const ocupados = e.conferirAgendasQueOcupam ? await ocupadosEntre(inicio, fim) : await eventosEntre(inicio, fim);
+    if (ocupados.some((x) => x.id !== eventoId && sobrepoe({ inicio, fim }, x))) throw new HorarioOcupado();
+    return chamar<EventoGoogle>(
+      "PATCH",
+      (cal) => `/calendars/${cal}/events/${encodeURIComponent(eventoId)}`,
+      { sendUpdates: email ? "all" : "none" },
+      { start: { dateTime: inicio.toISOString(), timeZone: FUSO }, end: { dateTime: fim.toISOString(), timeZone: FUSO } },
+    );
+  });
+
+  // Pela conexão comum, como o vínculo da reserva: o Google já mudou.
+  await sql`UPDATE agenda_reunioes SET inicio = ${inicio}, fim = ${fim} WHERE id = ${e.reuniaoId}`;
+  return { antes, inicio, fim, meet: atualizado.hangoutLink ?? null, convidou: Boolean(email) };
 }
 
 // ── O vínculo, do lado do CRM ─────────────────────────────────────────────────

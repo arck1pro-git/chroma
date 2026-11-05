@@ -35,6 +35,12 @@
 // alguém da equipe está na conversa; quando não tem como (contato fora da IA,
 // janela da Meta fechada, a hora passou longe), avisa o responsável.
 //
+// REMARCAÇÃO DE REUNIÃO (2026-11-05, lib/ia/remarcacao.ts): o lead avisou que
+// não vai conseguir ir e não escolheu o novo horário. A rodada volta a
+// oferecer horários com os tempos fixos de TEMPOS_REMARCACAO (2 horas e,
+// depois, um por dia), para qualquer IA, depois do retorno combinado e antes do
+// silêncio; a retomada por silêncio comum não cutuca quem está remarcando.
+//
 // QUEM CHAMA: o agendador do n8n (NOME_AGENDADOR), de 5 em 5 minutos, em
 // /api/ia/retomar. É ligado ao salvar uma IA com retomadas ou com o retorno
 // combinado pelo endereço público (app/inicio/acoes-ia.ts). Rodadas não se
@@ -50,7 +56,8 @@ import {
   type WorkflowMotor,
 } from "@/lib/automacoes/motores/n8n/adaptador";
 import { garantirCredencialDoCrm } from "@/lib/campanhas-workflow";
-import { rotuloDoHorario } from "@/lib/agenda";
+import { horariosLivres, horariosPorDia, rotuloDoHorario } from "@/lib/agenda";
+import { JANELA_REMARCACAO, LIKE_PENDENTE, LIKE_REMARCADA, TEMPOS_REMARCACAO, VALIDADE_DIAS } from "@/lib/ia/remarcacao";
 import {
   avisarNoWhatsApp,
   blocoDaFuncao,
@@ -148,9 +155,12 @@ export async function retomarConversas(): Promise<ResumoRetomada> {
     const [trava] = await tx`SELECT pg_try_advisory_xact_lock(hashtext('chroma:ia-retomada')) AS ok`;
     if (!trava.ok) return { ocupado: true, retomadas: 0, retornos: 0, avisos: 0, falhas: 0 };
     const resumo: ResumoRetomada = { retomadas: 0, retornos: 0, avisos: 0, falhas: 0 };
-    // O combinado tem hora marcada: vai primeiro, e o silêncio usa o que sobrar.
+    // O combinado tem hora marcada: vai primeiro; depois a remarcação de
+    // reunião (o lead que avisou que não vai conseguir ir); o silêncio usa o
+    // que sobrar.
     const usados = await retornosCombinados(resumo);
-    await rodada(resumo, POR_RODADA - usados);
+    const remarcando = await remarcacoes(resumo, POR_RODADA - usados);
+    await rodada(resumo, POR_RODADA - usados - remarcando);
     return resumo;
   });
 }
@@ -204,6 +214,9 @@ async function rodada(resumo: ResumoRetomada, limite: number): Promise<void> {
           WHERE h.contato_id = a.contato_id
             AND (h.descricao LIKE ${LIKE_RETORNO} OR h.descricao LIKE ${LIKE_FIM})
           ORDER BY h.data_criacao DESC LIMIT 1), false)
+       -- Remarcação aberta: quem retoma é a rodada dela (remarcacoes), com os
+       -- tempos dela.
+       AND NOT ${remarcacaoAbertaSql()}
      ORDER BY x.ultima_ia`) as unknown as Candidata[];
 
   const agora = new Date();
@@ -232,7 +245,17 @@ async function rodada(resumo: ResumoRetomada, limite: number): Promise<void> {
         resumo.avisos += 1;
         continue;
       }
-      const r = await retomar(c.id, s, ia, c.feitas + 1, agora.getTime() - ultimaIa);
+      const numero = c.feitas + 1;
+      const r = await retomar(c.id, s, ia, numero, total, [
+        `RETOMADA ${numero} DE ${total}. O cliente não respondeu à sua última mensagem, de ${duracao(agora.getTime() - ultimaIa)} atrás. Escreva UMA mensagem curta para retomar a conversa:`,
+        "- Volte ao assunto que ficou sem resposta com outras palavras. Não copie a pergunta anterior nem repita uma retomada que já foi.",
+        '- Leve e sem cobrança: nada de "sumiu?", "não me respondeu" ou "fico no aguardo".',
+        "- Uma ou duas frases, numa mensagem só, sem linha em branco.",
+        ...(numero === total
+          ? ["- É a última vez que você retoma: deixe a conversa aberta para quando ele quiser seguir, sem pressionar."]
+          : []),
+        "Escreva só a mensagem ao cliente.",
+      ]);
       if (r === "enviada") resumo.retomadas += 1;
       else resumo.falhas += 1;
     } catch (e) {
@@ -240,6 +263,110 @@ async function rodada(resumo: ResumoRetomada, limite: number): Promise<void> {
       console.error("[ia retomada] falhou:", c.id, e);
     }
   }
+}
+
+// ── A remarcação de reunião ─────────────────────────────────────────────────
+
+/**
+ * A remarcação está aberta para o contato da conversa `a` (lib/ia/remarcacao.ts):
+ * a última linha de remarcação dele, dentro da validade, é a pendente.
+ */
+function remarcacaoAbertaSql() {
+  return sql`coalesce((
+    SELECT h.descricao LIKE ${LIKE_PENDENTE} FROM historico h
+     WHERE h.contato_id = a.contato_id
+       AND (h.descricao LIKE ${LIKE_PENDENTE} OR h.descricao LIKE ${LIKE_REMARCADA})
+       AND h.data_criacao > now() - ${`${VALIDADE_DIAS} days`}::interval
+     ORDER BY h.data_criacao DESC LIMIT 1), false)`;
+}
+
+/**
+ * O lead avisou que não vai conseguir ir à reunião, a IA ofereceu horários e
+ * ele não respondeu (pedido dele, 2026-11-05: "se não tiver retorno manda
+ * outras depois de 2 horas e depois uma a cada dia"). Os tempos são os de
+ * TEMPOS_REMARCACAO, para qualquer IA, contados da mensagem anterior da IA, na
+ * JANELA_REMARCACAO. Sem resposta a nenhuma, desiste e avisa o responsável,
+ * como a retomada por silêncio. A remarcação feita (ou a resposta do cliente,
+ * que zera a conta) tira a conversa daqui. Devolve quantas conversas tocou.
+ */
+async function remarcacoes(resumo: ResumoRetomada, limite: number): Promise<number> {
+  if (limite <= 0) return 0;
+  const agora = new Date();
+  const hora = horaEmBrasilia(agora);
+  if (hora < JANELA_REMARCACAO.das || hora >= JANELA_REMARCACAO.ate) return 0;
+
+  const candidatas = (await sql`
+    SELECT a.id, x.feitas, x.ultima_ia
+      FROM atendimentos a
+      CROSS JOIN LATERAL (
+        SELECT m.enviada_por FROM mensagens m
+         WHERE m.atendimento_id = a.id AND m.status <> 'erro'
+         ORDER BY m.data_criacao DESC, m.id DESC LIMIT 1
+      ) ultima
+      CROSS JOIN LATERAL (
+        SELECT max(m.data_criacao) AS em FROM mensagens m
+         WHERE m.atendimento_id = a.id AND m.origem = 'contato'
+      ) cliente
+      CROSS JOIN LATERAL (
+        SELECT count(*) FILTER (WHERE m.retomada IS NOT NULL)::int AS feitas,
+               max(m.data_criacao) FILTER (WHERE m.enviada_por = 'ia') AS ultima_ia
+          FROM mensagens m
+         WHERE m.atendimento_id = a.id AND m.data_criacao > cliente.em
+      ) x
+     WHERE a.status <> 'encerrado'
+       AND a.contato_id IS NOT NULL
+       AND a.data_atualizacao > now() - ${`${VALIDADE_DIAS + 1} days`}::interval
+       AND ultima.enviada_por = 'ia'
+       AND cliente.em IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM historico h
+          WHERE h.contato_id = a.contato_id
+            AND h.descricao LIKE ${`${MARCA_PAROU}%`}
+            AND h.data_criacao > cliente.em)
+       AND ${remarcacaoAbertaSql()}
+     ORDER BY x.ultima_ia`) as unknown as Candidata[];
+
+  const total = TEMPOS_REMARCACAO.length;
+  let tocadas = 0;
+  for (const c of candidatas) {
+    if (tocadas >= limite) break;
+    try {
+      const s = await situacao(c.id);
+      const iaId = s && iaQueAtende(s);
+      if (!s || !iaId || s.humano_recente) continue;
+      const ultimaIa = new Date(c.ultima_ia).getTime();
+      const espera = c.feitas < total ? TEMPOS_REMARCACAO[c.feitas] * 60_000 : ESPERA_DESISTIR_MS;
+      const atraso = agora.getTime() - (ultimaIa + espera);
+      if (atraso < 0 || atraso > ATRASO_MAXIMO_MS) continue;
+      const [ia] = (await sql`SELECT nome, prompt, to_jsonb(acoes) AS acoes FROM ias WHERE id = ${iaId}`) as unknown as IaQueEscreve[];
+      if (!ia) continue;
+
+      tocadas += 1;
+      if (c.feitas >= total) {
+        await desistir(c.id, s, `${s.contato_nome} não respondeu a ${total} mensagens para remarcar a reunião.`, true);
+        resumo.avisos += 1;
+        continue;
+      }
+      const numero = c.feitas + 1;
+      const livres = await horariosLivres().catch(() => []);
+      const r = await retomar(c.id, s, ia, numero, total, [
+        `REMARCAÇÃO ${numero} DE ${total}. O cliente avisou que não ia conseguir ir à reunião e ainda não escolheu um novo horário; ele não respondeu à sua última mensagem, de ${duracao(agora.getTime() - ultimaIa)} atrás. Escreva UMA mensagem curta para retomar a remarcação:`,
+        livres.length
+          ? `- Ofereça dois destes horários livres (horário de Brasília), com outras palavras, sem copiar a mensagem anterior: ${horariosPorDia(livres)}`
+          : "- Pergunte qual dia e horário ficam melhores para ele, com outras palavras, sem copiar a mensagem anterior.",
+        '- Leve e sem cobrança: nada de "sumiu?", "não me respondeu" ou "fico no aguardo".',
+        "- Uma ou duas frases, numa mensagem só, sem linha em branco.",
+        ...(numero === total ? ["- É a última vez que você retoma: diga que, quando ele puder, é só chamar para remarcar."] : []),
+        "Escreva só a mensagem ao cliente.",
+      ]);
+      if (r === "enviada") resumo.retomadas += 1;
+      else resumo.falhas += 1;
+    } catch (e) {
+      resumo.falhas += 1;
+      console.error("[ia retomada] remarcação falhou:", c.id, e);
+    }
+  }
+  return tocadas;
 }
 
 // ── O retorno combinado ─────────────────────────────────────────────────────
@@ -357,13 +484,17 @@ async function retornar(r: RetornoVencido, resumo: ResumoRetomada): Promise<bool
   return true;
 }
 
-/** Escreve e manda a retomada `numero`. Falhou: para as retomadas da conversa. */
+/**
+ * Escreve e manda a retomada `numero` de `total`, com as `instrucoes` de quem
+ * chamou (o silêncio ou a remarcação). Falhou: para as retomadas da conversa.
+ */
 async function retomar(
   atendimentoId: string,
   s: Situacao,
-  ia: IaRetomada,
+  ia: IaQueEscreve,
   numero: number,
-  silencioMs: number,
+  total: number,
+  instrucoes: string[],
 ): Promise<"enviada" | "parou"> {
   // Pela Meta (API oficial e direct do Instagram), texto livre só dentro das
   // 24h abertas pela última mensagem do cliente. Fechada, nenhuma retomada sai
@@ -378,17 +509,7 @@ async function retomar(
     return "parou";
   }
 
-  const total = ia.retomar_apos.length;
-  const texto = await escreverRetomada(atendimentoId, s, ia, [
-    `RETOMADA ${numero} DE ${total}. O cliente não respondeu à sua última mensagem, de ${duracao(silencioMs)} atrás. Escreva UMA mensagem curta para retomar a conversa:`,
-    "- Volte ao assunto que ficou sem resposta com outras palavras. Não copie a pergunta anterior nem repita uma retomada que já foi.",
-    '- Leve e sem cobrança: nada de "sumiu?", "não me respondeu" ou "fico no aguardo".',
-    "- Uma ou duas frases, numa mensagem só, sem linha em branco.",
-    ...(numero === total
-      ? ["- É a última vez que você retoma: deixe a conversa aberta para quando ele quiser seguir, sem pressionar."]
-      : []),
-    "Escreva só a mensagem ao cliente.",
-  ]);
+  const texto = await escreverRetomada(atendimentoId, s, ia, instrucoes);
   if (!texto) {
     await desistir(atendimentoId, s, "o modelo não escreveu a retomada.", false);
     return "parou";
@@ -409,7 +530,7 @@ async function retomar(
     await desistir(atendimentoId, s, `o envio da retomada ${numero} falhou (${r.erro}).`, false);
     return "parou";
   }
-  console.info(`[ia retomada] retomada ${numero}/${ia.retomar_apos.length} em ${atendimentoId}`);
+  console.info(`[ia retomada] retomada ${numero}/${total} em ${atendimentoId}`);
   return "enviada";
 }
 

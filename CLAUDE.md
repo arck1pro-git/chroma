@@ -130,6 +130,12 @@ quem traz o dia de retomar o contato (`oportunidades.retomar_em`, conferido por 
 `lib/mover-etapa.ts`); a tela pede o dia em `app/funil/escolher-retorno.tsx`. Sair para outra etapa apaga o dia; no dia,
 o card mostra "Retomar contato" e sobe na coluna. Card novo não nasce nessa etapa, e remover etapa não despeja leads nela.
 
+Lead com reunião marcada que avisa que não vai conseguir ir: a IA chama `avisar_imprevisto` (avisa a Fernanda, sem
+encerrar o atendimento), oferece horários e, quando ele escolhe, `remarcar_reuniao` muda o mesmo evento no Google
+(`remarcarReuniao` em `lib/agenda.ts`) e avisa a Fernanda. Sem resposta, a rodada das retomadas volta a oferecer 2 h
+depois e, depois, uma vez por dia (`lib/ia/remarcacao.ts`, estado no histórico). Na "reunião agendada" combinada fora
+do CRM, a remarcação é uma reserva nova.
+
 ## 3. Onde fica cada coisa
 
 | O quê | Onde |
@@ -227,6 +233,9 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   da biblioteca de Documentos pela URL assinada e as recusas do registro),
   `testar-instancia-secundaria.ts` (pelo runner, contra o DEV com a uazapi falsa num servidor local e marca apagada no
   fim: quando a secundária assume, onde a mensagem fica, a volta à principal e as travas do banco),
+  `testar-ia-remarcacao.ts` (pelo runner, contra o DEV com a Anthropic falsa e marca apagada no fim: o estado da
+  remarcação, o aviso do imprevisto e as mensagens de 2 h e diárias da rodada; a mudança no Google fica no
+  `testar-agenda-ocupados.mjs`),
   `testar-ia-retorno.ts` (pelo runner, contra o DEV com a Anthropic falsa num servidor local e marca apagada no fim: o
   retorno combinado da IA, a rodada que retoma no horário e a retomada por silêncio que o respeita),
   `testar-ponto.ts` (pelo runner: as regras das horas do ponto; com `PONTO_DATABASE_URL`, lê dois meses da base do app
