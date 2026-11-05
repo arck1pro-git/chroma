@@ -62,7 +62,11 @@ public/               só ícones e o que o app serve; nada de material interno
 
 Módulos (chave, rota): inicio `/`, chat, contatos, agenda, demandas, metricas, emails, automacoes, campanhas,
 templates, blog, webhooks, formularios, documentos, videos, meta, integracoes, financeiro, infra, configuracoes. A rota é
-`/<chave>`, exceto inicio. Quem vê cada um é decidido no banco (`departamento_modulos`), não no código. O `infra`
+`/<chave>`, exceto inicio. Quem vê cada um é decidido no banco (`departamento_modulos`), não no código. O `blog`
+(`docs/blog.md`) é o quadro Pautas → Em revisão → Postado (rótulos de `pendente`/`aprovado`), o desempenho no Search
+Console (`lib/blog-google.ts`, a propriedade achada pelo endereço do blog, sem coluna) e a automação de artigos: um
+workflow só no n8n, de segunda a sexta às 7h, 2 por blog (`AGENDA_AUTOMACAO`), com a pauta escolhida por IA pela
+descrição do blog (`lib/blog-curadoria.ts`); ligar e pausar só pela tela em produção (`lib/blog-automacao.ts`). O `infra`
 (`lib/infra*.ts`) lê o uso e o limite de cada serviço externo com as chaves que o CRM já tem. O `financeiro` reúne o
 ponto (`lib/ponto.ts`, base guardada 1 minuto na memória), lido da base do app de ponto da equipe (outro sistema, só
 leitura, `lib/ponto-db.ts`), e a folha do mês (`lib/financeiro-pagamentos.ts`, conta em `lib/financeiro-tipos.ts`), no
@@ -242,7 +246,9 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   de ponto e confere que a conexão recusa escrita, sem gravar nada lá), `testar-folha.ts` (pelo runner: a conta da folha
   com deslocamento e as recusas; contra o DEV, a foto do mês e o padrão do cadastro, com marca apagada no fim, e a IA sem
   leitura), `testar-interesse-futuro.ts` (pelo runner, contra o DEV com um funil de teste apagado no fim: a etapa que
-  pede o dia de retomar, a trava do mover, o lote, o quadro e a remoção de etapa),
+  pede o dia de retomar, a trava do mover, o lote, o quadro e a remoção de etapa), `testar-blog.ts` (pelo runner, com
+  Search Console, n8n e Anthropic falsos pelo `fetch` interceptado e um blog marcado no DEV, apagado no fim: a
+  propriedade do blog, o desempenho e o artigo no Google, o workflow e o ligar, a curadoria da pauta e a cota do dia),
   `scripts/testar-extensao-reunioes.mjs` (direto com `node`: o service worker da extensão com um `chrome` falso; o áudio
   de verdade só no Chrome, ver `extensao-reunioes/LEIAME.md`) e `scripts/testar-hooks.mjs`
   para os hooks do Claude Code. Quando rodar cada um está na skill `/verify`. `testar-gsc.ts` e `testar-login.ts`
@@ -323,6 +329,7 @@ O fluxo completo, com delegação aos subagentes e revisão, está nas skills `/
 inteiro, dividido por assunto; sobretudo `-rodada`, `-envios` e `-controle`), `lib/campanhas-fluxo-entrada.ts`,
 `lib/aviso-equipe-whatsapp.ts`, `lib/ia/campanhas-construtor.ts`, `lib/whatsapp-custo.ts` (lê o gasto na Graph),
 `lib/reunioes-extensao.ts` (Origin e freio da extensão de reuniões), `lib/reunioes-lead.ts`, `lib/ia/reuniao.ts`,
+`lib/blog-automacao.ts` (cria, reescreve, liga e pausa o workflow do blog no n8n compartilhado; só produção),
 `extensao-reunioes/manifest.json` (permissões e a chave que fixa o ID) e `extensao-reunioes/service-worker.js`.
 
 **Dependências que importam:** `next` 16.3 (API diferente do treino, ver `AGENTS.md`), `postgres` (fora do
@@ -338,8 +345,8 @@ Neon, só em `lib/armazenamento.ts`), `@xyflow/react` (editor de fluxos), `@dnd-
 | uazapi | WhatsApp não oficial | `lib/uazapi.ts` | instância compartilhada; laço bane o número |
 | Meta | WhatsApp Cloud API, leads, Ads, Conversions API, posts, Instagram (DM e comentários) | `lib/whatsapp-oficial.ts`, `lib/meta*.ts`, `lib/social/`, `lib/instagram*.ts` | eventos sempre ligados na produção; app compartilhado (WhatsApp, leads, Instagram): mexer só na assinatura do objeto em questão |
 | n8n | executa cadências e agendadores | `lib/automacoes/motores/n8n/` | instância compartilhada; só tocar o que o CRM criou |
-| Google | Agenda (OAuth), Drive e gravações do Meet (conta de serviço), Search Console | `lib/google-*.ts`, `lib/agenda.ts`, `lib/gravacoes.ts`, `lib/search-console.ts` | escopo mínimo |
-| Anthropic | IAs de atendimento e de interface, copiloto de reuniões da extensão (`lib/ia/reuniao.ts`) | `lib/ia/` | prompt com dado de cliente sanitizado; a mesma chave e o mesmo limite de uso servem às três |
+| Google | Agenda (OAuth), Drive e gravações do Meet (conta de serviço), Search Console do blog (conta de serviço, só leitura) | `lib/google-*.ts`, `lib/agenda.ts`, `lib/gravacoes.ts`, `lib/search-console.ts`, `lib/blog-google.ts` | escopo mínimo; inspeção de URL tem cota (2.000/dia por site) |
+| Anthropic | IAs de atendimento e de interface, copiloto de reuniões da extensão (`lib/ia/reuniao.ts`), artigos e curadoria da pauta do blog | `lib/ia/`, `lib/artigo-geracao.ts`, `lib/blog-curadoria.ts` | prompt com dado de cliente sanitizado (título de notícia também); a mesma chave e o mesmo limite de uso servem a todas |
 | Groq, Magnific | transcrição de áudio (chat e reuniões da extensão), voz da IA | `lib/transcricao.ts`, `lib/voz.ts` | número por extenso antes da voz; a extensão divide a chave da Groq com o chat |
 | Claude (MCP) | conector de leitura e posts | `app/api/mcp/[segredo]`, `lib/mcp/` | telefone e e-mail mascarados |
 | App de ponto (Neon à parte) | horas da equipe na aba Ponto do Financeiro | `lib/ponto-db.ts`, `lib/ponto.ts` | outro sistema: só leitura (transação READ ONLY), nunca a coluna `senha` |

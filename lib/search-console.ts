@@ -12,6 +12,8 @@
 // O QUE ESTE MÓDULO NÃO FAZ: guardar nada. Ele lê da API e devolve. A
 // persistência é decisão de modelagem em aberto — e ela É necessária, porque a
 // janela do Search Console é de 16 meses e o que sai dela some para sempre.
+// Quem monta a tela do blog sobre estas leituras (com cache curto em memória)
+// é lib/blog-google.ts.
 import "server-only";
 import { ESCOPO_SEARCH_CONSOLE, tokenDeAcesso } from "@/lib/google-sa";
 
@@ -66,6 +68,18 @@ export interface OpcoesConsulta {
    * a tela ("o que aconteceu ontem"), ruim para gravar como número definitivo.
    */
   frescos?: boolean;
+  /**
+   * Recorte por dimensão, todos valendo juntos (E). É o que separa "o site" de
+   * "os artigos do blog" (página contendo o caminho do blog) e "um artigo" (a
+   * página dele) sem trazer as 25 mil linhas para filtrar aqui.
+   */
+  filtros?: FiltroConsulta[];
+}
+
+export interface FiltroConsulta {
+  dimensao: "page" | "query" | "country" | "device";
+  operador: "equals" | "contains" | "notContains";
+  expressao: string;
 }
 
 async function pedir<T>(url: string, corpo?: unknown): Promise<T> {
@@ -140,9 +154,25 @@ export async function consultar(
   }>(caminho, {
     startDate: opcoes.inicio,
     endDate: opcoes.fim,
-    dimensions: opcoes.dimensoes,
+    // Sem dimensão, a API devolve UMA linha com o total do período — é assim
+    // que se lê o placar do site sem somar dia a dia (a posição média não soma).
+    ...(opcoes.dimensoes.length ? { dimensions: opcoes.dimensoes } : {}),
     rowLimit: opcoes.limite ?? 1000,
     dataState: opcoes.frescos ? "all" : "final",
+    ...(opcoes.filtros?.length
+      ? {
+          dimensionFilterGroups: [
+            {
+              groupType: "and",
+              filters: opcoes.filtros.map((f) => ({
+                dimension: f.dimensao,
+                operator: f.operador,
+                expression: f.expressao,
+              })),
+            },
+          ],
+        }
+      : {}),
   });
 
   return (dados.rows ?? []).map((r) => ({

@@ -42,12 +42,14 @@ o `npx` baixaria pacotes do registro.
 | Atendimento humano | mudou `lib/atendimento-humano.ts`, `lib/automacoes/mover-pela-cadencia.ts`, `avancarPelaIa`/`passarParaHumano` em `lib/ia/atendente.ts` ou a pill em `lib/funil.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-atendimento-humano.ts` |
 | Retomadas e retorno combinado da IA | mudou `lib/ia/retorno.ts`, `lib/ia/retomada.ts` ou `gerarResposta`/`responderComIa` em `lib/ia/atendente.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-ia-retorno.ts` |
 | Remarcação de reunião pela IA | mudou `lib/ia/remarcacao.ts`, `lib/ia/retomada.ts`, `remarcarReuniao` em `lib/agenda.ts` ou `avisarImprevisto`/`remarcarPelaIa`/`agendaParaIa` em `lib/ia/atendente.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-ia-remarcacao.ts` e `node scripts/testar-agenda-ocupados.mjs` |
+| Blog (Google, automação, pauta) | mudou `lib/blog-*.ts`, `lib/search-console.ts`, `app/api/blogs/` ou `listarExecucoes`/`acharWorkflowPorNome` em `lib/automacoes/motores/n8n/adaptador.ts` | `node --env-file=.env scripts/jiti.mjs scripts/testar-blog.ts` |
 | Hooks do Claude Code | mudou `.claude/hooks/` ou `.claude/settings.json` | `node scripts/testar-hooks.mjs` |
 | Build | mudou `next.config.ts`, `proxy.ts`, `app/layout.tsx`, `package.json` ou `tsconfig.json`; rota ou página nova; alvo `build` ou `tudo` | `npm run build` |
 
 Os scripts simulam rede e serviços. O de eventos da Meta usa o banco DEV numa transação desfeita e devolve a etapa
 ao valor original. O de atendimento humano cria no DEV um funil de teste marcado e o apaga no fim; o do assistente de
-reuniões, um contato marcado, com a Anthropic falsa num servidor local. O motor e a IA do
+reuniões, um contato marcado, com a Anthropic falsa num servidor local; o do blog, um blog marcado, com Search Console,
+n8n e Anthropic falsos pelo `fetch` interceptado. O motor e a IA do
 construtor de campanhas usam o DEV com cenário marcado e apagado no fim, com a Graph e a uazapi falsas (nenhuma
 chamada à Anthropic). O de hooks usa uma
 pasta temporária com um `.env` falso. Nenhum outro script de `scripts/` entra aqui: `testar-gsc.ts` e `testar-login.ts` falam com

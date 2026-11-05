@@ -1,8 +1,8 @@
 // Gera UM artigo da pauta e GRAVA. Chamada pelo n8n, um item por vez.
 //
 // A DIFERENÇA PARA /api/artigos/generate: lá a rota devolve o rascunho e quem
-// grava é a pessoa, depois de olhar a prévia. Aqui não há ninguém olhando às 8h
-// da segunda — então esta rota grava. O artigo entra `pendente`, que é
+// grava é a pessoa, depois de olhar a prévia. Aqui não há ninguém olhando às 7h
+// da manhã — então esta rota grava. O artigo entra `pendente`, que é
 // exatamente o estado que pede leitura humana antes de ir ao ar: só o aprovado
 // sai em /api/publico/<chave>/artigos.
 //
@@ -17,7 +17,7 @@
 import { NextRequest } from "next/server";
 import { autorizado, naoAutorizado } from "@/lib/automacoes/servico";
 import { campo, lerCorpo } from "@/lib/blog";
-import { gerarDaPauta } from "@/lib/blog-pauta";
+import { artigosDeHoje, gerarDaPauta, POR_BLOG_AUTOMACAO } from "@/lib/blog-pauta";
 import { tamanhoValido } from "@/lib/artigo-geracao";
 
 // Um artigo: lê a matéria (até 12s) e escreve ~1.300 palavras. Cabe aqui; dez
@@ -40,6 +40,18 @@ export async function POST(req: NextRequest) {
   if (!link) return Response.json({ error: "link ausente." }, { status: 400 });
 
   const titulo = campo(corpo.titulo, 500);
+
+  // A cota do dia: a pauta traz candidatos a mais (para o paywall não comer a
+  // vaga), e quem completa a cota faz o resto da fila passar reto — sem ler a
+  // matéria nem gastar token.
+  if ((await artigosDeHoje(blogId)) >= POR_BLOG_AUTOMACAO) {
+    return Response.json({
+      ok: false,
+      pulado: true,
+      motivo: `O blog já recebeu os ${POR_BLOG_AUTOMACAO} artigos de hoje.`,
+      link,
+    });
+  }
 
   const saida = await gerarDaPauta({
     blogId,

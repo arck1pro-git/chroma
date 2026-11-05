@@ -1,0 +1,60 @@
+{
+  "aviso": "Dados fictícios para /blog/<id>?demo=1 (só em desenvolvimento). Nada aqui é de cliente.",
+  "blog": {
+    "id": 9001,
+    "nome": "Blog AMAAN (demonstração)",
+    "descricao": "Blog da AMAAN sobre investimento imobiliário: SCP, incorporação e renda com imóveis para quem investe de R$ 50 mil a R$ 1 milhão. Tom de especialista explicando para um cliente.",
+    "url_base": "https://amaan.com.br/blog",
+    "autor": "Equipe AMAAN",
+    "chave": "bk_demonstracao0000000000000000000000",
+    "rss_ativo": true
+  },
+  "artigos": [
+    { "id": 9101, "status": "pendente", "horas": 2, "titulo": "Selic em queda: o que muda para quem investe em imóveis na planta", "palavra_chave": "selic e imóveis", "resumo": "Com o corte de juros sinalizado pelo Copom, o crédito imobiliário volta a ficar mais barato. Veja o efeito no preço e no retorno de quem compra na planta.", "fonte_url": "https://www.infomoney.com.br/economia/copom-sinaliza-corte/", "palavras": 1340, "nota": 86 },
+    { "id": 9102, "status": "pendente", "horas": 5, "titulo": "Reforma tributária e incorporação: o que já está definido para 2027", "palavra_chave": "reforma tributária incorporação", "resumo": "O novo IBS/CBS muda a conta do incorporador e de quem investe junto. Separamos o que está decidido do que ainda depende de regulamentação.", "fonte_url": "https://g1.globo.com/economia/reforma-tributaria-imoveis.ghtml", "palavras": 1480, "nota": 78 },
+    { "id": 9103, "status": "pendente", "horas": 26, "titulo": "Aluguel por temporada no litoral catarinense bate recorde na alta", "palavra_chave": "aluguel por temporada", "resumo": "A ocupação em Porto Belo e Itapema puxa a renda de quem tem imóvel pronto para short stay.", "fonte_url": "https://www.moneytimes.com.br/aluguel-temporada-sc/", "palavras": 1190, "nota": 64 },
+    { "id": 9104, "status": "pendente", "horas": 30, "titulo": "Fundos imobiliários ou SCP: como comparar o risco de cada um", "palavra_chave": "fii ou scp", "resumo": "Liquidez, prazo e governança: os três pontos que separam as duas formas de investir em imóvel sem comprar um.", "fonte_url": "https://www.seudinheiro.com/economia/fiis-dezembro/", "palavras": 1560, "nota": 91 },
+    { "id": 9201, "status": "aprovado", "horas": 96, "titulo": "Como funciona uma SCP no mercado imobiliário", "palavra_chave": "scp imobiliária", "slug": "como-funciona-scp-imobiliaria", "resumo": "O guia do investidor iniciante.", "fonte_url": "https://www.infomoney.com.br/guias/scp/", "palavras": 1620, "nota": 94 },
+    { "id": 9202, "status": "aprovado", "horas": 170, "titulo": "Juros do crédito imobiliário: a tabela dos bancos em outubro", "palavra_chave": "juros crédito imobiliário", "slug": "juros-credito-imobiliario-outubro", "resumo": "Caixa, Itaú e Santander lado a lado.", "fonte_url": "https://agenciabrasil.ebc.com.br/economia/credito/", "palavras": 1280, "nota": 82 },
+    { "id": 9203, "status": "aprovado", "horas": 260, "titulo": "Short stay em prédio inteligente: o que o investidor precisa olhar", "palavra_chave": "short stay", "slug": "short-stay-predio-inteligente", "resumo": "Gestão, pool e taxa de ocupação.", "fonte_url": "https://www.moneytimes.com.br/short-stay/", "palavras": 1410, "nota": 88 },
+    { "id": 9204, "status": "aprovado", "horas": 340, "titulo": "Valorização de imóveis em Santa Catarina lidera o país em 2026", "palavra_chave": "valorização imóveis sc", "slug": "valorizacao-imoveis-santa-catarina", "resumo": "O índice FipeZap do trimestre.", "fonte_url": "https://g1.globo.com/economia/fipezap/", "palavras": 1350, "nota": 79 },
+    { "id": 9205, "status": "aprovado", "horas": 30, "titulo": "IPCA de outubro e o reajuste dos contratos de aluguel", "palavra_chave": "reajuste aluguel ipca", "slug": "ipca-outubro-reajuste-aluguel", "resumo": "O que o índice novo faz com o contrato.", "fonte_url": "https://www.infomoney.com.br/economia/ipca-outubro/", "palavras": 1220, "nota": 76 }
+  ],
+  "pautas": [
+    { "horas": 0.4, "titulo": "Caixa anuncia nova linha de crédito para imóveis de até R$ 1,5 milhão", "link": "https://www.infomoney.com.br/minhas-financas/caixa-nova-linha-credito/" },
+    { "horas": 1.2, "titulo": "Lançamentos imobiliários crescem 18% no trimestre, aponta Abrainc", "link": "https://www.moneytimes.com.br/lancamentos-abrainc-trimestre/" },
+    { "horas": 2.5, "titulo": "Copom mantém Selic e indica cortes a partir de janeiro", "link": "https://g1.globo.com/economia/noticia/copom-novembro.ghtml" },
+    { "horas": 4, "titulo": "Preço do metro quadrado em Balneário Camboriú passa de R$ 14 mil", "link": "https://www.infomoney.com.br/tudo-sobre/mercado-imobiliario/bc-metro-quadrado/" },
+    { "horas": 6, "titulo": "Governo amplia teto do Minha Casa, Minha Vida para a faixa 3", "link": "https://agenciabrasil.ebc.com.br/economia/noticia/mcmv-faixa-3" },
+    { "horas": 9, "titulo": "FIIs de logística sobem com nova demanda de galpões no Sul", "link": "https://www.seudinheiro.com/economia/fiis-logistica-sul/" },
+    { "horas": 20, "titulo": "Inadimplência das famílias recua pelo terceiro mês seguido", "link": "https://g1.globo.com/economia/noticia/inadimplencia-recua.ghtml" },
+    { "horas": 28, "titulo": "Construtoras listadas reportam margens maiores no terceiro trimestre", "link": "https://www.moneytimes.com.br/construtoras-margens-3t/" }
+  ],
+  "consultas": [
+    ["scp imobiliária", 41, 1210, 6.2],
+    ["como investir em imóveis com pouco dinheiro", 22, 1980, 11.4],
+    ["short stay porto belo", 17, 340, 3.1],
+    ["amaan investimentos", 15, 96, 1.2],
+    ["juros crédito imobiliário hoje", 9, 2310, 18.7],
+    ["valorização imóveis santa catarina", 8, 870, 9.3],
+    ["o que é scp", 6, 1490, 14.8],
+    ["investir em imóvel na planta vale a pena", 5, 1020, 16.2],
+    ["reajuste aluguel ipca", 3, 640, 21.5],
+    ["turmalina tower", 3, 41, 1.9]
+  ],
+  "paginas": [
+    ["https://amaan.com.br/", 64, 820, 4.1],
+    ["https://amaan.com.br/blog/como-funciona-scp-imobiliaria", 52, 3120, 8.4],
+    ["https://amaan.com.br/blog/short-stay-predio-inteligente", 19, 760, 7.2],
+    ["https://amaan.com.br/blog/juros-credito-imobiliario-outubro", 11, 2650, 17.9],
+    ["https://amaan.com.br/turmalina", 9, 210, 3.8],
+    ["https://amaan.com.br/blog/valorizacao-imoveis-santa-catarina", 8, 910, 10.1],
+    ["https://amaan.com.br/blog", 4, 130, 6.6]
+  ],
+  "fontes": [
+    { "url": "https://www.infomoney.com.br/feed/", "itens": 10, "horas": 0.4 },
+    { "url": "https://g1.globo.com/rss/g1/economia/", "itens": 40, "horas": 2.5 },
+    { "url": "https://www.moneytimes.com.br/feed/", "itens": 10, "horas": 1.2 },
+    { "url": "https://www.infomoney.com.br/tudo-sobre/mercado-imobiliario/feed/", "itens": 10, "horas": 96 }
+  ]
+}

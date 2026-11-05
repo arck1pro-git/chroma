@@ -1,330 +1,201 @@
 "use client";
 
-// Tela /blog: o CADASTRO dos blogs — criar, configurar, excluir.
+// Tela /blog: os blogs, cada um num cartão com o que pede atenção — quantos
+// artigos esperam revisão, quantos estão no ar e se o blog está na automação.
+// O clique entra no blog (/blog/[id]); a engrenagem abre a mesma gaveta de
+// configuração da tela do blog (./[id]/gaveta-blog.tsx).
 //
-// O cadastro e a geração de artigos usam a descrição e as configurações do blog.
-import { useCallback, useEffect, useState } from "react";
+// A barra lateral também lista os blogs (sanfona do Blog); esta tela é a visão
+// de todos lado a lado e o lugar de criar.
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Blog } from "@/lib/artigo";
-import { Settings2 } from "@/app/components/icones";
-import { BotaoExcluir, BotaoSalvar, Gaveta } from "./pecas";
+import { urlComparavel } from "@/lib/blog-google-tipos";
+import { Newspaper, Plus, Settings2 } from "@/app/components/icones";
+import { mensagemDeErro } from "./pecas";
+import GavetaBlog from "./[id]/gaveta-blog";
 
-type Rascunho = {
-  nome: string;
-  descricao: string;
-  url_base: string;
-  autor: string;
-};
-
-function deBlog(b: Blog): Rascunho {
-  return {
-    nome: b.nome,
-    descricao: b.descricao ?? "",
-    url_base: b.url_base ?? "",
-    autor: b.autor ?? "",
-  };
-}
-
-export default function Blogs() {
-  const [blogs, setBlogs] = useState<Blog[]>([]);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState<string | null>(null);
-
-  // Criação em linha pelo nome; as demais configurações ficam na gaveta.
+export default function Blogs({
+  iniciais,
+  base,
+  basePublica,
+  pode,
+}: {
+  iniciais: Blog[];
+  base: string;
+  basePublica: boolean;
+  pode: { criar: boolean; editar: boolean; excluir: boolean };
+}) {
+  const router = useRouter();
+  const [blogs, setBlogs] = useState(iniciais);
   const [nomeNovo, setNomeNovo] = useState("");
   const [criando, setCriando] = useState(false);
-
-  // O blog aberto na gaveta de configuração.
+  const [erro, setErro] = useState<string | null>(null);
   const [aberto, setAberto] = useState<Blog | null>(null);
-
-  useEffect(() => {
-    let vivo = true;
-    fetch("/api/blogs").then((r) => r.json())
-      .then((bs) => {
-        if (!vivo) return;
-        setBlogs(Array.isArray(bs) ? bs : []);
-      })
-      .catch(() => vivo && setErro("Não foi possível carregar os blogs."))
-      .finally(() => vivo && setCarregando(false));
-    return () => {
-      vivo = false;
-    };
-  }, []);
 
   async function criar() {
     const nome = nomeNovo.trim();
     if (!nome || criando) return;
     setCriando(true);
     setErro(null);
-
     const r = await fetch("/api/blogs", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ nome }),
-    });
-    const dados = await r.json();
+    }).catch(() => null);
+    const dados = await r?.json().catch(() => null);
     setCriando(false);
-
-    if (!r.ok) {
-      setErro(dados.error ?? "Não foi possível criar o blog.");
+    if (!r?.ok) {
+      setErro(mensagemDeErro(dados, "Não foi possível criar o blog."));
       return;
     }
-
-    setBlogs((atuais) =>
-      [...atuais, dados as Blog].sort((a, b) => a.nome.localeCompare(b.nome)),
-    );
-    setNomeNovo("");
-    // Abre a configuração do blog recém-criado: endereço, autor e descrição
-    // ainda estão vazios, e é isso que o próximo artigo vai usar.
-    setAberto(dados as Blog);
+    // Entra no blog novo: endereço, descrição e fontes ainda estão vazios, e é
+    // de lá (Configurar e Automação) que se completa.
+    router.push(`/blog/${(dados as Blog).id}`);
   }
-
-  const trocar = useCallback((b: Blog) => {
-    setBlogs((atuais) =>
-      atuais
-        .map((x) => (x.id === b.id ? b : x))
-        .sort((a, c) => a.nome.localeCompare(c.nome)),
-    );
-    setAberto(b);
-  }, []);
-
-  const remover = useCallback((id: number) => {
-    setBlogs((atuais) => atuais.filter((b) => b.id !== id));
-    setAberto(null);
-  }, []);
 
   return (
     <div className="pagina-surge min-h-screen bg-conteudo">
-      <div className="mx-auto w-full max-w-6xl px-6 py-8">
-        {/* ── Criação ────────────────────────────────────────────────────── */}
-        {!carregando && (
-          <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  value={nomeNovo}
-                  onChange={(e) => setNomeNovo(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && criar()}
-                  placeholder="Nome do blog"
-                  className="min-w-0 flex-1 rounded-full border border-zinc-200 bg-transparent px-4 py-2 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
-                />
-
-                <button
-                  type="button"
-                  onClick={criar}
-                  disabled={criando || !nomeNovo.trim()}
-                  className="rounded-full bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                >
-                  {criando ? "Criando…" : "Criar blog"}
-                </button>
-              </div>
+      <div className="mx-auto w-full max-w-6xl px-4 py-6 @container md:px-6 tela-baixa:py-4">
+        <header className="flex flex-wrap items-end gap-x-6 gap-y-3">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Blogs</h1>
+            <p className="mt-0.5 text-[12px] text-zinc-500 dark:text-zinc-400">
+              Os artigos nascem das notícias, passam pela revisão e vão para o site.
+            </p>
           </div>
+          {pode.criar && (
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <input
+                value={nomeNovo}
+                onChange={(e) => setNomeNovo(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && criar()}
+                placeholder="Nome do novo blog"
+                maxLength={200}
+                className="min-w-0 flex-1 rounded-full border border-zinc-200 bg-transparent px-4 py-1.5 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 sm:w-60 sm:flex-none dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
+              />
+              <button
+                type="button"
+                onClick={criar}
+                disabled={criando || !nomeNovo.trim()}
+                className="flex shrink-0 items-center gap-1.5 rounded-full bg-zinc-900 px-4 py-1.5 text-[13px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                <Plus className="size-3" aria-hidden="true" />
+                {criando ? "Criando…" : "Criar blog"}
+              </button>
+            </div>
+          )}
+        </header>
+
+        {erro && <p className="mt-3 text-[12px] text-red-600 dark:text-red-400">{erro}</p>}
+
+        {blogs.length === 0 ? (
+          <div className="mt-8 flex flex-col items-center gap-2 rounded-2xl border border-dashed border-zinc-300 px-6 py-14 text-center dark:border-zinc-700">
+            <Newspaper className="size-6 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
+            <p className="text-[13px] font-medium text-zinc-700 dark:text-zinc-200">Nenhum blog ainda</p>
+            <p className="max-w-sm text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+              Crie o primeiro acima. Depois é dar o endereço do site, uma descrição do tema e escolher as fontes de notícia.
+            </p>
+          </div>
+        ) : (
+          <ul className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {blogs.map((b, i) => (
+              <CartaoBlog key={b.id} blog={b} ordem={i} podeConfigurar={pode.editar || pode.excluir} aoConfigurar={() => setAberto(b)} />
+            ))}
+          </ul>
         )}
-
-        {erro && (
-          <p className="mt-3 text-[12px] text-red-600 dark:text-red-400">{erro}</p>
-        )}
-
-        {/* ── Lista ──────────────────────────────────────────────────────── */}
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {carregando
-            ? [0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="h-36 animate-pulse rounded-2xl border border-zinc-200 dark:border-zinc-800"
-                />
-              ))
-            : blogs.map((b) => (
-                <div key={b.id} className="surge relative">
-                  {/* O cartão inteiro é o link; a engrenagem fica por cima. */}
-                  <Link
-                    href={`/blog/${b.id}`}
-                    className="flex h-36 flex-col rounded-2xl border border-zinc-200 p-4 transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-700 dark:hover:bg-zinc-900/50"
-                  >
-                    <h2 className="truncate pr-8 text-[14px] font-medium text-zinc-900 dark:text-zinc-50">
-                      {b.nome}
-                    </h2>
-
-                    <p className="mt-2 line-clamp-2 flex-1 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                      {b.descricao || b.url_base || "Sem descrição ainda."}
-                    </p>
-
-                    <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                      {b.artigos ?? 0} artigo{(b.artigos ?? 0) === 1 ? "" : "s"}
-                    </span>
-                  </Link>
-
-                  <button
-                    type="button"
-                    onClick={() => setAberto(b)}
-                    aria-label={`Configurar ${b.nome}`}
-                    title="Configurar"
-                    className="absolute right-3 top-3 flex size-7 items-center justify-center rounded-full text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-                  >
-                    <Settings2 className="size-4" aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
-        </div>
-
-        {!carregando && blogs.length === 0 && (
-          <p className="mt-6 text-[12px] text-zinc-400 dark:text-zinc-500">
-            Nenhum blog ainda. Crie o primeiro acima.
-          </p>
-        )}
-
       </div>
 
       {aberto && (
-        <ConfigBlog
+        <GavetaBlog
           key={aberto.id}
           blog={aberto}
+          base={base}
+          basePublica={basePublica}
+          pode={pode}
           aoFechar={() => setAberto(null)}
-          aoSalvar={trocar}
-          aoExcluir={remover}
+          aoSalvar={(b) => {
+            setBlogs((xs) => xs.map((x) => (x.id === b.id ? { ...x, ...b } : x)).sort((a, c) => a.nome.localeCompare(c.nome)));
+            setAberto((x) => (x ? { ...x, ...b } : x));
+          }}
+          aoExcluir={(id) => {
+            setBlogs((xs) => xs.filter((x) => x.id !== id));
+            setAberto(null);
+          }}
         />
       )}
     </div>
   );
 }
 
-// ── Gaveta de configuração ──────────────────────────────────────────────────
-
-function ConfigBlog({
+function CartaoBlog({
   blog,
-  aoFechar,
-  aoSalvar,
-  aoExcluir,
+  ordem,
+  podeConfigurar,
+  aoConfigurar,
 }: {
   blog: Blog;
-  aoFechar: () => void;
-  aoSalvar: (b: Blog) => void;
-  aoExcluir: (id: number) => void;
+  ordem: number;
+  podeConfigurar: boolean;
+  aoConfigurar: () => void;
 }) {
-  const [r, setR] = useState<Rascunho>(() => deBlog(blog));
-  const [salvando, setSalvando] = useState(false);
-  const [salvo, setSalvo] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-
-  const muda = (campo: keyof Rascunho) => (v: string) =>
-    setR((atual) => ({ ...atual, [campo]: v }));
-
-  async function salvar() {
-    setSalvando(true);
-    setErro(null);
-
-    const resposta = await fetch(`/api/blogs/${blog.id}`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(r),
-    });
-    const dados = await resposta.json();
-    setSalvando(false);
-
-    if (!resposta.ok) {
-      setErro(dados.error ?? "Não foi possível salvar.");
-      return;
-    }
-
-    aoSalvar(dados as Blog);
-    setSalvo(true);
-    setTimeout(() => setSalvo(false), 2000);
-  }
-
-  async function excluir() {
-    setSalvando(true);
-    await fetch(`/api/blogs/${blog.id}`, { method: "DELETE" });
-    aoExcluir(blog.id);
-  }
-
-  const quantos = blog.artigos ?? 0;
+  const emRevisao = blog.em_revisao ?? 0;
+  const postados = (blog.artigos ?? 0) - emRevisao;
 
   return (
-    <Gaveta largura="sm:w-[32rem]" aoFechar={aoFechar}>
-      <header className="shrink-0 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
-        <h2 className="text-[14px] font-semibold text-zinc-900 dark:text-zinc-50">
-          Configurar blog
-        </h2>
-      </header>
-
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-            Nome
+    <li className="surge relative" style={{ animationDelay: `${ordem * 26}ms` }}>
+      <Link
+        href={`/blog/${blog.id}`}
+        className="flex h-full flex-col rounded-2xl border border-zinc-200 bg-white p-5 transition hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
+      >
+        <div className="flex items-start gap-3 pr-8">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 text-[15px] font-semibold text-white dark:bg-zinc-50 dark:text-zinc-900">
+            {blog.nome.trim().charAt(0).toUpperCase() || "B"}
           </span>
-          <input
-            value={r.nome}
-            onChange={(e) => muda("nome")(e.target.value)}
-            className="w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-900 outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-            Endereço do blog
-          </span>
-          <input
-            value={r.url_base}
-            onChange={(e) => muda("url_base")(e.target.value)}
-            placeholder="https://seusite.com.br/blog"
-            className="w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
-          />
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
-            Monta o canonical e o breadcrumb do artigo.
-          </span>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-            Autor padrão
-          </span>
-          <input
-            value={r.autor}
-            onChange={(e) => muda("autor")(e.target.value)}
-            className="w-full rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-900 outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
-          />
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
-            Entra no schema do artigo.
-          </span>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-            Sobre o blog
-          </span>
-          <textarea
-            value={r.descricao}
-            onChange={(e) => muda("descricao")(e.target.value)}
-            rows={4}
-            className="w-full resize-y rounded-xl border border-zinc-200 bg-transparent px-3 py-2 text-[13px] text-zinc-900 outline-none transition focus:border-zinc-400 dark:border-zinc-800 dark:text-zinc-50 dark:focus:border-zinc-600"
-          />
-          <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
-            Entra no prompt de geração.
-          </span>
-        </label>
-
-        {erro && (
-          <p className="text-[12px] text-red-600 dark:text-red-400">{erro}</p>
-        )}
-      </div>
-
-      <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-zinc-200 px-5 py-3 dark:border-zinc-800">
-        <BotaoExcluir
-          rotulo="Excluir"
-          confirmacao={`Excluir blog e ${quantos} artigo${quantos === 1 ? "" : "s"}`}
-          aoConfirmar={excluir}
-          ocupado={salvando}
-        />
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={aoFechar}
-            className="rounded-full px-3 py-1.5 text-[12px] text-zinc-500 transition hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          >
-            Fechar
-          </button>
-          <BotaoSalvar aoSalvar={salvar} salvando={salvando} salvo={salvo} />
+          <div className="min-w-0">
+            <h2 className="truncate text-[14px] font-semibold text-zinc-900 dark:text-zinc-50">{blog.nome}</h2>
+            <p className={`truncate text-[12px] ${blog.url_base ? "text-zinc-500 dark:text-zinc-400" : "text-amber-700 dark:text-amber-400"}`}>
+              {blog.url_base ? urlComparavel(blog.url_base) : "Sem endereço do site"}
+            </p>
+          </div>
         </div>
-      </footer>
-    </Gaveta>
+
+        <p className="mt-3 line-clamp-2 flex-1 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+          {blog.descricao || "Sem descrição. A IA usa a descrição para escolher as notícias e dar o ângulo dos artigos."}
+        </p>
+
+        <div className="mt-4 flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span
+            className={`rounded-full px-2 py-0.5 font-medium tabular-nums ${
+              emRevisao > 0
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+            }`}
+          >
+            {emRevisao} em revisão
+          </span>
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium tabular-nums text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            {postados} postado{postados === 1 ? "" : "s"}
+          </span>
+          <span className="ml-auto flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400">
+            <span className={`size-1.5 rounded-full ${blog.rss_ativo ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-600"}`} aria-hidden="true" />
+            {blog.rss_ativo ? "Na automação" : (blog.feeds ?? 0) === 0 ? "Sem fontes" : "Fora da automação"}
+          </span>
+        </div>
+      </Link>
+
+      {podeConfigurar && (
+        <button
+          type="button"
+          onClick={aoConfigurar}
+          aria-label={`Configurar ${blog.nome}`}
+          title="Configurar"
+          className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+        >
+          <Settings2 className="size-4" aria-hidden="true" />
+        </button>
+      )}
+    </li>
   );
 }

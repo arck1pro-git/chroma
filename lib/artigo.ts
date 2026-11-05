@@ -23,9 +23,14 @@
 export const ARTIGO_STATUS = ["pendente", "aprovado"] as const;
 export type ArtigoStatus = (typeof ARTIGO_STATUS)[number];
 
+/**
+ * Os nomes na tela — as colunas do quadro do blog (2026-11-05: "Em revisão" e
+ * "Postado", pedido dele). O valor no banco e na rota pública continua
+ * pendente/aprovado: só o rótulo mudou.
+ */
 export const ARTIGO_STATUS_LABEL: Record<ArtigoStatus, string> = {
-  pendente: "Pendente",
-  aprovado: "Aprovado",
+  pendente: "Em revisão",
+  aprovado: "Postado",
 };
 
 export interface Blog {
@@ -42,6 +47,12 @@ export interface Blog {
   created_at: string;
   /** Contagem de artigos, não é coluna de `blog`. */
   artigos?: number;
+  /** Os em revisão (pendente), para o cartão da lista de blogs. Também contagem. */
+  em_revisao?: number;
+  /** Se o blog entra na automação de artigos (coluna `rss_ativo`). */
+  rss_ativo?: boolean;
+  /** Quantos feeds de notícia o blog tem (contagem de blog_rss). */
+  feeds?: number;
 }
 
 export interface Artigo {

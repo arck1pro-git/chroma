@@ -16,9 +16,11 @@ import type { Artigo, Blog } from "@/lib/artigo";
  * que chega ao JSON não depende de como o driver serializa Date.
  */
 const CAMPOS_BLOG = `
-  b.id, b.nome, b.descricao, b.url_base, b.autor, b.chave,
+  b.id, b.nome, b.descricao, b.url_base, b.autor, b.chave, b.rss_ativo,
   to_char(b.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
-  (SELECT count(*) FROM artigo a WHERE a.blog_id = b.id)::int AS artigos`;
+  (SELECT count(*) FROM artigo a WHERE a.blog_id = b.id)::int AS artigos,
+  (SELECT count(*) FROM artigo a WHERE a.blog_id = b.id AND a.status = 'pendente')::int AS em_revisao,
+  (SELECT count(*) FROM blog_rss r WHERE r.blog_id = b.id)::int AS feeds`;
 
 const DE_BLOG = `FROM blog b`;
 
@@ -65,6 +67,18 @@ export async function artigosDoBlog(blogId: number): Promise<Artigo[]> {
     WHERE blog_id = ${blogId}
     ${sql.unsafe(ORDEM_ARTIGO)}`;
   return linhas as unknown as Artigo[];
+}
+
+/**
+ * Só o que o cruzamento com o Search Console usa (lib/blog-google.ts): sem o
+ * corpo, que é o grosso da linha e não serve para casar URL com artigo.
+ */
+export async function artigosParaOGoogle(
+  blogId: number,
+): Promise<Pick<Artigo, "id" | "slug" | "titulo" | "status">[]> {
+  const linhas = await sql`
+    SELECT id, slug, titulo, status FROM artigo WHERE blog_id = ${blogId}`;
+  return linhas as unknown as Pick<Artigo, "id" | "slug" | "titulo" | "status">[];
 }
 
 // ── Utilidades das rotas ────────────────────────────────────────────────────

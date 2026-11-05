@@ -1,37 +1,74 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { enderecoDoCrm } from "@/lib/endereco";
-import BlogArtigos from "./artigos";
+import { notFound } from "next/navigation";
 import { exigirModulo } from "@/lib/auth/dal";
+import { podeOperar } from "@/lib/auth/permissoes";
+import { artigosDoBlog, blogPorId } from "@/lib/blog";
+import { enderecoDoCrm } from "@/lib/endereco";
+import TelaBlog, { type Aba } from "./tela-blog";
+import { demonstracao } from "./demo";
 
-export const metadata: Metadata = { title: "Artigos · AmaanOffice" };
+export const metadata: Metadata = { title: "Blog · AmaanOffice" };
 
-// `params` é Promise nesta versão do Next — resolver aqui, no servidor, evita
-// um efeito no cliente só para descobrir de qual blog a tela é.
+const ABAS: Aba[] = ["artigos", "desempenho", "automacao"];
+
+const um = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+
+// O blog e os artigos vêm daqui, do servidor: o quadro pinta pronto, sem
+// esqueleto. O que é de fora (Google, n8n, feeds) a tela busca depois, cada
+// um no seu tempo — ver o cabeçalho de ./tela-blog.tsx.
 //
-// O ENDEREÇO DO CRM TAMBÉM VEM DAQUI, e pelo mesmo motivo de /webhooks: a URL
-// de conexão do blog é absoluta e alguém de fora vai chamá-la. Montá-la no
-// cliente com `window.location` daria divergência de hidratação (no servidor
-// não há window) e um piscar no lugar mais sensível da tela — o endereço que a
-// pessoa vai copiar.
+// O ENDEREÇO DO CRM TAMBÉM VEM DAQUI: a URL de conexão do blog é absoluta e o
+// site vai chamá-la. Montá-la no cliente com `window.location` daria
+// divergência de hidratação.
 export default async function Page({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ aba?: string | string[]; demo?: string | string[] }>;
 }) {
   // Checagem POR PÁGINA, e não no layout: com Partial Rendering o layout não
-  // re-renderiza a cada navegação, então a checagem lá deixaria de rodar
-  // justamente quando a pessoa troca de tela (guia de autenticação do Next,
-  // "Layouts and auth checks"). Aqui ela roda antes de qualquer consulta.
-  await exigirModulo("blog");
-  const [{ id }, cabecalhos] = await Promise.all([params, headers()]);
+  // re-renderiza a cada navegação (guia de autenticação do Next).
+  const { usuario } = await exigirModulo("blog");
+  const [{ id }, busca, cabecalhos] = await Promise.all([params, searchParams, headers()]);
+
   const endereco = enderecoDoCrm(cabecalhos);
+  const aba = ABAS.find((a) => a === um(busca.aba)) ?? "artigos";
+  // O que cada um pode é decidido aqui e nas rotas; a tela só esconde o botão.
+  const pode = {
+    criar: podeOperar(usuario, "blog", "criar"),
+    editar: podeOperar(usuario, "blog", "editar"),
+    excluir: podeOperar(usuario, "blog", "excluir"),
+  };
+
+  // ?demo=1 — só em desenvolvimento: a tela cheia com dados fictícios.
+  if (um(busca.demo) === "1" && process.env.NODE_ENV !== "production") {
+    const demo = demonstracao();
+    return (
+      <TelaBlog
+        blogInicial={demo.blog}
+        artigosIniciais={demo.artigos}
+        base={endereco.url}
+        basePublica={endereco.publico}
+        pode={pode}
+        abaInicial={aba}
+        demo={demo.tela}
+      />
+    );
+  }
+
+  const blog = /^\d+$/.test(id) ? await blogPorId(Number(id)) : null;
+  if (!blog) notFound();
 
   return (
-    <BlogArtigos
-      blogId={Number(id)}
+    <TelaBlog
+      blogInicial={blog}
+      artigosIniciais={await artigosDoBlog(blog.id)}
       base={endereco.url}
       basePublica={endereco.publico}
+      pode={pode}
+      abaInicial={aba}
     />
   );
 }

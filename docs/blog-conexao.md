@@ -3,8 +3,10 @@
 O CRM escreve os artigos; o site do cliente os exibe. A ponte entre os dois são
 duas URLs públicas, uma por blog, com uma **chave** no caminho.
 
-A chave fica na tela do blog (`/blog/<id>`, painel "Conexão com o site"), com
-botão de copiar e de trocar. Ela nasce junto com o blog — não há blog sem.
+A chave fica na gaveta **Configurar** da tela do blog (`/blog/<id>`, seção
+"Conexão com o site"), com botão de copiar e de trocar. Ela nasce junto com o
+blog — não há blog sem. O resto do módulo (quadro, Google, automação) está em
+[blog.md](blog.md).
 
 ## As duas URLs
 
@@ -17,8 +19,9 @@ O `slug` da segunda é o mesmo que sai em cada item da primeira. É ele que o si
 usa no próprio endereço: `meusite.com.br/blog/como-escolher-piso` vira
 `/api/publico/bk_…/artigos/como-escolher-piso`.
 
-**Só artigo aprovado sai.** Pendente é trabalho interno do CRM — aprovar é o que
-publica. Um artigo sem slug também não aparece, e por isso aprovar preenche o
+**Só artigo aprovado sai** — na tela, a coluna **Postado** (o status no banco
+continua `aprovado`). Pendente ("Em revisão") é trabalho interno do CRM — postar
+é o que publica. Um artigo sem slug também não aparece, e por isso aprovar preenche o
 slug a partir do título quando ele está vazio.
 
 Chave errada e artigo inexistente devolvem o mesmo `404 {"error":"Não

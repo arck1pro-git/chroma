@@ -2,7 +2,7 @@
 //
 // POR QUE É UM MÓDULO E NÃO CÓDIGO DA ROTA: dois caminhos chegam aqui — a
 // geração manual (/api/artigos/generate, alguém colou um link) e a automática
-// (/api/blogs/rss/gerar, o n8n na segunda de manhã). O prompt, o schema da
+// (/api/blogs/rss/gerar, o n8n nas manhãs de dia útil). O prompt, o schema da
 // resposta e as regras de normalização TÊM que ser os mesmos nos dois: um
 // artigo gerado pela automação não pode sair com estrutura diferente do gerado
 // à mão, senão o checklist de SEO mede duas coisas distintas.
@@ -14,7 +14,7 @@
 // 2. A descrição do blog e as instruções do editor orientam o ângulo e o tom.
 // 3. NADA É GRAVADO AQUI. Quem devolve é um rascunho em memória; gravar é
 //    decisão de quem chamou (a tela, depois da prévia; ou a rota de RSS, que
-//    grava direto porque não há ninguém para aprovar às 8h da segunda).
+//    grava direto porque não há ninguém para aprovar às 7h).
 import Anthropic from "@anthropic-ai/sdk";
 import { sql } from "@/lib/db";
 import { slugify, type ArtigoRascunho } from "@/lib/artigo";

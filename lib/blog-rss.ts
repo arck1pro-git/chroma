@@ -98,7 +98,7 @@ export function lerFeed(xml: string): ItemRss[] {
 
 /**
  * Busca um feed. NUNCA lança: um feed fora do ar não pode derrubar a pauta dos
- * outros quatro — a execução de segunda tem que entregar o que der.
+ * outros quatro — a rodada da manhã tem que entregar o que der.
  */
 export async function buscarFeed(url: string): Promise<ItemRss[]> {
   try {
@@ -123,12 +123,55 @@ export async function buscarFeed(url: string): Promise<ItemRss[]> {
         continue;
       }
       if (!r.ok) return [];
-      return lerFeed(await r.text());
+      return lerFeed(decodificarXml(new Uint8Array(await r.arrayBuffer()), r.headers.get("content-type")));
     }
     return [];
   } catch {
     return [];
   }
+}
+
+/**
+ * Bytes do feed → texto, na codificação QUE O FEED DECLARA. `r.text()` lê tudo
+ * como UTF-8, e há feed grande em ISO-8859-1 (o de Mercado da Folha): os
+ * acentos do título viravam "�" e o artigo nascia com a fonte ilegível. Vale o
+ * charset do cabeçalho; sem ele, o `encoding` da declaração <?xml ?>; sem
+ * nenhum dos dois, UTF-8, que é o padrão do XML.
+ */
+function decodificarXml(bytes: Uint8Array, tipo: string | null): string {
+  const cabecalho = /charset=["']?([\w-]+)/i.exec(tipo ?? "")?.[1];
+  const declaracao = /<\?xml[^>]*encoding=["']([\w-]+)["']/i.exec(
+    new TextDecoder("latin1").decode(bytes.subarray(0, 200)),
+  )?.[1];
+  try {
+    return new TextDecoder(cabecalho ?? declaracao ?? "utf-8").decode(bytes);
+  } catch {
+    // Codificação que o runtime não conhece: UTF-8 é o melhor palpite.
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+}
+
+/** Como está cada feed: quantas notícias ele traz e de quando é a mais nova. */
+export interface SaudeDoFeed {
+  url: string;
+  itens: number;
+  /** ISO da notícia mais recente; null quando não respondeu ou não traz data. */
+  ultima: string | null;
+}
+
+/**
+ * A saúde dos feeds de um blog, para a aba Automação: um feed que parou (0
+ * itens) ou envelheceu (a mais nova de meses atrás) não falha alto — ele só
+ * deixa de alimentar a pauta. A tela mostra isso ao lado de cada endereço.
+ */
+export async function saudeDosFeeds(urls: string[]): Promise<SaudeDoFeed[]> {
+  return Promise.all(
+    urls.map(async (url) => {
+      const itens = await buscarFeed(url);
+      const datas = itens.map((i) => i.data).filter((d): d is string => Boolean(d)).sort();
+      return { url, itens: itens.length, ultima: datas.pop() ?? null };
+    }),
+  );
 }
 
 /**

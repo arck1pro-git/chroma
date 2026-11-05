@@ -71,9 +71,12 @@ CRM_SERVICE_TOKEN=<secreto>
 ```
 
 **Não há `CRM_BASE_URL`** (removida em 2026-09-11). Onde o endereço do CRM ainda
-precisa ser assado num nó — hoje só o workflow de RSS do Blog —, ele sai do
-domínio do request que criou o workflow (`lib/endereco.ts`). Criar workflow a
-partir de um endereço local é recusado, porque o n8n não alcançaria o localhost.
+precisa ser assado num nó — hoje só o workflow de RSS do Blog —, ele é o domínio
+de produção fixo (`ENDERECO_DO_CRM`, `lib/link-do-crm.ts`), desde 2026-11-05: o
+workflow é um só para o CRM inteiro, e ligar ou pausar só vale pela tela em
+produção (`lib/blog-automacao.ts` confere `VERCEL_ENV`). Antes ele saía do
+domínio do request, e um clique no DEV ou num deploy de prévia apontaria o único
+workflow para outro endereço.
 
 Nenhum destes vai para o navegador — sem `NEXT_PUBLIC_`.
 
@@ -250,7 +253,7 @@ Verificado no banco em 2026-09-04:
 - `CRM_BASE_URL` **não existe mais** (removida em 2026-09-11). Publicar cadência
   não precisa de endereço do CRM nenhum: os nós falam direto com a uazapi e com
   o Postgres. O único lugar que ainda assa um endereço é o workflow de RSS do
-  Blog, e ele o tira do domínio do request (`lib/endereco.ts`).
+  Blog, e ele usa o domínio de produção fixo (`ENDERECO_DO_CRM`).
 
 ## 8. Segurança do webhook de entrada — em aberto
 

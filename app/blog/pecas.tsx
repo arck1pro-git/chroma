@@ -1,15 +1,20 @@
 "use client";
 
-// As peças que as quatro telas do Blog repetem: as tags, o selo de SEO, o campo
-// com contador e o botão de excluir em dois passos.
+// As peças que as telas do Blog repetem: as tags, o selo de SEO, o campo com
+// contador, o botão de excluir em dois passos, o interruptor, o aviso que sobe
+// do rodapé, a variação de um período para o outro e a sobreposição do artigo.
+// A gaveta de configuração usa a casca compartilhada (app/components/gaveta.tsx).
 //
 // Estão juntas aqui porque cada uma aparece em três ou quatro lugares — e
 // porque as faixas (o que é "curto demais" num título SEO) não podem divergir
-// entre o painel do artigo e a prévia do modal: é a mesma régua do checklist em
+// entre o painel do artigo e o quadro: é a mesma régua do checklist em
 // lib/artigo.ts.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ARTIGO_STATUS_LABEL, type ArtigoStatus } from "@/lib/artigo";
-import { Check, Trash2 } from "@/app/components/icones";
+import { dataDoInstante } from "@/lib/formato";
+import { variacao } from "@/lib/blog-google-tipos";
+import { ArrowDown, ArrowUp, Check, CircleCheck, Trash2, X } from "@/app/components/icones";
+import CamadaTopo from "@/app/components/camada-topo";
 
 /** Pastilha discreta para rótulos e status. */
 export function Tag({
@@ -22,7 +27,7 @@ export function Tag({
   const tons = {
     neutro:
       "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
-    // Pendente é âmbar e não cinza: é o estado que PEDE alguma coisa. Cinza
+    // Em revisão é âmbar e não cinza: é o estado que PEDE alguma coisa. Cinza
     // diria "arquivado", e é justamente o contrário — nada vai ao ar sem sair
     // daqui.
     pendente:
@@ -210,101 +215,183 @@ export function BotaoSalvar({
   );
 }
 
-/**
- * A folha que abre ANCORADA no botão que a chamou — sai do ícone, não do meio
- * da tela.
- *
- * POR QUE NÃO É A `Sobreposicao`: aquela é para o artigo, que ocupa a tela e é
- * onde se trabalha. Conexão e RSS são consulta rápida a partir de um botão da
- * coluna; centralizadas, perdiam a ligação com o que foi clicado e davam a uma
- * caixa de três campos a cerimônia de uma tela inteira.
- *
- * Fica por cima de tudo (`z-50`, acima da página) e o pai precisa ser
- * `relative`: é dele que saem o `left-0` e o `top-full`. Alinha pela borda
- * ESQUERDA do botão e cresce para a direita, que é para onde há tela — os dois
- * botões ficam no começo da faixa de conteúdo. A largura vem de fora porque
- * cada folha precisa da sua.
- */
-export function Balao({
+/** Liga/desliga com `role="switch"`. Quem chama decide se salva na hora. */
+export function Interruptor({
+  ligado,
+  aoMudar,
   rotulo,
-  aoFechar,
-  medida = "w-[min(34rem,90vw)]",
-  children,
+  desabilitado,
 }: {
+  ligado: boolean;
+  aoMudar: (novo: boolean) => void;
   rotulo: string;
-  aoFechar: () => void;
-  medida?: string;
-  children: React.ReactNode;
+  desabilitado?: boolean;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={ligado}
+      aria-label={rotulo}
+      disabled={desabilitado}
+      onClick={() => aoMudar(!ligado)}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-50 ${
+        ligado ? "bg-emerald-600" : "bg-zinc-300 dark:bg-zinc-700"
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 size-5 rounded-full bg-white shadow-sm transition-all ${ligado ? "left-[22px]" : "left-0.5"}`}
+      />
+    </button>
+  );
+}
 
-  // Clique fora fecha — e o clique SEGUE fazendo o que ia fazer. Antes era um
-  // apanhador invisível cobrindo a tela, que engolia o clique: com o balão
-  // aberto, o primeiro clique na sidebar ou na caixa de notícias só fechava a
-  // folha, e era preciso clicar de novo. Não sendo modal (a folha é consulta
-  // rápida), não há por que roubar o clique.
-  //
-  // A área que NÃO conta como "fora" é o pai inteiro — o botão que abriu e o
-  // balão —, porque o botão alterna sozinho: se o pointerdown nele fechasse,
-  // o click logo depois reabriria.
+export type AvisoTela = { ok: boolean; texto: string } | null;
+
+/**
+ * O aviso que sobe do rodapé depois de um gesto (publicou, voltou para revisão,
+ * falhou). Some sozinho em 5 s — é retorno, não decisão. O mesmo desenho do
+ * aviso do quadro de Demandas.
+ */
+export function Aviso({ aviso, aoFechar }: { aviso: AvisoTela; aoFechar: () => void }) {
   useEffect(() => {
-    const aoTeclar = (e: KeyboardEvent) => {
-      if (e.key === "Escape") aoFechar();
-    };
-    const aoApontar = (e: PointerEvent) => {
-      const area = ref.current?.parentElement;
-      if (area && !area.contains(e.target as Node)) aoFechar();
-    };
-    window.addEventListener("keydown", aoTeclar);
-    document.addEventListener("pointerdown", aoApontar);
-    return () => {
-      window.removeEventListener("keydown", aoTeclar);
-      document.removeEventListener("pointerdown", aoApontar);
-    };
-  }, [aoFechar]);
+    if (!aviso) return;
+    const t = setTimeout(aoFechar, 5000);
+    return () => clearTimeout(t);
+  }, [aviso, aoFechar]);
 
+  if (!aviso) return null;
   return (
     <div
-      ref={ref}
-      role="dialog"
-      aria-label={rotulo}
-      className={`surge absolute left-0 top-full z-50 mt-2 flex max-h-[70vh] max-w-[calc(100vw-3rem)] origin-top-left flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-conteudo shadow-xl dark:border-zinc-800 ${medida}`}
+      role="status"
+      className="surge fixed bottom-6 left-1/2 z-[320] flex max-w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 items-center gap-3 rounded-xl bg-zinc-900 py-2.5 pl-4 pr-2.5 text-[13px] text-white shadow-xl dark:bg-zinc-100 dark:text-zinc-900"
     >
-      {children}
+      {aviso.ok ? (
+        <CircleCheck className="size-4 shrink-0 text-emerald-400 dark:text-emerald-600" aria-hidden="true" />
+      ) : (
+        <span className="size-2 shrink-0 rounded-full bg-amber-400" aria-hidden="true" />
+      )}
+      <span className="flex-1">{aviso.texto}</span>
+      <button
+        type="button"
+        onClick={aoFechar}
+        aria-label="Fechar aviso"
+        className="rounded-md p-1 opacity-60 transition hover:bg-white/10 hover:opacity-100 dark:hover:bg-zinc-900/10"
+      >
+        <X className="size-3.5" aria-hidden="true" />
+      </button>
     </div>
   );
 }
 
 /**
- * O cabeçalho de uma folha do `Balao`: ícone, nome e Fechar.
- *
- * Existe para Conexão e RSS não escreverem a mesma barra duas vezes — o painel
- * do artigo tem a sua, com abas e status, e não passa por aqui.
+ * A variação contra o período anterior: "▲ 12%" verde ou "▼ 8%" vermelho. Na
+ * posição média, MENOR é melhor — `menorEMelhor` inverte a cor, não a seta: a
+ * seta diz o que o número fez, a cor diz se foi bom.
  */
-export function CabecalhoFolha({
-  icone: Icone,
-  titulo,
-  aoFechar,
+export function Variacao({
+  atual,
+  anterior,
+  menorEMelhor,
 }: {
-  icone: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  titulo: string;
-  aoFechar: () => void;
+  atual: number;
+  anterior: number;
+  menorEMelhor?: boolean;
+}) {
+  const v = variacao(atual, anterior);
+  if (v === null) {
+    return atual > 0 ? (
+      <span className="text-[11px] font-medium text-sky-600 dark:text-sky-400">novo</span>
+    ) : null;
+  }
+  if (Math.abs(v) < 0.005) {
+    return <span className="text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500">estável</span>;
+  }
+  const subiu = v > 0;
+  const bom = menorEMelhor ? !subiu : subiu;
+  const Seta = subiu ? ArrowUp : ArrowDown;
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 text-[11px] font-medium tabular-nums ${
+        bom ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+      }`}
+    >
+      <Seta className="size-2.5" aria-hidden="true" />
+      {Math.abs(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: Math.abs(v) < 0.1 ? 1 : 0 })}%
+      <span className="sr-only">{bom ? " (melhorou)" : " (piorou)"}</span>
+    </span>
+  );
+}
+
+/** Um grupo de opções exclusivas em pílula (período, métrica). */
+export function Segmentos<T extends string | number>({
+  opcoes,
+  valor,
+  aoMudar,
+  rotulo,
+}: {
+  opcoes: { id: T; rotulo: string }[];
+  valor: T;
+  aoMudar: (v: T) => void;
+  rotulo: string;
 }) {
   return (
-    <header className="flex shrink-0 items-center gap-2 border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
-      <Icone className="size-4 shrink-0 text-zinc-500" aria-hidden={true} />
-      <h2 className="text-[14px] font-semibold text-zinc-900 dark:text-zinc-50">
-        {titulo}
-      </h2>
-      <button
-        type="button"
-        onClick={aoFechar}
-        className="ml-auto rounded-full px-2 py-1 text-[12px] text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-      >
-        Fechar
-      </button>
-    </header>
+    <div role="radiogroup" aria-label={rotulo} className="flex rounded-full bg-zinc-100 p-0.5 dark:bg-zinc-800/80">
+      {opcoes.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="radio"
+          aria-checked={o.id === valor}
+          onClick={() => aoMudar(o.id)}
+          className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+            o.id === valor
+              ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
+              : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+          }`}
+        >
+          {o.rotulo}
+        </button>
+      ))}
+    </div>
   );
+}
+
+/**
+ * "agora", "há 12 min", "há 3 h", "ontem", "há 4 dias" — e a data a partir de
+ * uma semana. Só para o que é buscado no NAVEGADOR (notícias, rodadas da
+ * automação): no que vem renderizado do servidor, o minuto entre o SSR e a
+ * hidratação faria o React acusar texto diferente.
+ */
+export function tempoAtras(iso: string, agora = Date.now()): string {
+  const min = Math.round((agora - Date.parse(iso)) / 60_000);
+  if (min < 1) return "agora";
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h} h`;
+  const d = Math.round(h / 24);
+  if (d === 1) return "ontem";
+  if (d < 7) return `há ${d} dias`;
+  return dataDoInstante(iso);
+}
+
+/**
+ * A frase de erro de uma resposta das rotas: as do Blog devolvem `{ error }`,
+ * a portaria do módulo (lib/auth/dal.ts) devolve `{ erro }`.
+ */
+export function mensagemDeErro(dados: unknown, padrao: string): string {
+  const d = (dados ?? {}) as { error?: unknown; erro?: unknown };
+  const texto = typeof d.error === "string" ? d.error : typeof d.erro === "string" ? d.erro : "";
+  return texto || padrao;
+}
+
+/** "https://www.infomoney.com.br/x" → "infomoney.com.br". */
+export function dominioDe(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -324,46 +411,18 @@ export function prefixarIds(html: string): string {
     .replace(/ href="#/g, ' href="#previa-');
 }
 
-/** O véu + painel fixo à direita, com a animação que o resto do app já usa. */
-export function Gaveta({
-  largura,
-  aoFechar,
-  children,
-}: {
-  largura: string;
-  aoFechar: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <>
-      <div
-        className="veu-surge fixed inset-0 z-40 bg-zinc-900/20 dark:bg-black/40"
-        onClick={aoFechar}
-        aria-hidden="true"
-      />
-      <aside
-        className={`ficha-entra fixed right-0 top-0 z-50 flex h-screen w-full flex-col border-l border-zinc-200 bg-conteudo dark:border-zinc-800 ${largura}`}
-      >
-        {children}
-      </aside>
-    </>
-  );
-}
-
 /**
  * A folha que abre POR CIMA da tela, centralizada — o artigo em edição.
  *
- * POR QUE NÃO É A `Gaveta`: a gaveta encosta na direita, e na tela do blog a
- * direita já é das notícias. Abrir o artigo ali cobriria justamente a coluna de
- * onde ele saiu. Por cima, o texto ganha largura de leitura e a tela de trás
- * continua reconhecível atrás do véu.
+ * POR QUE NÃO É UMA GAVETA: o artigo é texto longo, e a leitura pede largura e
+ * o meio da tela; a gaveta é para configuração (o blog), que é uma coluna de
+ * campos. Por cima, a tela de trás continua reconhecível atrás do véu.
+ *
+ * No <body> (CamadaTopo), na camada das gavetas (z-300/310): acima do botão da
+ * IA (z-210) e sem herdar o empilhamento da página.
  *
  * Fecha no Esc e no clique fora. `aoFechar` é chamado sem confirmação: quem
  * tem rascunho não salvo é o painel de dentro, e é ele que avisa.
- *
- * `medida` é a única coisa que muda entre os três usos: o artigo ocupa quase a
- * tela, Conexão e RSS são folhas pequenas. Vem como classe e não como
- * "grande"/"pequeno" porque quem abre é quem sabe de quanto precisa.
  */
 export function Sobreposicao({
   rotulo,
@@ -385,9 +444,9 @@ export function Sobreposicao({
   }, [aoFechar]);
 
   return (
-    <>
+    <CamadaTopo>
       <div
-        className="veu-surge fixed inset-0 z-40 bg-zinc-900/30 dark:bg-black/50"
+        className="veu-surge fixed inset-0 z-[300] bg-zinc-950/40 backdrop-blur-[2px]"
         onClick={aoFechar}
         aria-hidden="true"
       />
@@ -395,10 +454,10 @@ export function Sobreposicao({
         role="dialog"
         aria-modal="true"
         aria-label={rotulo}
-        className={`surge fixed left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-conteudo shadow-xl dark:border-zinc-800 ${medida}`}
+        className={`surge fixed left-1/2 top-1/2 z-[310] flex -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-conteudo shadow-xl dark:border-zinc-800 ${medida}`}
       >
         {children}
       </div>
-    </>
+    </CamadaTopo>
   );
 }

@@ -1,19 +1,20 @@
 // Os feeds RSS de um blog e o interruptor da geração automática.
 //
-// Rota separada do PUT do blog de propósito: o painel de RSS fica no TOPO da
-// tela de artigos, não na gaveta de configuração, e salvar os feeds não pode
+// Rota separada do PUT do blog de propósito: as fontes ficam na aba Automação
+// da tela do blog, não na gaveta de configuração, e salvar os feeds não pode
 // exigir mandar nome e endereço junto — nem sobrescrevê-los com o
 // que estivesse na tela.
 import { NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { campo, lerCorpo } from "@/lib/blog";
-import { urlDeFeedValida } from "@/lib/blog-rss";
+import { saudeDosFeeds, urlDeFeedValida } from "@/lib/blog-rss";
+import { MAX_FEEDS } from "@/lib/blog-automacao-tipos";
 import { exigirModuloApi } from "@/lib/auth/dal";
 
 export const dynamic = "force-dynamic";
+// `?saude=1` lê cada feed (até 12 s cada, em paralelo).
+export const maxDuration = 60;
 
-/** Teto de produto: 5 feeds por blog. */
-export const MAX_FEEDS = 5;
 
 function idValido(bruto: string): number | null {
   return /^\d+$/.test(bruto) ? Number(bruto) : null;
@@ -30,7 +31,7 @@ async function estado(blogId: number) {
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const sessao = await exigirModuloApi("blog");
@@ -40,6 +41,15 @@ export async function GET(
 
   const atual = await estado(id);
   if (!atual) return Response.json(NAO_ENCONTRADO, { status: 404 });
+
+  // A saúde é a leitura de cada feed, de segundos: só quando a aba pede, para
+  // salvar e ligar a automação não esperarem a rede de cinco sites.
+  if (req.nextUrl.searchParams.get("saude") === "1") {
+    return Response.json({
+      ...atual,
+      saude: await saudeDosFeeds(atual.feeds.map((f) => f.url as string)),
+    });
+  }
   return Response.json(atual);
 }
 
@@ -95,7 +105,7 @@ export async function PUT(
   const ativo = corpo.rss_ativo === true;
 
   // Ligar sem nenhum feed é o pedido que não faz nada: a automação rodaria na
-  // segunda, não acharia pauta e o blog pareceria quebrado.
+  // manhã, não acharia pauta e o blog pareceria quebrado.
   if (ativo && urls.length === 0) {
     return Response.json(
       { error: "Cadastre ao menos um feed antes de ligar a geração automática." },
@@ -103,11 +113,15 @@ export async function PUT(
     );
   }
 
-  await sql`DELETE FROM blog_rss WHERE blog_id = ${id}`;
-  for (const url of urls) {
-    await sql`INSERT INTO blog_rss (blog_id, url) VALUES (${id}, ${url})`;
-  }
-  await sql`UPDATE blog SET rss_ativo = ${ativo} WHERE id = ${id}`;
+  // Numa transação: a rodada das 7h que lesse no meio da troca acharia o blog
+  // sem feed nenhum (apagados e ainda não regravados).
+  await sql.begin(async (tx: typeof sql) => {
+    await tx`DELETE FROM blog_rss WHERE blog_id = ${id}`;
+    for (const url of urls) {
+      await tx`INSERT INTO blog_rss (blog_id, url) VALUES (${id}, ${url})`;
+    }
+    await tx`UPDATE blog SET rss_ativo = ${ativo} WHERE id = ${id}`;
+  });
 
   return Response.json(await estado(id));
 }

@@ -1374,6 +1374,28 @@ export async function lerWorkflow(id: string) {
   return chamar(`/workflows/${encodeURIComponent(id)}`);
 }
 
+/** Uma execução, como a API pública do n8n a descreve. */
+export type ExecucaoMotor = {
+  id: string;
+  /** "success" | "error" | "running" | "waiting" | "canceled" | "crashed" (n8n 1.x). */
+  status?: string;
+  finished?: boolean;
+  startedAt: string;
+  stoppedAt?: string | null;
+};
+
+/**
+ * As últimas execuções de UM workflow, da mais nova para a mais antiga. Só
+ * leitura, e só pelo id — quem chama já sabe qual é o workflow (a tela do Blog
+ * mostra as rodadas da automação de RSS).
+ */
+export async function listarExecucoes(id: string, limite = 10): Promise<ExecucaoMotor[]> {
+  const r = (await chamar(
+    `/executions?workflowId=${encodeURIComponent(id)}&limit=${Math.min(Math.max(limite, 1), 100)}`,
+  )) as { data?: ExecucaoMotor[] } | null;
+  return r?.data ?? [];
+}
+
 /**
  * Acha um workflow do Chroma pelo nome exato.
  *

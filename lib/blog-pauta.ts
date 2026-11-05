@@ -6,7 +6,7 @@
 //
 //   · GET  /api/blogs/noticias        → a tela, que lista as notícias
 //   · POST /api/blogs/noticias/gerar  → a tela, quando alguém clica em "Gerar"
-//   · POST /api/blogs/rss/pauta       → o n8n, na segunda às 8h
+//   · POST /api/blogs/rss/pauta       → o n8n, de segunda a sexta às 7h
 //   · POST /api/blogs/rss/gerar       → o n8n, um item por vez
 //
 // Se o "já virou artigo" fosse decidido em dois lugares, a tela ofereceria como
@@ -18,7 +18,9 @@
 import { sql } from "@/lib/db";
 import type { Artigo } from "@/lib/artigo";
 import { camposArtigo } from "@/lib/blog";
-import { pautaDosFeeds } from "@/lib/blog-rss";
+import { pautaDosFeeds, type ItemRss } from "@/lib/blog-rss";
+import { escolherPautas } from "@/lib/blog-curadoria";
+import { AGENDA_AUTOMACAO } from "@/lib/blog-automacao-tipos";
 import { slugLivre } from "@/lib/artigo-server";
 import {
   FalhaGeracao,
@@ -32,19 +34,33 @@ import type { ItemPauta, PautaDoBlog } from "@/lib/blog-pauta-tipos";
 // servidor não ter de importar dos dois lugares.
 export type { ItemPauta, PautaDoBlog } from "@/lib/blog-pauta-tipos";
 
-/** Artigos por blog por execução da automação. Combinado: 10, toda segunda. */
-export const POR_BLOG_AUTOMACAO = 10;
+/**
+ * Artigos por blog por rodada da automação (AGENDA_AUTOMACAO): 2, de segunda a
+ * sexta. A pauta da rodada leva alguns a MAIS, em ordem de prioridade: matéria
+ * com paywall falha antes de gastar token, e o próximo da fila ocupa a vaga. A
+ * cota do dia é conferida na geração (`artigosDeHoje`).
+ */
+export const POR_BLOG_AUTOMACAO = AGENDA_AUTOMACAO.porBlog;
+export const CANDIDATOS_AUTOMACAO = POR_BLOG_AUTOMACAO + 3;
 
 /** Teto do que a TELA mostra por blog. Feed grande não vira lista infinita. */
 export const POR_BLOG_TELA = 30;
 
-const CAMPOS_BLOG = `b.id, b.nome`;
+/**
+ * Notícia mais velha que isso não entra na rodada da automação: a pauta é de
+ * notícia, e a do mês passado já foi coberta por todo mundo. Na tela ela
+ * continua, para quem quiser gerar à mão.
+ */
+const RECENTE_MS = 3 * 86_400_000;
+
+const CAMPOS_BLOG = `b.id, b.nome, b.descricao`;
 const DE_BLOG = `FROM blog b`;
 const TEM_FEED = `EXISTS (SELECT 1 FROM blog_rss r WHERE r.blog_id = b.id)`;
 
 interface BlogDaPauta {
   id: number;
   nome: string;
+  descricao: string;
 }
 
 /**
@@ -86,10 +102,22 @@ async function artigosPorFonte(blogId: number): Promise<Map<string, number>> {
   return new Map(linhas.map((a) => [a.fonte_url as string, a.id as number]));
 }
 
+/**
+ * A rodada da automação: as notícias recentes que ainda não viraram artigo,
+ * escolhidas pela descrição do blog (lib/blog-curadoria.ts) e em ordem de
+ * prioridade. Sem nenhuma recente, vale o que houver.
+ */
+async function escolherDaRodada(blog: BlogDaPauta, novos: ItemRss[], limite: number): Promise<ItemRss[]> {
+  const desde = Date.now() - RECENTE_MS;
+  const recentes = novos.filter((i) => !i.data || Date.parse(i.data) >= desde);
+  return escolherPautas(blog, recentes.length ? recentes : novos, limite);
+}
+
 async function pautaDeUmBlog(
   blog: BlogDaPauta,
   limite: number,
   incluirUsados: boolean,
+  curar: boolean,
 ): Promise<PautaDoBlog> {
   const feeds = await sql`
     SELECT url FROM blog_rss WHERE blog_id = ${blog.id} ORDER BY id`;
@@ -99,10 +127,10 @@ async function pautaDeUmBlog(
     artigosPorFonte(blog.id),
   ]);
 
-  const novos: ItemPauta[] = itens
-    .filter((i) => !usados.has(i.link))
-    .slice(0, limite)
-    .map((i) => ({ ...i, artigoId: null }));
+  const naoUsados = itens.filter((i) => !usados.has(i.link));
+  const novos: ItemPauta[] = (
+    curar ? await escolherDaRodada(blog, naoUsados, limite) : naoUsados.slice(0, limite)
+  ).map((i) => ({ ...i, artigoId: null }));
 
   // Os já usados vão DEPOIS dos novos, não intercalados pela data: o que a tela
   // precisa em cima é o que ainda dá trabalho. Eles continuam na lista porque
@@ -135,13 +163,28 @@ export async function pautaDosBlogs(opcoes: {
   somenteAtivos?: boolean;
   limite: number;
   incluirUsados?: boolean;
+  /** A rodada da automação: só recentes, escolhidas pela descrição do blog. */
+  curar?: boolean;
 }): Promise<PautaDoBlog[]> {
   const blogs = await blogsComFeed(opcoes);
   return Promise.all(
     blogs.map((b) =>
-      pautaDeUmBlog(b, opcoes.limite, opcoes.incluirUsados ?? false),
+      pautaDeUmBlog(b, opcoes.limite, opcoes.incluirUsados ?? false, opcoes.curar ?? false),
     ),
   );
+}
+
+/**
+ * Quantos artigos vindos de notícia o blog já recebeu HOJE (dia de Brasília).
+ * É a cota da automação: a rodada traz candidatos a mais, e a geração para
+ * quando o blog atinge POR_BLOG_AUTOMACAO.
+ */
+export async function artigosDeHoje(blogId: number): Promise<number> {
+  const [linha] = await sql`
+    SELECT count(*)::int AS n FROM artigo
+    WHERE blog_id = ${blogId} AND fonte_url <> ''
+      AND created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')`;
+  return linha.n as number;
 }
 
 // ── Da notícia ao artigo gravado ────────────────────────────────────────────
@@ -156,7 +199,7 @@ export type SaidaGeracao =
  *
  * Diferente de /api/artigos/generate, que devolve a prévia e deixa a gravação
  * para quem aprova: aqui o pedido é "pega essa notícia e gera", de um clique só
- * — ou do n8n às 8h da segunda, quando não há ninguém para aprovar. Rascunho é
+ * — ou do n8n às 7h, quando não há ninguém para aprovar. Rascunho é
  * justamente o estado que pede revisão humana antes de publicar, e ela acontece
  * depois, no painel do artigo.
  *

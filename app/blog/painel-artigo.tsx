@@ -1,6 +1,7 @@
 "use client";
 
-// O artigo aberto POR CIMA da tela do blog: conteúdo, SEO e prévia.
+// O artigo aberto POR CIMA da tela do blog: conteúdo, SEO, prévia e — depois de
+// postado — como ele está no Google.
 //
 // O PAINEL É MONTADO COM key={artigo.id} PELO PAI. Sem isso o rascunho local
 // sobreviveria à troca de artigo e o texto de um apareceria dentro do outro.
@@ -9,6 +10,10 @@
 // de leitura, nota e checklist — é DERIVADO do markdown a cada tecla, por
 // lib/artigo.ts. Não há "recalcular" nem salvar no meio: o que está na tela é o
 // que aquele texto produz.
+//
+// O ESTADO É UM PAR DE BOTÕES no rodapé (Em revisão | Postado), o mesmo par
+// das colunas do quadro. Postar daqui ou arrastando é o mesmo gesto, pela
+// mesma rota (PATCH), e o salvar do texto continua separado dele.
 import { useMemo, useState } from "react";
 import {
   ARTIGO_STATUS,
@@ -21,11 +26,13 @@ import {
   renderArtigo,
   slugify,
   tempoLeitura,
+  urlDoArtigo,
   type Artigo,
   type ArtigoRascunho,
   type ArtigoStatus,
   type Blog,
 } from "@/lib/artigo";
+import type { GoogleDoArtigo } from "@/lib/blog-google-tipos";
 import { AlertTriangle, CheckCircle2, Copy, ExternalLink } from "@/app/components/icones";
 import {
   BotaoExcluir,
@@ -34,10 +41,13 @@ import {
   SeloSeo,
   Sobreposicao,
   TagStatus,
+  mensagemDeErro,
   prefixarIds,
 } from "./pecas";
+import ArtigoNoGoogle from "./artigo-google";
 
-type Aba = "conteudo" | "seo" | "previa";
+export type AbaArtigo = "conteudo" | "seo" | "previa" | "google";
+type Aba = AbaArtigo;
 
 function deArtigo(a: Artigo): ArtigoRascunho {
   return {
@@ -56,6 +66,10 @@ function deArtigo(a: Artigo): ArtigoRascunho {
 export default function PainelArtigo({
   artigo,
   blog,
+  abaInicial,
+  pode,
+  demo,
+  googleDemo,
   aoFechar,
   aoSalvar,
   aoExcluir,
@@ -63,13 +77,19 @@ export default function PainelArtigo({
 }: {
   artigo: Artigo;
   blog: Blog;
+  /** A aba Desempenho abre o artigo direto em "Google". */
+  abaInicial?: AbaArtigo;
+  pode: { editar: boolean; excluir: boolean };
+  /** ?demo=1: nada vai ao servidor; o que se faz aqui fica só na tela. */
+  demo?: boolean;
+  googleDemo?: GoogleDoArtigo;
   aoFechar: () => void;
   aoSalvar: (a: Artigo) => void;
   aoExcluir: (id: number) => void;
-  /** Sobe o status e o slug: aprovar pode ter dado endereço ao artigo. */
+  /** Sobe o status e o slug: postar pode ter dado endereço ao artigo. */
   aoTrocarStatus: (id: number, status: ArtigoStatus, slug: string) => void;
 }) {
-  const [aba, setAba] = useState<Aba>("conteudo");
+  const [aba, setAba] = useState<Aba>(abaInicial ?? "conteudo");
   const [r, setR] = useState<ArtigoRascunho>(() => deArtigo(artigo));
   const [status, setStatus] = useState<ArtigoStatus>(artigo.status);
   const [salvando, setSalvando] = useState(false);
@@ -105,8 +125,14 @@ export default function PainelArtigo({
   }
 
   async function salvar() {
-    setSalvando(true);
     setErro(null);
+    if (demo) {
+      aoSalvar({ ...artigo, ...r, slug: r.slug || slugify(r.titulo) });
+      setSalvo(true);
+      setTimeout(() => setSalvo(false), 2000);
+      return;
+    }
+    setSalvando(true);
 
     const resposta = await fetch(`/api/artigos/${artigo.id}`, {
       method: "PUT",
@@ -117,11 +143,11 @@ export default function PainelArtigo({
         fonte_url: artigo.fonte_url,
       }),
     });
-    const dados = await resposta.json();
+    const dados = await resposta.json().catch(() => null);
     setSalvando(false);
 
     if (!resposta.ok) {
-      setErro(dados.error ?? "Não foi possível salvar.");
+      setErro(mensagemDeErro(dados, "Não foi possível salvar."));
       return;
     }
 
@@ -134,20 +160,27 @@ export default function PainelArtigo({
   }
 
   async function mudarStatus(novo: ArtigoStatus) {
+    if (novo === status) return;
     const anterior = status;
-    setStatus(novo); // otimista: o seletor responde na hora
+    setStatus(novo); // otimista: o par de botões responde na hora
     setErro(null);
+    if (demo) {
+      const slugDemo = r.slug || slugify(r.titulo);
+      if (!r.slug) setR((atualR) => ({ ...atualR, slug: slugDemo }));
+      aoTrocarStatus(artigo.id, novo, slugDemo);
+      return;
+    }
 
     const resposta = await fetch(`/api/artigos/${artigo.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ status: novo }),
-    });
+    }).catch(() => null);
 
-    if (!resposta.ok) {
+    if (!resposta?.ok) {
       setStatus(anterior);
-      const dados = await resposta.json().catch(() => ({}));
-      setErro(dados.error ?? "Não foi possível mudar o status.");
+      const dados = await resposta?.json().catch(() => null);
+      setErro(mensagemDeErro(dados, "Não foi possível mudar o estado do artigo."));
       return;
     }
 
@@ -165,10 +198,19 @@ export default function PainelArtigo({
   }
 
   async function excluir() {
+    if (demo) return aoExcluir(artigo.id);
     setSalvando(true);
-    await fetch(`/api/artigos/${artigo.id}`, { method: "DELETE" });
+    const resposta = await fetch(`/api/artigos/${artigo.id}`, { method: "DELETE" }).catch(() => null);
+    setSalvando(false);
+    if (!resposta?.ok) {
+      setErro(mensagemDeErro(await resposta?.json().catch(() => null), "Não foi possível excluir o artigo."));
+      return;
+    }
     aoExcluir(artigo.id);
   }
+
+  const postado = status === "aprovado";
+  const urlNoSite = postado ? urlDoArtigo(blog, atual) : "";
 
   const abas: { id: Aba; rotulo: React.ReactNode }[] = [
     { id: "conteudo", rotulo: "Conteúdo" },
@@ -181,7 +223,11 @@ export default function PainelArtigo({
       ),
     },
     { id: "previa", rotulo: "Prévia" },
+    // Só o que está no ar tem página para o Google medir.
+    ...(postado ? [{ id: "google" as const, rotulo: "Google" }] : []),
   ];
+  // Voltar para revisão com a aba Google aberta: ela some, e o painel volta ao texto.
+  const abaVisivel: Aba = aba === "google" && !postado ? "conteudo" : aba;
 
   return (
     <Sobreposicao rotulo={artigo.titulo} aoFechar={aoFechar}>
@@ -192,6 +238,17 @@ export default function PainelArtigo({
           <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
             {palavras} palavras · {minutos} min
           </span>
+          {urlNoSite && (
+            <a
+              href={urlNoSite}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-w-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium text-emerald-700 transition hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+            >
+              <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
+              Ver no site
+            </a>
+          )}
           <button
             type="button"
             onClick={aoFechar}
@@ -208,7 +265,7 @@ export default function PainelArtigo({
               type="button"
               onClick={() => setAba(a.id)}
               className={`rounded-t-lg border-b-2 px-3 py-2 text-[12px] transition ${
-                aba === a.id
+                abaVisivel === a.id
                   ? "border-zinc-900 font-medium text-zinc-900 dark:border-zinc-50 dark:text-zinc-50"
                   : "border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
               }`}
@@ -225,7 +282,7 @@ export default function PainelArtigo({
             a sobreposição ganhou, e o que é referência (índice, matéria de
             origem) sai de baixo do texto para o lado. Em telas estreitas
             volta a empilhar, na mesma ordem de antes. */}
-        {aba === "conteudo" && (
+        {abaVisivel === "conteudo" && (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
             <div className="flex min-w-0 flex-col gap-4">
               <Campo
@@ -310,7 +367,7 @@ export default function PainelArtigo({
         )}
 
         {/* ── SEO ───────────────────────────────────────────────────────── */}
-        {aba === "seo" && (
+        {abaVisivel === "seo" && (
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-3 rounded-2xl border border-zinc-200 px-4 py-3 dark:border-zinc-800">
               <span className="text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
@@ -406,7 +463,7 @@ export default function PainelArtigo({
         )}
 
         {/* ── Prévia ────────────────────────────────────────────────────── */}
-        {aba === "previa" && (
+        {abaVisivel === "previa" && (
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap gap-2">
               {(
@@ -484,6 +541,9 @@ export default function PainelArtigo({
             </article>
           </div>
         )}
+
+        {/* ── Google ────────────────────────────────────────────────────── */}
+        {abaVisivel === "google" && <ArtigoNoGoogle artigoId={artigo.id} inicial={googleDemo} />}
       </div>
 
       {erro && (
@@ -494,25 +554,47 @@ export default function PainelArtigo({
 
       {/* ── Rodapé ──────────────────────────────────────────────────────── */}
       <footer className="flex shrink-0 items-center justify-between gap-2 border-t border-zinc-200 px-5 py-3 dark:border-zinc-800">
-        <BotaoExcluir
-          rotulo="Excluir"
-          confirmacao="Excluir artigo"
-          aoConfirmar={excluir}
-          ocupado={salvando}
-        />
+        {pode.excluir ? (
+          <BotaoExcluir
+            rotulo="Excluir"
+            confirmacao="Excluir artigo"
+            aoConfirmar={excluir}
+            ocupado={salvando}
+          />
+        ) : (
+          <span />
+        )}
         <div className="flex items-center gap-2">
-          <select
-            value={status}
-            onChange={(e) => mudarStatus(e.target.value as ArtigoStatus)}
-            className="rounded-full border border-zinc-200 bg-transparent px-3 py-1.5 text-[12px] text-zinc-700 outline-none dark:border-zinc-800 dark:text-zinc-300"
-          >
+          {/* O mesmo par das colunas do quadro. Postado = a rota pública do
+              site passa a servir o artigo. */}
+          <div role="radiogroup" aria-label="Estado do artigo" className="flex rounded-full bg-zinc-100 p-0.5 dark:bg-zinc-800/80">
             {ARTIGO_STATUS.map((s) => (
-              <option key={s} value={s}>
+              <button
+                key={s}
+                type="button"
+                role="radio"
+                aria-checked={status === s}
+                disabled={!pode.editar}
+                onClick={() => mudarStatus(s)}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium transition disabled:cursor-not-allowed ${
+                  status === s
+                    ? s === "aprovado"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-50"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50"
+                }`}
+              >
+                <span
+                  className={`size-1.5 rounded-full ${
+                    s === "aprovado" ? (status === s ? "bg-white" : "bg-emerald-500") : "bg-amber-500"
+                  }`}
+                  aria-hidden="true"
+                />
                 {ARTIGO_STATUS_LABEL[s]}
-              </option>
+              </button>
             ))}
-          </select>
-          <BotaoSalvar aoSalvar={salvar} salvando={salvando} salvo={salvo} />
+          </div>
+          {pode.editar && <BotaoSalvar aoSalvar={salvar} salvando={salvando} salvo={salvo} />}
         </div>
       </footer>
     </Sobreposicao>

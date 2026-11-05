@@ -539,3 +539,46 @@ body {
     animation: none;
   }
 }
+
+/* Blog: a barra da pauta virando artigo (app/blog/[id]/cartoes.tsx). A
+   geração leva de um a três minutos e não tem como saber o quanto falta: barra
+   indeterminada, que diz "está andando" sem prometer um fim. Sem movimento, ela
+   fica parada no meio — o cronômetro ao lado continua dizendo que não travou. */
+@keyframes barra-indeterminada {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(310%);
+  }
+}
+.barra-indeterminada {
+  animation: barra-indeterminada 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* O artigo que acabou de chegar em "Em revisão": um anel que acende e apaga
+   duas vezes, para o olho achar o cartão novo no meio da coluna. */
+@keyframes chegou {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(14 165 233 / 0);
+  }
+  25%,
+  65% {
+    box-shadow: 0 0 0 3px rgb(14 165 233 / 0.45);
+  }
+}
+.chegou {
+  animation: chegou 1.6s ease-in-out 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barra-indeterminada {
+    animation: none;
+    transform: translateX(100%);
+  }
+  .chegou {
+    animation: none;
+    box-shadow: 0 0 0 2px rgb(14 165 233 / 0.45);
+  }
+}

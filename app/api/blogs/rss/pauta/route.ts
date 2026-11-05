@@ -1,8 +1,13 @@
-// A pauta da semana: quais notícias virar artigo, em qual blog.
+// A pauta do dia: quais notícias virar artigo, em qual blog.
 //
-// QUEM CHAMA: o workflow do n8n, toda segunda às 8h, autenticado pelo
-// CRM_SERVICE_TOKEN. Ele pega esta lista e depois pede UM artigo por vez em
-// /api/blogs/rss/gerar.
+// QUEM CHAMA: o workflow do n8n, de segunda a sexta às 7h (AGENDA_AUTOMACAO),
+// autenticado pelo CRM_SERVICE_TOKEN. Ele pega esta lista e depois pede UM
+// artigo por vez em /api/blogs/rss/gerar.
+//
+// A LISTA É ESCOLHIDA, NÃO SÓ A MAIS NOVA: das notícias recentes que ainda não
+// viraram artigo, a curadoria (lib/blog-curadoria.ts) fica com as que têm a ver
+// com a descrição de cada blog, em ordem de prioridade. Vêm alguns candidatos a
+// mais que a cota: a geração para quando o blog completa a do dia.
 //
 // POR QUE O LAÇO É DO n8n E NÃO DAQUI: gerar 10 artigos leva de 10 a 20 minutos
 // (cada um lê a matéria e escreve ~1.300 palavras no Opus). Nenhum
@@ -18,7 +23,7 @@
 // "Separar itens" abre, e cada item volta inteiro no corpo do POST de geração.
 import { NextRequest } from "next/server";
 import { autorizado, naoAutorizado } from "@/lib/automacoes/servico";
-import { POR_BLOG_AUTOMACAO, pautaDosBlogs } from "@/lib/blog-pauta";
+import { CANDIDATOS_AUTOMACAO, pautaDosBlogs } from "@/lib/blog-pauta";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -48,7 +53,8 @@ async function montar() {
   // novo seria pagar tokens para repetir o que está no banco.
   const blogs = await pautaDosBlogs({
     somenteAtivos: true,
-    limite: POR_BLOG_AUTOMACAO,
+    limite: CANDIDATOS_AUTOMACAO,
+    curar: true,
   });
 
   const pauta: ItemPauta[] = blogs.flatMap((b) =>

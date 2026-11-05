@@ -2,20 +2,20 @@
 //
 // A FORMA DELE, e por que é assim:
 //
-//   [Toda segunda 8h] → [Pauta da semana] → [Separar itens] → [Um por vez] ⇄ [Gerar artigo]
+//   [Seg a sex 7h] → [Pauta do dia] → [Separar itens] → [Um por vez] ⇄ [Gerar artigo]
 //
-// O laço é do n8n. Gerar 10 artigos leva de 10 a 20 minutos e nenhum
+// O laço é do n8n. Gerar vários artigos leva de 10 a 20 minutos e nenhum
 // `maxDuration` cobre isso — a rota morreria no meio, com parte dos artigos
 // gravados e nenhum aviso. Fatiado, cada volta do laço é UMA chamada de UM
 // artigo, que cabe folgado, e o motor ganha o que ele sabe fazer: seguir para o
 // próximo item quando um falha.
 //
 // É a Opção B de docs/automacoes-n8n.md aplicada ao blog: o n8n agenda e
-// orquestra; quem lê a matéria, chama o modelo e grava é o CRM.
+// orquestra; quem lê a matéria, escolhe a pauta, chama o modelo e grava é o
+// CRM. A agenda (dias, hora, quantos por blog) vem de AGENDA_AUTOMACAO, e quem
+// cria, atualiza, liga e pausa o workflow é lib/blog-automacao.ts.
 import type { WorkflowMotor } from "@/lib/automacoes/motores/n8n/adaptador";
-
-/** Toda segunda-feira às 8h. */
-export const CRON_SEMANAL = "0 8 * * 1";
+import { AGENDA_AUTOMACAO } from "@/lib/blog-automacao-tipos";
 
 /**
  * Nome fixo: é a chave de "já existe?" em acharWorkflowPorNome, e o prefixo
@@ -23,7 +23,8 @@ export const CRON_SEMANAL = "0 8 * * 1";
  */
 export const NOME_WORKFLOW = "[Chroma] Blog · artigos por RSS";
 
-const NO_PAUTA = "Pauta da semana";
+const NO_GATILHO = "Seg a sex, 7h";
+export const NO_PAUTA = "Pauta do dia";
 const NO_LACO = "Um artigo por vez";
 const NO_GERAR = "Gerar artigo";
 
@@ -48,17 +49,19 @@ export function montarWorkflowRss(opcoes: {
 
   return {
     name: NOME_WORKFLOW,
-    settings: { executionOrder: "v1" },
+    // O fuso vai escrito: sem ele o cron segue o fuso da INSTÂNCIA, que é
+    // compartilhada e pode estar em UTC — as 7h virariam 4h da manhã aqui.
+    settings: { executionOrder: "v1", timezone: AGENDA_AUTOMACAO.fuso },
     nodes: [
       {
         id: "gatilho",
-        name: "Toda segunda 8h",
+        name: NO_GATILHO,
         type: "n8n-nodes-base.scheduleTrigger",
         typeVersion: 1.2,
         position: [0, 0],
         parameters: {
           rule: {
-            interval: [{ field: "cronExpression", expression: CRON_SEMANAL }],
+            interval: [{ field: "cronExpression", expression: AGENDA_AUTOMACAO.cron }],
           },
         },
       },
@@ -123,7 +126,7 @@ export function montarWorkflowRss(opcoes: {
       },
     ],
     connections: {
-      "Toda segunda 8h": {
+      [NO_GATILHO]: {
         main: [[{ node: NO_PAUTA, type: "main", index: 0 }]],
       },
       [NO_PAUTA]: {

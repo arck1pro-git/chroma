@@ -1,17 +1,33 @@
 import type { Metadata } from "next";
-import Blogs from "./blogs";
+import { headers } from "next/headers";
 import { exigirModulo } from "@/lib/auth/dal";
+import { podeOperar } from "@/lib/auth/permissoes";
+import { listarBlogs } from "@/lib/blog";
+import { enderecoDoCrm } from "@/lib/endereco";
+import Blogs from "./blogs";
 
 export const metadata: Metadata = { title: "Blog · AmaanOffice" };
 
-// A tela busca no cliente (blogs, com skeleton): é
-// lista curta, e a criação em linha já reescreve o estado local sem recarregar
-// a rota. Deixar a página estática mantém a navegação instantânea.
+// A lista vem do servidor, já com as contagens (em revisão, postados, fontes):
+// é uma consulta só e pinta pronta. Criar e configurar mexem no estado local da
+// tela, sem recarregar a rota.
 export default async function Page() {
   // Checagem POR PÁGINA, e não no layout: com Partial Rendering o layout não
-  // re-renderiza a cada navegação, então a checagem lá deixaria de rodar
-  // justamente quando a pessoa troca de tela (guia de autenticação do Next,
-  // "Layouts and auth checks"). Aqui ela roda antes de qualquer consulta.
-  await exigirModulo("blog");
-  return <Blogs />;
+  // re-renderiza a cada navegação (guia de autenticação do Next).
+  const { usuario } = await exigirModulo("blog");
+  const [blogs, cabecalhos] = await Promise.all([listarBlogs(), headers()]);
+  const endereco = enderecoDoCrm(cabecalhos);
+
+  return (
+    <Blogs
+      iniciais={blogs}
+      base={endereco.url}
+      basePublica={endereco.publico}
+      pode={{
+        criar: podeOperar(usuario, "blog", "criar"),
+        editar: podeOperar(usuario, "blog", "editar"),
+        excluir: podeOperar(usuario, "blog", "excluir"),
+      }}
+    />
+  );
 }
