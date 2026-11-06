@@ -31,17 +31,25 @@ const PRAZO_LEITURA_MS = 15_000;
 
 /**
  * Os horários que a IA pode oferecer (decisões dele, 2026-10-02: fixo no
- * código; das 10h; 10 dias úteis para achar o dia que o lead sugerir). Seg a
- * sex, das 10h às 18h de Brasília — a última começa às 17h —, reuniões de 1h,
- * nos próximos 10 dias úteis com horário, e com 2h de antecedência no mínimo
- * — sempre só onde a agenda da conexão e as de AGENDAS_QUE_OCUPAM estão livres.
- * A IA oferece os mais próximos primeiro; o resto da lista serve para o dia que
- * ele pedir.
+ * código; 10 dias úteis para achar o dia que o lead sugerir). Todo dia, das 8h
+ * às 22h de Brasília — a última começa às 21h —, reuniões de 1h, até o 10º dia
+ * útil com horário (os sábados e domingos no meio entram junto), e com 2h de
+ * antecedência no mínimo — sempre só onde a agenda da conexão e as de
+ * AGENDAS_QUE_OCUPAM estão livres.
+ *
+ * A ordem de oferta (pedidos dele, 2026-11-06, quando a janela passou de seg a
+ * sex 10h–18h para isto): seg a sex das 8h às 18h (`prioridadeAte`); seg a sex
+ * das 18h às 22h só se o lead pedir à noite; sáb e dom só se ele não puder
+ * durante a semana. faixaDoHorario diz a faixa, horariosPorDia separa a lista
+ * por ela e as regras fixas da IA (lib/ia/atendente.ts) mandam seguir a ordem.
+ * Dentro da faixa, a IA oferece os mais próximos primeiro; o resto da lista
+ * serve para o dia que ele pedir.
  */
 export const REGRA_HORARIOS = {
   diasUteis: 10,
-  abre: 10,
-  fecha: 18,
+  abre: 8,
+  prioridadeAte: 18,
+  fecha: 22,
   duracaoMin: 60,
   antecedenciaMin: 120,
 } as const;
@@ -161,6 +169,17 @@ export function diaEmBrasilia(d: Date): string {
 export function horaEmBrasilia(d: Date): string {
   const p = partes(d);
   return `${String(p.hora).padStart(2, "0")}:${String(p.minuto).padStart(2, "0")}`;
+}
+
+/**
+ * Em que faixa da ordem de oferta (REGRA_HORARIOS) o horário cai: 0 = seg a
+ * sex antes das 18h; 1 = seg a sex à noite; 2 = sáb e dom.
+ */
+export function faixaDoHorario(d: Date): 0 | 1 | 2 {
+  const p = partes(d);
+  const semana = new Date(Date.UTC(p.ano, p.mes - 1, p.dia)).getUTCDay();
+  if (semana === 0 || semana === 6) return 2;
+  return p.hora < REGRA_HORARIOS.prioridadeAte ? 0 : 1;
 }
 
 /** "qui 02/10 15:00" — o rótulo do horário, e o valor que a IA devolve. */
@@ -559,27 +578,26 @@ async function ocupadosEntre(de: Date, ate: Date): Promise<EventoAgenda[]> {
 
 /**
  * Os horários de reunião que ainda estão livres, segundo REGRA_HORARIOS: os
- * dos próximos dias úteis QUE TÊM horário livre. Dia lotado ou bloqueado
- * (feriado marcado como dia inteiro) não conta, nem "hoje" depois das 16h.
+ * dos próximos dias QUE TÊM horário livre, até o 10º dia útil assim, com os
+ * sábados e domingos que caem no meio. Dia lotado ou bloqueado (feriado
+ * marcado como dia inteiro) não conta, nem "hoje" depois das 19h.
  *
  * Olha no máximo 3 semanas à frente: agenda cheia nesse tempo devolve menos
  * dias (ou nenhum), e a IA cai no avisar_equipe.
  *
  * Livre é livre em todas as agendas que ocupam (ocupadosEntre), não só na da
- * conexão. Vale para a IA e para as sugestões da ficha da oportunidade.
+ * conexão. Vale para a IA e para as sugestões da ficha da oportunidade, em
+ * ordem de tempo; a ordem de oferta é a de faixaDoHorario.
  */
 export async function horariosLivres(agora = new Date()): Promise<HorarioLivre[]> {
   const { diasUteis, abre, fecha, duracaoMin, antecedenciaMin } = REGRA_HORARIOS;
   const minimo = agora.getTime() + antecedenciaMin * 60_000;
   const hoje = partes(agora);
 
-  // Todos os horários de expediente da janela, por dia.
+  // Todos os horários da janela, por dia, sábado e domingo inclusive.
   const porDia: Array<Array<{ inicio: Date; fim: Date }>> = [];
   for (let i = 0; i < 21; i++) {
     const data = new Date(Date.UTC(hoje.ano, hoje.mes - 1, hoje.dia + i));
-    const semana = data.getUTCDay();
-    if (semana === 0 || semana === 6) continue;
-
     const doDia: Array<{ inicio: Date; fim: Date }> = [];
     for (let min = abre * 60; min + duracaoMin <= fecha * 60; min += duracaoMin) {
       const inicio = instanteEmBrasilia(data.getUTCFullYear(), data.getUTCMonth() + 1, data.getUTCDate(), Math.floor(min / 60), min % 60);
@@ -594,33 +612,64 @@ export async function horariosLivres(agora = new Date()): Promise<HorarioLivre[]
   const ultimo = porDia[porDia.length - 1];
   const ocupados = await ocupadosEntre(porDia[0][0].inicio, ultimo[ultimo.length - 1].fim);
 
-  return porDia
+  const livresPorDia = porDia
     .map((doDia) => doDia.filter((c) => !ocupados.some((e) => sobrepoe(c, e))))
-    .filter((livres) => livres.length > 0)
-    .slice(0, diasUteis)
+    .filter((livres) => livres.length > 0);
+  // Até o 10º dia útil com horário livre; sem 10 deles, a janela inteira.
+  const uteis = livresPorDia.filter((doDia) => faixaDoHorario(doDia[0].inicio) !== 2);
+  const ate = uteis.length >= diasUteis ? uteis[diasUteis - 1][0].inicio.getTime() : Infinity;
+  return livresPorDia
+    .filter((doDia) => doDia[0].inicio.getTime() <= ate)
     .flat()
     .map((c) => ({ ...c, rotulo: rotuloDoHorario(c.inicio) }));
 }
 
 /**
- * "sex 02/10 (hoje): 17:00 · seg 05/10: 10:00, 11:00" — os horários livres por
- * dia, para a IA ler. O "(hoje)" e o "(amanhã)" não são enfeite: sem eles o
- * modelo ofereceu "hoje às 16h" quando 16h de hoje já não estava na lista, e
- * marcou a sexta da semana seguinte no lugar (simulação de 2026-10-02).
+ * Os horários livres por dia, para a IA ler, numa linha por faixa de
+ * faixaDoHorario, na ordem de oferta (2026-11-06). A primeira faixa com
+ * horário vai como "ofereça estes primeiro" (sem dia útil antes das 18h, é a
+ * noite ou o fim de semana que a IA tem para oferecer); as outras, com a
+ * condição delas.
+ *
+ *   seg a sex, das 8h às 18h (ofereça estes primeiro): sex 02/10 (hoje): 17:00 · seg 05/10: 08:00, 09:00
+ *   seg a sex, das 18h às 22h (só se o cliente pedir à noite ou não puder das 8h às 18h): sex 02/10 (hoje): 18:00
+ *   sáb e dom, das 8h às 22h (só se o cliente pedir o fim de semana ou não puder de segunda a sexta): sáb 03/10 (amanhã): 08:00
+ *
+ * O "(hoje)" e o "(amanhã)" não são enfeite: sem eles o modelo ofereceu "hoje
+ * às 16h" quando 16h de hoje já não estava na lista, e marcou a sexta da
+ * semana seguinte no lugar (simulação de 2026-10-02).
  */
 export function horariosPorDia(horarios: HorarioLivre[], agora = new Date()): string {
+  const { abre, prioridadeAte, fecha } = REGRA_HORARIOS;
+  const FAIXAS = [
+    { nome: `seg a sex, das ${abre}h às ${prioridadeAte}h`, condicao: "ofereça estes primeiro" },
+    {
+      nome: `seg a sex, das ${prioridadeAte}h às ${fecha}h`,
+      condicao: `só se o cliente pedir à noite ou não puder das ${abre}h às ${prioridadeAte}h`,
+    },
+    {
+      nome: `sáb e dom, das ${abre}h às ${fecha}h`,
+      condicao: "só se o cliente pedir o fim de semana ou não puder de segunda a sexta",
+    },
+  ];
   const diaDe = (d: Date) => rotuloDoHorario(d).split(" ").slice(0, 2).join(" ");
   const hoje = diaDe(agora);
   const amanha = diaDe(new Date(agora.getTime() + 24 * 3600_000));
-  const dias = new Map<string, string[]>();
-  for (const h of horarios) {
-    const [semana, data, hora] = h.rotulo.split(" ");
-    const dia = `${semana} ${data}`;
-    dias.set(dia, [...(dias.get(dia) ?? []), hora]);
-  }
-  return [...dias]
-    .map(([dia, horas]) => `${dia}${dia === hoje ? " (hoje)" : dia === amanha ? " (amanhã)" : ""}: ${horas.join(", ")}`)
-    .join(" · ");
+  const porDia = (lista: HorarioLivre[]) => {
+    const dias = new Map<string, string[]>();
+    for (const h of lista) {
+      const [semana, data, hora] = h.rotulo.split(" ");
+      const dia = `${semana} ${data}`;
+      dias.set(dia, [...(dias.get(dia) ?? []), hora]);
+    }
+    return [...dias]
+      .map(([dia, horas]) => `${dia}${dia === hoje ? " (hoje)" : dia === amanha ? " (amanhã)" : ""}: ${horas.join(", ")}`)
+      .join(" · ");
+  };
+  return FAIXAS.map((f, i) => ({ ...f, lista: horarios.filter((h) => faixaDoHorario(h.inicio) === i) }))
+    .filter((f) => f.lista.length > 0)
+    .map((f, i) => `${f.nome} (${i === 0 ? FAIXAS[0].condicao : f.condicao}): ${porDia(f.lista)}`)
+    .join("\n");
 }
 
 // ── Marcar reunião ────────────────────────────────────────────────────────────

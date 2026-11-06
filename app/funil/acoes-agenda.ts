@@ -11,6 +11,7 @@ import { sql } from "@/lib/db";
 import { conexaoGoogle, GoogleDesconectado } from "@/lib/google-oauth";
 import {
   diaEmBrasilia,
+  faixaDoHorario,
   horaEmBrasilia,
   horariosLivres,
   HorarioOcupado,
@@ -81,7 +82,10 @@ export async function sugestoesDeHorario(): Promise<
 > {
   await exigirModulo("inicio");
   try {
-    const livres = await horariosLivres();
+    // Na ordem em que a IA oferece (faixaDoHorario): a ficha mostra só os
+    // primeiros, e a noite e o fim de semana (desde 2026-11-06) iriam na frente
+    // do dia útil antes das 18h sempre que fossem mais próximos.
+    const livres = (await horariosLivres()).sort((a, b) => faixaDoHorario(a.inicio) - faixaDoHorario(b.inicio));
     return {
       ok: true,
       horarios: livres.map((h) => ({ data: diaEmBrasilia(h.inicio), hora: horaEmBrasilia(h.inicio), rotulo: h.rotulo })),

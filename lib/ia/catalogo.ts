@@ -29,7 +29,7 @@ export const ACOES_IA = [
     chave: "agendar_reuniao",
     rotulo: "Agendar a reunião no Google Calendar",
     descricao:
-      "Com a agenda conectada em Integrações, ela oferece os horários livres do especialista (seg a sex, 10h às 18h, reuniões de 1h, nos próximos 10 dias úteis) e marca a reunião com link do Meet quando o cliente escolhe. A reunião fica ligada à oportunidade, entra no histórico, e o contato com e-mail recebe o convite. Quem já tem reunião marcada não recebe outra.",
+      "Com a agenda conectada em Integrações, ela oferece os horários livres do especialista (seg a sex, das 8h às 22h, primeiro os das 8h às 18h e os da noite só se o cliente pedir; sáb e dom no mesmo horário, só se ele não puder durante a semana; reuniões de 1h, nos próximos 10 dias úteis) e marca a reunião com link do Meet quando o cliente escolhe. A reunião fica ligada à oportunidade, entra no histórico, e o contato com e-mail recebe o convite. Quem já tem reunião marcada não recebe outra.",
   },
   {
     chave: "agendar_retorno",

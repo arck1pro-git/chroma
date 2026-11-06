@@ -60,7 +60,7 @@ const ag = carregar(resolve(raiz, "lib/agenda.ts"), {
 });
 
 // ── O Google simulado ────────────────────────────────────────────────────────
-// Terça 03/11/2026; "agora" é segunda às 8h. Horários do dia: 10h a 17h.
+// Terça 03/11/2026; "agora" é segunda às 8h. Horários do dia: 8h a 21h.
 const D = [2026, 11, 3];
 const agora = ag.instanteEmBrasilia(2026, 11, 2, 8);
 const ev = (id, h, extra = {}) => ({
@@ -161,11 +161,54 @@ try {
   //    trabalho com horário (17h) e o lembrete de dia inteiro "disponível" (o
   //    dia 03 continua com horários).
   const livres = await ag.horariosLivres(agora);
-  assert.deepEqual(horasDoDia(livres), [11, 14, 15, 17]);
+  assert.deepEqual(horasDoDia(livres), [8, 9, 11, 14, 15, 17, 18, 19, 20, 21]);
   assert.ok(!livres.some((h) => ag.diaEmBrasilia(h.inicio) === "2026-11-04"), "folga de dia inteiro ocupada tira o dia 04");
   assert.ok(livres.some((h) => ag.diaEmBrasilia(h.inicio) === "2026-11-05"), "o dia 05 segue livre, apesar do convite recusado");
   assert.equal(erros.length, 0, "com as duas agendas achadas, nada no log");
   assert.ok(comPrazo.GET > 0, "as leituras do Google vão com prazo");
+
+  // 1a. Sábado e domingo entram (2026-11-06), só os que caem até o 10º dia
+  //     útil com horário livre: 02, 03, 05, 06, 09 a 13 e 16/11 (a folga tira
+  //     o 04). Os de 07/08 e 14/15 vêm; o 17/11 não.
+  const dias = [...new Set(livres.map((h) => ag.diaEmBrasilia(h.inicio)))];
+  const fimDeSemana = dias.filter((d) => ["07", "08", "14", "15"].includes(d.slice(-2)));
+  assert.deepEqual(fimDeSemana, ["2026-11-07", "2026-11-08", "2026-11-14", "2026-11-15"]);
+  assert.equal(dias.length - fimDeSemana.length, 10, "10 dias úteis");
+  assert.equal(dias.at(-1), "2026-11-16", "para no 10º dia útil");
+  assert.deepEqual(
+    [[2, 17], [2, 18], [7, 10], [8, 21]].map(([dia, h]) => ag.faixaDoHorario(ag.instanteEmBrasilia(2026, 11, dia, h))),
+    [0, 1, 2, 2],
+    "seg 17h, seg 18h, sáb 10h e dom 21h",
+  );
+
+  //     Para a IA, uma linha por faixa, na ordem de oferta: dia útil das 8h
+  //     às 18h; a noite só se o cliente pedir; o fim de semana só se ele não
+  //     puder durante a semana. Sem a primeira, a seguinte vai na frente.
+  const [prioritaria, noite, sabDom, ...resto] = ag.horariosPorDia(livres, agora).split("\n");
+  assert.equal(resto.length, 0, "uma linha por faixa");
+  assert.ok(prioritaria.startsWith("seg a sex, das 8h às 18h (ofereça estes primeiro): seg 02/11 (hoje): 10:00, 11:00,"), prioritaria);
+  assert.ok(prioritaria.includes(" · ter 03/11 (amanhã): 08:00, 09:00, 11:00, 14:00, 15:00, 17:00 · "), prioritaria);
+  assert.ok(!/(18|19|20|21):00|sáb|dom/.test(prioritaria), "a faixa prioritária não leva noite nem fim de semana");
+  assert.ok(
+    noite.startsWith(
+      "seg a sex, das 18h às 22h (só se o cliente pedir à noite ou não puder das 8h às 18h): seg 02/11 (hoje): 18:00, 19:00, 20:00, 21:00 · ter 03/11 (amanhã): 18:00",
+    ),
+    noite,
+  );
+  assert.ok(!/sáb|dom/.test(noite), "a noite é só de dia útil");
+  assert.ok(
+    sabDom.startsWith(
+      "sáb e dom, das 8h às 22h (só se o cliente pedir o fim de semana ou não puder de segunda a sexta): sáb 07/11: 08:00, 09:00, ",
+    ),
+    sabDom,
+  );
+  assert.ok(sabDom.includes("21:00 · dom 08/11: 08:00"), sabDom);
+  const semPrioritaria = livres.filter((h) => ag.faixaDoHorario(h.inicio) !== 0);
+  assert.ok(ag.horariosPorDia(semPrioritaria, agora).startsWith("seg a sex, das 18h às 22h (ofereça estes primeiro): seg 02/11 (hoje): 18:00"));
+  const soFimDeSemana = livres.filter((h) => ag.faixaDoHorario(h.inicio) === 2);
+  assert.equal(ag.horariosPorDia(soFimDeSemana, agora).split("\n").length, 1);
+  assert.ok(ag.horariosPorDia(soFimDeSemana, agora).startsWith("sáb e dom, das 8h às 22h (ofereça estes primeiro): sáb 07/11: 08:00"));
+  assert.equal(ag.horariosPorDia([], agora), "");
 
   // 1b. Resposta boa com o corpo cortado não vira "agenda sem compromisso".
   corpoCortado = "fer-lig";
@@ -189,7 +232,7 @@ try {
 
   // 4. Agenda renomeada: só ela sai da conferência, com erro no log; a outra segue.
   lista = AGENDAS.map((a) => (a.id === "fer-vid" ? { ...a, summary: "Videochamada" } : a));
-  assert.deepEqual(horasDoDia(await ag.horariosLivres(agora)), [11, 14, 15, 16, 17]);
+  assert.deepEqual(horasDoDia(await ag.horariosLivres(agora)), [8, 9, 11, 14, 15, 16, 17, 18, 19, 20, 21]);
   assert.ok(erros.some((e) => e.includes("Agenda Fernanda - Vídeo chamada")), "loga a que falta");
 
   // 5. Nome repetido não esconde a que falta.
@@ -202,7 +245,7 @@ try {
 
   // 6. Agenda escondida da lista do Google continua ocupando; a tela não a vê.
   ocultas = new Set(["fer-vid"]);
-  assert.deepEqual(horasDoDia(await ag.horariosLivres(agora)), [11, 14, 15, 17]);
+  assert.deepEqual(horasDoDia(await ag.horariosLivres(agora)), [8, 9, 11, 14, 15, 17, 18, 19, 20, 21]);
   assert.ok(!(await ag.agendasDaConta()).agendas.some((a) => a.id === "fer-vid"), "a tela não lista a escondida");
   ocultas = new Set();
 
@@ -293,5 +336,5 @@ try {
   console.error = erroOriginal;
 }
 console.log(
-  "OK: agendas que ocupam o horário (Fernanda sim, Fabricio não; na da conexão, evento com horário sempre, dia inteiro só se ocupado, recusado e local de trabalho nunca), falha fechada, prazo só na leitura, corpo cortado, cota, renomeada, repetida, escondida, reserva da IA x ficha, descrição com o link do CRM e remarcação.",
+  "OK: janela das 8h às 22h com sábado e domingo e as três faixas de oferta para a IA, agendas que ocupam o horário (Fernanda sim, Fabricio não; na da conexão, evento com horário sempre, dia inteiro só se ocupado, recusado e local de trabalho nunca), falha fechada, prazo só na leitura, corpo cortado, cota, renomeada, repetida, escondida, reserva da IA x ficha, descrição com o link do CRM e remarcação.",
 );
