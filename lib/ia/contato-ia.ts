@@ -9,6 +9,14 @@
 // ia_id só vale com ia = true; nos outros casos é gravado NULL, para a linha
 // nunca dizer duas coisas ao mesmo tempo (migration-ias.sql).
 //
+// QUEM LIGA (regra dele, 2026-11-06: "a IA corresponde à etapa"): uma pessoa,
+// no contato (a gaveta do dashboard e o chat) ou pela palavra da IA no
+// celular. As duas exceções automáticas, mantidas por decisão dele no mesmo
+// dia, são o bloco "Passar para a IA" das campanhas (lib/campanhas-whatsapp-
+// acoes.ts) e a IA de comentários do Instagram (lib/ia/comentarios.ts). A IA
+// de atendimento nunca liga: ela atende pela etapa e para quando o card sai
+// dela (lib/ia/atendente.ts).
+//
 // Fica no histórico com quem mexeu: é a primeira pergunta quando "a IA parou
 // de responder" alguém. Pelo celular (a palavra da IA, lib/ia/atendente.ts) não
 // há usuário do CRM: autor vazio, e `como` diz por onde veio.

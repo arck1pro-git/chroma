@@ -10,7 +10,8 @@
 //      equipe escreve;
 //   3. a IA (avancarPelaIa): quem pede gente vai para o atendimento humano de
 //      qualquer etapa antes da reunião agendada, com o nome antigo ou o novo,
-//      nas duas ordens de coluna e em funil sem "reunião agendada".
+//      nas duas ordens de coluna e em funil sem "reunião agendada"; e mover o
+//      card não liga a IA no contato (a IA é da etapa, 2026-11-06).
 // O DEV não tem os funis reformulados, então o cenário monta funis de teste no
 // formato da AMAAN (marca "seed-atendimento-humano"), apagados no fim.
 import { sql } from "../lib/db";
@@ -143,9 +144,27 @@ async function main() {
   const pedirGente = async (c: Awaited<ReturnType<typeof cenario>>, de: string) => {
     await c.porEtapa(de);
     const s = { op_id: c.op, op_funil_id: c.funil, op_etapa_id: c.etapa[de], contato_id: c.contato };
-    await avancarPelaIa(s as never, ia.id, ETAPA_SOLICITOU, "o lead pediu atendimento (teste)", false);
+    await avancarPelaIa(s as never, ia.id, ETAPA_SOLICITOU, "o lead pediu atendimento (teste)");
     return c.etapaAgora();
   };
+  // A IA é da etapa (2026-11-06): mover o card, para "em atendimento" ou para
+  // "reunião agendada", não liga a IA no contato.
+  {
+    const iaDoContato = async () => {
+      const [c] = await sql`SELECT ia, ia_id FROM contatos WHERE id = ${a.contato}`;
+      return `${c.ia}/${c.ia_id}`;
+    };
+    for (const [de, alvo, para] of [
+      ["Atendimento IA", paraTesteAndamento.ETAPA_EM_CONTATO, "em atendimento"],
+      ["em atendimento", paraTesteAndamento.ETAPA_REUNIAO, "reunião agendada"],
+    ] as const) {
+      await a.porEtapa(de);
+      const s = { op_id: a.op, op_funil_id: a.funil, op_etapa_id: a.etapa[de], contato_id: a.contato };
+      await avancarPelaIa(s as never, ia.id, alvo, "teste");
+      conferir((await a.etapaAgora()) === para, `IA: de "${de}" → ${para}`);
+      conferir((await iaDoContato()) === "null/null", `IA: ir para "${para}" não liga a IA no contato`, await iaDoContato());
+    }
+  }
   const b = await cenario("B", ORDEM_B);
   for (const [c, nome] of [[a, "A"], [b, "B"]] as const) {
     for (const de of ["Atendimento IA", "em atendimento", "sem contato", "sem interesse - sem perfil - sem capital"]) {

@@ -9,6 +9,10 @@
 //      a IA escolhida à mão (contatos.ia_id); vazio segue a etapa — a IA
 //      (etapas.ia_id) da oportunidade ABERTA dele. Sem IA, não responde.
 //      (migration-ia-atendimento.sql e migration-ias.sql)
+//      A IA é da ETAPA (regra dele, 2026-11-06): o lead que cai numa etapa com
+//      IA é atendido enquanto estiver nela e deixa de ser quando sai. O
+//      atendente nunca liga o interruptor do contato, nem ao mover o card;
+//      quem liga é uma pessoa (lib/ia/contato-ia.ts).
 //   2. Algum atendente falou com ele na ÚLTIMA HORA?  Mensagem de gente da
 //      equipe — pelo celular ou pelo CRM — há menos de 1h: a conversa é do
 //      atendente e a IA não manda. Passou de 1h, a IA volta a responder.
@@ -409,9 +413,9 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
 
     if (saida.tipo === "humano") {
       await passarParaHumano(atendimentoId, s, saida.motivo, saida.mensagem);
-      // Pediu gente: "solicitou contato". Sem manter a IA — passou para a equipe.
+      // Pediu gente: "solicitou contato".
       if (saida.mover) await moverPelaIa(s, saida.mover);
-      else await avancarPelaIa(s, iaId, ETAPA_SOLICITOU, `o lead pediu atendimento (${saida.motivo})`.slice(0, 300), false);
+      else await avancarPelaIa(s, iaId, ETAPA_SOLICITOU, `o lead pediu atendimento (${saida.motivo})`.slice(0, 300));
       return;
     }
     if (saida.texto) {
@@ -450,13 +454,13 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
     // atendimento humano (avisar_equipe) leva a "solicitou contato"; e, sem
     // nenhum deles, o lead que respondeu está "em atendimento".
     if (saida.tipo === "texto" && saida.marcou) {
-      await avancarPelaIa(s, iaId, ETAPA_REUNIAO, "marcou a reunião", true);
+      await avancarPelaIa(s, iaId, ETAPA_REUNIAO, "marcou a reunião");
     } else if (saida.mover) {
       await moverPelaIa(s, saida.mover);
     } else if (saida.avisar) {
-      await avancarPelaIa(s, iaId, ETAPA_SOLICITOU, `o lead pediu atendimento (${saida.avisar})`.slice(0, 300), false);
+      await avancarPelaIa(s, iaId, ETAPA_SOLICITOU, `o lead pediu atendimento (${saida.avisar})`.slice(0, 300));
     } else if (saida.texto) {
-      await avancarPelaIa(s, iaId, ETAPA_EM_CONTATO, "o lead respondeu", true);
+      await avancarPelaIa(s, iaId, ETAPA_EM_CONTATO, "o lead respondeu");
     }
 
     if (saida.avisar) {
@@ -544,16 +548,18 @@ async function moverPelaIa(s: Situacao, mover: Movimento) {
  *     atendimento", como antes. O nome da etapa (solicitou contato ou
  *     atendimento humano) está em lib/atendimento-humano.ts.
  *
- * `manterIa`: a IA atende pela etapa (iaQueAtende), e "em atendimento" não tem
- * IA — sair da etapa dela a calaria no meio da conversa. Então ela fica ligada
- * no contato antes de o card andar (só se ninguém mexeu à mão: ia IS NULL).
+ * Mover NÃO liga a IA no contato (regra dele, 2026-11-06; de 2026-10-19 até
+ * aqui, "em atendimento" e "reunião agendada" ligavam, e a IA seguia o lead
+ * por todas as etapas dali em diante). Ela atende pela etapa: se a etapa nova
+ * não tem IA, ela para de atender ali. Para continuar, a etapa nova precisa
+ * ter IA.
  */
 // "em contato" ainda casa: é o nome antigo, que o banco do dev continua usando.
 const ETAPA_EM_CONTATO = /^(em atendimento|em contato)$/i;
 const ETAPA_SOLICITOU = ETAPA_ATENDIMENTO_HUMANO;
 const ETAPA_REUNIAO = /^reuni[aã]o agendada$/i;
 
-async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: string, manterIa: boolean): Promise<void> {
+async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: string): Promise<void> {
   if (!s.op_id || !s.op_funil_id) return;
   try {
     const etapas = (await sql`
@@ -570,9 +576,6 @@ async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: st
       (alvo === ETAPA_SOLICITOU &&
         (reuniao ? atual.ordem < reuniao.ordem : ETAPA_EM_CONTATO.test(atual.nome.trim())));
     if (destino.ordem <= atual.ordem && !volta) return;
-    if (manterIa) {
-      await sql`UPDATE contatos SET ia = true, ia_id = ${iaId} WHERE id = ${s.contato_id} AND ia IS NULL`;
-    }
     const [ia] = await sql`SELECT nome FROM ias WHERE id = ${iaId}`;
     const quem = ia?.nome ? `pela IA ${ia.nome}` : "pela IA";
     await moverOportunidadeDeEtapa(s.op_id, destino.id, s.op_funil_id, ` ${quem}: ${motivo}`);

@@ -114,7 +114,10 @@ quando e quem em `financeiro_lancamentos` (`validado_*`, `nf_*`, `pago_*`): quem
 | Instalar a extensão | `/api/extensao-reunioes` (o .zip da pasta `extensao-reunioes/`, só os arquivos da extensão; aberto pelo menu da conta na barra lateral) | sessão + módulo Agenda |
 
 Mensagem que chega pelo WhatsApp é gravada e, depois da resposta (`after`), `lib/ia/atendente.ts` decide se a IA
-responde. Mensagem de grupo do WhatsApp Web (`@g.us`) vira conversa do grupo (`lib/grupos-whatsapp.ts`, tabela
+responde. A IA é da etapa (`etapas.ia_id`): atende o lead enquanto ele está numa etapa com IA e para quando o card sai,
+inclusive quando a própria IA o move. O interruptor do contato (`contatos.ia`, `lib/ia/contato-ia.ts`) só é ligado por
+uma pessoa, na tela do contato ou pela palavra da IA no celular; as exceções são o bloco "Passar para a IA" das campanhas
+e a IA de comentários do Instagram. Mensagem de grupo do WhatsApp Web (`@g.us`) vira conversa do grupo (`lib/grupos-whatsapp.ts`, tabela
 `grupos_whatsapp`, `atendimentos.grupo_id` com `contato_id` NULL) e nunca passa pela IA; só o chat a lista (LEFT JOIN),
 e o que lê conversa com `JOIN contatos` não vê grupo. Conversa fixada (`atendimentos.fixada_em`) vale para a equipe. Envio de mensagem, da equipe ou da IA, passa por `lib/conversa-envio.ts`: grava pendente, envia pela
 uazapi, pela Meta ou pelo Instagram (escolha por canal, sem "senão é uazapi"), casa o retorno. Número secundário: no
