@@ -21,6 +21,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { sql } from "@/lib/db";
 import { acessoGoogle, esquecerTokenGoogle, GoogleDesconectado } from "@/lib/google-oauth";
+import { linkDaOportunidade, linkDoContato } from "@/lib/link-do-crm";
 import { ehUuid } from "@/lib/validacao";
 
 const API = "https://www.googleapis.com/calendar/v3";
@@ -687,18 +688,26 @@ export async function marcarReuniao(e: {
   if (!c) throw new Error("Contato não encontrado.");
 
   const email = typeof c.email === "string" && EMAIL.test(c.email.trim()) ? c.email.trim() : null;
-  const nome = (c.nome as string)?.trim() || "contato";
+  const nomeDoCadastro = typeof c.nome === "string" ? c.nome.trim() : "";
+  const nome = nomeDoCadastro || "contato";
   // A descrição vai no CONVITE que o lead recebe por e-mail: nada de bastidor
   // ("marcada pelo Chroma", "pela IA", nome interno da oportunidade). Quem
   // marcou e de qual oportunidade é fica no CRM (histórico, agenda_reunioes e
   // extendedProperties abaixo). Pedido dele, 2026-10-02.
+  //
+  // A exceção é o link do CRM (pedido dele, 2026-11-06): nome, número e o link
+  // da oportunidade (ou do contato, sem oportunidade), para quem abre o evento
+  // na agenda ir direto ao lead. O lead com e-mail também vê o link no convite;
+  // ele só abre com login no CRM.
   const minutos = Math.round((fim.getTime() - inicio.getTime()) / 60_000);
   const duracao = minutos % 60 ? (minutos < 60 ? `${minutos} minutos` : `${Math.floor(minutos / 60)}h${minutos % 60}`) : minutos === 60 ? "1 hora" : `${minutos / 60} horas`;
   const descricao = [
     `Reunião online de ${duracao} pelo Google Meet.`,
-    c.whatsapp || email ? "" : null,
+    "",
+    nomeDoCadastro ? `Nome: ${nomeDoCadastro}` : null,
     c.whatsapp ? `WhatsApp: ${c.whatsapp}` : null,
     email ? `E-mail: ${email}` : null,
+    `No CRM: ${e.oportunidadeId ? linkDaOportunidade(e.oportunidadeId) : linkDoContato(e.contatoId)}`,
   ]
     .filter((l) => l !== null)
     .join("\n");

@@ -43,8 +43,10 @@ const sql = async (partes, ...valores) => {
     atualizacoes.push(valores);
     return [];
   }
-  return texto.includes("FROM contatos") ? [{ nome: "Teste", email: null, whatsapp: null }] : [];
+  return texto.includes("FROM contatos") ? [contatoDoBanco] : [];
 };
+// O contato da reserva (passos 7 e 7b).
+let contatoDoBanco = { nome: "Teste", email: null, whatsapp: null };
 // A trava da reserva roda numa transação; aqui ela só chama de volta (a fila de
 // verdade precisa de um Postgres e não é testada neste script).
 sql.begin = async (corpo) => corpo(async () => []);
@@ -107,6 +109,8 @@ let falhar = null;
 let corpoCortado = null;
 let semResposta = null;
 let postou = 0;
+// O corpo de cada evento que a reserva mandou criar.
+const criados = [];
 const comPrazo = { GET: 0, POST: 0, PATCH: 0 };
 const patches = [];
 globalThis.fetch = async (url, init = {}) => {
@@ -127,6 +131,7 @@ globalThis.fetch = async (url, init = {}) => {
   const m = /^\/calendars\/([^/]+)\/events$/.exec(caminho);
   if (m && (init.method ?? "GET") === "POST") {
     postou++;
+    criados.push(JSON.parse(init.body));
     throw new Error("POST chamado");
   }
   if (m) {
@@ -233,6 +238,25 @@ try {
   assert.equal(postou, 3);
   assert.equal(comPrazo.POST, 0, "criar evento espera o Google, sem prazo (POST abortado deixaria reunião sem vínculo)");
 
+  // 7b. A descrição do evento (2026-11-06): nome, número, e-mail e o link do
+  //     CRM, para a oportunidade ou, sem ela, para a ficha do contato.
+  assert.equal(
+    criados[0].description,
+    "Reunião online de 1 hora pelo Google Meet.\n\nNome: Teste\nNo CRM: https://amaanoffice.amaan.com.br/contatos?contato=c",
+  );
+  contatoDoBanco = { nome: " Maria Lead ", email: "maria@exemplo.com", whatsapp: "5547999990000" };
+  await assert.rejects(
+    ag.marcarReuniao({ ...base, oportunidadeId: "o1", inicio: ag.instanteEmBrasilia(...D, 14), autorId: null, quem: "IA" }),
+    /POST chamado/,
+  );
+  assert.equal(
+    criados.at(-1).description,
+    "Reunião online de 1 hora pelo Google Meet.\n\nNome: Maria Lead\nWhatsApp: 5547999990000\nE-mail: maria@exemplo.com\n" +
+      "No CRM: https://amaanoffice.amaan.com.br/?op=o1",
+  );
+  assert.equal(criados.at(-1).summary, "Reunião AMAAN com Maria Lead");
+  contatoDoBanco = { nome: "Teste", email: null, whatsapp: null };
+
   // 9. A remarcação (2026-11-05): o MESMO evento, só o horário, com a mesma
   //    duração; o próprio evento não ocupa o horário novo; a agenda da Fernanda
   //    barra; o banco muda junto; o convidado com e-mail recebe a atualização.
@@ -269,5 +293,5 @@ try {
   console.error = erroOriginal;
 }
 console.log(
-  "OK: agendas que ocupam o horário (Fernanda sim, Fabricio não; na da conexão, evento com horário sempre, dia inteiro só se ocupado, recusado e local de trabalho nunca), falha fechada, prazo só na leitura, corpo cortado, cota, renomeada, repetida, escondida, reserva da IA x ficha e remarcação.",
+  "OK: agendas que ocupam o horário (Fernanda sim, Fabricio não; na da conexão, evento com horário sempre, dia inteiro só se ocupado, recusado e local de trabalho nunca), falha fechada, prazo só na leitura, corpo cortado, cota, renomeada, repetida, escondida, reserva da IA x ficha, descrição com o link do CRM e remarcação.",
 );
