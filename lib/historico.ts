@@ -161,13 +161,15 @@ export async function registrarEnvioAoAtendimentoHumano(oportunidadeId: string, 
  * faz: cadência de etapa se resolve movendo o card, inscrição manual se
  * resolve tirando da automação.
  */
-export type OrigemFluxo = "etapa" | "manual" | "segmento" | "api";
+export type OrigemFluxo = "etapa" | "manual" | "segmento" | "api" | "lista";
 
 const PORQUE: Record<OrigemFluxo, string> = {
   etapa: " pela cadência da etapa",
   manual: "",
   segmento: " pelo segmento",
   api: " pela captação",
+  // Um workflow do n8n escolhendo de uma lista (/api/automacoes/inscrever).
+  lista: " pela reinscrição em lote",
 };
 
 /**

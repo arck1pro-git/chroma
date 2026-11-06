@@ -74,6 +74,10 @@ const SERVICO_EXATAS = new Set([
   "/api/automacoes/enviar",
   // O motor pondo o card em outra etapa (bloco "Atualizar oportunidade").
   "/api/automacoes/mover",
+  // O motor inscrevendo oportunidades numa automação publicada (reinscrição em
+  // lote). O chroma_n8n não tem INSERT em fluxo_execucoes: o n8n propõe os
+  // ids, o CRM confere as regras e inscreve.
+  "/api/automacoes/inscrever",
   // A rodada das retomadas da IA (lib/ia/retomada.ts), de 5 em 5 minutos.
   "/api/ia/retomar",
   // A varredura dos formulários da Meta (lib/meta-leads.ts), de 5 em 5 minutos.

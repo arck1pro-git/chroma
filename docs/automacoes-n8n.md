@@ -119,10 +119,23 @@ Route Handlers, não Server Actions: quem chama é externo.
 | `/api/automacoes/acao` | POST | n8n | Executa um bloco (enviar WhatsApp, atualizar oportunidade…) e devolve o resultado |
 | `/api/automacoes/callback` | POST | n8n | Fim de execução: sucesso, erro e qual nó falhou |
 | `/api/automacoes/cron` | POST | agendador | Esperas vencidas, reconciliação de execuções `perdidas`, partição do mês |
+| `/api/automacoes/inscrever` | POST | workflow do n8n | Inscreve até 20 oportunidades abertas numa automação publicada (nunca cadência de etapa), pelo caminho do "adicionar em automação" do quadro, com origem `lista`. Quem já passou pela automação não volta (só a `perdida`). Teto de 20 por hora por automação. O `chroma_n8n` não tem INSERT em `fluxo_execucoes`: o n8n propõe, o CRM confere e inscreve |
 
 Todas exigem `Authorization: Bearer <CRM_SERVICE_TOKEN>`, comparado em **tempo
 constante** (`crypto.timingSafeEqual`) — comparação com `===` vaza o token por
 tempo de resposta.
+
+**Reinscrição em lote (2026-11-06).** Quem chama `/api/automacoes/inscrever` é
+um workflow avulso, criado à mão no n8n: "[Chroma] Lote 06/11 · fora da cadência
+→ Retomada D1 (5 por hora)". De hora em hora, um nó Postgres (credencial do
+`chroma_n8n`, só leitura) escolhe as 5 próximas de uma lista fixa no SQL: os 89
+leads da etapa Atendimento IA da AMAAN que saíram da cadência de 14 dias e não
+voltaram. Só escolhe quem continua aberta, na etapa, sem automação ativa e sem
+ter passado pela Retomada (perdida volta). Não há cursor: a cada rodada a lista
+é conferida de novo no banco. Acabou a lista, a consulta não devolve nada e o
+workflow para sozinho; desligar e apagar depois. Com o token, a rota inscreve
+qualquer oportunidade aberta em qualquer automação publicada que não seja
+cadência de etapa, uma vez só por automação, até o teto por hora.
 
 `/api/automacoes/acao` recebe **só ponteiros**: `execucao_id`, `fluxo_id` e
 `no_id`. O `tipo` e a `config` do bloco **não viajam** — o CRM os lê da versão

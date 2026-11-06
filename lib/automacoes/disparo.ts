@@ -1,8 +1,9 @@
 // O laço que leva as inscrições ao motor.
 //
-// Existe porque há TRÊS disparos com a mesma mecânica e validações diferentes:
+// Existe porque há QUATRO disparos com a mesma mecânica e validações diferentes:
 // a cadência de uma etapa (app/inicio/acoes-cadencia.ts), o segmento e a
-// seleção do kanban (app/automacoes/acoes.ts, app/funil/actions.ts). O que
+// seleção do kanban (app/automacoes/acoes.ts, app/funil/actions.ts) e a
+// reinscrição em lote pedida pelo n8n (app/api/automacoes/inscrever). O que
 // muda entre eles é o que vem ANTES — quem pode disparar, quem entra na lista,
 // que erro a pessoa lê. O laço em si é idêntico, e com três cópias um ajuste de
 // tamanho de lote viraria três edições que saem de sincronia.

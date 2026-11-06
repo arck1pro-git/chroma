@@ -594,26 +594,45 @@ export async function retomarExecucao(execucaoId: string): Promise<number> {
 // ── Inscrever um SEGMENTO inteiro ───────────────────────────────────────────
 
 /**
- * Inscreve uma LISTA explícita de oportunidades — o "adicionar em um fluxo de
- * automação" da seleção do kanban.
+ * Inscreve uma LISTA explícita de oportunidades. Dois chamadores:
  *
- * origem 'manual' e não 'lista': quem escolheu foi uma pessoa, cartão a cartão.
- * A diferença importa na hora de explicar por que alguém recebeu a mensagem.
+ *   · o "adicionar em um fluxo de automação" da seleção do kanban: origem
+ *     'manual', quem escolheu foi uma pessoa, cartão a cartão;
+ *   · /api/automacoes/inscrever (2026-11-06): origem 'lista', quem escolheu foi
+ *     um workflow do n8n. Só entra oportunidade aberta (soAbertas) e que nunca
+ *     passou por este fluxo (semRepetir): quem terminou, deu erro ou foi tirado
+ *     por uma pessoa ("Tirar da cadência") não volta sozinho. Perdida volta: ela
+ *     nunca chegou ao motor.
+ *
+ * A origem importa na hora de explicar por que alguém recebeu a mensagem, e é
+ * por ela que a rota conta o teto por hora (inscricoesPorListaNaUltimaHora).
  */
 export async function inscreverOportunidades(
   fluxoId: string,
   versaoId: string,
   oportunidadeIds: string[],
+  {
+    origem = "manual",
+    soAbertas = false,
+    semRepetir = false,
+  }: { origem?: "manual" | "lista"; soAbertas?: boolean; semRepetir?: boolean } = {},
 ) {
   if (oportunidadeIds.length === 0) return [];
   const inscritos = (await sql`
     INSERT INTO fluxo_execucoes (
       fluxo_id, versao_id, entidade_tipo, entidade_id, origem, motor)
-    SELECT f.id, ${versaoId}, 'oportunidade', o.id, 'manual', f.motor
+    SELECT f.id, ${versaoId}, 'oportunidade', o.id, ${origem}, f.motor
     FROM oportunidades o
     CROSS JOIN fluxos f
     WHERE f.id = ${fluxoId}
       AND o.id = ANY(string_to_array(${listaUuid(oportunidadeIds)}, ',')::uuid[])
+      ${soAbertas ? sql`AND o.status = 'aberta'` : sql``}
+      ${semRepetir
+        ? sql`AND NOT EXISTS (
+                SELECT 1 FROM fluxo_execucoes x
+                 WHERE x.fluxo_id = f.id AND x.entidade_tipo = 'oportunidade'
+                   AND x.entidade_id = o.id AND x.estado <> 'perdida')`
+        : sql``}
     ON CONFLICT (fluxo_id, entidade_tipo, entidade_id)
       WHERE estado IN ('pendente','rodando','esperando','pausada')
       DO NOTHING
@@ -626,10 +645,23 @@ export async function inscreverOportunidades(
     fluxoId,
     "oportunidade",
     inscritos.map((i) => i.entidade_id),
-    "manual",
+    origem,
   );
 
   return inscritos;
+}
+
+/**
+ * Quantas inscrições por lista (origem 'lista') este fluxo recebeu na última
+ * hora, perdidas inclusive: a tentativa conta. É o freio de
+ * /api/automacoes/inscrever, que não tem outro (o rate limit do CRM saiu em
+ * 2026-09-09, ver lib/automacoes/servico.ts).
+ */
+export async function inscricoesPorListaNaUltimaHora(fluxoId: string): Promise<number> {
+  const [r] = await sql`
+    SELECT count(*)::int AS n FROM fluxo_execucoes
+     WHERE fluxo_id = ${fluxoId} AND origem = 'lista' AND iniciado_em > now() - interval '1 hour'`;
+  return r.n as number;
 }
 
 /**
