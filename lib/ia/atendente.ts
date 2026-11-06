@@ -451,16 +451,15 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
 
     // Reunião marcada nesta resposta vale mais que qualquer outro movimento; o
     // pedido do modelo (a recusa → sem interesse) vem depois; o pedido de
-    // atendimento humano (avisar_equipe) leva a "solicitou contato"; e, sem
-    // nenhum deles, o lead que respondeu está "em atendimento".
+    // atendimento humano (avisar_equipe) leva ao atendimento humano. Sem
+    // nenhum deles, o card FICA onde está: o lead que só respondeu continua com
+    // a IA (ver avancarPelaIa).
     if (saida.tipo === "texto" && saida.marcou) {
       await avancarPelaIa(s, iaId, ETAPA_REUNIAO, "marcou a reunião");
     } else if (saida.mover) {
       await moverPelaIa(s, saida.mover);
     } else if (saida.avisar) {
       await avancarPelaIa(s, iaId, ETAPA_SOLICITOU, `o lead pediu atendimento (${saida.avisar})`.slice(0, 300));
-    } else if (saida.texto) {
-      await avancarPelaIa(s, iaId, ETAPA_EM_CONTATO, "o lead respondeu");
     }
 
     if (saida.avisar) {
@@ -530,14 +529,16 @@ async function moverPelaIa(s: Situacao, mover: Movimento) {
  * não estão movendo as oportunidades"). O modelo só movia quando o prompt
  * mandava, e o prompt só manda na recusa: em 14 dias foram 4 movimentos para 7
  * reuniões marcadas. Agora, sem depender do modelo:
- *   · o lead respondeu à IA         → "em atendimento"
- *   · o lead pediu atendimento humano → "solicitou contato"
+ *   · o lead pediu atendimento humano → "atendimento humano"
  *   · a IA marcou a reunião          → "reunião agendada"
- * (Funis reformulados em 2026-10-19: "em contato" virou "em atendimento" e
- * "tentando contato" virou "solicitou contato".)
+ *   · o lead só respondeu            → o card FICA onde está (regra dele,
+ *     2026-11-06: "se o lead responder mantém ele em atendimento ia"). De
+ *     2026-10-19 até aqui ia para "em atendimento"/"em contato", etapa que nem
+ *     sempre tem IA, e a conversa morria ali. Se a cadência acaba sem reunião
+ *     nem atendimento humano, quem move é o fim da cadência
+ *     (lib/automacoes/fim-da-cadencia.ts), também para quem respondeu.
  * Só para a frente pela ordem das etapas (card que já passou não volta), com
- * duas voltas permitidas:
- *   · "sem contato" → "em atendimento": é exatamente o lead que voltou a falar;
+ * uma volta permitida:
  *   · qualquer etapa antes de "reunião agendada" → atendimento humano: o lead
  *     pediu uma pessoa (pedidos dele, 2026-10-23 e 2026-10-28: "se a IA ver
  *     que o lead quer atendimento humano, enviar para atendimento humano"). Se
@@ -554,7 +555,8 @@ async function moverPelaIa(s: Situacao, mover: Movimento) {
  * não tem IA, ela para de atender ali. Para continuar, a etapa nova precisa
  * ter IA.
  */
-// "em contato" ainda casa: é o nome antigo, que o banco do dev continua usando.
+// Só para a volta do atendimento humano em funil sem "reunião agendada". "em
+// contato" ainda casa: é o nome antigo, que o banco do dev continua usando.
 const ETAPA_EM_CONTATO = /^(em atendimento|em contato)$/i;
 const ETAPA_SOLICITOU = ETAPA_ATENDIMENTO_HUMANO;
 const ETAPA_REUNIAO = /^reuni[aã]o agendada$/i;
@@ -572,9 +574,8 @@ async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: st
     if (!destino || !atual || destino.id === atual.id) return;
     const reuniao = etapas.find((e) => ETAPA_REUNIAO.test(e.nome.trim()));
     const volta =
-      (alvo === ETAPA_EM_CONTATO && /^sem contato$/i.test(atual.nome.trim())) ||
-      (alvo === ETAPA_SOLICITOU &&
-        (reuniao ? atual.ordem < reuniao.ordem : ETAPA_EM_CONTATO.test(atual.nome.trim())));
+      alvo === ETAPA_SOLICITOU &&
+      (reuniao ? atual.ordem < reuniao.ordem : ETAPA_EM_CONTATO.test(atual.nome.trim()));
     if (destino.ordem <= atual.ordem && !volta) return;
     const [ia] = await sql`SELECT nome FROM ias WHERE id = ${iaId}`;
     const quem = ia?.nome ? `pela IA ${ia.nome}` : "pela IA";

@@ -121,6 +121,41 @@ Com ele saíram o `entrada.alternativas` do compilador e o Switch do adaptador.
 O que ficou dessa rodada, e continua valendo por si, é a recusa de bloco de
 execução morta no executor.
 
+## O fim da cadência para quem respondeu (2026-11-06)
+
+A regra pedida para as etapas "Atendimento IA" (AMAAN e ARCK1PRO): o lead que
+responde **fica** na etapa da IA; reunião marcada vai para "reunião agendada";
+pedido de gente, para "Atendimento Humano"; e se a cadência chega ao fim sem
+nenhum dos dois, o card vai para **sem contato**.
+
+O lead que não respondeu chega ao bloco final da cadência pelo motor, como
+sempre. O que respondeu, não: a guarda do envio seguinte não devolve linha e a
+execução morre ali, sem chegar ao "Atualizar oportunidade". Quem cobre esse caso
+é `lib/automacoes/fim-da-cadencia.ts`, na rodada de 5 em 5 minutos de
+`/api/ia/retomar`:
+
+- olha só execuções rodando ou esperando de cards abertos numa etapa
+  "Atendimento IA" (com IA), na etapa em que entraram (`origem_etapa_id`, ou a
+  etapa da cadência);
+- o fim é o mais tardio entre a versão seguida e a publicada, mais 2 horas de
+  folga para o motor agir primeiro (entre 30/10 e 03/11 houve versões que
+  terminavam 2 horas depois da saudação);
+- não mexe em quem não está parado: equipe falou com o lead depois da entrada
+  (CRM ou celular), IA desligada no contato, card que saiu da etapa e voltou,
+  lead ou IA falando nas últimas 24 horas, retorno combinado ou remarcação em
+  aberto, reunião marcada que ainda não acabou;
+- nunca leva ao atendimento humano (se o bloco final apontar para lá, conta
+  como falha e não move);
+- aplica o bloco final da versão publicada por `moverPelaCadencia`, fecha a
+  execução e grava "Saiu da automação … — fim da cadência sem reunião nem
+  atendimento humano". Uma rodada por vez (trava no banco).
+
+Depende do agendador "[Chroma] IA · retomar conversas" ligado no n8n: sem ele, o
+fim de quem respondeu não roda.
+
+A reinscrição em lote (`/api/automacoes/inscrever`, origem `lista`) grava a
+etapa em que o card estava ao entrar, para essas inscrições também terem fim.
+
 ## De qual número sai
 
 **Uma instância por mensagem**, escolhida no formulário da coluna entre as

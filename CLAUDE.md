@@ -137,6 +137,12 @@ quem traz o dia de retomar o contato (`oportunidades.retomar_em`, conferido por 
 `lib/mover-etapa.ts`); a tela pede o dia em `app/funil/escolher-retorno.tsx`. Sair para outra etapa apaga o dia; no dia,
 o card mostra "Retomar contato" e sobe na coluna. Card novo não nasce nessa etapa, e remover etapa não despeja leads nela.
 
+A IA de atendimento move o card quando marca a reunião ("reunião agendada"), quando o lead pede gente ("Atendimento
+Humano") e quando o prompt manda (`mover_etapa`, como a recusa para "sem interesse"); o lead que só responde fica na
+etapa da IA. O fim da cadência sem reunião nem atendimento humano leva ao destino do bloco final ("sem contato" nas
+etapas "Atendimento IA"), também para quem respondeu: `lib/automacoes/fim-da-cadencia.ts`, na rodada de
+`/api/ia/retomar` (`docs/cadencia-etapa.md`).
+
 Lead com reunião marcada que avisa que não vai conseguir ir: a IA chama `avisar_imprevisto` (avisa a Fernanda, sem
 encerrar o atendimento), oferece horários e, quando ele escolhe, `remarcar_reuniao` muda o mesmo evento no Google
 (`remarcarReuniao` em `lib/agenda.ts`) e avisa a Fernanda. Sem resposta, a rodada das retomadas volta a oferecer 2 h

@@ -618,10 +618,14 @@ export async function inscreverOportunidades(
   }: { origem?: "manual" | "lista"; soAbertas?: boolean; semRepetir?: boolean } = {},
 ) {
   if (oportunidadeIds.length === 0) return [];
+  // origem_etapa_id na lista: a etapa em que o card estava ao entrar. É ela que
+  // faz o bloco final (mover-pela-cadencia) e o fim da cadência
+  // (fim-da-cadencia.ts) não mexerem em quem já saiu dali.
   const inscritos = (await sql`
     INSERT INTO fluxo_execucoes (
-      fluxo_id, versao_id, entidade_tipo, entidade_id, origem, motor)
-    SELECT f.id, ${versaoId}, 'oportunidade', o.id, ${origem}, f.motor
+      fluxo_id, versao_id, entidade_tipo, entidade_id, origem, origem_etapa_id, motor)
+    SELECT f.id, ${versaoId}, 'oportunidade', o.id, ${origem},
+           ${origem === "lista" ? sql`o.etapa_id` : sql`NULL::uuid`}, f.motor
     FROM oportunidades o
     CROSS JOIN fluxos f
     WHERE f.id = ${fluxoId}

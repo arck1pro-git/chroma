@@ -974,8 +974,9 @@ export function paraWorkflow(
       // No-Op lá embaixo.
       //
       // TRÊS nós, como a mensagem: confere, pede ao CRM e marca o passo. A
-      // guarda é a mesma da mensagem — respondeu, o card não sai do lugar (a IA
-      // é quem o leva para "em atendimento"). Quem move é o CRM
+      // guarda é a mesma da mensagem — respondeu, o ramo morre antes daqui, e
+      // o fim de quem respondeu é aplicado pelo CRM quando a cadência acaba
+      // (lib/automacoes/fim-da-cadencia.ts, 2026-11-06). Quem move é o CRM
       // (/api/automacoes/mover), pelo mesmo caminho do arraste no quadro.
       //
       // A etapa vai dentro do corpo JSON do nó: só uuid canônico passa, para

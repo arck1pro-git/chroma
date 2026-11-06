@@ -1,7 +1,12 @@
 // O bloco "Atualizar oportunidade" com etapa (2026-10-21): a cadência põe o card
 // em outra etapa. O caso que o trouxe: a recuperação do Atendimento IA da AMAAN
-// terminou sem resposta → "sem contato". Desde 2026-10-28 (pedido dele), o fim
-// dela leva ao atendimento humano.
+// terminou sem resposta → "sem contato". De 2026-10-28 a 2026-11-06 o fim dela
+// levou ao atendimento humano; desde 2026-11-06 (pedido dele) volta a levar a
+// "sem contato", nas cadências das duas etapas "Atendimento IA" e nas Retomadas.
+//
+// Dois chamadores: o motor, no bloco final (/api/automacoes/mover), e o fim da
+// cadência de quem respondeu (lib/automacoes/fim-da-cadencia.ts), cujo ramo no
+// n8n morreu na guarda antes de chegar aqui.
 //
 // QUEM MOVE É O CRM, pelo MESMO caminho do arraste no quadro e da IA
 // (moverOportunidadeDeEtapa): histórico, cadência da etapa nova e evento da

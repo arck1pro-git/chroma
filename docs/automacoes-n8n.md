@@ -135,7 +135,10 @@ ter passado pela Retomada (perdida volta). Não há cursor: a cada rodada a list
 é conferida de novo no banco. Acabou a lista, a consulta não devolve nada e o
 workflow para sozinho; desligar e apagar depois. Com o token, a rota inscreve
 qualquer oportunidade aberta em qualquer automação publicada que não seja
-cadência de etapa, uma vez só por automação, até o teto por hora.
+cadência de etapa, uma vez só por automação, até o teto por hora. A inscrição
+grava a etapa em que o card estava (`origem_etapa_id`): o bloco final não puxa
+de volta quem saiu dali, e o fim da cadência de quem respondeu
+(`lib/automacoes/fim-da-cadencia.ts`) também vale para ela.
 
 `/api/automacoes/acao` recebe **só ponteiros**: `execucao_id`, `fluxo_id` e
 `no_id`. O `tipo` e a `config` do bloco **não viajam** — o CRM os lê da versão
