@@ -17,7 +17,7 @@ export const ACOES_IA = [
     chave: "mover_etapa",
     rotulo: "Mover a oportunidade entre etapas",
     descricao:
-      "Ela pode mudar a oportunidade do contato de etapa, dentro do mesmo funil, quando o prompt disser em que situação. Conta como arrastar o card: entra no histórico, na cadência e no pixel da etapa nova — e quem atende dali em diante é a IA dessa etapa.",
+      "Ela pode mudar a oportunidade do contato de etapa, dentro do mesmo funil, quando o prompt disser em que situação e para qual etapa (ex.: marcou a reunião → reunião agendada; pediu atendimento humano → Atendimento Humano). Sem esta ação, ou sem a instrução no prompt, o card não sai do lugar: o sistema não move sozinho. Conta como arrastar o card: entra no histórico, na cadência e no pixel da etapa nova — e quem atende dali em diante é a IA dessa etapa.",
   },
   {
     chave: "registrar_objecao",

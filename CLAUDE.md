@@ -137,11 +137,12 @@ quem traz o dia de retomar o contato (`oportunidades.retomar_em`, conferido por 
 `lib/mover-etapa.ts`); a tela pede o dia em `app/funil/escolher-retorno.tsx`. Sair para outra etapa apaga o dia; no dia,
 o card mostra "Retomar contato" e sobe na coluna. Card novo não nasce nessa etapa, e remover etapa não despeja leads nela.
 
-A IA de atendimento move o card quando marca a reunião ("reunião agendada"), quando o lead pede gente ("Atendimento
-Humano") e quando o prompt manda (`mover_etapa`, como a recusa para "sem interesse"); o lead que só responde fica na
-etapa da IA. O fim da cadência sem reunião nem atendimento humano leva ao destino do bloco final ("sem contato" nas
-etapas "Atendimento IA"), também para quem respondeu: `lib/automacoes/fim-da-cadencia.ts`, na rodada de
-`/api/ia/retomar` (`docs/cadencia-etapa.md`).
+A IA de atendimento só muda o card de etapa pela ação `mover_etapa`, quando e para onde o PROMPT dela manda (reunião
+marcada → "reunião agendada", pediu gente → "Atendimento Humano", recusa → "sem interesse"); a configuração da IA só
+libera a ação, e o código não move por regra. Movimento pedido junto com a reserva da reunião é descartado se o Google não
+reservou. O fim da cadência sem reunião nem atendimento humano leva ao destino do bloco final ("sem contato" nas etapas
+"Atendimento IA"), também para quem respondeu: `lib/automacoes/fim-da-cadencia.ts`, na rodada de `/api/ia/retomar`
+(`docs/cadencia-etapa.md`).
 
 Lead com reunião marcada que avisa que não vai conseguir ir: a IA chama `avisar_imprevisto` (avisa a Fernanda, sem
 encerrar o atendimento), oferece horários e, quando ele escolhe, `remarcar_reuniao` muda o mesmo evento no Google
@@ -239,8 +240,8 @@ node --env-file=.env scripts/jiti.mjs scripts/<arquivo>.ts   # roda TS do projet
   blocos e as operações do construtor, com as pendências iguais às do servidor), `testar-campanhas-motor.ts`
   e `testar-campanhas-construtor.ts` (pelo runner, contra o DEV com Graph e uazapi falsas: o motor das campanhas e a
   IA do construtor, sem chamar a Anthropic), `testar-campanhas-metricas.ts` (pelo runner, contra o DEV com a Graph
-  falsa: o funil, as falhas por motivo e o gasto pelo template_analytics), `testar-atendimento-humano.ts` (pelo runner, contra o DEV com um funil de teste apagado no fim: o fim da cadência,
-  a IA que passa o lead para a equipe e a pill "Atendimento humano"), `testar-reunioes-assistente.ts` (pelo runner, contra
+  falsa: o funil, as falhas por motivo e o gasto pelo template_analytics), `testar-atendimento-humano.ts` (pelo runner, contra o DEV com um funil de teste apagado no fim: o fim da cadência
+  e a pill "Atendimento humano", pela cadência e pela IA), `testar-reunioes-assistente.ts` (pelo runner, contra
   o DEV com cenário marcado e a Anthropic falsa num servidor local: a porta, o lead e o copiloto da extensão de reuniões),
   `testar-documentos-envio.ts` (pelo runner, contra o DEV e o Storage do `.env`, com marca apagada no fim: o envio direto
   da biblioteca de Documentos pela URL assinada e as recusas do registro),

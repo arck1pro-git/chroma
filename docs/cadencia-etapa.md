@@ -126,7 +126,9 @@ execução morta no executor.
 A regra pedida para as etapas "Atendimento IA" (AMAAN e ARCK1PRO): o lead que
 responde **fica** na etapa da IA; reunião marcada vai para "reunião agendada";
 pedido de gente, para "Atendimento Humano"; e se a cadência chega ao fim sem
-nenhum dos dois, o card vai para **sem contato**.
+nenhum dos dois, o card vai para **sem contato**. Os dois primeiros movimentos
+são do PROMPT da IA (`mover_etapa`), não do código; o último é o bloco final da
+cadência.
 
 O lead que não respondeu chega ao bloco final da cadência pelo motor, como
 sempre. O que respondeu, não: a guarda do envio seguinte não devolve linha e a

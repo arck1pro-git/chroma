@@ -45,7 +45,9 @@
 // AÇÕES QUE DEPENDEM DA IA, marcadas na criação dela (ias.acoes):
 //   · passar_para_humano — a saída descrita acima.
 //   · mover_etapa — muda a oportunidade de etapa no mesmo funil, pelo mesmo
-//     caminho do arraste (lib/mover-etapa.ts). Dali em diante quem atende é a
+//     caminho do arraste (lib/mover-etapa.ts), quando e para onde o PROMPT
+//     manda. É o único jeito de a IA mudar o card de etapa: o sistema não move
+//     por regra (2026-11-06, ver moverPelaIa). Dali em diante quem atende é a
 //     IA da etapa nova — ou ninguém, se ela não tiver.
 //   · registrar_objecao — anota no histórico cada objeção do cliente (frase,
 //     categoria, o que estava por trás, resposta): o banco vivo de objeções
@@ -85,7 +87,7 @@ import { avisarPorDemanda } from "@/lib/ia/aviso-demanda";
 import { NOME_PROVISORIO } from "@/lib/instagram";
 import { conexaoGoogle } from "@/lib/google-oauth";
 import { linkDaConversa } from "@/lib/link-do-crm";
-import { ETAPA_ATENDIMENTO_HUMANO, PASSOU_PELA_IA } from "@/lib/atendimento-humano";
+import { PASSOU_PELA_IA } from "@/lib/atendimento-humano";
 import {
   conferirRetorno,
   FERRAMENTA_RETORNO,
@@ -413,9 +415,8 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
 
     if (saida.tipo === "humano") {
       await passarParaHumano(atendimentoId, s, saida.motivo, saida.mensagem);
-      // Pediu gente: "solicitou contato".
+      // A etapa só muda se o prompt mandou (mover_etapa): ver moverPelaIa.
       if (saida.mover) await moverPelaIa(s, saida.mover);
-      else await avancarPelaIa(s, iaId, ETAPA_SOLICITOU, `o lead pediu atendimento (${saida.motivo})`.slice(0, 300));
       return;
     }
     if (saida.texto) {
@@ -449,18 +450,8 @@ export async function responderComIa(atendimentoId: string, mensagemId: string):
       return;
     }
 
-    // Reunião marcada nesta resposta vale mais que qualquer outro movimento; o
-    // pedido do modelo (a recusa → sem interesse) vem depois; o pedido de
-    // atendimento humano (avisar_equipe) leva ao atendimento humano. Sem
-    // nenhum deles, o card FICA onde está: o lead que só respondeu continua com
-    // a IA (ver avancarPelaIa).
-    if (saida.tipo === "texto" && saida.marcou) {
-      await avancarPelaIa(s, iaId, ETAPA_REUNIAO, "marcou a reunião");
-    } else if (saida.mover) {
-      await moverPelaIa(s, saida.mover);
-    } else if (saida.avisar) {
-      await avancarPelaIa(s, iaId, ETAPA_SOLICITOU, `o lead pediu atendimento (${saida.avisar})`.slice(0, 300));
-    }
+    // A etapa só muda se o prompt mandou (mover_etapa): ver moverPelaIa.
+    if (saida.mover) await moverPelaIa(s, saida.mover);
 
     if (saida.avisar) {
       // O cliente pediu algo que só a equipe tem (documento, contrato…): a
@@ -510,9 +501,20 @@ async function passarParaHumano(
 }
 
 /**
- * A ação mover_etapa. Não derruba o resto: o cliente já foi respondido, e uma
- * etapa que não deu para gravar (a oportunidade mudou de funil enquanto o
- * modelo pensava, por exemplo) só vai para o log.
+ * A ação mover_etapa: o ÚNICO jeito de a IA mudar o card de etapa (regra dele,
+ * 2026-11-06: "a decisão de mover para x etapa deve ser explícita no prompt e
+ * não por regra do sistema"). Para onde e quando quem diz é o prompt da IA
+ * (reunião marcada → "reunião agendada", pediu gente → "Atendimento Humano",
+ * recusa → "sem interesse"…); a configuração da IA só libera a ação. De
+ * 2026-10-19 até aqui o código movia sozinho por nome de etapa (avancarPelaIa),
+ * e cada funil novo pedia regra nova.
+ *
+ * Mover NÃO liga a IA no contato (2026-11-06): ela atende pela etapa, e se a
+ * etapa nova não tem IA, ela para de atender ali.
+ *
+ * Não derruba o resto: o cliente já foi respondido, e uma etapa que não deu
+ * para gravar (a oportunidade mudou de funil enquanto o modelo pensava, ou a
+ * etapa pede o dia de retomar) só vai para o log.
  */
 async function moverPelaIa(s: Situacao, mover: Movimento) {
   if (!s.op_id || !s.op_funil_id) return;
@@ -521,67 +523,6 @@ async function moverPelaIa(s: Situacao, mover: Movimento) {
     if (!mudou) console.info(`[ia atendente] ${s.op_id} já estava em ${mover.etapaId}`);
   } catch (e) {
     console.error("[ia atendente] não conseguiu mover", s.op_id, e);
-  }
-}
-
-/**
- * O ANDAMENTO DO FUNIL FEITO PELO CÓDIGO (pedido dele, 2026-10-19: "nossas IAs
- * não estão movendo as oportunidades"). O modelo só movia quando o prompt
- * mandava, e o prompt só manda na recusa: em 14 dias foram 4 movimentos para 7
- * reuniões marcadas. Agora, sem depender do modelo:
- *   · o lead pediu atendimento humano → "atendimento humano"
- *   · a IA marcou a reunião          → "reunião agendada"
- *   · o lead só respondeu            → o card FICA onde está (regra dele,
- *     2026-11-06: "se o lead responder mantém ele em atendimento ia"). De
- *     2026-10-19 até aqui ia para "em atendimento"/"em contato", etapa que nem
- *     sempre tem IA, e a conversa morria ali. Se a cadência acaba sem reunião
- *     nem atendimento humano, quem move é o fim da cadência
- *     (lib/automacoes/fim-da-cadencia.ts), também para quem respondeu.
- * Só para a frente pela ordem das etapas (card que já passou não volta), com
- * uma volta permitida:
- *   · qualquer etapa antes de "reunião agendada" → atendimento humano: o lead
- *     pediu uma pessoa (pedidos dele, 2026-10-23 e 2026-10-28: "se a IA ver
- *     que o lead quer atendimento humano, enviar para atendimento humano"). Se
- *     "solicitou contato" vem antes de "em atendimento" no quadro, só para a
- *     frente a coluna receberia apenas quem pede gente na primeira resposta. Da
- *     reunião agendada em diante (No Show, realizada) não volta: ali a equipe
- *     já está com o lead. Funil sem "reunião agendada": volta só de "em
- *     atendimento", como antes. O nome da etapa (solicitou contato ou
- *     atendimento humano) está em lib/atendimento-humano.ts.
- *
- * Mover NÃO liga a IA no contato (regra dele, 2026-11-06; de 2026-10-19 até
- * aqui, "em atendimento" e "reunião agendada" ligavam, e a IA seguia o lead
- * por todas as etapas dali em diante). Ela atende pela etapa: se a etapa nova
- * não tem IA, ela para de atender ali. Para continuar, a etapa nova precisa
- * ter IA.
- */
-// Só para a volta do atendimento humano em funil sem "reunião agendada". "em
-// contato" ainda casa: é o nome antigo, que o banco do dev continua usando.
-const ETAPA_EM_CONTATO = /^(em atendimento|em contato)$/i;
-const ETAPA_SOLICITOU = ETAPA_ATENDIMENTO_HUMANO;
-const ETAPA_REUNIAO = /^reuni[aã]o agendada$/i;
-
-async function avancarPelaIa(s: Situacao, iaId: string, alvo: RegExp, motivo: string): Promise<void> {
-  if (!s.op_id || !s.op_funil_id) return;
-  try {
-    const etapas = (await sql`
-      SELECT id, nome, ordem FROM etapas WHERE funil_id = ${s.op_funil_id} ORDER BY ordem`) as unknown as Array<{ id: string; nome: string; ordem: number }>;
-    const destino = etapas.find((e) => alvo.test(e.nome.trim()));
-    const atual = etapas.find((e) => e.id === s.op_etapa_id);
-    if (!destino && alvo === ETAPA_SOLICITOU) {
-      console.info(`[ia atendente] ${s.op_id} pediu atendimento humano, mas o funil não tem a etapa (${ETAPA_SOLICITOU})`);
-    }
-    if (!destino || !atual || destino.id === atual.id) return;
-    const reuniao = etapas.find((e) => ETAPA_REUNIAO.test(e.nome.trim()));
-    const volta =
-      alvo === ETAPA_SOLICITOU &&
-      (reuniao ? atual.ordem < reuniao.ordem : ETAPA_EM_CONTATO.test(atual.nome.trim()));
-    if (destino.ordem <= atual.ordem && !volta) return;
-    const [ia] = await sql`SELECT nome FROM ias WHERE id = ${iaId}`;
-    const quem = ia?.nome ? `pela IA ${ia.nome}` : "pela IA";
-    await moverOportunidadeDeEtapa(s.op_id, destino.id, s.op_funil_id, ` ${quem}: ${motivo}`);
-  } catch (e) {
-    console.error("[ia atendente] não avançou a etapa:", s.op_id, e);
   }
 }
 
@@ -935,8 +876,6 @@ type Saida = (
       /** O valor que o cliente disse, quando a IA avisou a equipe (avisar_equipe). */
       valor?: number | null;
       mover: Movimento | null;
-      /** A IA reservou a reunião nesta resposta (o card vai para "reunião agendada"). */
-      marcou?: boolean;
       /** O retorno combinado (agendar_retorno), já conferido; grava depois do envio. */
       retorno?: RetornoPedido | null;
       /** avisar_imprevisto: o lead não vai conseguir ir; avisa a Fernanda e abre a remarcação depois do envio. */
@@ -1027,7 +966,7 @@ function ferramentaMover(etapas: string[]): Anthropic.Tool {
   return {
     name: "mover_etapa",
     description:
-      "Move a oportunidade desta conversa para outra etapa do funil dela. Use SÓ na situação em que <sua_funcao> manda mover — nunca por conta própria. É interno, o cliente não vê: use junto com a sua resposta em texto (na mesma resposta).",
+      "Move a oportunidade desta conversa para outra etapa do funil dela. Use SÓ na situação em que <sua_funcao> manda mover, para a etapa que ela diz — nunca por conta própria: o sistema não move o card sozinho em nenhum caso. É interno, o cliente não vê: use junto com a sua resposta em texto (na mesma resposta). Se a mudança depende de outra ação desta resposta (marcar ou remarcar a reunião), chame as duas juntas: se a reunião não for reservada, a etapa não muda.",
     input_schema: {
       type: "object",
       properties: {
@@ -1816,6 +1755,10 @@ async function gerarResposta(
     const motivo = typeof entrada.motivo === "string" ? entrada.motivo.trim() : "";
     if (etapaId) mover = { etapaId, complemento: ` pela IA ${ia.nome}${motivo ? `: ${motivo}` : ""}` };
   }
+  // Decidida junto com a reserva (ou a remarcação), a mudança conta com ela:
+  // "marcou a reunião → reunião agendada". Se o Google não reservou, a etapa
+  // não muda — o modelo pediu as duas antes de saber o resultado.
+  if ((pedidoAgendar && !agendamento?.textoReserva) || (pedidoRemarcar && !remarcacao?.textoReserva)) mover = null;
 
   // Registro puro, vale em qualquer saída: a objeção foi dita de todo jeito.
   const textoDa = (v: unknown) => (typeof v === "string" ? v.trim() : "");
@@ -1865,8 +1808,6 @@ async function gerarResposta(
     valor: Number.isFinite(valorAviso) && valorAviso > 0 ? valorAviso : null,
     mover,
     objecoes,
-    // textoReserva só existe quando a reserva no Google deu certo.
-    marcou: Boolean(agendamento?.textoReserva),
     retorno: retorno && !("erro" in retorno) ? retorno : null,
     // A remarcação feita fecha o imprevisto da mesma resposta: o aviso dela já
     // foi para a Fernanda (remarcarPelaIa).
@@ -1874,8 +1815,6 @@ async function gerarResposta(
   };
 }
 
-// Para o teste do andamento do funil (avancarPelaIa) contra o banco do dev.
-export const paraTesteAndamento = { avancarPelaIa, ETAPA_EM_CONTATO, ETAPA_SOLICITOU, ETAPA_REUNIAO };
 // Para o teste do aviso por demanda no Instagram (scripts/testar-instagram.ts):
 // a reunião só é marcada com o Google de verdade, e o aviso é o que importa ali.
 export const paraTesteAvisos = { avisarReuniao };

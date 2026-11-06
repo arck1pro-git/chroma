@@ -3,14 +3,17 @@
 // card (lib/funil.ts, app/funil/cartao.tsx).
 //
 // Dois caminhos levam o lead até lá (pedido dele, 2026-10-28):
-//   · a IA vê que o lead quer uma pessoa (lib/ia/atendente.ts, passarParaHumano);
+//   · a IA vê que o lead quer uma pessoa (lib/ia/atendente.ts, passarParaHumano)
+//     e grava a linha da pill; a etapa só muda se o prompt mandar (mover_etapa,
+//     desde 2026-11-06 o sistema não move o card por regra);
 //   · a cadência do Atendimento IA termina sem resposta e o bloco "Atualizar
 //     oportunidade" põe o card nesta etapa (lib/automacoes/mover-pela-cadencia.ts).
 // Nos dois, o contato ganha uma das linhas abaixo e a pill acende. Ela apaga
 // quando alguém da equipe escreve para o lead.
 //
-// Arquivo próprio porque a IA, a cadência e o quadro leem a mesma regra, e a
-// cadência não deve carregar o atendente da IA inteiro só por uma constante.
+// Arquivo próprio porque a IA, a cadência e o quadro leem as mesmas linhas e
+// constantes, e a cadência não deve carregar o atendente da IA inteiro só por
+// uma constante.
 
 /** A etapa do atendimento humano. "solicitou contato" é o nome dos funis reformulados (2026-10-19). */
 export const ETAPA_ATENDIMENTO_HUMANO = /^(solicitou contato|atendimento humano)$/i;
